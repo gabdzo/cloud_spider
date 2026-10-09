@@ -185,7 +185,7 @@ function errorName(error) {
   return error?.name || error?.Code || error?.code || "";
 }
 
-function publicError(error) {
+export function publicError(error) {
   const name = errorName(error);
   const text = typeof error?.message === "string" && error.message ? error.message : name || "error";
   return { error: text };
