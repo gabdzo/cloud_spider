@@ -30,6 +30,18 @@ test("nameless LookupEvents stay quiet and a stop stays newest", () => {
   );
 });
 
+test("reads stay off the radio, even when they name an instance", () => {
+  assert.equal(
+    radioWindow([
+      { name: "DescribeInstances", resources: ["i-0abc1234"], time: 9 },
+      { name: "ListClusters", resources: [], time: 8 },
+      { name: "GetMetricData", resources: [], time: 7 },
+      { name: "CreateTags", resources: ["i-0abc1234"], time: 6 },
+    ]),
+    "CreateTags i-0abc1234",
+  );
+});
+
 test("a refresh keeps the previous line until the next list arrives", async () => {
   let release;
   const pending = new Promise((resolve) => {

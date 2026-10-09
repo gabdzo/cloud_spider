@@ -112,7 +112,12 @@ async function verb(region, id, dryRun, command) {
 async function lookupEvents(region) {
   try {
     const client = new CloudTrailClient({ region });
-    const out = await client.send(new LookupEventsCommand({ MaxResults: 50 }));
+    const out = await client.send(
+      new LookupEventsCommand({
+        MaxResults: 50,
+        LookupAttributes: [{ AttributeKey: "ReadOnly", AttributeValue: "false" }],
+      }),
+    );
     return {
       events: (out.Events || []).map((event) => ({
         name: event.EventName,

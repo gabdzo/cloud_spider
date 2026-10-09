@@ -4,4 +4,4 @@ open http://127.0.0.1:9241
 
 Sample does not touch AWS. It draws three local shacks.
 Only a shack tagged cloudspider=expendable can be stopped or started.
-The radio lists the last 15 actions, newest first.
+The radio lists the last 15 changes to the account, newest first. Reads stay off it.
