@@ -1,5 +1,6 @@
 import { createAws } from "./aws.js";
 import { createApp } from "./app.js";
+import { createPathAws } from "./aws-path.js";
 import { listen, listenExit } from "./server.js";
 
 const port = Number(process.env.PORT || 9241);
@@ -9,6 +10,7 @@ const app = createApp({
   ec2: aws.ec2,
   trail: aws.trail,
   logs: aws.logs,
+  path: createPathAws(),
   logGroup: process.env.CLOUDSPIDER_LOG_GROUP || "",
   pageOrigin,
   clock: () => Date.now(),

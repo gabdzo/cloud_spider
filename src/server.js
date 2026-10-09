@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { samplePlace } from "./sample.js";
+import { samplePathGraph } from "./path-sample.js";
+import { pathResult } from "./path-view.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const FILES = new Set([
@@ -14,6 +16,8 @@ const FILES = new Set([
   "verbs.js",
   "ids.js",
   "report.js",
+  "path-layout.js",
+  "path-draw.js",
 ]);
 
 const page = `<!doctype html>
@@ -45,7 +49,7 @@ const page = `<!doctype html>
   }
   h1 { margin: 0; font-size: 18px; letter-spacing: 0.16em; color: #ffcc33; }
   label { display: flex; gap: 8px; align-items: center; color: #c2a978; }
-  select, button {
+  select, button, input {
     min-height: 44px;
     background: #2a2218;
     color: #f2e3b8;
@@ -70,6 +74,9 @@ const page = `<!doctype html>
     border-bottom: 4px solid #4a3519;
   }
   select:disabled { opacity: 0.45; }
+  input { min-width: 240px; }
+  input::placeholder { color: #c2a978; }
+  [hidden] { display: none !important; }
   #error { color: #ff8a6b; margin: 0; padding: 10px 24px; background: #2a1510; }
   #map {
     flex: 1;
@@ -85,6 +92,9 @@ const page = `<!doctype html>
   <h1>CLOUD SPIDER</h1>
   <label>region <select id="region"></select></label>
   <button id="sample" type="button">Sample</button>
+  <button id="path" type="button">Path</button>
+  <select id="lb" aria-label="load balancer" hidden></select>
+  <input id="host" type="text" aria-label="URL or host" placeholder="paste a URL or host" hidden>
   <span id="status"></span>
   <p id="confirm"></p>
   <button id="yes" type="button" hidden>put it down</button>
@@ -156,6 +166,32 @@ async function route(app, req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/sample") {
     send(res, 200, { place: samplePlace() });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/path-sample") {
+    send(
+      res,
+      200,
+      pathResult(samplePathGraph(), {
+        lb: url.searchParams.get("lb") || "",
+        host: url.searchParams.get("host") || "",
+        region: "sample",
+      }),
+    );
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/path") {
+    await app.boot();
+    send(
+      res,
+      200,
+      await app.pathView({
+        lb: url.searchParams.get("lb") || "",
+        host: url.searchParams.get("host") || "",
+      }),
+    );
     return;
   }
 
