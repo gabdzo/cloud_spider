@@ -1,0 +1,10 @@
+config:
+  aws:region: eu-north-1
+  aws:profile: default
+  aws:allowedAccountIds:
+    - "550536272523"
+  aws:defaultTags:
+    tags:
+      project: cloudspider
+      managed-by: pulumi
+encryptionsalt: v1:f9f1zxqfoP0=:v1:DEk6DMrA3iEDkdKy:mZ4yDfpK6DTsRS6W9VJyTzGoQaeDNA==

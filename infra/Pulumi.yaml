@@ -1,0 +1,5 @@
+name: cloudspider
+runtime: nodejs
+description: Test resources so the Cloud Spider map can be exercised live in eu-north-1.
+backend:
+  url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"

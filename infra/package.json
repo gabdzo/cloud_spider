@@ -1,0 +1,12 @@
+{
+  "name": "cloudspider-infra",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@pulumi/aws": "^6.66.0",
+    "@pulumi/pulumi": "3.144.1"
+  }
+}

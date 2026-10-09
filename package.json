@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node src/main.js",
-    "test": "node --test"
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-cloudtrail": "^3.901.0",
