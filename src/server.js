@@ -2,6 +2,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { samplePlace } from "./sample.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const FILES = new Set([
@@ -56,9 +57,19 @@ const page = `<!doctype html>
   button:focus-visible, select:focus-visible { outline: 3px solid #ffcc33; outline-offset: 2px; }
   #yes { border-color: #e0603f; color: #ffd9cc; }
   #status { color: #fff2c8; }
-  #radio { color: #a9cf86; }
   #confirm { flex-basis: 100%; margin: 0; min-height: 1.4em; font-size: 16px; }
   #confirm:empty, #status:empty, #radio:empty { display: none; }
+  #radio {
+    margin: 0;
+    padding: 8px 24px;
+    max-height: calc(6 * 1.4em + 16px);
+    overflow: auto;
+    white-space: pre;
+    color: #a9cf86;
+    background: #1f1a14;
+    border-bottom: 4px solid #4a3519;
+  }
+  select:disabled { opacity: 0.45; }
   #error { color: #ff8a6b; margin: 0; padding: 10px 24px; background: #2a1510; }
   #map {
     flex: 1;
@@ -73,12 +84,13 @@ const page = `<!doctype html>
 <header>
   <h1>CLOUD SPIDER</h1>
   <label>region <select id="region"></select></label>
+  <button id="sample" type="button">Sample</button>
   <span id="status"></span>
-  <span id="radio"></span>
   <p id="confirm"></p>
   <button id="yes" type="button" hidden>put it down</button>
   <button id="no" type="button" hidden>leave it</button>
 </header>
+<pre id="radio"></pre>
 <p id="error" hidden></p>
 <div id="map"><canvas id="place"></canvas></div>
 <script type="module" src="/browser.js"></script>
@@ -94,6 +106,16 @@ export function createServer(app) {
       send(res, 500, { status: "the page failed" });
     }
   });
+}
+
+export function listenExit(error, port = 9241) {
+  if (error?.code === "EADDRINUSE") {
+    return {
+      code: 0,
+      line: `Cloud Spider is already open at http://127.0.0.1:${port}`,
+    };
+  }
+  return { code: 1, line: `listen: ${error?.message || "the page failed"}` };
 }
 
 export function listen(app, port = 9241) {
@@ -130,6 +152,11 @@ async function route(app, req, res) {
       res.end(body);
       return;
     }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/sample") {
+    send(res, 200, { place: samplePlace() });
+    return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/view") {

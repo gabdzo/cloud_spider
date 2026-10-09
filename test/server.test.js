@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "../src/app.js";
-import { listen } from "../src/server.js";
+import { listen, listenExit } from "../src/server.js";
+import { isInstanceId } from "../src/ids.js";
 
 const id = "i-0abc1234";
 
@@ -47,6 +48,37 @@ function app() {
     }),
   };
 }
+
+test("a taken port says the page is already open and any other listen error exits 1", () => {
+  const taken = listenExit({ code: "EADDRINUSE", message: "listen EADDRINUSE" }, 9241);
+  assert.equal(taken.code, 0);
+  assert.equal(taken.line, "Cloud Spider is already open at http://127.0.0.1:9241");
+  const other = listenExit({ code: "EACCES", message: "bad" }, 9241);
+  assert.equal(other.code, 1);
+  assert.match(other.line, /^listen: bad/);
+});
+
+test("sample is three local shacks and does not describe the account", async () => {
+  let reads = 0;
+  const box = app();
+  const original = box.app.boot.bind(box.app);
+  box.app.boot = async () => {
+    reads += 1;
+    return original();
+  };
+  const server = await listen(box.app, 0);
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/sample`);
+    const body = await response.json();
+    const ids = body.place.instances.map((item) => item.id);
+    assert.deepEqual(ids, ["sample-running", "sample-stopped", "sample-untagged"]);
+    assert.equal(ids.every((item) => isInstanceId(item)), false);
+    assert.equal(reads, 0);
+  } finally {
+    server.close();
+  }
+});
 
 test("the process binds loopback and a foreign stop does not describe", async () => {
   const box = app();

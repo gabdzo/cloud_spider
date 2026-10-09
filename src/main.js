@@ -1,6 +1,6 @@
 import { createAws } from "./aws.js";
 import { createApp } from "./app.js";
-import { listen } from "./server.js";
+import { listen, listenExit } from "./server.js";
 
 const port = Number(process.env.PORT || 9241);
 const pageOrigin = `http://127.0.0.1:${port}`;
@@ -21,8 +21,9 @@ let server;
 try {
   server = await listen(app, port);
 } catch (error) {
-  process.stdout.write(`listen: ${error?.message || "the page failed"}\n`);
-  process.exit(1);
+  const failure = listenExit(error, port);
+  process.stdout.write(`${failure.line}\n`);
+  process.exit(failure.code);
 }
 process.stdout.write(`cloud spider ${pageOrigin}\n`);
 

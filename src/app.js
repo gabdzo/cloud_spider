@@ -8,6 +8,11 @@ import { createRadio } from "./radio.js";
 import { readLogs } from "./logs.js";
 
 const CALL = { stop: "StopInstances", start: "StartInstances" };
+const ACCOUNT_HINT = "Set AWS_PROFILE=default and AWS_REGION=eu-north-1.";
+
+function accountRead(error) {
+  return `${ACCOUNT_HINT} ${error}`;
+}
 
 export function createApp({ ec2, trail, logs, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
@@ -42,8 +47,8 @@ export function createApp({ ec2, trail, logs, logGroup, pageOrigin, clock, write
     if (mine !== generation || next !== region) return;
     if (result.error) {
       place = null;
-      error = result.error;
-      report(sink, { call: "DescribeInstances", sentence: result.error });
+      error = accountRead(result.error);
+      report(sink, { call: "DescribeInstances", sentence: error });
       return;
     }
     error = "";
@@ -147,8 +152,8 @@ export function createApp({ ec2, trail, logs, logGroup, pageOrigin, clock, write
     if (listed?.error) {
       loading = false;
       place = null;
-      error = listed.error;
-      report(sink, { call: "DescribeRegions", sentence: listed.error });
+      error = accountRead(listed.error);
+      report(sink, { call: "DescribeRegions", sentence: error });
       return;
     }
     regions = listed?.regions || [];
@@ -170,7 +175,7 @@ export function createApp({ ec2, trail, logs, logGroup, pageOrigin, clock, write
       return { status, wait: false };
     }
     const result = await attemptVerb({ ec2, lines: sink, region, id, verb: name });
-    if (result.sentence) status = result.sentence;
+    status = result.sentence || "";
     if (result.wait) waits.begin({ region, id, verb: name, at: clock() });
     return { status, wait: Boolean(result.wait) };
   }

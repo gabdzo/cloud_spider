@@ -45,7 +45,8 @@ test("an unset group and a missing stream are said, without a search", async () 
     id: "i-0abc1234",
   });
   assert.equal(called, false);
-  assert.equal(unset.note, "the log group is unset");
+  assert.match(unset.note, /CLOUDSPIDER_LOG_GROUP=\/cloudspider\/test/);
+  assert.match(unset.note, /the log group is unset/);
   const missing = await readLogs({
     logs,
     logGroup: "/cloud-spider",

@@ -15,7 +15,7 @@ export function clickBuilding(ui, building, region) {
   ui.selection = building;
   ui.logs = [];
   ui.logNote = "";
-  ui.confirmation = confirmationFor(building, region);
+  ui.confirmation = confirmationFor(building, region, ui.sample);
 }
 
 export function clickGround(ui) {
@@ -27,7 +27,9 @@ export function clickGround(ui) {
 
 export function pressY(ui) {
   if (!ui.confirmation?.allowsY) return null;
-  const action = { verb: ui.confirmation.verb, id: ui.confirmation.id };
+  const action = ui.sample
+    ? { local: true, verb: ui.confirmation.verb, id: ui.confirmation.id }
+    : { verb: ui.confirmation.verb, id: ui.confirmation.id };
   ui.confirmation = null;
   return action;
 }
@@ -59,7 +61,7 @@ export function switchRegion(ui) {
   ui.logNote = "";
 }
 
-function confirmationFor(building, region) {
+function confirmationFor(building, region, sample) {
   if (building.state !== "running" && building.state !== "stopped") return null;
   const verb = building.state === "running" ? "stop" : "start";
   if (!isExpendable(building)) {
@@ -71,9 +73,17 @@ function confirmationFor(building, region) {
     };
   }
   const name = building.name ? `, ${building.name}` : "";
+  const button = verb === "stop" ? "put it down" : "bring it back";
+  if (sample) {
+    return {
+      verb,
+      id: building.id,
+      allowsY: true,
+      line: `> ${building.id} (${building.type}${name})? Y changes the picture. This does not call AWS. [Y] ${button}  [N] leave it`,
+    };
+  }
   const word = verb === "stop" ? "STOP" : "START";
   const does = verb === "stop" ? "stops" : "starts";
-  const button = verb === "stop" ? "put it down" : "bring it back";
   return {
     verb,
     id: building.id,

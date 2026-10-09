@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { isInstanceId } from "../src/ids.js";
+import { samplePlace } from "../src/sample.js";
 import {
   clickBuilding,
   clickGround,
@@ -91,6 +93,24 @@ test("empty ground clears the selection and another building does not keep the o
   clickBuilding(ui, building("stopped", { id: "i-0bbb2222" }), region);
   assert.equal(ui.selection.id, "i-0bbb2222");
   assert.match(ui.confirmation.line, /START i-0bbb2222/);
+});
+
+test("sample Y changes the picture locally and does not name a dry run", () => {
+  const place = samplePlace();
+  for (const shack of place.instances) assert.equal(isInstanceId(shack.id), false);
+  const ui = createUi();
+  ui.sample = true;
+  const running = place.instances[0];
+  clickBuilding(ui, running, "sample");
+  assert.match(ui.confirmation.line, /Y changes the picture/);
+  assert.match(ui.confirmation.line, /does not call AWS/);
+  assert.equal(ui.confirmation.line.includes("dry-run"), false);
+  const action = pressY(ui);
+  assert.deepEqual(action, { local: true, verb: "stop", id: "sample-running" });
+  clickBuilding(ui, place.instances[2], "sample");
+  assert.match(ui.confirmation.line, /is not tagged cloudspider=expendable/);
+  assert.equal(ui.confirmation.allowsY, false);
+  assert.equal(pressY(ui), null);
 });
 
 test("a region switch closes the confirmation and clears the radio", () => {

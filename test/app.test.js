@@ -133,6 +133,15 @@ test("a failed open is read again on the next open", async () => {
   assert.equal(second.region, "us-east-1");
 });
 
+test("a failed account read names the profile and region", async () => {
+  const { app } = harness({ regions: { error: "explicit deny" } });
+  const view = await app.boot();
+  assert.match(view.error, /^Set AWS_PROFILE=default and AWS_REGION=eu-north-1\. explicit deny/);
+  assert.match(app.stdout.join("\n"), /Set AWS_PROFILE=default and AWS_REGION=eu-north-1\. explicit deny/);
+  const refused = await app.stop(origin, "not-an-id");
+  assert.equal(refused.status.startsWith("Set AWS_PROFILE"), false);
+});
+
 test("a credential failure draws no place", async () => {
   const { app, calls } = harness({
     regions: { error: "Could not load credentials", secret: "AKIAIOSFODNN7EXAMPLE" },
@@ -190,6 +199,16 @@ test("a tag in another region does not stop the instance on screen", async () =>
   const result = await box.app.stop(origin, id);
   assert.match(result.status, /the stop did not happen/);
   assert.equal(box.calls.some((call) => call[0] === "stop"), false);
+});
+
+test("a successful verb clears the status left by the previous refusal", async () => {
+  const box = harness();
+  await box.app.boot();
+  const refused = await box.app.stop(origin, "i-0bbb2222");
+  assert.match(refused.status, /the stop did not happen/);
+  const started = await box.app.start(origin, "i-0bbb2222");
+  assert.equal(started.wait, true);
+  assert.equal(started.status, "");
 });
 
 test("logs ask for the instance id as the stream", async () => {

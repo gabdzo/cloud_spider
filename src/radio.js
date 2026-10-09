@@ -1,3 +1,7 @@
+import { isInstanceId } from "./ids.js";
+
+const WINDOW = 15;
+
 export function radioLine(event) {
   if (!event) return "the radio is quiet";
   const resources = event.resources || [];
@@ -8,6 +12,29 @@ export function radioLine(event) {
 
 export function radioError(error) {
   return `the radio cannot read CloudTrail: ${error}`;
+}
+
+export function radioWindow(events) {
+  const kept = [];
+  for (const event of events || []) {
+    if (!event) continue;
+    const named = (event.resources || []).some((id) => isInstanceId(id));
+    if (event.name === "LookupEvents" && !named) continue;
+    kept.push(event);
+  }
+  const ordered = kept
+    .map((event, index) => ({ event, index }))
+    .sort((a, b) => (b.event.time || 0) - (a.event.time || 0) || a.index - b.index)
+    .slice(0, WINDOW)
+    .map((item) => radioLine(item.event));
+  if (ordered.length === 0) return "the radio is quiet";
+  return ordered.join("\n");
+}
+
+function eventsFrom(result) {
+  if (Array.isArray(result?.events)) return result.events;
+  if (result?.event) return [result.event];
+  return [];
 }
 
 export function createRadio({ lookup }) {
@@ -23,10 +50,9 @@ export function createRadio({ lookup }) {
     },
     async refresh(region) {
       const mine = ++ticket;
-      line = "";
       const result = await lookup(region);
       if (mine !== ticket) return { dropped: true, line };
-      line = result?.error ? radioError(result.error) : radioLine(result?.event ?? null);
+      line = result?.error ? radioError(result.error) : radioWindow(eventsFrom(result));
       return { dropped: false, line };
     },
   };

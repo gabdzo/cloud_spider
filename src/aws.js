@@ -112,14 +112,13 @@ async function verb(region, id, dryRun, command) {
 async function lookupEvents(region) {
   try {
     const client = new CloudTrailClient({ region });
-    const out = await client.send(new LookupEventsCommand({ MaxResults: 1 }));
-    const event = out.Events?.[0];
-    if (!event) return { event: null };
+    const out = await client.send(new LookupEventsCommand({ MaxResults: 50 }));
     return {
-      event: {
+      events: (out.Events || []).map((event) => ({
         name: event.EventName,
+        time: event.EventTime ? new Date(event.EventTime).getTime() : 0,
         resources: (event.Resources || []).map(resourceId).filter(Boolean),
-      },
+      })),
     };
   } catch (error) {
     return publicError(error);

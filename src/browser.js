@@ -1,5 +1,6 @@
 import { layout } from "./layout.js";
 import { buildingAt, paint } from "./draw.js";
+import { isInstanceId } from "./ids.js";
 import {
   clickBuilding,
   clickGround,
@@ -22,16 +23,18 @@ const confirmEl = document.querySelector("#confirm");
 const errorEl = document.querySelector("#error");
 const yes = document.querySelector("#yes");
 const no = document.querySelector("#no");
+const sampleButton = document.querySelector("#sample");
 const map = document.querySelector("#map");
 
 let place = null;
 let region = "";
 let phase = 0;
 let pulling = false;
+let sample = false;
 
 function renderChrome() {
   statusEl.textContent = ui.status;
-  radioEl.textContent = ui.radio ? `radio: ${ui.radio}` : "";
+  radioEl.textContent = ui.radio || "";
   confirmEl.textContent = ui.confirmation?.line || "";
   no.hidden = !ui.confirmation;
   yes.hidden = !ui.confirmation?.allowsY;
@@ -93,10 +96,19 @@ async function pull() {
   pulling = true;
   try {
     const view = await fetch("/api/view").then((response) => response.json());
+    setRadio(ui, view.radio || "");
+    if (sample) {
+      if (view.error) {
+        errorEl.hidden = false;
+        errorEl.textContent = view.error;
+      }
+      renderChrome();
+      draw();
+      return;
+    }
     region = view.region || "";
     place = view.place;
     setStatus(ui, view.status || "");
-    setRadio(ui, view.radio || "");
     errorEl.hidden = !view.error;
     errorEl.textContent = view.error || "";
     syncRegions(view.regions || [], view.region);
@@ -105,6 +117,43 @@ async function pull() {
     draw();
   } finally {
     pulling = false;
+  }
+}
+
+function showSample(next) {
+  sample = true;
+  ui.sample = true;
+  place = next;
+  regionSelect.disabled = true;
+  clickGround(ui);
+  setStatus(ui, "sample, not the account");
+  renderChrome();
+  draw();
+}
+
+function leaveSample() {
+  sample = false;
+  ui.sample = false;
+  regionSelect.disabled = false;
+  clickGround(ui);
+  setStatus(ui, "");
+  pull();
+}
+
+async function toggleSample() {
+  if (sample) {
+    leaveSample();
+    return;
+  }
+  try {
+    const response = await fetch("/api/sample");
+    if (!response.ok) throw new Error("the page failed");
+    const body = await response.json();
+    if (!body?.place) throw new Error("the page failed");
+    showSample(body.place);
+  } catch {
+    errorEl.hidden = false;
+    if (!errorEl.textContent) errorEl.textContent = "the page failed";
   }
 }
 
@@ -126,6 +175,7 @@ canvas.addEventListener("click", async (event) => {
   clickBuilding(ui, raw, region);
   renderChrome();
   draw();
+  if (sample || !isInstanceId(raw.id)) return;
   const logs = await fetch(`/api/logs?id=${encodeURIComponent(raw.id)}`).then((response) => response.json());
   if (ui.selection?.id !== raw.id) return;
   setLogs(ui, logs.lines || [], logs.note || "");
@@ -152,10 +202,24 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
+function flipSample(action) {
+  const found = place?.instances?.find((item) => item.id === action.id);
+  if (!found) return;
+  found.state = action.verb === "stop" ? "stopped" : "running";
+  if (ui.selection?.id === found.id) ui.selection = { ...ui.selection, state: found.state };
+  setStatus(ui, "sample, not the account");
+}
+
 async function act(action) {
   renderChrome();
   draw();
   if (!action) return;
+  if (action.local) {
+    flipSample(action);
+    renderChrome();
+    draw();
+    return;
+  }
   const path = action.verb === "start" ? "/api/start" : "/api/stop";
   const body = await fetch(path, {
     method: "POST",
@@ -167,7 +231,12 @@ async function act(action) {
   await pull();
 }
 
+sampleButton.addEventListener("click", () => {
+  toggleSample();
+});
+
 regionSelect.addEventListener("change", async () => {
+  if (sample) return;
   switchRegion(ui);
   renderChrome();
   draw();
