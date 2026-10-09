@@ -1,0 +1,201 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createApp } from "../src/app.js";
+
+const origin = "http://127.0.0.1:8787";
+const id = "i-0abc1234";
+
+function tagged(state = "running") {
+  return {
+    id,
+    type: "t4g.nano",
+    state,
+    vpcId: "vpc-1",
+    subnetId: "subnet-1",
+    tags: [{ key: "cloudspider", value: "expendable" }],
+  };
+}
+
+function harness(overrides = {}) {
+  const calls = [];
+  let instance = tagged();
+  const ec2 = {
+    calls,
+    setInstance(next) {
+      instance = next;
+    },
+    async describeRegions() {
+      calls.push("regions");
+      return overrides.regions || { regions: ["eu-west-1", "us-east-1"] };
+    },
+    async defaultRegion() {
+      return overrides.defaultRegion || "us-east-1";
+    },
+    async describeVpcs() {
+      calls.push("vpcs");
+      return overrides.vpcs || { items: [{ id: "vpc-1" }] };
+    },
+    async describeSubnets() {
+      calls.push("subnets");
+      return { items: [{ id: "subnet-1", vpcId: "vpc-1" }] };
+    },
+    async describeInstances() {
+      calls.push("instances");
+      return { items: instance ? [instance] : [] };
+    },
+    async describeInstance(region, gotId) {
+      calls.push(["one", region, gotId]);
+      if (overrides.describeInstance) return overrides.describeInstance(region, gotId);
+      if (gotId === "i-0bbb2222") return { ...tagged("stopped"), id: "i-0bbb2222" };
+      return instance ? { ...instance } : null;
+    },
+    async stopInstances(_region, _id, dryRun) {
+      calls.push(["stop", dryRun]);
+      if (dryRun) return overrides.dry || { dryRunPass: true };
+      return overrides.real || {};
+    },
+    async startInstances(_region, _id, dryRun) {
+      calls.push(["start", dryRun]);
+      if (dryRun) return { dryRunPass: true };
+      return {};
+    },
+  };
+  const lookups = [];
+  const trail = {
+    lookups,
+    async lookupEvents(region) {
+      lookups.push(region);
+      if (overrides.trailError) return { error: overrides.trailError };
+      if (region === "eu-west-1") {
+        return { event: { name: "RunInstances", resources: ["i-0new0001"] } };
+      }
+      return { event: overrides.event === undefined ? null : overrides.event };
+    },
+  };
+  const logCalls = [];
+  const logs = {
+    async filter(request) {
+      logCalls.push(request);
+      return overrides.logs || { events: [{ message: "ready" }] };
+    },
+  };
+  let time = 10_000;
+  const app = createApp({
+    ec2,
+    trail,
+    logs,
+    logGroup: overrides.logGroup === undefined ? "/cloud-spider" : overrides.logGroup,
+    pageOrigin: origin,
+    clock: () => time,
+  });
+  return {
+    app,
+    calls,
+    lookups,
+    logCalls,
+    ec2,
+    setTime(next) {
+      time = next;
+    },
+    };
+}
+
+test("a bad id and a foreign origin do not call AWS", async () => {
+  const { app, calls } = harness();
+  await app.boot();
+  const before = calls.length;
+  const bad = await app.stop(origin, "instance-1");
+  assert.equal(bad.status, "it is not an instance id");
+  const foreign = await app.stop("http://evil.example", id);
+  assert.match(foreign.status, /the stop did not happen/);
+  assert.equal(calls.slice(before).some((call) => call[0] === "one" || call[0] === "stop"), false);
+  assert.equal(app.stdout.join("\n").includes("AKIA"), false);
+});
+
+test("a second open does not read the account again", async () => {
+  const box = harness();
+  await box.app.boot();
+  const reads = box.calls.filter((call) => call === "vpcs").length;
+  await box.app.boot();
+  assert.equal(box.calls.filter((call) => call === "vpcs").length, reads);
+});
+
+test("a failed open is read again on the next open", async () => {
+  let denied = true;
+  const box = harness();
+  const listed = box.ec2.describeRegions;
+  box.ec2.describeRegions = async () => (denied ? { error: "explicit deny" } : listed());
+  const first = await box.app.boot();
+  assert.match(first.error, /explicit deny/);
+  denied = false;
+  const second = await box.app.boot();
+  assert.equal(second.error, "");
+  assert.equal(second.region, "us-east-1");
+});
+
+test("a credential failure draws no place", async () => {
+  const { app, calls } = harness({
+    regions: { error: "Could not load credentials", secret: "AKIAIOSFODNN7EXAMPLE" },
+  });
+  const view = await app.boot();
+  assert.equal(view.place, null);
+  assert.match(view.error, /Could not load credentials/);
+  assert.equal(calls.includes("vpcs"), false);
+  assert.equal(app.stdout.join("\n").includes("AKIAIOSFODNN7EXAMPLE"), false);
+});
+
+test("an empty enabled region is a place", async () => {
+  const { app } = harness({
+    vpcs: { items: [] },
+  });
+  const view = await app.boot();
+  assert.equal(view.error, "");
+  assert.equal(view.place.region, "us-east-1");
+  assert.deepEqual(view.place.vpcs, []);
+  assert.equal(view.radio, "the radio is quiet");
+});
+
+test("a clean stop waits, then the target state says it happened", async () => {
+  const box = harness();
+  await box.app.boot();
+  const started = await box.app.stop(origin, id);
+  assert.equal(started.wait, true);
+  box.ec2.setInstance(tagged("stopped"));
+  const view = await box.app.poll();
+  assert.match(view.status, /it happened/);
+  assert.match(box.app.stdout.join("\n"), /it happened/);
+});
+
+test("switching region cancels waits, names the count, and reads the new radio", async () => {
+  const box = harness();
+  await box.app.boot();
+  await box.app.stop(origin, id);
+  await box.app.start(origin, "i-0bbb2222");
+  const view = await box.app.switchRegion("eu-west-1");
+  assert.equal(view.status, "2 verbs did not finish");
+  assert.equal(view.region, "eu-west-1");
+  assert.match(view.radio, /RunInstances i-0new0001/);
+  assert.equal(view.radio.includes("i-0old0001"), false);
+  assert.equal(box.lookups.at(-1), "eu-west-1");
+});
+
+test("a tag in another region does not stop the instance on screen", async () => {
+  const box = harness({
+    describeInstance(region) {
+      if (region === "eu-west-1") return tagged("running");
+      return { ...tagged("running"), tags: [] };
+    },
+  });
+  await box.app.boot();
+  const result = await box.app.stop(origin, id);
+  assert.match(result.status, /the stop did not happen/);
+  assert.equal(box.calls.some((call) => call[0] === "stop"), false);
+});
+
+test("logs ask for the instance id as the stream", async () => {
+  const box = harness();
+  await box.app.boot();
+  const logs = await box.app.logsFor(id);
+  assert.equal(box.logCalls[0].stream, id);
+  assert.deepEqual(logs.lines, ["ready"]);
+});
