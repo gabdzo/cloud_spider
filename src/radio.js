@@ -1,6 +1,5 @@
-import { isInstanceId } from "./ids.js";
-
 const WINDOW = 15;
+const READ_ONLY = /^(Describe|List|Get(?!FederationToken$)|Lookup|Head)/;
 
 export function radioLine(event) {
   if (!event) return "the radio is quiet";
@@ -17,9 +16,7 @@ export function radioError(error) {
 export function radioWindow(events) {
   const kept = [];
   for (const event of events || []) {
-    if (!event) continue;
-    const named = (event.resources || []).some((id) => isInstanceId(id));
-    if (event.name === "LookupEvents" && !named) continue;
+    if (!event || READ_ONLY.test(event.name || "")) continue;
     kept.push(event);
   }
   const ordered = kept
