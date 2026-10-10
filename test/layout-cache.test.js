@@ -21,6 +21,16 @@ function countingLayout() {
   return { calls, fn: (place) => { calls.n += 1; return layout(place); } };
 }
 
+test("a different row limit lays the place out again", () => {
+  const { calls, fn } = countingLayout();
+  const cache = createLayoutCache(fn);
+  const place = samplePlace();
+  cache.get(place, 1100);
+  cache.get(place, 1100);
+  cache.get(place, 390);
+  assert.equal(calls.n, 2);
+});
+
 test("the layout cache reuses the layout while the place is unchanged", () => {
   const { calls, fn } = countingLayout();
   const cache = createLayoutCache(fn);

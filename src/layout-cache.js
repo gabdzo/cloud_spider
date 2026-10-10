@@ -4,17 +4,20 @@
 // invalidate) so the next frame lays out the new state.
 export function createLayoutCache(layoutFn) {
   let key = null;
+  let limit = undefined;
   let placed = null;
   return {
-    get(place) {
-      if (key !== place) {
-        placed = layoutFn(place);
+    get(place, rowLimit) {
+      if (key !== place || limit !== rowLimit) {
+        placed = rowLimit == null ? layoutFn(place) : layoutFn(place, { rowLimit });
         key = place;
+        limit = rowLimit;
       }
       return placed;
     },
     invalidate() {
       key = null;
+      limit = undefined;
       placed = null;
     },
   };

@@ -1,4 +1,4 @@
-import { layout } from "./layout.js";
+import { ROW_LIMIT, layout } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, paint } from "./draw.js";
 import { isInstanceId } from "./ids.js";
@@ -79,8 +79,14 @@ function sizeCanvas(contentWidth, contentHeight) {
 
 function placedPath() {
   return pathData?.diagram
-    ? layoutPath(pathData.diagram)
+    ? layoutPath(pathData.diagram, map.clientWidth || 0)
     : { nodes: [], edges: [], contentWidth: 960, contentHeight: 640 };
+}
+
+function placedMap() {
+  const width = map.clientWidth || 0;
+  const rowLimit = width ? Math.min(ROW_LIMIT, width) : ROW_LIMIT;
+  return layoutCache.get(place, rowLimit);
 }
 
 function drawPath() {
@@ -105,7 +111,7 @@ function draw() {
   
   // Layout is cached per place; flipSampleState invalidates it on mutation.
   const placed = place
-    ? layoutCache.get(place)
+    ? placedMap()
     : {
         settlements: [],
         orphans: { items: [], label: "no VPC" },
@@ -337,7 +343,7 @@ canvas.addEventListener("click", async (event) => {
     draw();
     return;
   }
-  const hit = buildingAt(layout(place), event.offsetX, event.offsetY);
+  const hit = buildingAt(placedMap(), event.offsetX, event.offsetY);
   if (!hit) {
     clickGround(ui);
     renderChrome();

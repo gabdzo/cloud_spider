@@ -31,7 +31,7 @@ const page = `<!doctype html>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
-  html, body { height: 100%; }
+  html, body { height: 100%; overflow: hidden; }
   body {
     margin: 0;
     display: flex;
@@ -69,6 +69,8 @@ const page = `<!doctype html>
     flex-wrap: wrap;
     gap: 10px 24px;
     align-items: center;
+    min-width: 0;
+    max-width: 100%;
     padding: 12px 24px;
     background: #1f1a14;
     border: 4px solid #4a3519;
@@ -153,21 +155,30 @@ const page = `<!doctype html>
   #yes:hover:not(:disabled) {
     box-shadow: inset 0 0 0 1px #1f1a14, 2px 2px 0 rgba(0, 0, 0, 0.6), 0 0 16px rgba(224, 96, 63, 0.5);
   }
-  #status { color: #fff2c8; }
+  #status {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: #fff2c8;
+  }
   #confirm {
     flex-basis: 100%;
+    min-width: 0;
     margin: 0;
     min-height: 1.4em;
+    overflow-wrap: anywhere;
     font-size: 16px;
     color: #c2a978;
   }
   #confirm:empty, #status:empty, #radio:empty { display: none; }
   #radio {
     margin: 0;
+    min-width: 0;
+    max-width: 100%;
     padding: 8px 24px;
     max-height: calc(6 * 1.4em + 16px);
     overflow: auto;
-    white-space: pre;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     color: #a9cf86;
     background: #1a1510;
     border: 4px solid #4a3519;
@@ -176,12 +187,15 @@ const page = `<!doctype html>
     font-size: 13px;
   }
   select:disabled { opacity: 0.45; filter: grayscale(0.5); }
-  input { min-width: 240px; }
+  input { min-width: 0; flex: 1 1 240px; max-width: 420px; }
   input::placeholder { color: #c2a978; opacity: 0.6; }
   [hidden] { display: none !important; }
   #error {
     color: #ff8a6b;
     margin: 0;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
     padding: 10px 24px;
     background: #2a1510;
     border: 4px solid #e0603f;
@@ -190,6 +204,7 @@ const page = `<!doctype html>
   }
   #map {
     flex: 1;
+    min-width: 0;
     min-height: 0;
     overflow: auto;
     background: repeating-linear-gradient(#1c1813 0 8px, #17140f 8px 16px);
@@ -208,6 +223,18 @@ const page = `<!doctype html>
     pointer-events: none;
   }
   canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+  @media (max-width: 900px) {
+    header { padding: 8px 12px; gap: 6px 10px; }
+    h1 { font-size: 15px; letter-spacing: 0.08em; }
+    #status, #confirm { flex-basis: 100%; }
+    select, button, input { padding: 0 8px; }
+    #radio, #error { padding-left: 12px; padding-right: 12px; }
+  }
+  @media (max-height: 700px) {
+    header { padding: 6px 12px; }
+    select, button, input { min-height: 36px; }
+    #radio { max-height: calc(3 * 1.4em + 12px); padding-top: 6px; padding-bottom: 6px; }
+  }
 </style>
 </head>
 <body>
