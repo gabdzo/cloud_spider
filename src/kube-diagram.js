@@ -1,6 +1,7 @@
 // Kubernetes objects as a Cluster view diagram, left to right the way
 // traffic flows: cluster → namespace → ingress → service → workload → pod →
-// node. System namespaces are one box each, without their insides.
+// node. System namespaces carry their insides too (marked `system`): the
+// lane layout (kube-layout.js) folds them shut until they are opened.
 export const KUBE_COLUMNS = {
   "control-plane": 0,
   namespace: 1,
@@ -122,11 +123,12 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       label: ns,
       caption: `${inside.length} pod${inside.length === 1 ? "" : "s"}${userNs(ns) ? "" : " · system"}${broken ? ` · ${broken} failing` : ""}`,
       status: broken ? "broken" : "ok",
+      system: !userNs(ns),
     });
     edges.push({ from: cpId, to: `ns:${ns}`, status: broken ? "broken" : "ok" });
   }
   const shownNs = new Set(nodes.filter((n) => n.kind === "namespace").map((n) => n.label));
-  const inUserNs = (item) => shownNs.has(meta(item).namespace) && userNs(meta(item).namespace);
+  const inUserNs = (item) => shownNs.has(meta(item).namespace);
 
   // Workloads.
   const byKey = new Map();
@@ -135,7 +137,7 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       const state = workloadState(kind, item);
       const id = `${kind}:${key(item)}`;
       byKey.set(id, item);
-      nodes.push({ id, kind: "workload", label: meta(item).name, caption: `${kind.toLowerCase()} ${state.have}/${state.want} ready`, status: state.health, labels: item.spec?.template?.metadata?.labels || {}, ns: meta(item).namespace });
+      nodes.push({ id, kind: "workload", label: meta(item).name, caption: `${kind.toLowerCase()} ${state.have}/${state.want} ready`, status: state.health, labels: item.spec?.template?.metadata?.labels || {}, ns: meta(item).namespace, workloadKind: kind, want: state.want, have: state.have });
     }
   }
   const workloads = nodes.filter((n) => n.kind === "workload");
@@ -149,14 +151,14 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
     const targets = workloads.filter((w) => w.ns === meta(svc).namespace && subset(svc.spec?.selector, w.labels));
     const ports = (svc.spec?.ports || []).map((p) => p.port).join(",");
     const healthy = targets.some((t) => t.status === "ok");
-    nodes.push({ id, kind: "service", label: meta(svc).name, caption: `${svc.spec?.type || "ClusterIP"} :${ports}`, status: targets.length && !healthy ? "broken" : "ok" });
+    nodes.push({ id, kind: "service", ns: meta(svc).namespace, label: meta(svc).name, caption: `${svc.spec?.type || "ClusterIP"} :${ports}`, status: targets.length && !healthy ? "broken" : "ok" });
     for (const t of targets) edges.push({ from: id, to: t.id, status: t.status === "broken" ? "broken" : "ok" });
   }
   const ingresses = (snapshot.ingresses || []).filter(inUserNs);
   for (const ing of ingresses) {
     const id = `ing:${key(ing)}`;
     const host = ing.spec?.rules?.[0]?.host || ing.status?.loadBalancer?.ingress?.[0]?.hostname || "";
-    nodes.push({ id, kind: "ingress", label: meta(ing).name, caption: host || "ingress", status: "ok" });
+    nodes.push({ id, kind: "ingress", ns: meta(ing).namespace, label: meta(ing).name, caption: host || "ingress", status: "ok" });
     edges.push({ from: `ns:${meta(ing).namespace}`, to: id, status: "ok" });
     const backends = new Set();
     for (const rule of ing.spec?.rules || []) for (const path of rule.http?.paths || []) if (path.backend?.service?.name) backends.add(path.backend.service.name);
@@ -185,12 +187,14 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
     nodes.push({
       id,
       kind: "pod",
+      ns: meta(pod).namespace,
       label: meta(pod).name,
       caption: [state.word, state.restarts ? `${state.restarts} restart${state.restarts === 1 ? "" : "s"}` : "", usage].filter(Boolean).join(" · "),
       status: state.health,
       pod: { ns: meta(pod).namespace, name: meta(pod).name, containers: (pod.spec?.containers || []).map((c) => c.name), node: pod.spec?.nodeName || "" },
     });
     const owner = ownerWorkload(pod, byKey);
+    nodes[nodes.length - 1].owner = owner;
     if (owner) edges.push({ from: owner, to: id, status: state.health === "broken" ? "broken" : "ok" });
     else edges.push({ from: `ns:${meta(pod).namespace}`, to: id, status: state.health === "broken" ? "broken" : "ok" });
     const nodeName = pod.spec?.nodeName;
@@ -215,10 +219,7 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       host: { name: nodeName, type, pods: running, ready: item ? healthy : null, instanceId: (/\/(i-[0-9a-z]+)$/.exec(item?.spec?.providerID || "") || [])[1] || "", load },
     });
   }
-  for (const n of nodes) {
-    delete n.labels;
-    delete n.ns;
-  }
+  for (const n of nodes) delete n.labels;
   return { layout: "kube", columns: usedColumns(nodes), nodes, edges };
 }
 

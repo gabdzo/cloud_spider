@@ -28,6 +28,8 @@ export const FILES = new Set([
   "scene.js",
   "cluster.js",
   "kube-diagram.js",
+  "kube-layout.js",
+  "kube-draw.js",
   "metrics.js",
   "upgrade-rules.js",
   "stack-costs.js",

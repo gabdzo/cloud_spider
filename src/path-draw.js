@@ -14,7 +14,7 @@ export const STATUS_COLOR = STATUS;
 // The backdrop only depends on the canvas size, so it is drawn once.
 let backdrop = { key: "", canvas: null };
 
-function backdropLayer(ctx, width, height) {
+export function backdropLayer(ctx, width, height) {
   if (!canMakeLayer()) return null;
   const dpr = dprOf(ctx);
   const key = `${width}x${height}@${dpr}`;

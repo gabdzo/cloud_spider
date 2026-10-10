@@ -76,7 +76,7 @@ test("the client: token from the exec plugin (cached), GET with the CA, 403 and 
   assert.match(none.error, /no kubeconfig at \/none/);
 });
 
-test("the kube diagram: traffic order, broken pods and workloads, metrics, system namespaces folded", () => {
+test("the kube diagram: traffic order, broken pods and workloads, metrics, system namespaces marked", () => {
   const diagram = diagramFromKube(sampleKubeSnapshot(), { cluster: { version: "1.32", status: "ACTIVE" } });
   assert.equal(diagram.layout, "kube");
   const kinds = new Set(diagram.nodes.map((n) => n.kind));
@@ -84,7 +84,8 @@ test("the kube diagram: traffic order, broken pods and workloads, metrics, syste
   assert.deepEqual(diagram.columns, { "control-plane": 0, namespace: 1, service: 2, workload: 3, pod: 4, node: 5 }, "no empty ingress column");
   const by = (id) => diagram.nodes.find((n) => n.id === id);
   assert.equal(by("ns:kube-system").caption, "6 pods · system");
-  assert.ok(!diagram.nodes.some((n) => n.id.startsWith("pod:kube-system/")));
+  assert.equal(by("ns:kube-system").system, true, "system namespaces are marked, the lane layout folds them shut");
+  assert.ok(diagram.nodes.some((n) => n.id === "pod:kube-system/coredns-6d9c8b7f5-a1" && n.owner === "Deployment:kube-system/coredns" && n.ns === "kube-system"));
   assert.equal(by("Deployment:demo/loadgen").status, "broken");
   assert.equal(by("pod:demo/loadgen-6b7d9c5f8-q4mnv").caption, "CrashLoopBackOff · 7 restarts");
   assert.equal(by("pod:demo/web-7c9f6d8b5-x2lqp").caption, "Running · 4m · 18Mi");
