@@ -74,6 +74,7 @@ test("sample is three local shacks and does not describe the account", async () 
     const ids = body.place.instances.map((item) => item.id);
     assert.deepEqual(ids, ["sample-running", "sample-stopped", "sample-untagged"]);
     assert.equal(ids.every((item) => isInstanceId(item)), false);
+    assert.match(body.radio, /^StopInstances sample-stopped\n/);
     assert.equal(reads, 0);
   } finally {
     server.close();
@@ -128,6 +129,9 @@ test("path sample is local and names the first break", async () => {
     assert.equal(reads, 0);
     const page = await (await fetch(`http://127.0.0.1:${address.port}/`)).text();
     assert.match(page, /id="path"/);
+    assert.match(page, /--pip-bright: #/);
+    assert.match(page, /id="tab-map"/);
+    assert.match(page, /id="radio-panel"/);
     assert.match(page, /id="lb"/);
     assert.match(page, /id="host"/);
     const layout = await fetch(`http://127.0.0.1:${address.port}/path-layout.js`);
@@ -141,6 +145,7 @@ test("path sample is local and names the first break", async () => {
 
 test("every module the page imports is served", async () => {
   const { readFile } = await import("node:fs/promises");
+  const { posix } = await import("node:path");
   const box = app();
   const server = await listen(box.app, 0);
   try {
@@ -154,7 +159,8 @@ test("every module the page imports is served", async () => {
       const response = await fetch(`http://127.0.0.1:${port}/${name}`);
       assert.equal(response.status, 200, `${name} is not served`);
       const source = await readFile(new URL(`../src/${name}`, import.meta.url), "utf8");
-      for (const match of source.matchAll(/from "\.\/([\w-]+\.js)"/g)) queue.push(match[1]);
+      const dir = posix.dirname(name);
+      for (const match of source.matchAll(/from "(\.{1,2}\/[\w./-]+\.js)"/g)) queue.push(posix.join(dir, match[1]));
     }
   } finally {
     server.close();

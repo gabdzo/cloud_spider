@@ -1,34 +1,27 @@
 import { buildingFrame } from "./sprites.js";
-import { 
+import { WINDOW_CENTRES } from "./sprites/buildings.js";
+import { icon } from "./sprites/icons.js";
+import { BEACON, radioTower, vaultDoor, waterTower } from "./sprites/landmarks.js";
+import {
   campfireFrame, vaultDwellerSitting, dogLying, wandererWalkFrame,
   emberParticle, skull, grassTuft, deadTree, rubble, tire, barrel,
   ruinedCar, warningSign, skylineSegment, smokePuff,
   settlementPost, settlementWallH, settlementWallV, settlementGate
 } from "./pixel-art.js";
 import { FONT_PX, SMOKE_PX } from "./layout.js";
+import { isExpendable } from "./verbs.js";
+import { PIP, STATE_COLOR, WORLD, font, rgba } from "./theme.js";
+import {
+  BAR_H, HORIZON, SKYLINE_DARK, SKYLINE_LIT, brackets, crtBackdrop, drawSprite, glow, ridge, road,
+  labelBacking, newLayer, pipPanel, plaque,
+} from "./draw-kit.js";
 
-const COLORS = {
-  1: "#3a2a14",
-  2: "#7a5f48",
-  3: "#ffcc33",
-  4: "#1a120c",
-  5: "#fff2a8",
-  7: "#e0603f",
-  8: "#c2a978",
-  9: "#5a4a3a",
-  10: "#a9cf86",
-  11: "#4a7a9a",
-  12: "#ffcc33",
-  13: "#b0381f",
-  14: "#2e4f68",
-  15: "#ff9a3c",
-};
 const PIXEL = 4;
 const WANDERER_SCALE = 2;
-const FONT = `bold ${FONT_PX}px Menlo, Monaco, Consolas, monospace`;
-const SMALL = `bold ${FONT_PX - 2}px Menlo, Monaco, Consolas, monospace`;
-const TEXT = "#f2e3b8";
-const MUTED = "#c2a978";
+const FONT = font(FONT_PX);
+const SMALL = font(FONT_PX - 2);
+const TEXT = PIP.bright;
+const MUTED = PIP.mid;
 
 // Campfire scene always visible in bottom-right
 const CAMPFIRE_AREA = { x: null, y: null, w: 232, h: 150, margin: 24 };
@@ -110,6 +103,9 @@ function generateDebris(width, height, placed) {
   
   // Place debris deterministically
   const debrisTypes = [
+    { sprite: 'vault', w: 90, h: 48, count: 1, big: true },
+    { sprite: 'radio', w: 45, h: 138, count: 1, big: true },
+    { sprite: 'water', w: 54, h: 90, count: 1, big: true },
     { sprite: 'skull', w: 32, h: 24, count: 5 },
     { sprite: 'tree', w: 48, h: 80, count: 3 },
     { sprite: 'rubble', w: 40, h: 24, count: 8 },
@@ -119,14 +115,23 @@ function generateDebris(width, height, placed) {
     { sprite: 'grass', w: 24, h: 16, count: 15 },
   ];
   
+  // More ground, more junk: counts are tuned for ~1000x700 and scale with area.
+  const density = Math.max(1, Math.min(1.8, (width * height) / 700000));
   for (const type of debrisTypes) {
-    for (let i = 0; i < type.count; i++) {
+    const count = type.big ? type.count : Math.round(type.count * density);
+    for (let i = 0; i < count; i++) {
       let attempts = 0;
       while (attempts < 50) {
         const x = rng.next() * (width - type.w);
-        const y = 60 + rng.next() * (height - 60 - type.h - 100);
-        if (isFree(x, y, type.w, type.h)) {
-          debris.push({ sprite: type.sprite, x, y, variant: Math.floor(rng.next() * 10) });
+        const y = HORIZON + 8 + rng.next() * (height - HORIZON - 8 - type.h - 60);
+        // Keep junk from piling on itself: wide berth around landmarks, a
+        // little air between everything else (grass may touch).
+        const clear = (item) => {
+          const gap = item.big || type.big ? 20 : 4;
+          return x + type.w + gap < item.x || x > item.x + item.w + gap || y + type.h + gap < item.y || y > item.y + item.h + gap;
+        };
+        if (isFree(x, y, type.w, type.h) && (type.sprite === 'grass' || debris.filter((item) => item.sprite !== 'grass').every(clear))) {
+          debris.push({ sprite: type.sprite, x, y, w: type.w, h: type.h, big: Boolean(type.big), variant: Math.floor(rng.next() * 10) });
           break;
         }
         attempts++;
@@ -146,13 +151,7 @@ function layerKey(width, height, dpr, placed) {
   return `${dpr}|${getCacheKey(width, height, placed)}|${plots}`;
 }
 
-function newLayer(w, h) {
-  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  return canvas;
-}
+
 
 function staticLayer(ctx, width, height, placed) {
   const dpr = ctx.getTransform ? ctx.getTransform().a || 1 : 1;
@@ -174,13 +173,8 @@ function staticLayer(ctx, width, height, placed) {
   drawCampfireStill(layer, width, height);
   for (const settlement of placed.settlements) {
     drawSettlement(layer, settlement);
-    for (const plot of settlement.plots) {
-      layer.fillStyle = "rgba(16, 13, 8, 0.7)";
-      layer.fillRect(plot.x, plot.y, plot.w, plot.h);
-      layer.strokeStyle = "#4a3519";
-      layer.lineWidth = 2;
-      layer.strokeRect(plot.x + 1, plot.y + 1, plot.w - 2, plot.h - 2);
-    }
+    for (const plot of settlement.plots) drawPlot(layer, plot);
+    drawBanner(layer, settlement);
   }
 
   layerCache = { key, canvas };
@@ -200,6 +194,7 @@ export function paint(ctx, scene) {
 
   // Moving parts: fire and embers, buildings, smoke, wanderers.
   drawCampfireFlames(ctx, width, height, animTime, reducedMotion);
+  drawBeacon(ctx, animTime, reducedMotion);
   const buildings = allBuildings(placed);
   for (const building of buildings) drawBuilding(ctx, building, animTime, ui, reducedMotion);
   for (const building of buildings) drawSmoke(ctx, building, animTime, reducedMotion);
@@ -217,9 +212,7 @@ export function paint(ctx, scene) {
   for (const settlement of placed.settlements) {
     for (const plot of settlement.plots) {
       ctx.font = FONT;
-      labelBacking(ctx, plot.label, plot.x + 12, plot.y + 24, FONT_PX);
-      ctx.fillStyle = TEXT;
-      ctx.fillText(plot.label, plot.x + 12, plot.y + 24);
+      plaque(ctx, plot.label, plot.x + 12, plot.y + 24, FONT_PX, TEXT);
       ctx.font = SMALL;
       if (plot.caption) {
         labelBacking(ctx, plot.caption, plot.x + 12, plot.y + 42, FONT_PX - 2);
@@ -227,40 +220,34 @@ export function paint(ctx, scene) {
         ctx.fillText(plot.caption, plot.x + 12, plot.y + 42);
       }
       ctx.fillStyle = MUTED;
-      if (!plot.buildings.length) ctx.fillText("empty", plot.x + 12, plot.y + 68 + SMOKE_PX);
+      if (!plot.buildings.length) ctx.fillText("[ empty plot ]", plot.x + 12, plot.y + 68 + SMOKE_PX);
     }
     drawSettlementLabel(ctx, settlement);
   }
   if (placed.orphans?.items?.length) {
     ctx.font = FONT;
-    ctx.fillStyle = TEXT;
-    ctx.fillText(placed.orphans.label, 36, placed.orphans.y + 22);
+    plaque(ctx, placed.orphans.label, 36, placed.orphans.y + 22, FONT_PX, TEXT);
   }
   for (const building of buildings) drawBuildingLabel(ctx, building);
 
   const selected = ui.selection ? buildingAt(placed, null, null, ui.selection.id) : null;
-  if (selected) drawPlate(ctx, selected, ui, width, height);
+  if (selected) drawPlate(ctx, selected, ui, width, height, placed);
 }
 
 function drawWastelandBackground(ctx, width, height) {
-  // Draw ruined skyline across the top
-  const skylineY = 20;
+  crtBackdrop(ctx, width, height);
+  ridge(ctx, width, HORIZON);
+  road(ctx, width, height, HORIZON);
+  // Ruined skyline as dark silhouettes on the toxic horizon; every third
+  // block still has a few windows burning.
   let x = 0;
   let segmentIndex = 0;
   while (x < width) {
     const segment = skylineSegment(segmentIndex);
-    drawSprite(ctx, segment, x, skylineY, 2);
+    const palette = segmentIndex % 3 === 1 ? SKYLINE_LIT : SKYLINE_DARK;
+    drawSprite(ctx, segment, x, HORIZON - segment.length * 2 + 2, 2, palette);
     x += segment[0].length * 2;
     segmentIndex++;
-  }
-  
-  // Draw ground texture variation
-  for (let y = height - 60; y < height; y += 8) {
-    for (let x = 0; x < width; x += 16) {
-      const variant = (x / 16 + y / 8) % 3;
-      ctx.fillStyle = variant === 0 ? "#1a1510" : (variant === 1 ? "#1c1813" : "#17140f");
-      ctx.fillRect(x, y, 16, 8);
-    }
   }
 }
 
@@ -274,10 +261,36 @@ function drawDebris(ctx, item) {
     case 'barrel': sprite = barrel(); break;
     case 'car': sprite = ruinedCar(); break;
     case 'grass': sprite = grassTuft(item.variant); break;
+    case 'vault': sprite = vaultDoor(); break;
+    case 'radio': sprite = radioTower(); break;
+    case 'water': sprite = waterTower(); break;
     default: return;
   }
-  const scale = item.sprite === 'grass' ? 2 : 4;
+  const scale = item.sprite === 'grass' ? 2 : item.big ? 3 : 4;
+  const w = Math.max(...sprite.map((row) => row.length)) * scale;
+  const h = sprite.length * scale;
+  if (item.sprite !== 'grass') {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+    ctx.beginPath();
+    ctx.ellipse(item.x + w / 2 + 3, item.y + h - 1, w * 0.48, Math.max(3, h * 0.12), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = item.sprite === 'grass' ? 0.8 : 0.9;
   drawSprite(ctx, sprite, item.x, item.y, scale);
+  ctx.globalAlpha = 1;
+}
+
+// The radio mast's beacon blinks red, slowly.
+function drawBeacon(ctx, animTime, reducedMotion) {
+  const mast = debrisCache.debris.find((item) => item.sprite === "radio");
+  if (!mast) return;
+  const on = reducedMotion || Math.floor(animTime / 700) % 2 === 0;
+  if (!on) return;
+  const bx = mast.x + BEACON[0] * 3 + 1.5;
+  const by = mast.y + BEACON[1] * 3 + 1.5;
+  glow(ctx, bx, by, 16, WORLD.warning, 0.6);
+  ctx.fillStyle = WORLD.glow;
+  ctx.fillRect(Math.round(bx) - 1, Math.round(by) - 1, 3, 3);
 }
 
 function campfireOrigin(width, height) {
@@ -337,75 +350,154 @@ function drawCampfireFlames(ctx, width, height, animTime, reducedMotion) {
 }
 
 function drawSettlement(ctx, settlement) {
-  // Draw semi-transparent ground inside settlement
-  ctx.fillStyle = "rgba(26, 22, 16, 0.6)";
-  ctx.fillRect(settlement.x, settlement.y, settlement.w, settlement.h);
+  const { x, y, w, h } = settlement;
+  // Cast shadow, so the camp sits on the ground instead of floating.
+  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.fillRect(x + 8, y + 10, w, h);
 
-  // Draw palisade/scrap-metal wall border with posts and gate
+  // Packed dirt: warm in the middle, dark at the walls.
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const dirt = ctx.createRadialGradient(cx, cy, 10, cx, cy, Math.max(w, h) * 0.7);
+  dirt.addColorStop(0, WORLD.dirtLight);
+  dirt.addColorStop(0.6, WORLD.dirt);
+  dirt.addColorStop(1, WORLD.dirtEdge);
+  ctx.fillStyle = dirt;
+  ctx.fillRect(x, y, w, h);
+  // Gravel speckle.
+  let seed = (x * 31 + y * 17 + w) | 0;
+  const next = () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed / 0x7fffffff;
+  };
+  for (let i = 0; i < (w * h) / 220; i += 1) {
+    ctx.fillStyle = next() > 0.5 ? "rgba(122, 95, 72, 0.35)" : "rgba(10, 7, 4, 0.4)";
+    ctx.fillRect(x + Math.floor(next() * w), y + Math.floor(next() * h), 2, 2);
+  }
+
+  // Palisade / scrap-metal wall with posts and a gate.
   const wallScale = 3;
   const postSprite = settlementPost();
   const wallHSprite = settlementWallH();
   const wallVSprite = settlementWallV();
   const gateSprite = settlementGate();
-  
-  // Draw corner posts
-  drawSprite(ctx, postSprite, settlement.x, settlement.y, wallScale);
-  drawSprite(ctx, postSprite, settlement.x + settlement.w - postSprite[0].length * wallScale, settlement.y, wallScale);
-  drawSprite(ctx, postSprite, settlement.x, settlement.y + settlement.h - postSprite.length * wallScale, wallScale);
-  drawSprite(ctx, postSprite, settlement.x + settlement.w - postSprite[0].length * wallScale, 
-             settlement.y + settlement.h - postSprite.length * wallScale, wallScale);
-
-  // Draw top wall with gate in the middle
   const postW = postSprite[0].length * wallScale;
   const gateW = gateSprite[0].length * wallScale;
-  const gateX = settlement.x + Math.floor((settlement.w - gateW) / 2);
-  
-  // Top wall segments (left of gate)
-  for (let x = settlement.x + postW; x < gateX - wallScale; x += wallHSprite[0].length * wallScale) {
-    drawSprite(ctx, wallHSprite, x, settlement.y, wallScale);
+  const gateX = x + Math.floor((w - gateW) / 2);
+
+  for (let wx = x + postW; wx < gateX - wallScale; wx += wallHSprite[0].length * wallScale) {
+    drawSprite(ctx, wallHSprite, wx, y, wallScale);
   }
-  // Gate
-  drawSprite(ctx, gateSprite, gateX, settlement.y, wallScale);
-  // Top wall segments (right of gate)
-  for (let x = gateX + gateW + wallScale; x < settlement.x + settlement.w - postW; x += wallHSprite[0].length * wallScale) {
-    drawSprite(ctx, wallHSprite, x, settlement.y, wallScale);
+  for (let wx = gateX + gateW + wallScale; wx < x + w - postW; wx += wallHSprite[0].length * wallScale) {
+    drawSprite(ctx, wallHSprite, wx, y, wallScale);
   }
-  
-  // Bottom wall
-  for (let x = settlement.x + postW; x < settlement.x + settlement.w - postW; x += wallHSprite[0].length * wallScale) {
-    drawSprite(ctx, wallHSprite, x, settlement.y + settlement.h - wallHSprite.length * wallScale, wallScale);
+  for (let wx = x + postW; wx < x + w - postW; wx += wallHSprite[0].length * wallScale) {
+    drawSprite(ctx, wallHSprite, wx, y + h - wallHSprite.length * wallScale, wallScale);
   }
-  
-  // Left wall
-  for (let y = settlement.y + postW; y < settlement.y + settlement.h - postW; y += wallVSprite.length * wallScale) {
-    drawSprite(ctx, wallVSprite, settlement.x, y, wallScale);
+  for (let wy = y + postW; wy < y + h - postW; wy += wallVSprite.length * wallScale) {
+    drawSprite(ctx, wallVSprite, x, wy, wallScale);
+    drawSprite(ctx, wallVSprite, x + w - wallVSprite[0].length * wallScale, wy, wallScale);
   }
-  
-  // Right wall
-  for (let y = settlement.y + postW; y < settlement.y + settlement.h - postW; y += wallVSprite.length * wallScale) {
-    drawSprite(ctx, wallVSprite, settlement.x + settlement.w - wallVSprite[0].length * wallScale, y, wallScale);
+  // Inner shade under the walls gives the yard depth.
+  const shade = ctx.createLinearGradient(0, y + 18, 0, y + 40);
+  shade.addColorStop(0, "rgba(0, 0, 0, 0.45)");
+  shade.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(x + 18, y + 18, w - 36, 22);
+
+  drawSprite(ctx, gateSprite, gateX, y, wallScale);
+  // Torches either side of the gate.
+  for (const tx of [gateX - 6, gateX + gateW + 2]) {
+    glow(ctx, tx + 2, y + 4, 26, WORLD.flame, 0.35);
+    ctx.fillStyle = WORLD.rustShade;
+    ctx.fillRect(tx, y + 4, 4, 14);
+    ctx.fillStyle = WORLD.flame;
+    ctx.fillRect(tx, y, 4, 4);
+    ctx.fillStyle = WORLD.glow;
+    ctx.fillRect(tx + 1, y + 1, 2, 2);
+  }
+  for (const [px, py] of [
+    [x, y],
+    [x + w - postW, y],
+    [x, y + h - postSprite.length * wallScale],
+    [x + w - postW, y + h - postSprite.length * wallScale],
+  ]) {
+    drawSprite(ctx, postSprite, px, py, wallScale);
   }
 }
 
-// Dark plate behind a label so smoke or sprites drawn under it can't make a
-// light glyph (like the '-' in sample-subnet) blend into the background.
-function labelBacking(ctx, text, x, baseline, px) {
-  const w = ctx.measureText(text).width;
-  ctx.fillStyle = "rgba(16, 13, 8, 0.9)";
-  ctx.fillRect(Math.floor(x - 3), Math.floor(baseline - px), Math.ceil(w + 6), px + 5);
+// Subnet plot: a fenced yard of tilled soil.
+function drawPlot(ctx, plot) {
+  const { x, y, w, h } = plot;
+  const soil = ctx.createLinearGradient(0, y, 0, y + h);
+  soil.addColorStop(0, WORLD.soilTop);
+  soil.addColorStop(1, WORLD.soilBottom);
+  ctx.fillStyle = soil;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
+  for (let ry = y + 52; ry < y + h - 4; ry += 6) ctx.fillRect(x + 4, ry, w - 8, 1);
+  // Rails and posts.
+  ctx.fillStyle = WORLD.rustShade;
+  ctx.fillRect(x, y, w, 2);
+  ctx.fillRect(x, y + h - 2, w, 2);
+  ctx.fillRect(x, y, 2, h);
+  ctx.fillRect(x + w - 2, y, 2, h);
+  ctx.fillStyle = WORLD.rust;
+  ctx.fillRect(x, y + 4, w, 1);
+  for (let px = x; px <= x + w - 3; px += 12) {
+    ctx.fillRect(px, y - 3, 3, 8);
+    ctx.fillRect(px, y + h - 5, 3, 8);
+  }
+  for (let py = y + 12; py <= y + h - 12; py += 12) {
+    ctx.fillRect(x - 1, py, 3, 5);
+    ctx.fillRect(x + w - 2, py, 3, 5);
+  }
+}
+
+// Cloth banner hung from the wall, carrying the VPC name.
+function bannerBox(ctx, settlement) {
+  ctx.font = FONT;
+  const w = Math.ceil(ctx.measureText(settlement.label).width) + 22;
+  return { x: settlement.x + 22, y: settlement.y + 2, w, h: 26 };
+}
+
+function drawBanner(ctx, settlement) {
+  const b = bannerBox(ctx, settlement);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+  ctx.fillRect(b.x + 3, b.y + 4, b.w, b.h + 4);
+  // Pole.
+  ctx.fillStyle = WORLD.wall;
+  ctx.fillRect(b.x - 4, b.y - 2, b.w + 8, 4);
+  ctx.fillStyle = WORLD.metalLight;
+  ctx.fillRect(b.x - 6, b.y - 3, 4, 6);
+  ctx.fillRect(b.x + b.w + 2, b.y - 3, 4, 6);
+  // Cloth with a swallowtail and a vertical sheen.
+  const cloth = ctx.createLinearGradient(b.x, 0, b.x + b.w, 0);
+  cloth.addColorStop(0, WORLD.clothEdge);
+  cloth.addColorStop(0.35, WORLD.cloth);
+  cloth.addColorStop(1, WORLD.clothDark);
+  ctx.fillStyle = cloth;
+  ctx.beginPath();
+  ctx.moveTo(b.x, b.y + 2);
+  ctx.lineTo(b.x + b.w, b.y + 2);
+  ctx.lineTo(b.x + b.w, b.y + b.h + 4);
+  ctx.lineTo(b.x + b.w - 10, b.y + b.h - 2);
+  ctx.lineTo(b.x + 10, b.y + b.h - 2);
+  ctx.lineTo(b.x, b.y + b.h + 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(255, 204, 51, 0.55)";
+  ctx.fillRect(b.x + 3, b.y + 4, b.w - 6, 1);
+  ctx.fillRect(b.x + 3, b.y + b.h - 5, b.w - 6, 1);
 }
 
 function drawSettlementLabel(ctx, settlement) {
-  // Draw settlement label (on top of smoke, so it's readable)
+  const b = bannerBox(ctx, settlement);
   ctx.font = FONT;
-  ctx.fillStyle = TEXT;
-  const labelY = settlement.y + 24;
-  // Add dark background behind label for readability
-  ctx.fillStyle = "rgba(16, 13, 8, 0.85)";
-  const labelW = ctx.measureText(settlement.label).width + 16;
-  ctx.fillRect(settlement.x + 8, settlement.y + 6, labelW, 22);
-  ctx.fillStyle = TEXT;
-  ctx.fillText(settlement.label, settlement.x + 12, labelY);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+  ctx.fillText(settlement.label, b.x + 12, b.y + 20);
+  ctx.fillStyle = WORLD.text;
+  ctx.fillText(settlement.label, b.x + 11, b.y + 19);
 }
 
 function drawSmoke(ctx, building, animTime, reducedMotion) {
@@ -426,13 +518,19 @@ function drawSmoke(ctx, building, animTime, reducedMotion) {
 function drawBuildingLabel(ctx, building) {
   const size = buildingFrame(building.state, 0, true).length * PIXEL;
   const originY = building.y;
+  const cx = building.x + building.w / 2;
   ctx.font = SMALL;
   ctx.textAlign = "center";
-  ctx.fillStyle = TEXT;
-  ctx.fillText(building.state || "", building.x + building.w / 2, originY + size + 14);
+  const state = String(building.state || "").toUpperCase();
+  const w = ctx.measureText(state).width;
+  ctx.fillStyle = rgba(PIP.ink, 0.8);
+  ctx.fillRect(Math.floor(cx - w / 2 - 10), originY + size + 3, Math.ceil(w + 20), 15);
+  ctx.fillStyle = STATE_COLOR[building.state] || MUTED;
+  ctx.fillRect(Math.floor(cx - w / 2 - 7), originY + size + 8, 4, 4);
+  ctx.fillText(state, cx + 3, originY + size + 15);
   if (building.label) {
     ctx.fillStyle = MUTED;
-    ctx.fillText(building.label, building.x + building.w / 2, originY + size + 28);
+    ctx.fillText(building.label, cx, originY + size + 30);
   }
   ctx.textAlign = "left";
 }
@@ -481,60 +579,34 @@ function drawBuilding(ctx, building, animTime, ui, reducedMotion) {
   const size = frame.length * PIXEL;
   const originX = building.x + Math.floor((building.w - size) / 2);
   const originY = building.y;
-  
+
+  // Contact shadow under the shack.
+  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.fillRect(originX + 4, originY + size - 2, size, 6);
+
   drawSprite(ctx, frame, originX, originY, PIXEL);
 
-  // Draw warning sign for expendable instances
-  if (building.tags?.cloudspider === "expendable") {
+  // Lamplight: lit windows bloom, and spill a little light on the dirt.
+  const lit = building.state === "running" || (building.state === "pending" && animPhase === 1);
+  if (lit) {
+    ctx.globalCompositeOperation = "lighter";
+    for (const [wx, wy] of WINDOW_CENTRES) glow(ctx, originX + wx * PIXEL, originY + wy * PIXEL, 18, WORLD.amber, 0.32);
+    ctx.globalCompositeOperation = "source-over";
+    glow(ctx, originX + size / 2, originY + size + 2, 30, WORLD.amber, 0.12);
+  }
+
+  // Warning sign for expendable instances.
+  if (isExpendable(building)) {
     const sign = warningSign();
-    drawSprite(ctx, sign, originX + size + 4, originY + size - 32, 2);
+    drawSprite(ctx, sign, originX + size + 2, originY + size - 18, 2);
   }
 
   if (ui.selection?.id === building.id) {
-    ctx.strokeStyle = "#ffcc33";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(originX - 5, originY - 5, size + 10, size + 10);
-    ctx.fillStyle = "#ffcc33";
-    ctx.fillRect(originX - 5, originY - 5, 4, 4);
-    ctx.fillRect(originX + size + 1, originY - 5, 4, 4);
-    ctx.fillRect(originX - 5, originY + size + 1, 4, 4);
-    ctx.fillRect(originX + size + 1, originY + size + 1, 4, 4);
+    brackets(ctx, originX - 7, originY - 7, size + 14, size + 14, PIP.bright, 12, 3);
   }
 }
 
-// Sprites are rasterised once per (pixels, scale) into a small bitmap and
-// blitted, instead of one fillRect per pixel every frame.
-const spriteBitmaps = new Map();
-const SPRITE_CACHE_LIMIT = 400;
 
-function spriteBitmap(sprite, scale) {
-  const key = `${scale}:${sprite.map((row) => row.join(",")).join("/")}`;
-  let bitmap = spriteBitmaps.get(key);
-  if (bitmap) return bitmap;
-  const w = sprite.reduce((max, row) => Math.max(max, row.length), 0);
-  bitmap = newLayer(Math.max(1, w * scale), Math.max(1, sprite.length * scale));
-  rasterise(bitmap.getContext("2d"), sprite, 0, 0, scale);
-  if (spriteBitmaps.size >= SPRITE_CACHE_LIMIT) spriteBitmaps.clear();
-  spriteBitmaps.set(key, bitmap);
-  return bitmap;
-}
-
-function rasterise(ctx, sprite, x, y, scale) {
-  for (let row = 0; row < sprite.length; row += 1) {
-    for (let col = 0; col < sprite[row].length; col += 1) {
-      const colorIndex = sprite[row][col];
-      if (colorIndex === 0) continue;
-      const color = COLORS[colorIndex];
-      if (!color) continue;
-      ctx.fillStyle = color;
-      ctx.fillRect(x + col * scale, y + row * scale, scale, scale);
-    }
-  }
-}
-
-function drawSprite(ctx, sprite, x, y, scale = 4) {
-  ctx.drawImage(spriteBitmap(sprite, scale), Math.round(x), Math.round(y));
-}
 
 export function buildingAt(placed, x, y, id) {
   const buildings = allBuildings(placed);
@@ -557,15 +629,19 @@ function allBuildings(placed) {
   return buildings;
 }
 
-const STATE_COLOR = { running: TEXT, pending: "#ffa726", stopping: "#ffa726", stopped: "#c2a978", terminated: "#e0603f" };
 const PAD = 14;
 const ROW = 18;
 
-function drawPlate(ctx, building, ui, width, height) {
+function drawPlate(ctx, building, ui, width, height, placed) {
   const name = ui.selection?.name || "";
   const type = ui.selection?.type || building.type || "";
   const state = ui.selection?.state || building.state || "";
-  const plateW = Math.min(600, width - 16);
+  const camp = (placed.settlements || []).find(
+    (s) => building.x >= s.x && building.x < s.x + s.w && building.y >= s.y && building.y < s.y + s.h,
+  );
+  const besideCamp = camp ? width - (camp.x + camp.w + 20) - 8 : 0;
+  const hasLogs = (ui.logs || []).length || ui.logNote;
+  const plateW = besideCamp >= 380 ? Math.min(600, besideCamp) : Math.min(hasLogs ? 600 : 420, width - 16);
   const inner = plateW - PAD * 2;
 
   ctx.font = SMALL;
@@ -578,7 +654,7 @@ function drawPlate(ctx, building, ui, width, height) {
   }));
   const note = ui.logNote ? wrapWords(ui.logNote, fits(0)) : [];
 
-  const headH = PAD + 22 + (name ? 22 : 0) + 20 + 12;
+  const headH = 4 + BAR_H + 6 + (name ? 22 : 0) + 20 + 12;
   const logTitleH = rows.length || note.length ? 34 : 0;
   const maxH = Math.max(160, height - 16);
   let shown = rows;
@@ -590,46 +666,50 @@ function drawPlate(ctx, building, ui, width, height) {
   }
   const plateH = headH + logTitleH + heightOf(shown) + note.length * ROW + (hidden ? ROW : 0) + PAD;
 
-  let x = building.x + building.w + 12;
-  if (x + plateW > width - 8) x = Math.max(8, building.x - plateW - 12);
+  // Beside the camp when there is room, so the plate never hides the
+  // neighbouring shacks; otherwise beside the shack.
+  let x = camp ? camp.x + camp.w + 20 : building.x + building.w + 16;
+  if (x + plateW > width - 8) x = building.x + building.w + 16;
+  if (x + plateW > width - 8) x = Math.max(8, building.x - plateW - 16);
   const y = Math.max(8, Math.min(building.y, height - plateH - 8));
 
-  ctx.fillStyle = "rgba(16, 13, 8, 0.95)";
-  ctx.fillRect(x, y, plateW, plateH);
-  ctx.strokeStyle = "#7a5f48";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(x + 1, y + 1, plateW - 2, plateH - 2);
-  ctx.fillStyle = "#7a5f48";
-  ctx.fillRect(x, y, 6, 6);
-  ctx.fillRect(x + plateW - 6, y, 6, 6);
+  let textY = pipPanel(ctx, x, y, plateW, plateH, { title: clipTo(ctx, name || building.id, plateW - 140), icon: icon("ec2") });
+  // Status pill on the header bar.
+  ctx.font = SMALL;
+  const pill = String(state).toUpperCase();
+  const pillW = ctx.measureText(pill).width + 16;
+  ctx.fillStyle = PIP.ink;
+  ctx.fillRect(x + plateW - pillW - 10, y + 8, pillW, BAR_H - 8);
+  ctx.fillStyle = STATE_COLOR[state] || MUTED;
+  ctx.fillText(pill, x + plateW - pillW - 2, y + BAR_H - 2);
 
-  let textY = y + PAD + 16;
-  ctx.font = FONT;
-  ctx.fillStyle = TEXT;
-  ctx.fillText(name || building.id, x + PAD, textY);
-  textY += 22;
+  textY += 14;
   if (name) {
-    ctx.font = SMALL;
     ctx.fillStyle = MUTED;
     ctx.fillText(building.id, x + PAD, textY);
     textY += 22;
   }
-  ctx.font = SMALL;
-  ctx.fillStyle = MUTED;
-  ctx.fillText(type, x + PAD, textY);
-  ctx.fillStyle = STATE_COLOR[state] || MUTED;
-  ctx.fillText(state, x + PAD + ctx.measureText(`${type}  `).width, textY);
+  ctx.fillStyle = PIP.dim;
+  ctx.fillText("TYPE", x + PAD, textY);
+  ctx.fillStyle = TEXT;
+  ctx.fillText(type, x + PAD + ctx.measureText("TYPE  ").width, textY);
+  if (isExpendable(building)) {
+    ctx.fillStyle = WORLD.amber;
+    const tag = "EXPENDABLE";
+    ctx.fillText(tag, x + plateW - PAD - ctx.measureText(tag).width, textY);
+  }
   textY += 12;
 
   if (!logTitleH) return;
-  ctx.fillStyle = "#4a3519";
-  ctx.fillRect(x + PAD, textY, inner, 2);
+  ctx.fillStyle = PIP.dim;
+  for (let dx = 0; dx < inner; dx += 6) ctx.fillRect(x + PAD + dx, textY, 3, 2);
   textY += 22;
-  ctx.fillStyle = "#7a5f48";
-  ctx.fillText("LOGS", x + PAD, textY);
+  drawSprite(ctx, icon("logs"), x + PAD, textY - 13, 1);
+  ctx.fillStyle = TEXT;
+  ctx.fillText("LOGS", x + PAD + 22, textY);
   ctx.fillStyle = MUTED;
   const count = rows.length ? `last ${rows.length} ${rows.length === 1 ? "line" : "lines"}, newest at the bottom` : "";
-  ctx.fillText(count, x + PAD + ctx.measureText("LOGS  ").width, textY);
+  ctx.fillText(count, x + PAD + 22 + ctx.measureText("LOGS  ").width, textY);
   textY += 12;
 
   if (hidden) {
@@ -641,14 +721,14 @@ function drawPlate(ctx, building, ui, width, height) {
   shown.forEach((row, index) => {
     const rowH = row.lines.length * ROW + 4;
     if ((index + hidden) % 2 === 0) {
-      ctx.fillStyle = "rgba(58, 42, 20, 0.35)";
+      ctx.fillStyle = rgba(PIP.bright, 0.06);
       ctx.fillRect(x + PAD - 6, textY, inner + 12, rowH);
     }
     const indent = row.time ? timeW : 0;
     row.lines.forEach((line, lineIndex) => {
       const lineY = textY + 15 + lineIndex * ROW;
       if (lineIndex === 0 && row.time) {
-        ctx.fillStyle = MUTED;
+        ctx.fillStyle = PIP.dim;
         ctx.fillText(row.time, x + PAD, lineY);
       }
       ctx.fillStyle = TEXT;
@@ -657,9 +737,17 @@ function drawPlate(ctx, building, ui, width, height) {
     textY += rowH;
   });
   if (note.length) {
-    ctx.fillStyle = "#ffa726";
+    ctx.fillStyle = WORLD.amber;
     note.forEach((line, index) => ctx.fillText(line, x + PAD, textY + 15 + index * ROW));
   }
+}
+
+function clipTo(ctx, text, maxW) {
+  ctx.font = font(14);
+  if (ctx.measureText(text).width <= maxW) return text;
+  let cut = text.length;
+  while (cut > 1 && ctx.measureText(`${text.slice(0, cut)}…`).width > maxW) cut -= 1;
+  return `${text.slice(0, cut)}…`;
 }
 
 function clock(ms) {
