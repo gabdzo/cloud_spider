@@ -2003,4 +2003,9 @@ setInterval(() => {
   pull();
 }, 2000);
 
-pull();
+// The overview reads the bill once, when the first live pull has a place
+// (Overview plan R2/T2), then the server's six-hour cache. The two-second
+// pull itself never asks for it.
+pull().then(() => {
+  if (place && !sample) queueSpend();
+});
