@@ -4,6 +4,8 @@ const NODE = "ip-10-43-1-27.eu-north-1.compute.internal";
 const meta = (ns, name, extra = {}) => ({ metadata: { namespace: ns, name, ...extra } });
 const running = (restarts = 0) => ({ phase: "Running", containerStatuses: [{ name: "c", ready: true, restartCount: restarts, state: { running: {} } }] });
 const rs = (name) => ({ ownerReferences: [{ kind: "ReplicaSet", name }] });
+const ds = (name) => ({ ownerReferences: [{ kind: "DaemonSet", name }] });
+const daemon = (ns, name) => ({ ...meta(ns, name), spec: { template: { metadata: { labels: { "k8s-app": name } } } }, status: { desiredNumberScheduled: 1, numberReady: 1 } });
 
 export function sampleKubeSnapshot() {
   const pod = (ns, name, owner, status, labels = {}) => ({ ...meta(ns, name, { ...owner, labels }), spec: { nodeName: NODE, containers: [{ name: name.split("-")[0] }] }, status });
@@ -19,24 +21,27 @@ export function sampleKubeSnapshot() {
       pod("demo", "otel-collector-9xk2d", { ownerReferences: [{ kind: "DaemonSet", name: "otel-collector" }] }, running(), { app: "otel-collector" }),
       pod("kube-system", "coredns-6d9c8b7f5-a1", rs("coredns-6d9c8b7f5"), running()),
       pod("kube-system", "coredns-6d9c8b7f5-b2", rs("coredns-6d9c8b7f5"), running()),
-      pod("kube-system", "aws-node-z9q8w", {}, running()),
-      pod("kube-system", "kube-proxy-p0o9i", {}, running()),
-      pod("kube-system", "eks-pod-identity-agent-l1k2j", {}, running()),
-      pod("kube-system", "metrics-server-7f9c-m3n4", rs("metrics-server-7f9c"), running()),
+      pod("kube-system", "aws-node-z9q8w", ds("aws-node"), running()),
+      pod("kube-system", "kube-proxy-p0o9i", ds("kube-proxy"), running()),
+      pod("kube-system", "eks-pod-identity-agent-l1k2j", ds("eks-pod-identity-agent"), running()),
+      pod("kube-system", "metrics-server-7f9c6d-m3n4p", rs("metrics-server-7f9c6d"), running()),
     ],
     deployments: [
       { ...meta("demo", "web"), spec: { replicas: 1, template: { metadata: { labels: { app: "web" } } } }, status: { readyReplicas: 1 } },
       { ...meta("demo", "api"), spec: { replicas: 1, template: { metadata: { labels: { app: "api" } } } }, status: { readyReplicas: 1 } },
       { ...meta("demo", "loadgen"), spec: { replicas: 1, template: { metadata: { labels: { app: "loadgen" } } } }, status: { readyReplicas: 0 } },
-      { ...meta("kube-system", "coredns"), spec: { replicas: 2, template: { metadata: { labels: { k8s: "dns" } } } }, status: { readyReplicas: 2 } },
+      { ...meta("kube-system", "coredns"), spec: { replicas: 2, template: { metadata: { labels: { "k8s-app": "kube-dns" } } } }, status: { readyReplicas: 2 } },
+      { ...meta("kube-system", "metrics-server"), spec: { replicas: 1, template: { metadata: { labels: { "k8s-app": "metrics-server" } } } }, status: { readyReplicas: 1 } },
     ],
-    daemonsets: [{ ...meta("demo", "otel-collector"), spec: { template: { metadata: { labels: { app: "otel-collector" } } } }, status: { desiredNumberScheduled: 1, numberReady: 1 } }],
+    daemonsets: [{ ...meta("demo", "otel-collector"), spec: { template: { metadata: { labels: { app: "otel-collector" } } } }, status: { desiredNumberScheduled: 1, numberReady: 1 } }, daemon("kube-system", "aws-node"), daemon("kube-system", "kube-proxy"), daemon("kube-system", "eks-pod-identity-agent")],
     statefulsets: [],
     services: [
       { ...meta("default", "kubernetes"), spec: { type: "ClusterIP", ports: [{ port: 443 }] } },
       { ...meta("demo", "web"), spec: { type: "ClusterIP", selector: { app: "web" }, ports: [{ port: 9898 }] } },
       { ...meta("demo", "api"), spec: { type: "ClusterIP", selector: { app: "api" }, ports: [{ port: 9898 }] } },
       { ...meta("demo", "otel-collector"), spec: { type: "ClusterIP", selector: { app: "otel-collector" }, ports: [{ port: 4317 }, { port: 4318 }] } },
+      { ...meta("kube-system", "kube-dns"), spec: { type: "ClusterIP", selector: { "k8s-app": "kube-dns" }, ports: [{ port: 53 }] } },
+      { ...meta("kube-system", "metrics-server"), spec: { type: "ClusterIP", selector: { "k8s-app": "metrics-server" }, ports: [{ port: 443 }] } },
     ],
     ingresses: [],
     nodeMetrics: [{ metadata: { name: NODE }, usage: { cpu: "212m", memory: "1186Mi" } }],

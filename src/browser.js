@@ -20,6 +20,8 @@ import { layoutDiagram, layoutPath, nodeAt } from "./path-layout.js";
 import { paintDiagram, paintPath, sentenceRect } from "./path-draw.js";
 import { CLUSTER_COLUMNS } from "./cluster.js";
 import { KUBE_COLUMNS } from "./kube-diagram.js";
+import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
+import { paintKube } from "./kube-draw.js";
 import { upgradeSpiderLine } from "./upgrade-rules.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
@@ -897,7 +899,37 @@ function drawPath() {
   });
 }
 
+// Cluster lanes: which namespaces are open and which workloads list their
+// pods one by one, kept across reloads like the vault doors.
+const CLUSTER_LANES_KEY = "cloudspider.cluster.lanes";
+let clusterLanes = { open: {}, expanded: [] };
+try {
+  const saved = JSON.parse(window.localStorage.getItem(CLUSTER_LANES_KEY) || "null");
+  if (saved && typeof saved === "object") clusterLanes = { open: saved.open || {}, expanded: Array.isArray(saved.expanded) ? saved.expanded : [] };
+} catch {
+  // private mode or a bad value: start with the defaults
+}
+let clusterHover = null;
+let clusterPlaced = { key: null, data: null, placed: null };
+
+function saveClusterLanes() {
+  try {
+    window.localStorage.setItem(CLUSTER_LANES_KEY, JSON.stringify(clusterLanes));
+  } catch {
+    // not kept, still works for this page
+  }
+  clusterPlaced = { key: null, data: null, placed: null };
+}
+
 function placedCluster() {
+  if (clusterData?.diagram?.layout === "kube") {
+    // Laid out once per answer, width and lane state; frames only paint.
+    const key = `${map.clientWidth || 0}|${JSON.stringify(clusterLanes)}`;
+    if (clusterPlaced.data !== clusterData || clusterPlaced.key !== key) {
+      clusterPlaced = { key, data: clusterData, placed: layoutKube(clusterData.diagram, { width: map.clientWidth || 0, state: clusterLanes }) };
+    }
+    return clusterPlaced.placed;
+  }
   return clusterData?.diagram
     ? layoutDiagram(clusterData.diagram, clusterData.diagram.layout === "kube" ? clusterData.diagram.columns || KUBE_COLUMNS : CLUSTER_COLUMNS, map.clientWidth || 0)
     : { nodes: [], edges: [], contentWidth: 0, contentHeight: 0 };
@@ -906,6 +938,10 @@ function placedCluster() {
 function drawCluster() {
   const placed = placedCluster();
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
+  if (placed.kind === "kube") {
+    paintKube(ctx, { placed, selectedId: clusterSelected, hoverId: clusterHover, animTime, width, height, reducedMotion });
+    return;
+  }
   paintDiagram(ctx, {
     placed,
     selectedId: clusterSelected,
@@ -1432,7 +1468,33 @@ function showPod(node) {
     });
 }
 
+canvas.addEventListener("mouseleave", () => {
+  if (clusterHover === null) return;
+  clusterHover = null;
+  if (mode === "cluster") draw();
+});
+
 canvas.addEventListener("click", async (event) => {
+  if (mode === "cluster" && placedCluster().kind === "kube") {
+    const hit = kubeHit(placedCluster(), event.offsetX, event.offsetY);
+    if (hit?.type === "lane") {
+      clusterLanes.open = { ...clusterLanes.open, [hit.ns]: !hit.lane.open };
+      saveClusterLanes();
+    } else if (hit?.type === "expand") {
+      const list = new Set(clusterLanes.expanded);
+      if (list.has(hit.owner)) list.delete(hit.owner);
+      else list.add(hit.owner);
+      clusterLanes.expanded = [...list];
+      saveClusterLanes();
+    } else {
+      const node = hit?.node || null;
+      clusterSelected = node?.id || null;
+      if (node?.host) showNode(node);
+      else showPod(node?.pod ? node : null);
+    }
+    draw();
+    return;
+  }
   if (mode === "path" || mode === "cluster") {
     const placed = mode === "path" ? placedPath() : placedCluster();
     const hit = nodeAt(placed, event.offsetX, event.offsetY);
@@ -1485,6 +1547,20 @@ canvas.addEventListener("click", async (event) => {
 
 // A pointer over a door says it can be opened.
 canvas.addEventListener("mousemove", (event) => {
+  if (mode === "cluster" && placedCluster().kind === "kube") {
+    const hit = kubeHit(placedCluster(), event.offsetX, event.offsetY);
+    const id = hit?.type === "lane" ? `lane:${hit.ns}` : hit?.type === "expand" && hit.node.kind === "workload" ? hit.node.id : hit?.node?.id || null;
+    const cursor = hit ? "pointer" : "";
+    if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
+    const title = hoverText(hit);
+    if (canvas.title !== title) canvas.title = title;
+    if (id !== clusterHover) {
+      clusterHover = id;
+      draw();
+    }
+    return;
+  }
+  if (canvas.title) canvas.title = "";
   if (mode !== "map" || !vaultsData.vaults.length) {
     if (canvas.style.cursor) canvas.style.cursor = "";
     return;
