@@ -105,7 +105,7 @@ const kubeTabs = document.querySelector("#kube-tabs");
 const kubeTele = document.querySelector("#kube-tele");
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
-const vaultStripEl = document.querySelector("#vault-strip");
+const tabVaults = document.querySelector("#tab-vaults");
 const vaultPageEl = document.querySelector("#vault-page");
 const askTab = document.querySelector("#ask");
 const askThis = document.querySelector("#ask-this");
@@ -167,6 +167,10 @@ let winking = -1;
 
 // Vaults: projects from YAML files, drawn as doors in a hillside.
 let vaultsData = { vaults: [], note: "", templates: [] };
+// The VAULTS view's route (#vaults, #vaults/<key>); null on the map.
+let vaultRoute = parseVaultHash(location.hash);
+let vaultPageShown = "";
+let vaultPageFrom = null;
 let vaultsFor = null; // sample flag the vaults were read for
 let vaultsAt = 0;
 let vaultsLoading = false;
@@ -211,7 +215,8 @@ function renderChrome() {
   renderRadioPanel();
   showSpend();
   sampleButton.setAttribute("aria-checked", String(sample));
-  tabMap.setAttribute("aria-pressed", String(mode === "map"));
+  tabMap.setAttribute("aria-pressed", String(mode === "map" && !vaultRoute));
+  tabVaults.setAttribute("aria-pressed", String(vaultPageOpen()));
   pathButton.setAttribute("aria-pressed", String(mode === "path"));
   clusterButton.setAttribute("aria-pressed", String(mode === "cluster"));
   tabRadio.setAttribute("aria-pressed", String(!radioPanel.hidden));
@@ -486,9 +491,8 @@ function placedMap() {
     for (const cell of placed.vaults.cells) cell.vault = byKey.get(cell.key) || cell.vault;
     placed.vaults.boundTo = vaultsData;
   }
-  if ((placed.vaultStrip || placed.badges?.length) && placed.badgesBoundTo !== vaultsData) {
+  if (placed.badges?.length && placed.badgesBoundTo !== vaultsData) {
     const byKey = new Map(vaults.map((vault) => [vault.key, vault]));
-    for (const chip of placed.vaultStrip?.chips || []) chip.vault = byKey.get(chip.key) || chip.vault;
     for (const badge of placed.badges || []) badge.vault = byKey.get(badge.key) || badge.vault;
     placed.badgesBoundTo = vaultsData;
   }
@@ -767,7 +771,6 @@ async function loadVaultLogs(key, force = false) {
 
 function repaintPanels() {
   panelsShown = "";
-  chromeFor = { placed: null, data: null };
   renderChrome();
   draw();
 }
@@ -884,57 +887,19 @@ let panelsShown = "";
 
 // HTML panels for open vaults (and the open/close-all switch) sit over the
 // canvas at layout positions and scroll with the map.
-let chromeFor = { placed: null, data: null };
-// The strip at the top of the map: a VAULTS button and one plate chip per
-// vault (number, lamp, name). Real buttons, so Tab and Enter reach them;
-// each opens the VAULTS page (the chip at that vault's own page).
-function placeVaultChrome(placed) {
-  const strip = mode === "map" ? placed?.vaultStrip : null;
+// The vaults are their own view now (the VAULTS tab): nothing of theirs
+// sits over the map but the badges, which the canvas draws.
+function placeVaultChrome() {
   vaultAll.hidden = true;
   vaultTemplatesButton.hidden = true;
   vaultTemplates.hidden = true;
-  if (!strip) {
-    if (chromeFor.placed) vaultStripEl.replaceChildren();
-    vaultStripEl.hidden = true;
-    chromeFor = { placed: null, data: null };
-    return;
-  }
-  // Same layout, same data: nothing to do (this runs every frame).
-  if (placed === chromeFor.placed && vaultsData === chromeFor.data) return;
-  chromeFor = { placed, data: vaultsData };
-  vaultStripEl.hidden = false;
-  const tally = vaultTally(vaultsData.vaults);
-  const open = vel("button", "cmd vs-open", `VAULTS ▸ ${tally.total}`);
-  open.type = "button";
-  open.title = "open the VAULTS page";
-  open.setAttribute("aria-label", `open the vaults page: ${tally.total} vaults, ${tally.fail + tally.damaged} need a look`);
-  Object.assign(open.style, { left: `${strip.button.x}px`, top: `${strip.button.y}px`, width: `${strip.button.w}px`, height: `${strip.button.h}px` });
-  open.addEventListener("click", () => openVaultPage(null));
-  const chips = strip.chips.map((chip) => {
-    const summary = vaultSummary(chip.vault);
-    const button = vel("button", `vs-chip ${summary.light}${summary.trouble ? " trouble" : ""}`);
-    button.type = "button";
-    button.dataset.key = chip.key;
-    button.title = `${summary.title} · ${summary.lightText}`;
-    button.setAttribute("aria-label", `${summary.plate} ${summary.title}: ${summary.lightText}`);
-    button.append(vel("i", "vs-lamp"), vel("b", "vs-plate", String(chip.vault.number ?? "?").padStart(3, "0")), vel("span", "vs-name", chip.vault.damaged ? "DAMAGED" : chip.vault.title || chip.vault.name));
-    Object.assign(button.style, { left: `${chip.x}px`, top: `${chip.y}px`, width: `${chip.w}px`, height: `${chip.h}px` });
-    button.addEventListener("click", () => openVaultPage(chip.key));
-    return button;
-  });
-  const focused = document.activeElement?.closest?.("#vault-strip") ? document.activeElement.dataset.key || "open" : null;
-  vaultStripEl.replaceChildren(open, ...chips);
-  if (focused) (focused === "open" ? open : chips.find((chip) => chip.dataset.key === focused))?.focus();
 }
 
-// ---- the VAULTS page (#vaults, #vaults/<key>) ----
-// Covers the map (which stops drawing while it is up). The list: a door per
+// ---- the VAULTS view (the fourth tab; #vaults, #vaults/<key>) ----
+// A view like Path and Cluster: the tab is lit and the map stops drawing. The list: a door per
 // vault on its hill with plate and lamp, status, stack and counts; then the
 // templates. One vault: the door, the panel (description, facts, checks,
 // METRICS, TROUBLE, ERROR LINES, links) and what it owns, each with SHOW.
-let vaultRoute = parseVaultHash(location.hash);
-let vaultPageShown = "";
-let vaultPageFrom = null;
 
 function vaultPageOpen() {
   return Boolean(vaultRoute) && mode === "map";
@@ -953,11 +918,33 @@ function closeVaultPage() {
   routeVaults();
 }
 
+// The VAULTS tab: from Path or Cluster, leave that view first (the vault
+// page needs the map's resources for OWNED RESOURCES and SHOW).
+function enterVaults() {
+  if (mode === "path") leavePath();
+  else if (mode === "cluster") leaveCluster();
+  openVaultPage(null);
+}
+
+// Path and Cluster drop the vaults route, so MAP later means the map.
+function dropVaultRoute() {
+  if (!vaultRoute) return;
+  history.replaceState(null, "", `${location.pathname}${location.search}`);
+  vaultRoute = null;
+  vaultPageShown = "";
+  renderVaultPage();
+}
+
 function routeVaults() {
   const before = vaultRoute;
   vaultRoute = parseVaultHash(location.hash);
+  if (vaultRoute && mode !== "map") {
+    if (mode === "path") leavePath();
+    else if (mode === "cluster") leaveCluster();
+  }
   vaultPageShown = "";
   renderVaultPage();
+  renderChrome();
   if (!vaultRoute && before) {
     draw();
     if (vaultPageFrom?.isConnected) vaultPageFrom.focus();
@@ -1012,7 +999,7 @@ function renderVaultPage() {
   vaultPageEl.hidden = !open;
   map.toggleAttribute("inert", open);
   if (!open) {
-    if (vaultPageShown) vaultPageEl.replaceChildren();
+    if (vaultPageEl.firstChild) vaultPageEl.replaceChildren();
     vaultPageShown = "";
     return;
   }
@@ -1600,6 +1587,7 @@ function showRadioFor(next) {
 }
 
 function enterPath() {
+  dropVaultRoute();
   dropSample();
   showRadioFor("path");
   mode = "path";
@@ -1662,6 +1650,7 @@ async function pullCluster() {
 }
 
 function enterCluster() {
+  dropVaultRoute();
   dropSample();
   showRadioFor("cluster");
   mode = "cluster";
@@ -1694,6 +1683,7 @@ function leaveCluster() {
 
 // The mascot porthole is "home": back to the map from Path or Cluster.
 function goOverview() {
+  if (vaultRoute) closeVaultPage();
   if (mode === "path") leavePath();
   else if (mode === "cluster") leaveCluster();
 }
@@ -2487,6 +2477,10 @@ async function toggleUpgrade() {
 }
 
 tabMap.addEventListener("click", goOverview);
+tabVaults.addEventListener("click", () => {
+  if (vaultPageOpen() && !vaultRoute.key) return;
+  enterVaults();
+});
 
 clusterButton.addEventListener("click", () => {
   if (mode !== "cluster") enterCluster();

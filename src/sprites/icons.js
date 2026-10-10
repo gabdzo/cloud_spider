@@ -540,6 +540,26 @@ const GRIDS = {
     "................",
   ],
   // A vault door: gear teeth, a hazard ring, the hub.
+  // The VAULTS view tab: a cog vault door, lit from the top left, with its
+  // cross seam, four bolts and the hub.
+  vaults: [
+    "......BBBB......",
+    "..BB.BHHHHB.BB..",
+    "..BHBHMMMMMBDB..",
+    "...BHMMMMMMDB...",
+    ".BBHMHMDDMHMDBB.",
+    ".BHMMMMDDMMMMDB.",
+    "BMHMMMMDDMMMMDMB",
+    "BMHMDDDKKDDDMDMB",
+    "BMHMDDDKHDDDMDMB",
+    "BMHMMMMDDMMMMDMB",
+    ".BHMMMMDDMMMMDB.",
+    ".BBMMHMDDMHMDBB.",
+    "...BMMMMMMMDB...",
+    "..BDBMDDDDDBDB..",
+    "..BB.BDDDDB.BB..",
+    "......BBBB......",
+  ],
   vault: [
     "......B..B......",
     "...B.BMMMMB.B...",

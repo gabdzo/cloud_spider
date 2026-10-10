@@ -1,6 +1,6 @@
-// The VAULTS page: vaults left the map. The map keeps a slim strip of
-// enamel plates (one per vault, with its light) and a small plate badge on
-// every resource a vault owns; both open this page. Pure helpers here (no
+// The VAULTS view (the fourth header tab, #vaults): vaults left the map.
+// The map keeps a small plate badge on every resource a vault owns; a badge
+// opens that vault's page. Pure helpers here (no
 // DOM, no canvas) so node:test can check them.
 import { plateText } from "./vault-schema.js";
 
@@ -92,40 +92,6 @@ export function vaultTally(vaults = []) {
     if (stackState(vault).state === "live") tally.live += 1;
   }
   return tally;
-}
-
-// ---- the strip on the map ----
-// One row (wrapping on narrow windows) of plate chips with a VAULTS button
-// first. The chips themselves are HTML buttons the page places on the strip,
-// so Tab reaches them; the canvas draws only the rail behind them.
-export const STRIP = { h: 44, label: 0, button: 132, chip: 150, gap: 8, inset: 8, rowGap: 6 };
-
-export function placeVaultStrip(vaults, { top, left, rowLimit }) {
-  if (!vaults?.length) return null;
-  const right = Math.max(left + STRIP.button + STRIP.chip + STRIP.inset * 3, rowLimit - left);
-  const chips = [];
-  let x = left + STRIP.inset + STRIP.button + STRIP.gap;
-  let y = top + STRIP.inset;
-  const rowH = STRIP.h - STRIP.inset * 2;
-  for (const vault of vaults) {
-    if (x + STRIP.chip > right - STRIP.inset && chips.length) {
-      x = left + STRIP.inset + STRIP.button + STRIP.gap;
-      y += rowH + STRIP.rowGap;
-    }
-    chips.push({ key: vault.key, vault, x, y, w: STRIP.chip, h: rowH });
-    x += STRIP.chip + STRIP.gap;
-  }
-  const bottom = y + rowH + STRIP.inset;
-  const used = Math.max(...chips.map((chip) => chip.x + chip.w)) + STRIP.inset;
-  return {
-    x: left,
-    y: top,
-    w: Math.min(right, used) - left,
-    h: bottom - top,
-    bottom,
-    button: { x: left + STRIP.inset, y: top + STRIP.inset, w: STRIP.button, h: rowH },
-    chips,
-  };
 }
 
 // ---- badges on owned resources ----
