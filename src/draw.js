@@ -11,13 +11,15 @@ import {
 import { FONT_PX, SMOKE_PX } from "./layout.js";
 import { drawVaultLabels, drawVaultsLive, drawVaultsStatic, settledVaults, vaultCards } from "./vault-draw.js";
 import { isExpendable } from "./verbs.js";
-import { PIP, STATE_COLOR, STATUS, WORLD, font, rgba } from "./theme.js";
+import { PALETTE, PIP, STATE_COLOR, STATUS, WORLD, font, rgba } from "./theme.js";
 import {
   BAR_H, HORIZON, SKYLINE_DARK, SKYLINE_LIT, brackets, crtBackdrop, drawSprite, glow, ridge, road,
   labelBacking, newLayer, pipPanel, plaque,
 } from "./draw-kit.js";
 
 const PIXEL = 4;
+// The caps icon re-inked in the toxic amber ramp, for idle-but-billed.
+const IDLE_CAPS = { ...PALETTE, 21: WORLD.amber, 22: WORLD.flame, 23: PALETTE[13], 24: WORLD.dark, 25: WORLD.glow };
 const WANDERER_SCALE = 2;
 const FONT = font(FONT_PX);
 const SMALL = font(FONT_PX - 2);
@@ -311,6 +313,8 @@ function drawGateLabel(ctx, settlement) {
   ctx.fillText(label, gateX, settlement.y + 34);
 }
 
+const LINK_STATE = { unhealthy: "bad", unavailable: "bad", "unhealthy.draining": "bad", unused: "off", draining: "off" };
+
 // Balancer-to-target and camp lines: glowing phosphor traces with a pulse
 // that walks along them (still under reduced motion).
 function drawLinks(ctx, edges, animTime, reducedMotion) {
@@ -323,18 +327,22 @@ function drawLinks(ctx, edges, animTime, reducedMotion) {
   };
   ctx.lineCap = "round";
   for (const edge of edges) {
-    ctx.strokeStyle = rgba(PIP.bright, 0.18);
+    // The target state rides on a balancer line: a failing target's line
+    // runs red, a stopped (unused) one is a dim, still trace.
+    const state = LINK_STATE[edge.state] || "ok";
+    const hue = state === "bad" ? STATUS.broken : state === "off" ? PIP.dim : PIP.bright;
+    ctx.strokeStyle = rgba(hue, state === "off" ? 0.08 : 0.18);
     ctx.lineWidth = 7;
     curve(edge);
     ctx.stroke();
-    ctx.strokeStyle = PIP.mid;
+    ctx.strokeStyle = state === "bad" ? STATUS.broken : state === "off" ? PIP.dark : PIP.mid;
     ctx.lineWidth = 2;
-    ctx.setLineDash([8, 6]);
-    ctx.lineDashOffset = reducedMotion ? 0 : -((animTime || 0) / 40) % 14;
+    ctx.setLineDash(state === "off" ? [3, 7] : [8, 6]);
+    ctx.lineDashOffset = reducedMotion || state === "off" ? 0 : -((animTime || 0) / (state === "bad" ? 90 : 40)) % 14;
     curve(edge);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = PIP.bright;
+    ctx.fillStyle = state === "bad" ? STATUS.broken : state === "off" ? PIP.dim : PIP.bright;
     ctx.fillRect(edge.x1 - 3, edge.y1 - 3, 6, 6);
     ctx.fillRect(edge.x2 - 3, edge.y2 - 3, 6, 6);
   }
@@ -346,7 +354,9 @@ function drawLinks(ctx, edges, animTime, reducedMotion) {
 function drawFixture(ctx, fixture, ui, phase) {
   const { x, y, w, h } = fixture;
   const broken = fixture.status === "broken";
-  const edge = broken ? STATUS.broken : PIP.mid;
+  // Idle but billed: the object burns caps. Amber, so it never reads as broken.
+  const idle = !broken && Boolean(ui.marks?.[fixture.id]?.fire);
+  const edge = broken ? STATUS.broken : idle ? WORLD.amber : PIP.mid;
   ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
   ctx.fillRect(x + 5, y + 6, w, h);
   ctx.fillStyle = rgba(PIP.ink, 0.9);
@@ -361,7 +371,23 @@ function drawFixture(ctx, fixture, ui, phase) {
   ctx.fillRect(x + 6, y + Math.round((h - 36) / 2), 36, 36);
   drawSprite(ctx, icon(fixture.kind), x + 8, y + Math.round((h - 32) / 2), 2);
   if (broken) drawSprite(ctx, campfireFrame(phase), x + w - 26, y + 6, 1);
+  if (idle) drawIdleFire(ctx, fixture, phase);
   if (ui.selection?.id === fixture.id) brackets(ctx, x - 6, y - 6, w + 12, h + 12, PIP.hot, 12, 3);
+}
+
+// A small fire on the card's top edge with a bottle cap beside it and a
+// warm glow under both: money burning on something that serves nobody.
+function drawIdleFire(ctx, fixture, phase) {
+  const { x, y, w } = fixture;
+  const fire = campfireFrame(phase);
+  const fw = fire[0].length * 2;
+  const fx = x + w - fw - 6;
+  const fy = y - fire.length * 2 + 12;
+  glow(ctx, fx + fw / 2, fy + fire.length * 2 - 6, 34, WORLD.flame, 0.4);
+  drawSprite(ctx, fire, fx, fy, 2);
+  drawSprite(ctx, icon("caps"), fx - 22, fy + fire.length * 2 - 18, 1, IDLE_CAPS);
+  ctx.fillStyle = rgba(WORLD.amber, 0.85);
+  for (let dx = 0; dx < w - 8; dx += 8) ctx.fillRect(x + 4 + dx, y + fixture.h - 3, 4, 1);
 }
 
 function drawFixtureLabel(ctx, fixture) {
@@ -827,8 +853,12 @@ function drawPlate(ctx, building, ui, width, height, placed) {
     lines: wrapWords(entry.text || " ", fits(entry.time ? timeW : 0)),
   }));
   const note = ui.logNote ? String(ui.logNote).split("\n").flatMap((part) => wrapWords(part, fits(0))) : [];
+  // The morning's facts for this object: last change, blast radius, idle.
+  const factLabelW = Math.max(0, ...(ui.facts || []).map((fact) => ctx.measureText(fact.label).width)) + 12;
+  const facts = (ui.facts || []).map((fact) => ({ ...fact, lines: wrapWords(fact.text || " ", fits(factLabelW)) }));
+  const factsH = facts.length ? 10 + facts.reduce((sum, fact) => sum + fact.lines.length * ROW + 4, 0) : 0;
 
-  const headH = 4 + BAR_H + 6 + (name ? 22 : 0) + 20 + 12;
+  const headH = 4 + BAR_H + 6 + (name ? 22 : 0) + 20 + 12 + factsH;
   // A fixture's note ("uses ...") stands alone; only real log lines get the LOGS header.
   const logTitleH = rows.length ? 34 : 0;
   const noteGap = note.length && !rows.length ? 8 : 0;
@@ -870,6 +900,20 @@ function drawPlate(ctx, building, ui, width, height, placed) {
     ctx.fillText(tag, x + plateW - PAD - ctx.measureText(tag).width, textY);
   }
   textY += 12;
+  if (facts.length) {
+    textY += 10;
+    const tone = { fail: STATUS.broken, warn: WORLD.amber, unknown: MUTED };
+    for (const fact of facts) {
+      // A thin phosphor tick on the left, the label dim, the text in its tone.
+      ctx.fillStyle = tone[fact.tone] || PIP.mid;
+      ctx.fillRect(x + PAD - 8, textY + 4, 2, fact.lines.length * ROW - 2);
+      ctx.fillStyle = PIP.dim;
+      ctx.fillText(fact.label, x + PAD, textY + 15);
+      ctx.fillStyle = tone[fact.tone] || TEXT;
+      fact.lines.forEach((line, index) => ctx.fillText(line, x + PAD + factLabelW, textY + 15 + index * ROW));
+      textY += fact.lines.length * ROW + 4;
+    }
+  }
 
   if (!logTitleH) {
     if (note.length) {

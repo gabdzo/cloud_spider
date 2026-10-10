@@ -167,6 +167,9 @@ test("a resource read keeps the month total when one service is denied", async (
   assert.equal(bill.label, "Cost $1.20");
   assert.equal(bill.total, "$1.20");
   assert.match(bill.lines.join("\n"), /ELB: not enabled yet/);
+  // The morning meets bill rows to objects by the raw resource id.
+  assert.match(bill.resourceErrors["Amazon Elastic Load Balancing"], /not enabled yet/);
+  assert.ok(bill.resources.some((row) => row.id.endsWith("app/cloudspider-api/abc") && row.service === "Amazon Elastic Kubernetes Service"));
   assert.match(bill.lines.join("\n"), /GetCostAndUsageWithResources/);
   assert.match(bill.lines.join("\n"), /EKS cloudspider-api/);
   assert.match(bill.lines.join("\n"), /\$0\.50/);
@@ -188,6 +191,8 @@ test("a resource read keeps the month total when one service is denied", async (
   ]);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].resource, "cloudspider-api");
+  assert.equal(rows[0].id, "arn:aws:elasticloadbalancing:eu-north-1:1:loadbalancer/app/cloudspider-api/abc");
+  assert.equal(rows[0].value, 0.5);
   assert.equal(rows[0].amount, "$0.50");
   assert.match(resourceLines([{ service: "Amazon Elastic Kubernetes Service", rows: [] }]).join("\n"), /no charge above \$0\.01 yet/);
 });
@@ -293,6 +298,8 @@ test("the overview has a home control and a spend box, and the map poll does not
     const pullFn = source.slice(pullStart, pullEnd);
     assert.doesNotMatch(pullFn, /api\/cost/);
     assert.doesNotMatch(pullFn, /queueSpend|loadSpend/);
+    // The first live pull, and only that one, asks for the bill once.
+    assert.match(source, /pull\(\)\.then\(\(\) => \{\n  if \(place && !sample\) queueSpend\(\);\n\}\);/);
     await fetch(`${base}/api/view`);
     assert.equal(reads, 0);
     const sample = await fetch(`${base}/api/cost-sample`);

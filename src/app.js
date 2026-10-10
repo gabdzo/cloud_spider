@@ -14,6 +14,7 @@ import { diagramFromKube } from "./kube-diagram.js";
 import { campFixtures, watchLine } from "./upgrade-rules.js";
 import { createLinkCache } from "./aws-path.js";
 import { createMetricsCache, sampleMetrics } from "./metrics.js";
+import { idleCandidates, morningReport, nextIdleStreak } from "./layout.js";
 
 const CALL = { stop: "StopInstances", start: "StartInstances" };
 const ACCOUNT_HINT = "Set AWS_PROFILE=default and AWS_REGION=eu-north-1.";
@@ -45,6 +46,9 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, eks,
   let costFlight = null;
   let watchCache = null;
   let sawRunning = false;
+  // The idle-fire guard: per object, how many target reads in a row it
+  // looked idle on (layout.js nextIdleStreak).
+  let idleStreak = {};
   const radio = createRadio({
     lookup: (next) => trail.lookupEvents(next),
   });
@@ -66,6 +70,22 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, eks,
     if (!cached.known) return;
     place.links = cached.edges;
     place.linkNote = cached.error || "";
+    place.linksRead = true;
+    place.targetCounts = cached.counts || {};
+    idleStreak = nextIdleStreak(idleStreak, idleCandidates(place).map((item) => item.id), cached.at);
+  }
+
+  // The morning: three sentences from reads already made. The bill is the
+  // six-hour cache only; this never calls Cost Explorer.
+  function morning() {
+    if (!place) return null;
+    return morningReport({
+      place,
+      events: radio.changes(),
+      trail: radio.trailState(),
+      bill: costCache?.bill || null,
+      idleStreak,
+    });
   }
 
   const waits = createWaits({
@@ -106,6 +126,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, eks,
       status,
       radio: radio.line(),
       trail: radio.entries(),
+      morning: morning(),
       loading,
       pageOrigin,
     };
@@ -184,6 +205,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, eks,
       const cancelled = waits.cancelRegion(region);
       region = next;
       place = null;
+      idleStreak = {};
       radio.clear();
       if (cancelled.count > 0) {
         status = cancelled.status;

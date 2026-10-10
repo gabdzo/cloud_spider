@@ -25,7 +25,7 @@ import {
 import { CloudWatchClient, GetMetricDataCommand } from "@aws-sdk/client-cloudwatch";
 import { publicError } from "./aws.js";
 import { isInstanceId } from "./ids.js";
-import { linesFromTargets } from "./path-diagnose.js";
+import { linesFromTargets, targetCounts } from "./path-diagnose.js";
 
 const METRICS = {
   elb502: "HTTPCode_ELB_502_Count",
@@ -169,7 +169,11 @@ export function createPathAws() {
       }
       const faces = await this.interfacesByAddress(region, ips);
       if (faces.error) return { edges: [], error: faces.error };
-      return { edges: linesFromTargets(balancers, mine, health, faces.items), error: "" };
+      return {
+        edges: linesFromTargets(balancers, mine, health, faces.items),
+        counts: targetCounts(balancers, mine, health),
+        error: "",
+      };
     },
     async instancesById(region, ids) {
       const client = ec2(region);
@@ -263,7 +267,7 @@ export function createLinkCache({ read, clock = Date.now, ttl = 30_000 }) {
     current(region) {
       const slot = slots.get(region);
       if (!slot?.at) return { edges: [], error: "", known: false };
-      return { edges: slot.edges || [], error: slot.error || "", known: true };
+      return { edges: slot.edges || [], counts: slot.counts || {}, error: slot.error || "", known: true, at: slot.at };
     },
     kick(region, balancers) {
       const slot = slots.get(region);
@@ -281,6 +285,7 @@ export function createLinkCache({ read, clock = Date.now, ttl = 30_000 }) {
         .then((result) => {
           slots.set(region, {
             edges: result?.error ? [] : result?.edges || [],
+            counts: result?.error ? {} : result?.counts || {},
             error: result?.error || "",
             at: clock(),
             inflight: false,
@@ -289,6 +294,7 @@ export function createLinkCache({ read, clock = Date.now, ttl = 30_000 }) {
         .catch((error) => {
           slots.set(region, {
             edges: [],
+            counts: {},
             error: error?.message || "the target read failed",
             at: clock(),
             inflight: false,

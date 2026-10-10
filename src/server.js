@@ -2,7 +2,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { samplePlace, sampleTrail } from "./sample.js";
+import { sampleMorning, samplePlace, sampleTrail } from "./sample.js";
 import { samplePathGraph } from "./path-sample.js";
 import { pathResult } from "./path-view.js";
 import { cssVars } from "./theme.js";
@@ -19,6 +19,7 @@ export const FILES = new Set([
   "layout-cache.js",
   "ui.js",
   "layout.js",
+  "radio.js",
   "verbs.js",
   "ids.js",
   "report.js",
@@ -390,6 +391,101 @@ const page = `<!doctype html>
   .body { flex: 1; min-height: 0; display: flex; }
   .mapwrap { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
   #map { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--pip-screen); }
+
+  /* ---- the morning report: three sentences pinned over the map ---- */
+  #morning {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 14px;
+    padding: 8px 14px 8px 12px;
+    border-bottom: 2px solid var(--pip-dark);
+    background:
+      repeating-linear-gradient(90deg, rgba(20, 255, 106, 0.035) 0 2px, transparent 2px 6px),
+      linear-gradient(180deg, rgba(255, 204, 51, 0.07), rgba(4, 20, 10, 0) 70%),
+      var(--pip-ink);
+    box-shadow: inset 0 -1px 0 rgba(20, 255, 106, 0.12), inset 0 6px 14px rgba(0, 0, 0, 0.6);
+  }
+  #morning[hidden] { display: none; }
+  #sunrise {
+    width: 64px; height: 36px;
+    image-rendering: pixelated;
+    border: 2px solid var(--pip-dark);
+    box-shadow: 0 0 0 1px #000, 0 0 12px rgba(255, 154, 60, 0.25), inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+    background: linear-gradient(180deg, var(--world-wall), var(--world-dark) 70%);
+  }
+  .m-head { display: flex; flex-direction: column; line-height: 1.05; letter-spacing: 0.14em; }
+  .m-head b { color: var(--world-amber); font-size: 13px; text-shadow: 0 0 6px rgba(255, 204, 51, 0.45); }
+  .m-head small { color: var(--pip-mid); font-size: 10px; }
+  .m-head output { color: var(--pip-dim); font-size: 10px; margin-top: 3px; letter-spacing: 0.06em; }
+  .m-lines { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; }
+  .m-line {
+    position: relative;
+    display: grid;
+    grid-template-columns: 16px auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 2px 6px;
+    min-width: 0;
+    padding: 5px 22px 5px 8px;
+    border: 1px solid var(--pip-dark);
+    background: linear-gradient(180deg, rgba(20, 255, 106, 0.05), rgba(0, 0, 0, 0.35));
+    box-shadow: inset 0 0 0 1px #000, inset 3px 0 0 var(--m-tone, var(--pip-dim));
+    --m-tone: var(--pip-dim);
+  }
+  .m-line img { grid-row: 1; image-rendering: pixelated; }
+  .m-line b { grid-row: 1; font-size: 10px; letter-spacing: 0.16em; color: var(--m-tone); }
+  .m-line .m-text {
+    grid-column: 1 / -1; grid-row: 2;
+    min-width: 0; font-size: 12px; line-height: 1.3; color: var(--world-text);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+  .m-line .m-text time { color: var(--pip-mid); margin-right: 6px; }
+  .m-led { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; background: var(--m-tone); box-shadow: 0 0 0 1px #000, 0 0 8px var(--m-tone); }
+  .m-line.ok { --m-tone: var(--pip-bright); }
+  .m-line.fail { --m-tone: var(--status-broken); background: linear-gradient(180deg, rgba(255, 90, 60, 0.12), rgba(0, 0, 0, 0.35)); }
+  .m-line.fail .m-led { animation: blink 1.2s steps(1) infinite; }
+  .m-line.warn { --m-tone: var(--world-amber); background: linear-gradient(180deg, rgba(255, 204, 51, 0.1), rgba(0, 0, 0, 0.35)); }
+  .m-line.unknown { --m-tone: var(--pip-dim); }
+  .m-line.unknown .m-text { color: var(--world-muted); }
+  .m-line.unknown .m-led { background: transparent; box-shadow: 0 0 0 1px var(--pip-dim); }
+  .m-fold {
+    align-self: start;
+    width: 22px; height: 22px; padding: 0;
+    font-size: 10px; line-height: 1;
+    color: var(--pip-mid); background: var(--pip-ink);
+    border: 1px solid var(--pip-dark);
+  }
+  .m-fold:hover { color: var(--pip-ink); background: var(--pip-bright); }
+  /* Folded: one line, the worst sentence only. */
+  #morning.folded { padding-top: 4px; padding-bottom: 4px; }
+  #morning.folded #sunrise { width: 32px; height: 18px; }
+  #morning.folded .m-head small, #morning.folded .m-head output { display: none; }
+  #morning.folded .m-lines { grid-template-columns: minmax(0, 1fr); }
+  #morning.folded .m-line:not(.lead) { display: none; }
+  #morning.folded .m-line { grid-template-rows: auto; grid-template-columns: 16px auto minmax(0, 1fr); padding-top: 3px; padding-bottom: 3px; }
+  #morning.folded .m-text { grid-column: 3; grid-row: 1; -webkit-line-clamp: 1; }
+  @media (min-width: 1600px) {
+    #sunrise { width: 96px; height: 54px; }
+    .m-line .m-text { font-size: 13px; }
+  }
+  @media (max-width: 1180px) {
+    #morning { grid-template-columns: auto minmax(0, 1fr) auto; }
+    .m-head { display: none; }
+    .m-lines { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .m-line { grid-template-rows: auto; padding-top: 3px; padding-bottom: 3px; }
+    .m-line .m-text { grid-column: 3; grid-row: 1; -webkit-line-clamp: 2; }
+    .m-line b { min-width: 92px; }
+  }
+  @media (max-width: 820px) {
+    #morning { grid-template-columns: minmax(0, 1fr) auto; padding-left: 10px; }
+    #sunrise { display: none; }
+    .m-line { grid-template-columns: 16px minmax(0, 1fr); grid-template-rows: auto auto; }
+    .m-line b { min-width: 0; }
+    .m-line .m-text { grid-column: 1 / -1; grid-row: 2; }
+  }
 
   /* ---- header gauges: the tally and the bill as recessed LCD strips ---- */
   .gauges { flex: 1 1 360px; min-width: 0; display: flex; align-items: center; gap: 10px; }
@@ -818,6 +914,16 @@ const page = `<!doctype html>
     <button id="ask-this" class="cmd" type="button" data-icon="terminal" hidden>ASK ABOUT THIS</button>
   </div>
   <p id="error" hidden></p>
+  <section id="morning" aria-label="morning report" hidden>
+    <canvas id="sunrise" width="64" height="36" aria-hidden="true"></canvas>
+    <div class="m-head"><b>MORNING</b><small>REPORT</small><output id="morning-when"></output></div>
+    <ul class="m-lines">
+      <li id="m-hurting" class="m-line"><img class="px" data-icon="fire" alt=""><b>HURTING</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-changed" class="m-line"><img class="px" data-icon="clock" alt=""><b>CHANGED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-idle" class="m-line"><img class="px" data-icon="caps" alt=""><b>IDLE·BILLED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+    </ul>
+    <button id="morning-fold" class="m-fold" type="button" aria-expanded="true" aria-controls="morning" title="fold the morning report">&#9650;</button>
+  </section>
   <div class="body">
     <div class="mapwrap">
       <div id="map">
@@ -908,7 +1014,7 @@ async function route(app, req, res) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/sample") {
-    send(res, 200, { place: samplePlace(), trail: sampleTrail() });
+    send(res, 200, { place: samplePlace(), trail: sampleTrail(), morning: sampleMorning() });
     return;
   }
 

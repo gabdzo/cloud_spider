@@ -1,5 +1,5 @@
 const WINDOW = 8;
-const READ_ONLY = /^(Describe|List|Get(?!FederationToken$)|Lookup|Head)/;
+export const READ_ONLY = /^(Describe|List|Get(?!FederationToken$)|Lookup|Head)/;
 
 const ACTS = [
   [/^StopInstances$/, "put a machine down"],
@@ -99,7 +99,8 @@ function clock(time) {
   return `${hh}:${mm}`;
 }
 
-function phrase(name) {
+// The radio's words for one API call ("brought a machine back").
+export function phrase(name) {
   for (const [pattern, line] of ACTS) {
     if (pattern.test(name)) return line;
   }
@@ -124,6 +125,11 @@ export function createRadio({ lookup }) {
   let entries = [];
   // Failed calls, kept raw (newest first, 50 at most) for vault trouble.
   let failures = [];
+  // Every change, raw and unfolded (newest first, 50 at most): the morning's
+  // "changed last" and each plate's last change read these, because the
+  // folded radio rows can clear a resource name.
+  let changes = [];
+  let trail = { read: false, error: "" };
   let ticket = 0;
 
   return {
@@ -136,10 +142,18 @@ export function createRadio({ lookup }) {
     failures() {
       return failures;
     },
+    changes() {
+      return changes;
+    },
+    trailState() {
+      return trail;
+    },
     clear() {
       line = "";
       entries = [];
       failures = [];
+      changes = [];
+      trail = { read: false, error: "" };
     },
     async refresh(region) {
       const mine = ++ticket;
@@ -147,6 +161,8 @@ export function createRadio({ lookup }) {
       if (mine !== ticket) return { dropped: true, line };
       if (result?.error) {
         entries = [{ time: 0, status: "fail", text: `the radio cannot read CloudTrail: ${result.error}`, issue: "", count: 1 }];
+        changes = [];
+        trail = { read: true, error: String(result.error) };
         line = formatEntry(entries[0]);
       } else {
         entries = radioEntries(eventsFrom(result));
@@ -154,6 +170,11 @@ export function createRadio({ lookup }) {
           .filter((event) => event?.error)
           .sort((a, b) => (b.time || 0) - (a.time || 0))
           .slice(0, 50);
+        changes = eventsFrom(result)
+          .filter((event) => event && !READ_ONLY.test(event.name || ""))
+          .sort((a, b) => (b.time || 0) - (a.time || 0))
+          .slice(0, 50);
+        trail = { read: true, error: "" };
         line = entries.length ? entries.map(formatEntry).join("\n") : "the radio is quiet";
       }
       return { dropped: false, line };

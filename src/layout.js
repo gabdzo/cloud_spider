@@ -1,4 +1,5 @@
 import { placeVaults, vaultEdges } from "./vault-layout.js";
+import { READ_ONLY, phrase } from "./radio.js";
 export const FONT_PX = 14;
 const CHAR_W = 8.5;
 const LINE = 20;
@@ -236,6 +237,7 @@ function settlementEdges(settlement, links) {
     edges.push({
       from: from.id,
       to: to.id,
+      state: link.state || "",
       x1: from.x + Math.floor(from.w / 2),
       y1: from.y,
       x2: to.x + Math.floor(to.w / 2),
@@ -433,4 +435,305 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
       PAD * 2,
     ),
   };
+}
+
+// ---- SRE overview: the morning in three sentences ----
+// What is hurting, what changed last, and what is idle but still billed.
+// Every sentence is built from reads the page already makes (target health,
+// the CloudTrail trail, the six-hour bill); a fact that was not read says
+// "not checked" instead of guessing. Systems are inferred from the wires
+// already on the map: there is no catalog file.
+
+const HEALTH = {
+  healthy: "healthy",
+  initial: "starting",
+  unhealthy: "unhealthy",
+  unavailable: "unhealthy",
+  "unhealthy.draining": "unhealthy",
+  unused: "unused",
+  draining: "unused",
+};
+
+export function targetState(state) {
+  return HEALTH[state] || "unknown";
+}
+
+function nameOf(place, id) {
+  const hit = (place?.instances || []).find((item) => item.id === id) || (place?.fixtures || []).find((item) => item.id === id);
+  return hit?.name || hit?.label || id;
+}
+
+function tagValue(item, key) {
+  const tags = item?.tags;
+  if (Array.isArray(tags)) {
+    const hit = tags.find((tag) => (tag.key ?? tag.Key) === key);
+    return hit ? hit.value ?? hit.Value : undefined;
+  }
+  return tags?.[key];
+}
+
+function clusterNodes(place, cluster) {
+  return (place?.instances || []).filter((item) => tagValue(item, "eks:cluster-name") === cluster.name);
+}
+
+export function systemsOf(place) {
+  const systems = [];
+  const fixtures = place?.fixtures || [];
+  for (const lb of fixtures.filter((item) => item.kind === "alb")) {
+    const targets = (place.links || []).filter((edge) => edge.from === lb.id).map((edge) => edge.to);
+    systems.push({ kind: "api", name: `API ${lb.name || lb.id}`, root: lb.id, members: new Set([lb.id, ...targets]) });
+  }
+  const fn = fixtures.find((item) => item.kind === "function" && (item.camp || (item.uses || []).length));
+  if (fn) systems.push({ kind: "camp", name: "camp", root: fn.id, members: new Set([fn.id, ...(fn.uses || [])]) });
+  for (const cluster of fixtures.filter((item) => item.kind === "eks")) {
+    const nodes = clusterNodes(place, cluster).map((item) => item.id);
+    systems.push({ kind: "cluster", name: `cluster ${cluster.name || cluster.id}`, root: cluster.id, members: new Set([cluster.id, ...nodes]) });
+  }
+  return systems;
+}
+
+function systemFor(systems, id) {
+  return systems.find((system) => system.members.has(id))?.name || "";
+}
+
+// Keys an object answers to in a CloudTrail event: its id, its name, and
+// the tail of an ARN (after the last / or :).
+function tail(text) {
+  const value = String(text || "");
+  return value.split(/[/:]/).filter(Boolean).at(-1) || value;
+}
+
+function keysOf(item) {
+  return [item.id, item.name, tail(item.id)].filter(Boolean);
+}
+
+function eventKeys(event) {
+  const keys = new Set();
+  for (const raw of [...(event.resources || []), ...(event.names || [])]) {
+    if (!raw) continue;
+    keys.add(String(raw));
+    keys.add(tail(raw));
+    // A listener or target group ARN names its balancer: app/<name>/<id>.
+    const lb = String(raw).match(/(?:loadbalancer|listener|listener-rule)\/(?:app|net)\/([^/]+)/);
+    if (lb) keys.add(lb[1]);
+  }
+  return keys;
+}
+
+// "UpdateFunctionConfiguration20150331v2" -> "UpdateFunctionConfiguration".
+function callName(name) {
+  return String(name || "").replace(/\d{8}(v\d+)?$/, "");
+}
+
+function sentence(text) {
+  const value = String(text || "").trim();
+  if (!value) return value;
+  const head = value[0].toUpperCase() + value.slice(1);
+  return /[.!?]$/.test(head) ? head : `${head}.`;
+}
+
+function changeText(event, place, systems, own) {
+  const act = phrase(callName(event.name));
+  const named = (event.resources || []).concat(event.names || []).map((raw) => {
+    const hit = [...(place?.instances || []), ...(place?.fixtures || [])].find((item) => keysOf(item).includes(raw) || keysOf(item).includes(tail(raw)));
+    return hit || null;
+  });
+  const object = own || named.find(Boolean) || null;
+  const label = object ? object.name || object.id : tail((event.resources || [])[0] || (event.names || [])[0] || "");
+  const owner = object ? systems.find((item) => item.members.has(object.id)) : null;
+  const system = owner && owner.root !== object.id ? owner.name : "";
+  const where = system ? ` (${system})` : "";
+  const failed = event.error ? `, failed: ${event.error}` : "";
+  return `${act}${label ? ` ${label}` : ""}${where}${failed}`;
+}
+
+function newestChanges(events) {
+  return (events || [])
+    .filter((event) => event && !READ_ONLY.test(event.name || ""))
+    .slice()
+    .sort((a, b) => (b.time || 0) - (a.time || 0));
+}
+
+// Objects that look idle on this read. A balancer with no healthy, starting
+// or unhealthy target (none at all, or only stopped machines) serves
+// nothing; a cluster with no running node runs nothing. An unhealthy
+// target is hurting, not idle. Before the target read: never idle.
+export function idleCandidates(place) {
+  const out = [];
+  for (const lb of (place?.fixtures || []).filter((item) => item.kind === "alb")) {
+    const counts = place.linksRead && !place.linkNote ? place.targetCounts?.[lb.id] : null;
+    if (!counts) continue;
+    if (counts.healthy || counts.starting || counts.unhealthy) continue;
+    const why = counts.total ? `has only stopped targets (${counts.unused} unused)` : "has no target";
+    out.push({ id: lb.id, name: lb.name || lb.id, why });
+  }
+  for (const cluster of (place?.fixtures || []).filter((item) => item.kind === "eks")) {
+    if (clusterNodes(place, cluster).some((item) => item.state === "running")) continue;
+    out.push({ id: cluster.id, name: cluster.name || cluster.id, why: "has no running node" });
+  }
+  return out;
+}
+
+// The idle-fire guard: an object must look idle on two target-state reads
+// in a row before it burns, so a deploy caught between targets does not.
+export function nextIdleStreak(prev, ids, read) {
+  const next = {};
+  for (const id of ids) {
+    const was = prev?.[id];
+    if (was && was.read === read) next[id] = was;
+    else next[id] = { count: (was?.count || 0) + 1, read };
+  }
+  return next;
+}
+
+const BILL_SERVICE = { alb: "Amazon Elastic Load Balancing", eks: "Amazon Elastic Kubernetes Service" };
+
+function billFor(bill, item, kind) {
+  if (!bill || bill.error || !Array.isArray(bill.resources)) return { checked: false };
+  const service = BILL_SERVICE[kind];
+  if (service && bill.resourceErrors?.[service]) return { checked: false, note: bill.resourceErrors[service] };
+  const row = bill.resources.find((entry) => entry.id === item.id || (entry.id && tail(entry.id) === tail(item.id) && entry.service === service));
+  return { checked: true, row: row || null };
+}
+
+export function morningReport({ place, events = [], trail = { read: false }, bill = null, idleStreak = {} } = {}) {
+  const systems = systemsOf(place || {});
+  const marks = {};
+  const objects = [...(place?.instances || []), ...(place?.fixtures || [])];
+  for (const item of objects) marks[item.id] = { lastChange: null, idle: "", fire: false };
+
+  // 1. What is hurting.
+  let hurting;
+  const broken = (place?.fixtures || []).filter((item) => item.status === "broken");
+  const brokenBits = broken.map((item) => {
+    const system = systemFor(systems, item.id);
+    return `${system && system !== item.name ? `${system}: ` : ""}${item.name || item.id} is in trouble`;
+  });
+  const balancers = (place?.fixtures || []).filter((item) => item.kind === "alb");
+  if (!place?.linksRead || place?.linkNote) {
+    const why = place?.linkNote ? ` (${place.linkNote})` : "";
+    const base = balancers.length ? `target health not checked${why}` : "no balancer on the map, target health not checked";
+    hurting = brokenBits.length
+      ? { status: "fail", text: `${brokenBits.join("; ")}. ${base}.` }
+      : { status: "unknown", text: `${base[0].toUpperCase()}${base.slice(1)}.` };
+  } else {
+    const hurt = [];
+    let healthy = 0;
+    let total = 0;
+    for (const lb of balancers) {
+      const counts = place.targetCounts?.[lb.id] || { total: 0, healthy: 0, unhealthy: 0 };
+      healthy += counts.healthy || 0;
+      total += counts.total || 0;
+      if (!counts.unhealthy) continue;
+      const bad = (place.links || []).filter((edge) => edge.from === lb.id && targetState(edge.state) === "unhealthy");
+      const names = bad.map((edge) => `${nameOf(place, edge.to)}${edge.reason ? ` (${edge.reason})` : ""}`);
+      const unnamed = counts.unhealthy - bad.length;
+      if (unnamed > 0) names.push(`${unnamed} unmapped target${unnamed === 1 ? "" : "s"}`);
+      const none = counts.healthy ? "" : "; no healthy target left";
+      const verb = counts.unhealthy === 1 ? "fails its health check" : "fail their health checks";
+      hurt.push(`API ${lb.name || lb.id}: ${names.join(", ")} ${verb}${none}`);
+    }
+    const bits = [...hurt, ...brokenBits];
+    if (bits.length) hurting = { status: "fail", text: `${bits.join("; ")}.` };
+    else if (!balancers.length) hurting = { status: "ok", text: "Nothing is hurting. No balancer on the map to check." };
+    else {
+      const which = balancers.length === 1 ? ` behind ${balancers[0].name || balancers[0].id}` : "";
+      hurting = { status: "ok", text: `Nothing is hurting: ${healthy} of ${total} targets${which} healthy.` };
+    }
+  }
+
+  // 2. What changed last (raw CloudTrail events, before the radio folds them).
+  const changes = newestChanges(events);
+  let changed;
+  if (!trail?.read || trail.error) {
+    changed = { status: "unknown", time: 0, text: `Last change not checked${trail?.error ? ` (${trail.error})` : ""}.` };
+  } else if (!changes.length) {
+    changed = { status: "ok", time: 0, text: "No change in the radio's CloudTrail window." };
+  } else {
+    const event = changes[0];
+    changed = { status: event.error ? "fail" : "ok", time: event.time || 0, text: sentence(changeText(event, place, systems)) };
+  }
+  // The biography on each plate: that object's own newest change.
+  if (trail?.read && !trail.error) {
+    for (const item of objects) {
+      const keys = keysOf(item);
+      const event = changes.find((entry) => {
+        const have = eventKeys(entry);
+        return keys.some((key) => have.has(key));
+      });
+      if (event) marks[item.id].lastChange = { time: event.time || 0, status: event.error ? "fail" : "ok", text: changeText(event, place, systems, item) };
+    }
+  }
+
+  // 3. What is idle but still billed.
+  const candidates = idleCandidates(place);
+  const kindOf = new Map((place?.fixtures || []).map((item) => [item.id, item.kind]));
+  const burning = [];
+  const waiting = [];
+  const unbilled = [];
+  const unchecked = [];
+  for (const item of candidates) {
+    const streak = idleStreak?.[item.id]?.count || 0;
+    if (streak < 2) {
+      waiting.push(item);
+      continue;
+    }
+    const billed = billFor(bill, item, kindOf.get(item.id));
+    if (!billed.checked) {
+      unchecked.push(item);
+      marks[item.id].idle = `${item.why}; bill not checked`;
+    } else if (billed.row) {
+      burning.push({ ...item, amount: billed.row.amount });
+      marks[item.id].idle = `${item.why}; ${billed.row.amount} billed in 14 days`;
+      marks[item.id].fire = true;
+    } else {
+      unbilled.push(item);
+      marks[item.id].idle = `${item.why}; nothing on the bill yet`;
+    }
+  }
+  let idle;
+  const parts = [];
+  if (burning.length) parts.push(...burning.map((item) => `${item.name} ${item.why}, ${item.amount} in 14 days`));
+  if (unchecked.length) parts.push(...unchecked.map((item) => `${item.name} ${item.why}, bill not checked`));
+  if (unbilled.length) parts.push(...unbilled.map((item) => `${item.name} ${item.why}, nothing billed yet`));
+  if (waiting.length) parts.push(...waiting.map((item) => `${item.name} looks idle, waiting for a second read`));
+  if (burning.length) idle = { status: "warn", text: `Idle but billed: ${parts.join("; ")}.` };
+  else if (unchecked.length) idle = { status: "unknown", text: `Idle: ${parts.join("; ")}.` };
+  else if (parts.length) idle = { status: "ok", text: `Idle: ${parts.join("; ")}.` };
+  else if (!place?.linksRead && balancers.length) idle = { status: "unknown", text: "Idle not checked: target health is not read yet." };
+  else if (!bill || bill.error) idle = { status: "unknown", text: `Nothing idle on the map. Bill not checked${bill?.error ? ` (${bill.error})` : ""}.` };
+  else idle = { status: "ok", text: "Nothing idle on the map is billed." };
+
+  return { hurting, changed, idle, marks, systems: systems.map((system) => ({ kind: system.kind, name: system.name, root: system.root, members: [...system.members] })) };
+}
+
+// Blast radius: what else this object touches, said on its plate and on
+// the stop/start question.
+export function blastLine(place, id) {
+  const links = place?.links || [];
+  const fixtures = place?.fixtures || [];
+  const name = (target) => nameOf(place, target);
+  const bits = [];
+  for (const edge of links.filter((item) => item.to === id)) {
+    const lb = name(edge.from);
+    const siblings = links.filter((item) => item.from === edge.from && item.to !== id);
+    const healthyOthers = siblings.filter((item) => targetState(item.state) === "healthy").length;
+    const mine = targetState(edge.state);
+    if (mine === "healthy" && !healthyOthers) bits.push(`only healthy target behind ${lb}; stopping it takes the API down`);
+    else bits.push(`target of ${lb} (${healthyOthers} other healthy)`);
+  }
+  const served = links.filter((item) => item.from === id).map((item) => name(item.to));
+  if (served.length) bits.push(`sends traffic to ${served.join(", ")}`);
+  const self = fixtures.find((item) => item.id === id);
+  if (self?.uses?.length) bits.push(`uses ${self.uses.map(name).join(", ")}`);
+  const users = fixtures.filter((item) => (item.uses || []).includes(id)).map((item) => item.name || item.id);
+  if (users.length) bits.push(`${users.join(", ")} uses it`);
+  const instance = (place?.instances || []).find((item) => item.id === id);
+  const cluster = instance ? tagValue(instance, "eks:cluster-name") : "";
+  if (cluster) bits.push(`node of cluster ${cluster}`);
+  if (self?.kind === "eks") {
+    const nodes = clusterNodes(place, self);
+    if (nodes.length) bits.push(`runs on ${nodes.length} node${nodes.length === 1 ? "" : "s"}`);
+  }
+  return bits.length ? `touches: ${bits.join("; ")}` : "touches nothing else on the map";
 }

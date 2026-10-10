@@ -218,3 +218,76 @@ test("logs ask for the instance id as the stream", async () => {
   assert.equal(box.logCalls[0].stream, id);
   assert.deepEqual(logs.lines, ["ready"]);
 });
+
+// ---- the morning: app fills it from the reads it already has ----
+function morningApp({ counts, edges = [], cost }) {
+  let now = 10_000;
+  const lbArn = "arn:aws:elasticloadbalancing:eu-north-1:1:loadbalancer/app/cloudspider-api/abc";
+  let reads = 0;
+  const app = createApp({
+    ec2: {
+      async describeRegions() { return { regions: ["eu-north-1"] }; },
+      async defaultRegion() { return "eu-north-1"; },
+      async describeVpcs() { return { items: [{ id: "vpc-1" }] }; },
+      async describeSubnets() { return { items: [] }; },
+      async describeInstances() { return { items: [{ id: "i-0aaa1111", state: "stopped", vpcId: "vpc-1", name: "cloudspider-stopped" }] }; },
+      async describeDiagram() { return { fixtures: [{ id: lbArn, kind: "alb", name: "cloudspider-api", vpcId: "vpc-1" }], gateways: [] }; },
+    },
+    trail: { async lookupEvents() { return { events: [{ name: "StopInstances", time: 9_000, resources: ["i-0aaa1111"] }] }; } },
+    path: {
+      async targetLines() {
+        reads += 1;
+        return { edges, counts: { [lbArn]: counts }, error: "" };
+      },
+    },
+    cost: cost === undefined ? undefined : { async read() { return cost; } },
+    pageOrigin: origin,
+    clock: () => now,
+  });
+  return { app, lbArn, tick: (ms) => { now += ms; }, reads: () => reads };
+}
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+test("the view carries the three morning sentences, built only from reads already made", async () => {
+  const { app, lbArn, tick } = morningApp({ counts: { total: 1, healthy: 0, starting: 0, unhealthy: 0, unused: 1 }, edges: [], cost: { label: "Cost $1", lines: [], resources: [{ service: "Amazon Elastic Load Balancing", id: "arn:aws:elasticloadbalancing:eu-north-1:1:loadbalancer/app/cloudspider-api/abc", resource: "cloudspider-api", value: 0.42, amount: "$0.42" }], resourceErrors: {} } });
+  let view = await app.boot();
+  assert.ok(view.place, "the place was read");
+  assert.equal(view.morning.hurting.status, "unknown", "no target read yet");
+  assert.match(view.morning.changed.text, /Put a machine down cloudspider-stopped/);
+  assert.match(view.morning.idle.text, /not checked/);
+  app.kickLinks();
+  await flush();
+  view = app.view();
+  assert.equal(view.place.linksRead, true);
+  assert.match(view.morning.idle.text, /waiting for a second read/);
+  assert.equal(view.morning.marks[lbArn].fire, false);
+  // The two-second view never reads the bill; only /api/cost does.
+  assert.match(view.morning.idle.text, /cloudspider-api/);
+  tick(31_000);
+  app.kickLinks();
+  await flush();
+  view = app.view();
+  assert.match(view.morning.idle.text, /bill not checked/);
+  await app.costView();
+  view = app.view();
+  assert.equal(view.morning.idle.status, "warn");
+  assert.equal(view.morning.marks[lbArn].fire, true);
+  assert.match(view.morning.marks["i-0aaa1111"].lastChange.text, /put a machine down/);
+});
+
+test("the view's morning never calls Cost Explorer", async () => {
+  let billReads = 0;
+  const { app } = morningApp({ counts: { total: 0, healthy: 0, starting: 0, unhealthy: 0, unused: 0 } });
+  const withCost = createApp({
+    ec2: { async describeRegions() { return { regions: ["eu-north-1"] }; }, async defaultRegion() { return "eu-north-1"; }, async describeVpcs() { return { items: [] }; }, async describeSubnets() { return { items: [] }; }, async describeInstances() { return { items: [] }; } },
+    trail: { async lookupEvents() { return { events: [] }; } },
+    cost: { async read() { billReads += 1; throw new Error("the view must not read the bill"); } },
+    pageOrigin: origin,
+    clock: () => 1,
+  });
+  await withCost.boot();
+  for (let i = 0; i < 3; i += 1) withCost.view();
+  assert.equal(billReads, 0);
+  assert.ok(app);
+});
