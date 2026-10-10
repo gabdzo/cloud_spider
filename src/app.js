@@ -6,6 +6,8 @@ import { attemptVerb } from "./verbs.js";
 import { createWaits } from "./waits.js";
 import { createRadio } from "./radio.js";
 import { readLogs } from "./logs.js";
+import { readPath } from "./path-read.js";
+import { pathResult } from "./path-view.js";
 
 const CALL = { stop: "StopInstances", start: "StartInstances" };
 const ACCOUNT_HINT = "Set AWS_PROFILE=default and AWS_REGION=eu-north-1.";
@@ -14,7 +16,7 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
-export function createApp({ ec2, trail, logs, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, path, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -31,6 +33,7 @@ export function createApp({ ec2, trail, logs, logGroup, pageOrigin, clock, write
   let generation = 0;
   let radioAt = 0;
   let booted = null;
+  let pathGeneration = 0;
 
   const radio = createRadio({
     lookup: (next) => trail.lookupEvents(next),
@@ -144,6 +147,30 @@ export function createApp({ ec2, trail, logs, logGroup, pageOrigin, clock, write
         report(sink, { call: "GetLogEvents", id, sentence: result.note });
       }
       return result;
+    },
+    async pathView(query = {}) {
+      const at = region;
+      const failed = (sentence) => ({
+        region: at,
+        error: sentence,
+        loadBalancers: [],
+        selected: "",
+        diagram: null,
+        findings: [],
+        headline: "",
+        notes: [],
+      });
+      if (!path) return failed("path reads are not set up");
+      if (!at) return failed(error || "the region is not read yet");
+      const mine = ++pathGeneration;
+      const result = await readPath(path, at);
+      if (mine !== pathGeneration || at !== region) return { region, stale: true };
+      if (result.error) {
+        const sentence = accountRead(result.error);
+        report(sink, { call: result.call, sentence });
+        return failed(sentence);
+      }
+      return pathResult(result.graph, { lb: query.lb || "", host: query.host || "", region: at });
     },
   };
 

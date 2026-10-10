@@ -107,3 +107,34 @@ test("the process binds loopback and a foreign stop does not describe", async ()
     server.close();
   }
 });
+
+test("path sample is local and names the first break", async () => {
+  let reads = 0;
+  const box = app();
+  const original = box.app.boot.bind(box.app);
+  box.app.boot = async () => {
+    reads += 1;
+    return original();
+  };
+  const server = await listen(box.app, 0);
+  try {
+    const address = server.address();
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/path-sample?host=api.sample.test`);
+    const body = await response.json();
+    assert.equal(
+      body.findings[0].sentence,
+      "sample-sg-node-b does not allow tcp 8080 from sample-sg-alb. The load balancer cannot reach this target.",
+    );
+    assert.equal(reads, 0);
+    const page = await (await fetch(`http://127.0.0.1:${address.port}/`)).text();
+    assert.match(page, /id="path"/);
+    assert.match(page, /id="lb"/);
+    assert.match(page, /id="host"/);
+    const layout = await fetch(`http://127.0.0.1:${address.port}/path-layout.js`);
+    assert.equal(layout.status, 200);
+    const drawer = await fetch(`http://127.0.0.1:${address.port}/path-draw.js`);
+    assert.equal(drawer.status, 200);
+  } finally {
+    server.close();
+  }
+});

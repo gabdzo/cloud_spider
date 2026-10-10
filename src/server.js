@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { samplePlace } from "./sample.js";
+import { samplePathGraph } from "./path-sample.js";
+import { pathResult } from "./path-view.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const FILES = new Set([
@@ -14,6 +16,8 @@ const FILES = new Set([
   "verbs.js",
   "ids.js",
   "report.js",
+  "path-layout.js",
+  "path-draw.js",
 ]);
 
 const page = `<!doctype html>
@@ -30,54 +34,179 @@ const page = `<!doctype html>
     margin: 0;
     display: flex;
     flex-direction: column;
-    background: #14110d;
-    color: #f2e3b8;
-    font: bold 15px/1.4 Menlo, Monaco, Consolas, monospace;
+    background: #0d1117;
+    color: #5fcf95;
+    font: bold 14px/1.5 Menlo, Monaco, "Courier New", monospace;
+    text-rendering: optimizeSpeed;
+    image-rendering: pixelated;
+    position: relative;
+  }
+  body::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.15) 0px,
+      transparent 1px,
+      transparent 2px,
+      rgba(0, 0, 0, 0.15) 3px
+    );
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.3;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body::before { display: none; }
   }
   header {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px 24px;
+    gap: 8px 16px;
     align-items: center;
-    padding: 12px 24px;
-    border-bottom: 4px solid #4a3519;
-    background: #1f1a14;
+    padding: 12px 20px;
+    background: #1a1f2e;
+    border: 3px solid #00d9ff;
+    border-width: 0 0 3px 0;
+    box-shadow: inset 0 0 0 1px #0a0e1a, 0 3px 8px rgba(0, 0, 0, 0.6);
+    position: relative;
   }
-  h1 { margin: 0; font-size: 18px; letter-spacing: 0.16em; color: #ffcc33; }
-  label { display: flex; gap: 8px; align-items: center; color: #c2a978; }
-  select, button {
+  header::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 6px;
+    background: #00d9ff;
+  }
+  header::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 6px;
+    background: #00d9ff;
+  }
+  h1 {
+    margin: 0;
+    font-size: 16px;
+    letter-spacing: 0.2em;
+    color: #ff8500;
+    text-shadow: 0 0 8px rgba(255, 133, 0, 0.6), 2px 2px 0 #000;
+    font-weight: bold;
+  }
+  label {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    color: #6dff6d;
+    font-size: 13px;
+  }
+  select, button, input {
     min-height: 44px;
-    background: #2a2218;
-    color: #f2e3b8;
-    border: 2px solid #b08f52;
+    background: #0a0e1a;
+    color: #5fcf95;
+    border: 2px solid #4db8ff;
     font: inherit;
-    padding: 0 14px;
+    font-size: 13px;
+    padding: 0 12px;
+    box-shadow: inset 0 0 0 1px #1a1f2e, 2px 2px 0 rgba(0, 0, 0, 0.4);
+    position: relative;
   }
-  button { cursor: pointer; }
-  button:focus-visible, select:focus-visible { outline: 3px solid #ffcc33; outline-offset: 2px; }
-  #yes { border-color: #e0603f; color: #ffd9cc; }
-  #status { color: #fff2c8; }
-  #confirm { flex-basis: 100%; margin: 0; min-height: 1.4em; font-size: 16px; }
+  button::before {
+    content: "";
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    width: 4px;
+    height: 4px;
+    background: #4db8ff;
+  }
+  button {
+    cursor: pointer;
+    transition: all 0.1s ease;
+    font-weight: bold;
+  }
+  button:hover:not(:disabled) {
+    background: #152030;
+    box-shadow: inset 0 0 0 1px #1a1f2e, 2px 2px 0 rgba(0, 0, 0, 0.6), 0 0 12px rgba(77, 184, 255, 0.4);
+  }
+  button:active:not(:disabled) {
+    transform: translate(1px, 1px);
+    box-shadow: inset 0 0 0 1px #1a1f2e, 1px 1px 0 rgba(0, 0, 0, 0.6);
+  }
+  button:focus-visible, select:focus-visible, input:focus-visible {
+    outline: 3px solid #ff8500;
+    outline-offset: 2px;
+  }
+  #yes {
+    border-color: #ff4444;
+    color: #ffaa88;
+    box-shadow: inset 0 0 0 1px #1a1f2e, 2px 2px 0 rgba(0, 0, 0, 0.4), 0 0 8px rgba(255, 68, 68, 0.3);
+  }
+  #yes:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 1px #1a1f2e, 2px 2px 0 rgba(0, 0, 0, 0.6), 0 0 16px rgba(255, 68, 68, 0.5);
+  }
+  #status { color: #ffa726; }
+  #confirm {
+    flex-basis: 100%;
+    margin: 0;
+    min-height: 1.5em;
+    font-size: 14px;
+    color: #6dff6d;
+  }
   #confirm:empty, #status:empty, #radio:empty { display: none; }
   #radio {
     margin: 0;
-    padding: 8px 24px;
-    max-height: calc(6 * 1.4em + 16px);
+    padding: 8px 20px;
+    max-height: calc(6 * 1.5em + 16px);
     overflow: auto;
     white-space: pre;
-    color: #a9cf86;
-    background: #1f1a14;
-    border-bottom: 4px solid #4a3519;
+    color: #ffa726;
+    background: #0a0e1a;
+    border: 3px solid #ff8500;
+    border-width: 0 0 3px 0;
+    box-shadow: inset 0 0 0 1px #1a1f2e;
+    font-size: 12px;
   }
-  select:disabled { opacity: 0.45; }
-  #error { color: #ff8a6b; margin: 0; padding: 10px 24px; background: #2a1510; }
+  select:disabled { opacity: 0.5; filter: grayscale(0.5); }
+  input { min-width: 240px; }
+  input::placeholder { color: #4db8ff; opacity: 0.6; }
+  [hidden] { display: none !important; }
+  #error {
+    color: #ff6b6b;
+    margin: 0;
+    padding: 10px 20px;
+    background: #1a0a0a;
+    border: 3px solid #ff4444;
+    border-width: 0 0 3px 0;
+    box-shadow: inset 0 0 0 1px #000, 0 0 12px rgba(255, 68, 68, 0.3);
+  }
   #map {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    background: repeating-linear-gradient(#1c1813 0 8px, #17140f 8px 16px);
+    background: radial-gradient(circle at 30% 40%, #1a1f2e 0%, #0d1117 60%);
+    position: relative;
   }
-  canvas { display: block; image-rendering: pixelated; }
+  #map::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+      radial-gradient(circle at 20% 80%, rgba(255, 133, 0, 0.03) 0%, transparent 25%),
+      radial-gradient(circle at 80% 20%, rgba(77, 184, 255, 0.03) 0%, transparent 25%);
+    pointer-events: none;
+  }
+  canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
 </style>
 </head>
 <body>
@@ -85,6 +214,9 @@ const page = `<!doctype html>
   <h1>CLOUD SPIDER</h1>
   <label>region <select id="region"></select></label>
   <button id="sample" type="button">Sample</button>
+  <button id="path" type="button">Path</button>
+  <select id="lb" aria-label="load balancer" hidden></select>
+  <input id="host" type="text" aria-label="URL or host" placeholder="paste a URL or host" hidden>
   <span id="status"></span>
   <p id="confirm"></p>
   <button id="yes" type="button" hidden>put it down</button>
@@ -156,6 +288,32 @@ async function route(app, req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/sample") {
     send(res, 200, { place: samplePlace() });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/path-sample") {
+    send(
+      res,
+      200,
+      pathResult(samplePathGraph(), {
+        lb: url.searchParams.get("lb") || "",
+        host: url.searchParams.get("host") || "",
+        region: "sample",
+      }),
+    );
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/path") {
+    await app.boot();
+    send(
+      res,
+      200,
+      await app.pathView({
+        lb: url.searchParams.get("lb") || "",
+        host: url.searchParams.get("host") || "",
+      }),
+    );
     return;
   }
 
