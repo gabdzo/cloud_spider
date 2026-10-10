@@ -1,4 +1,5 @@
 import { placeVaults, vaultEdges } from "./vault-layout.js";
+import { placeVaultStrip, vaultBadges } from "./vault-page.js";
 import { buildingFace, cardFace, emptyLabel, natFixtures, peeringEdges, placeArchVpc, placeTagCamps, subnetRoutes } from "./arch-layout.js";
 export { tagKeys, tagOf as tagValueOf } from "./arch-layout.js";
 import { READ_ONLY, phrase } from "./radio.js";
@@ -312,7 +313,7 @@ export function foldAt(placed, x, y) {
 export const REGION_IN = 14;
 const GLOBAL_KIND = new Set(["cdn"]);
 
-export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false, isClosed = () => false, view = "arch", groupBy = "project" } = {}) {
+export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false, isClosed = () => false, view = "arch", groupBy = "project", vaultMode = "doors" } = {}) {
   const vpcs = [...(place.vpcs || [])].sort(byId);
   const subnets = [...(place.subnets || [])].sort(byId);
   const allInstances = [...(place.instances || [])].sort(byId);
@@ -329,8 +330,12 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
   for (const item of place.fixtures || []) resources.set(item.id, item);
   for (const item of place.vpcs || []) resources.set(item.id, { ...item, kind: "vpc", vpcId: item.id });
   for (const item of place.subnets || []) resources.set(item.id, { ...item, kind: "subnet" });
-  const vaultArea = placeVaults(vaults, { top: cursorY, left: PAD, rowLimit, isOpen, resources });
+  // vaultMode "page": the vaults have their own page; the map keeps a slim
+  // strip of plates that opens it, and badges on what each vault owns.
+  const vaultStrip = vaultMode === "page" ? placeVaultStrip(vaults, { top: cursorY, left: PAD, rowLimit }) : null;
+  const vaultArea = vaultMode === "page" ? null : placeVaults(vaults, { top: cursorY, left: PAD, rowLimit, isOpen, resources });
   if (vaultArea) cursorY = vaultArea.bottom + GAP * 2;
+  if (vaultStrip) cursorY = vaultStrip.bottom + GAP * 2;
   const instances = allInstances;
   // NAT gateways are cards in their subnet; they also keep the gate role.
   const fixtures = [...(place.fixtures || []), ...natFixtures(place).filter((nat) => !(place.fixtures || []).some((item) => item.id === nat.id))];
@@ -515,9 +520,10 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
   if (vaultArea) vaultArea.edges = vaultEdges(vaultArea, (id) => findPlaced(settlements, id));
 
   const contentHeight = Math.max(cursorY + PAD, region.y + region.h + PAD);
-  return {
+  const out = {
     settlements,
     vaults: vaultArea,
+    vaultStrip,
     camp,
     zones: globalZone ? [globalZone] : [],
     region,
@@ -537,9 +543,12 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
       camp ? camp.x + camp.w + PAD : 0,
       globalZone ? globalZone.x + globalZone.w + PAD : 0,
       vaultArea ? vaultArea.x + vaultArea.w + PAD : 0,
+      vaultStrip ? vaultStrip.x + vaultStrip.w + PAD : 0,
       PAD * 2,
     ),
   };
+  out.badges = vaultMode === "page" ? vaultBadges(out, vaults) : [];
+  return out;
 }
 
 // A walled zone of cards (the GLOBAL strip above the region).

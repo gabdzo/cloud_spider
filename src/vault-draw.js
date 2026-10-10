@@ -213,3 +213,64 @@ function drawCellLabel(ctx, cell) {
 export function vaultCards(area) {
   return (area?.cells || []).flatMap((cell) => (cell.open ? cell.cards : []));
 }
+
+// ---- vaults on their own page: what stays on the map ----
+
+// The rail behind the strip of vault plates: a riveted steel plank with a
+// hazard-striped end cap. The plates and the VAULTS button are HTML on top.
+export function drawVaultStrip(ctx, strip) {
+  if (!strip) return;
+  const { x, y, w, h } = strip;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+  ctx.fillRect(x + 4, y + 5, w, h);
+  ctx.fillStyle = CASE.lo;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = rgba(PIP.ink, 0.85);
+  ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
+  ctx.fillStyle = rgba(PIP.bright, 0.035);
+  for (let row = y + 4; row < y + h - 3; row += 3) ctx.fillRect(x + 4, row, w - 8, 1);
+  // Hazard cap on the left end.
+  for (let i = 0; i < 6; i++) {
+    ctx.fillStyle = i % 2 ? WORLD.dark : WORLD.amber;
+    ctx.fillRect(x - 8, y + i * Math.ceil(h / 6), 6, Math.ceil(h / 6));
+  }
+  ctx.fillStyle = CASE.seam;
+  for (const rx of [x + 2, x + w - 5]) for (const ry of [y + 2, y + h - 5]) ctx.fillRect(rx, ry, 3, 3);
+  brackets(ctx, x - 10, y - 2, w + 12, h + 4, PIP.mid, 10, 2);
+}
+
+// A tiny enamel tag with the vault number and its lamp, on the corner of
+// every resource a vault owns. Live pass: the lamp follows the checks.
+export function drawVaultBadges(ctx, badges, { animTime = 0, reducedMotion = false } = {}) {
+  if (!badges?.length) return;
+  ctx.font = font(10);
+  for (const badge of badges) {
+    const { x, y, w, h } = badge;
+    const state = vaultLight(badge.vault || {});
+    const color = LIGHT_COLOR[state] || PIP.dim;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.fillRect(x + 1, y + 2, w, h);
+    ctx.fillStyle = CASE.brassLo;
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = WORLD.amber;
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.fillStyle = rgba(WORLD.glow, 0.5);
+    ctx.fillRect(x + 1, y + 1, w - 2, 1);
+    // Lamp socket on the left of the tag.
+    ctx.fillStyle = CASE.lo;
+    ctx.fillRect(x + 2, y + 3, 7, 7);
+    const blink = (state === "pending" || state === "fail") && !reducedMotion && Math.floor(animTime / 600) % 2 === 1;
+    ctx.fillStyle = blink || state === "none" ? rgba(color, 0.35) : color;
+    ctx.fillRect(x + 3, y + 4, 5, 5);
+    ctx.fillStyle = PALETTE[14];
+    ctx.fillText(badge.text, x + 11, y + h - 3);
+  }
+}
+
+// One closed door on its hill, with its plate and lamp, for a card on the
+// VAULTS page (drawn once per data change into a small canvas).
+export function paintVaultCard(ctx, cell) {
+  drawHill(ctx, cell);
+  drawDoor(ctx, cell, 0);
+  drawLight(ctx, cell, 0, true);
+}
