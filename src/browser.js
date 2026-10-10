@@ -42,6 +42,7 @@ import { createLearnView } from "./learn-view.js";
 import { metricAlerts, paintPlace } from "./metrics.js";
 import { sunrise } from "./sprites/landmarks.js";
 import { drawSprite } from "./draw-kit.js";
+import { sloBlock, sloFacts } from "./slo-view.js";
 
 const ui = createUi();
 // The morning report (SRE overview): three sentences from the server's
@@ -376,6 +377,10 @@ function plateFacts(id) {
   else if (/not checked/.test(report.changed?.text || "")) facts.push({ label: "LAST CHANGE", text: "not checked", tone: "unknown" });
   else facts.push({ label: "LAST CHANGE", text: "none in the radio's CloudTrail window", tone: "unknown" });
   if (place) facts.push({ label: "BLAST", text: blastLine(place, id).replace(/^touches: /, "") });
+  // The SLOs of the vault(s) that own this piece.
+  for (const vault of vaultsData.vaults) {
+    if (!vault.damaged && vault.slos?.length && (vault.owned || []).includes(id)) facts.push(...sloFacts(vault.slos));
+  }
   return facts;
 }
 
@@ -835,6 +840,7 @@ function vaultPanel(cell) {
     checks.append(list);
     body.append(checks);
     if (vaultMetrics(vault).length) body.append(metricsBlock(vault));
+    if (vault.slos?.length) body.append(sloBlock(vault.slos, { title: "SLOS" }));
     if (vault.trouble?.length) body.append(troubleBlock(vault));
     if (vault.logGroups?.length) body.append(errorLinesBlock(vault));
   }
@@ -993,7 +999,7 @@ function vaultPageSignature() {
   return JSON.stringify([
     vaultRoute,
     vaultsFor,
-    vaultsData.vaults.map((vault) => [vault.key, vault.status, vault.damaged, (vault.checks || []).map((check) => [check.status, check.code, check.ms]), vault.stackInfo, (vault.trouble || []).length, (vault.owned || []).length]),
+    vaultsData.vaults.map((vault) => [vault.key, vault.status, vault.damaged, (vault.slos || []).map((slo) => [slo.flag, slo.sliPct, slo.budgetPct, slo.burn]), (vault.checks || []).map((check) => [check.status, check.code, check.ms]), vault.stackInfo, (vault.trouble || []).length, (vault.owned || []).length]),
     (vaultsData.templates || []).length,
     route ? [route.description, route.links, route.trouble, vaultLogState.get(route.key), vaultMetrics(route).map((hit) => `${hit.id}:${metricsData?.at}`), (route.owned || []).map((id) => place?.instances?.find((item) => item.id === id)?.state)] : null,
   ]);
@@ -1870,6 +1876,8 @@ function showNode(node) {
     list.append(meter("CPU", load.cpuPct, `${load.cpu}m / ${load.cpuOf}m`), meter("MEM", load.memPct, `${load.mem}Mi / ${load.memOf}Mi`));
     body.append(list);
   }
+  const slos = clusterData?.slos?.cluster || [];
+  if (slos.length) body.append(sloBlock(slos.filter((item) => item.source !== "kube:restarts"), { title: "CLUSTER SLOS" }));
   const hit = host.instanceId ? metricsData?.targets?.[host.instanceId] : null;
   if (hit) {
     const cwHead = vel("h4");
@@ -1883,6 +1891,34 @@ function showNode(node) {
     }
     body.append(list);
   }
+  kubePanel.replaceChildren(head, body);
+  kubePanel.hidden = false;
+}
+
+// A workload: its readiness and its SLOs (restart rate for its own pods,
+// plus the cluster's API and pod-restart objectives).
+function showWorkload(node) {
+  ++podTicket;
+  podInspector.close();
+  const head = vel("div", "kp-title");
+  head.append(vel("span", "kp-name", `${String(node.workloadKind || "workload").toUpperCase()} · ${node.ns}/${node.label}`));
+  const close = vel("button", "vp-close", "CLOSE");
+  close.type = "button";
+  close.addEventListener("click", () => {
+    clusterSelected = null;
+    showPod(null);
+    draw();
+  });
+  head.append(close);
+  const facts = vel("dl", "vp-facts");
+  for (const [label, value] of [["READY", `${node.have ?? "?"}/${node.want ?? "?"}`], ["STATE", node.status === "broken" ? "not ready" : node.status === "hang" ? "partly ready" : "ready"], ["NAMESPACE", node.ns]]) {
+    facts.append(vel("dt", "", label), vel("dd", "", value));
+  }
+  const body = vel("div", "kp-body vp-metrics");
+  body.append(facts);
+  const own = clusterData?.slos?.workloads?.[`${node.ns}/${node.label}`];
+  const cluster = (clusterData?.slos?.cluster || []).filter((item) => item.source !== "kube:nodes");
+  body.append(sloBlock([own, ...cluster].filter(Boolean), { title: "SLOS", empty: "no readings yet: restarts are counted from the second cluster read on" }));
   kubePanel.replaceChildren(head, body);
   kubePanel.hidden = false;
 }
@@ -1929,6 +1965,7 @@ canvas.addEventListener("click", async (event) => {
       const node = hit?.node || null;
       clusterSelected = node?.id || null;
       if (node?.host) showNode(node);
+      else if (node?.kind === "workload") showWorkload(node);
       else showPod(node?.pod ? node : null);
     }
     draw();

@@ -2,6 +2,7 @@
 // a short description, who owns it, which resources are its own, where to
 // view it and how to test it. validateVault never throws: it returns the
 // cleaned vault (or null) and a list of plain sentences naming the path.
+import { validateSlos } from "./slo.js";
 
 export const API_VERSION = "cloudspider/v1";
 export const KIND = "Vault";
@@ -81,9 +82,14 @@ export function validateVault(doc) {
 
   const spec = isObject(doc.spec) ? doc.spec : null;
   if (!spec) errors.push("spec: is required");
-  const out = { resources: { tags: {}, ids: [] }, links: {}, checks: [], stack: null };
+  const out = { resources: { tags: {}, ids: [] }, links: {}, checks: [], stack: null, slos: [] };
   if (spec) {
-    unknownKeys(spec, ["type", "resources", "links", "checks", "stack"], "spec.", warnings);
+    unknownKeys(spec, ["type", "resources", "links", "checks", "stack", "slos"], "spec.", warnings);
+    // spec.slos: targets measured from what the app already reads (slo.js).
+    const slos = validateSlos(spec.slos);
+    errors.push(...slos.errors);
+    warnings.push(...slos.warnings);
+    out.slos = slos.slos;
     if (spec.stack !== undefined) {
       const stack = spec.stack;
       if (!isObject(stack)) errors.push("spec.stack: must be a mapping with dir and name");
@@ -196,6 +202,7 @@ export function validateVault(doc) {
       links: out.links,
       checks: out.checks,
       stack: out.stack,
+      slos: out.slos,
     },
     errors: [],
     warnings,

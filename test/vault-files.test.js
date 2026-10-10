@@ -33,7 +33,9 @@ test("vaults/templates/ holds templates: checked and listed, never drawn", async
   // The template uses every field the format has.
   const doc = parse(readFileSync(`${vaultsDir}/templates/example.yaml`, "utf8"));
   assert.deepEqual(Object.keys(doc.metadata).sort(), ["description", "name", "number", "owner", "tags", "title"]);
-  assert.deepEqual(Object.keys(doc.spec).sort(), ["checks", "links", "resources", "stack", "type"]);
+  assert.deepEqual(Object.keys(doc.spec).sort(), ["checks", "links", "resources", "slos", "stack", "type"]);
+  assert.deepEqual(Object.keys(doc.spec.slos[0]).sort(), ["name", "sli", "source", "target", "window"]);
+  assert.ok(doc.spec.slos.some((slo) => slo.threshold));
   assert.deepEqual(Object.keys(doc.spec.links).sort(), ["dashboard", "docs", "repo", "view"]);
   assert.deepEqual(Object.keys(doc.spec.checks.http[0]).sort(), ["contains", "expect", "name", "timeout", "url"]);
 });

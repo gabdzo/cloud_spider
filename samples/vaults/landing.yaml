@@ -26,3 +26,9 @@ spec:
         expect: 200
         contains: Welcome
         timeout: 3000
+  slos:
+    - name: page-latency
+      sli: latency
+      source: checks
+      threshold: 1000
+      target: 99%

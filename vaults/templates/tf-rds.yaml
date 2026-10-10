@@ -23,3 +23,10 @@ spec:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/terraform/stacks/rds
     docs: https://github.com/gabdzo/cloud_spider/blob/main/docs/RUN-ME.md
     dashboard: https://eu-north-1.console.aws.amazon.com/rds/home?region=eu-north-1#database:id=cloudspider-tf-rds
+  # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  slos:
+    - name: db-available
+      sli: availability
+      source: resources
+      target: 99.5%
+      window: 30d

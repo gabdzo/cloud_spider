@@ -16,6 +16,7 @@ import { inspectPod } from "./kube-inspect.js";
 import { opsView, sampleOps } from "./kube-ops.js";
 import { refuseUp, sampleAddons } from "./addons.js";
 import { addonById } from "../upgrades/addons/catalog.js";
+import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, watchLine } from "./upgrade-rules.js";
 import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
@@ -34,7 +35,7 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
-export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, telemetry, addons, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -68,6 +69,11 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
 
   const now = typeof clock === "function" ? clock : Date.now;
   const tele = telemetry || (kube ? createTelemetry({ kube, clock: now }) : null);
+  // SLOs (slo.js): one in-memory ledger for vaults and the cluster, filled
+  // from reads the app makes anyway. No extra AWS or kube calls.
+  const ledger = sloLedger || createSloLedger({ clock: now });
+  const clusterSlo = createClusterSlo({ ledger, clock: now });
+  let sloCluster = null;
   const linkCache = createLinkCache({
     read: (name, balancers) => path.targetLines(name, balancers),
     clock: now,
@@ -366,7 +372,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       const viewer = sample ? vaults?.sample : vaults?.live;
       if (!viewer) return { dir: "", note: "vaults are not set up", vaults: [] };
       try {
-        return await viewer.view(sample ? vaults.samplePlace?.() : place, { failures: sample ? vaults.sampleFailures?.() || [] : radio.failures() });
+        if (sample) return await viewer.view(vaults.samplePlace?.(), { failures: vaults.sampleFailures?.() || [], slo: { metrics: sampleMetrics(vaults.samplePlace?.(), { now: now() }) } });
+        return await viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: metricsCache.peek(region), cluster: sloCluster } });
       } catch (failure) {
         return { dir: "", note: `the vaults did not load: ${failure?.message || "error"}`, vaults: [] };
       }
@@ -432,12 +439,15 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       // Inside the cluster (read-only kube context): namespaces to nodes.
       if (kube && diagram.nodes.length) {
         const snap = await kube.snapshot().catch((failure) => ({ error: failure?.message || "the cluster did not answer" }));
+        if (snap.clusterName) sloCluster = snap.clusterName;
+        if (!snap.unset && sloCluster) clusterSlo.record(sloCluster, snap);
         if (!snap.error) {
           const cluster = (result?.items || []).find((item) => item.name === snap.clusterName) || {};
           return {
             region: at,
             error: "",
             diagram: diagramFromKube(snap, { cluster }),
+            slos: clusterSlo.view(snap.clusterName),
             headline: "",
             note: [`inside ${snap.clusterName} via kube context ${kube.context} (read-only)`, ...(snap.notes || [])].join(" · "),
           };

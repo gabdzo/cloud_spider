@@ -4,6 +4,7 @@
 import { matchVaults, placeResources } from "./vault-match.js";
 import { createLogCache, readErrorLines, vaultHandles, vaultLogGroups, vaultTrouble } from "./vault-trouble.js";
 import { vaultStatus } from "./vault-checks.js";
+import { createSloLedger, sloLamp, vaultSlos } from "./slo.js";
 
 // {output: name} links and check URLs come from the stack's outputs; an
 // output the stack does not have yet leaves the link off and the check out,
@@ -30,8 +31,13 @@ export function resolveOutputs(entry, outputs = {}) {
   return { links, checks, waiting };
 }
 
+// SLOs: view(place, { slo: { ledger, metrics, cluster } }) records the
+// readings it saw into the ledger (in memory, shared with the Cluster view)
+// and answers each vault's spec.slos. metrics is the /api/metrics answer,
+// cluster the kube context's cluster name.
 export function createVaultView({ store, checker, stacks = null, clock = Date.now }) {
   const logCache = createLogCache({ clock });
+  const ownLedger = createSloLedger({ clock });
   function byId(place) {
     return new Map(placeResources(place).map((item) => [item.id, item]));
   }
@@ -68,7 +74,7 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
     );
   }
 
-  function shape(entry, owned, checks, trouble = []) {
+  function shape(entry, owned, checks, trouble = [], slos = []) {
     return {
       key: entry.key,
       name: entry.name,
@@ -91,21 +97,37 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
       owned,
       checks,
       status: entry.damaged ? "fail" : vaultStatus(checks, entry.checks.length),
+      slos,
+      sloLamp: sloLamp(slos),
     };
   }
 
   return {
-    async view(place, { failures = [] } = {}) {
+    async view(place, { failures = [], slo = {} } = {}) {
+      const ledger = slo.ledger || ownLedger;
       const loaded = await store.load();
       const bound = await bind(loaded.vaults);
       const owned = matchVaults(bound, place);
       const resources = byId(place);
+      const metrics = slo.metrics || null;
+      // Status as the map shows it (instances' state, fixtures' status).
+      const raw = new Map([...(place?.instances || []), ...(place?.fixtures || [])].map((item) => [item.id, item]));
       const vaults = bound.map((entry) => {
         const checks = entry.damaged ? [] : checker.peek(entry.checks);
         const mine = owned.get(entry.key) || [];
         const trouble = entry.damaged ? [] : vaultTrouble(vaultHandles(entry, mine, resources), failures);
         const functions = mine.map((id) => resources.get(id)).filter((item) => item?.kind === "function").map((item) => item.name);
-        return shape({ ...entry, logGroups: vaultLogGroups(entry.logGroups, functions) }, mine, checks, trouble);
+        const slos = entry.damaged || !entry.slos?.length
+          ? []
+          : vaultSlos(entry, {
+              ledger,
+              checks,
+              owned: mine.map((id) => raw.get(id)).filter(Boolean),
+              hits: mine.map((id) => metrics?.targets?.[id]).filter(Boolean),
+              cluster: slo.cluster || null,
+              now: clock(),
+            });
+        return shape({ ...entry, logGroups: vaultLogGroups(entry.logGroups, functions) }, mine, checks, trouble, slos);
       });
       const templates = typeof store.templates === "function" ? await store.templates() : [];
       return { dir: loaded.dir, note: loaded.note, vaults, templates };

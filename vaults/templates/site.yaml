@@ -32,3 +32,16 @@ spec:
         name: site page
         expect: 200
         contains: cloudspider site
+  # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  slos:
+    - name: site-availability
+      sli: availability
+      source: check:site page
+      target: 99.9%
+      window: 30d
+    - name: site-latency
+      sli: latency
+      source: check:site page
+      threshold: 500
+      target: 99%
+      window: 30d

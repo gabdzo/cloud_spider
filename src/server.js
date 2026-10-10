@@ -38,6 +38,8 @@ export const FILES = new Set([
   "tele-view.js",
   "pod-inspect-view.js",
   "ops-view.js",
+  "slo.js",
+  "slo-view.js",
   "metrics.js",
   "upgrade-rules.js",
   "stack-costs.js",
@@ -945,6 +947,47 @@ const page = `<!doctype html>
   .pi-bar .req { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--pip-hot); }
   .pi-meters li.hot .used { background: var(--status-hang); }
   /* ---- end pod deep-inspect ---- */
+  /* ---- SLOs (slo-view.js) ---- */
+  .slo-block { margin-top: 10px; }
+  .slo-block h4 { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .slo-list { list-style: none; margin: 0; padding: 0; }
+  .vp-metrics .slo-list li.slo-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px dashed var(--pip-dark); font-size: 10px; }
+  .slo-dial { display: block; image-rendering: pixelated; }
+  .slo-text p { margin: 0 0 2px; display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+  .slo-head b { color: var(--pip-bright); font-size: 11px; letter-spacing: 0.06em; overflow-wrap: anywhere; }
+  .slo-kind { color: var(--pip-dim); letter-spacing: 0.12em; }
+  .slo-target { color: var(--pip-mid); }
+  .slo-foot { color: var(--pip-dim); }
+  .slo-foot .hot { color: var(--status-hang); }
+  .slo-row.spent .slo-foot .hot { color: var(--status-broken); }
+  .slo-budget { align-items: center; flex-wrap: nowrap !important; }
+  .slo-budget .lbl { color: var(--pip-dim); letter-spacing: 0.12em; }
+  .slo-budget .val { color: var(--pip-bright); min-width: 38px; text-align: right; }
+  .slo-row.burning .slo-budget .val { color: var(--status-hang); }
+  .slo-row.spent .slo-budget .val { color: var(--status-broken); }
+  .slo-bar { flex: 1; display: grid; grid-template-columns: repeat(20, 1fr); gap: 1px; height: 9px; padding: 1px; background: var(--pip-ink); border: 1px solid var(--pip-dark); min-width: 60px; }
+  .slo-bar i { background: var(--pip-dark); }
+  .slo-bar i.on { background: var(--pip-bright); box-shadow: 0 0 3px var(--glow-soft); }
+  .slo-row.burning .slo-bar i.on { background: var(--status-hang); box-shadow: none; }
+  .slo-row.spent .slo-bar i.on, .slo-row.spent .slo-bar i { background: var(--status-broken); opacity: 0.5; }
+  .slo-row.nodata { opacity: 0.7; }
+  .slo-lamp { display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0.12em; font-size: 10px; color: var(--pip-dim); }
+  .slo-lamp i { width: 10px; height: 10px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim); }
+  .slo-lamp.ok i { background: var(--lamp-on); box-shadow: 0 0 6px var(--btn-glow), inset 0 0 0 1px var(--lamp-on-core); }
+  .slo-lamp.ok b { color: var(--pip-mid); }
+  .slo-lamp.burning i { background: var(--status-hang); box-shadow: 0 0 8px var(--status-hang); animation: kt-blink 1s steps(2) infinite; }
+  .slo-lamp.burning b { color: var(--status-hang); }
+  .slo-lamp.spent i { background: var(--status-broken); box-shadow: 0 0 8px var(--status-broken); animation: kt-blink 0.7s steps(2) infinite; }
+  .slo-lamp.spent b { color: var(--status-broken); }
+  @media (prefers-reduced-motion: reduce) { .slo-lamp i { animation: none !important; } }
+  .slo-help { margin-top: 6px; font-size: 10px; color: var(--pip-mid); }
+  .slo-help summary { cursor: pointer; color: var(--pip-dim); letter-spacing: 0.12em; }
+  .slo-help summary:hover, .slo-help summary:focus-visible { color: var(--pip-bright); }
+  .slo-help dl { display: grid; grid-template-columns: 54px 1fr; gap: 3px 8px; margin: 6px 0; }
+  .slo-help dt { color: var(--pip-bright); letter-spacing: 0.1em; }
+  .slo-help dd { margin: 0; }
+  .slo-help p { margin: 0; color: var(--pip-dim); }
+  /* ---- end SLOs ---- */
   /* ---- cluster screens: tabs + telemetry ---- */
   #kube-tabs { position: absolute; z-index: 4; left: 14px; top: 10px; display: flex; gap: 6px; }
   #kube-tabs button { font: inherit; font-size: 11px; letter-spacing: 0.14em; padding: 5px 12px; color: var(--pip-dim); background: var(--pip-ink); border: 1px solid var(--pip-dark); cursor: pointer; }
@@ -1067,7 +1110,7 @@ const page = `<!doctype html>
   .ko-events li.policy b, .ko-events li.warning b { color: var(--status-broken); }
   .ko-events li.node b { color: var(--world-amber); }
   /* ---- end cluster screens ---- */
-  #kube-panel { position: absolute; z-index: 5; right: 12px; top: 48px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 60px); }
+  #kube-panel { position: absolute; z-index: 5; right: 12px; top: 48px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 60px); background: var(--pip-screen); }
   .kp-title { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.12em; font-size: 11px; }
   .kp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kp-body { overflow: auto; padding: 6px 12px 10px; }

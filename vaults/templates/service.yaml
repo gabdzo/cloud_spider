@@ -22,3 +22,16 @@ spec:
   links:
     repo: https://github.com/gabdzo/cloud_spider
     dashboard: "https://eu-north-1.console.aws.amazon.com/ec2/home?region=eu-north-1#LoadBalancers:"
+  # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  slos:
+    - name: availability
+      sli: availability
+      source: alb
+      target: 99.5%
+      window: 30d
+    - name: latency
+      sli: latency
+      source: alb
+      threshold: 300
+      target: 99%
+      window: 30d
