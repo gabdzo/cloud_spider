@@ -102,3 +102,30 @@ export function sampleStacks() {
     },
   };
 }
+
+// Sample mode's CloudTrail failures and log lines (vault trouble).
+export function sampleFailures(now = Date.now()) {
+  return [
+    {
+      name: "UpdateFunctionConfiguration20150331v2",
+      time: now - 12 * 60 * 1000,
+      resources: [],
+      names: ["cloudspider-camp-page"],
+      error: "InvalidParameterValueException: The role defined for the function cannot be assumed by Lambda.",
+    },
+    { name: "PutItem", time: now - 40 * 60 * 1000, resources: ["cloudspider-camp-table"], names: [], error: "AccessDenied" },
+  ];
+}
+
+export const sampleLogs = {
+  async search({ group, start }) {
+    if (group !== "/aws/lambda/cloudspider-camp-page") return { missing: true };
+    const at = (minutes) => start + (60 - minutes) * 60 * 1000;
+    return {
+      events: [
+        { time: at(14), message: "2026-10-10T20:28:03.120Z\tERROR\tInvoke Error\t{\"errorType\":\"AccessDeniedException\",\"errorMessage\":\"User is not authorized to perform: dynamodb:GetItem on resource: cloudspider-camp-table\"}" },
+        { time: at(9), message: "2026-10-10T20:33:41.004Z\tERROR\tTask timed out after 3.00 seconds" },
+      ],
+    };
+  },
+};

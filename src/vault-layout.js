@@ -41,6 +41,11 @@ export function panelHeight(vault, width) {
       h += Math.ceil(String(check.name || check.url || "").length / urlChars) * 17 + 10;
       if (check.error) h += Math.ceil(check.error.length / urlChars) * 17;
     }
+    if (vault.trouble?.length) {
+      h += 30;
+      for (const item of vault.trouble) h += lines(`${item.call} ${item.resource} ${item.issue}`) * 17 + 10;
+    }
+    if (vault.logGroups?.length) h += 30 + 140;
   }
   const labels = ["view", "repo", "docs", "dashboard"].filter((key) => vault.links?.[key]).map((key) => key.length);
   if (!vault.damaged && vault.checks?.length) labels.push(4);

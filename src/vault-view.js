@@ -1,7 +1,8 @@
 // What /api/vaults answers: every vault from the folder (damaged ones
 // included), the ids it owns on the current map, its check results and the
 // light they add up to. Checks run in the background; a view never waits.
-import { matchVaults } from "./vault-match.js";
+import { matchVaults, placeResources } from "./vault-match.js";
+import { createLogCache, readErrorLines, vaultHandles, vaultLogGroups, vaultTrouble } from "./vault-trouble.js";
 import { vaultStatus } from "./vault-checks.js";
 
 // {output: name} links and check URLs come from the stack's outputs; an
@@ -29,7 +30,11 @@ export function resolveOutputs(entry, outputs = {}) {
   return { links, checks, waiting };
 }
 
-export function createVaultView({ store, checker, stacks = null }) {
+export function createVaultView({ store, checker, stacks = null, clock = Date.now }) {
+  const logCache = createLogCache({ clock });
+  function byId(place) {
+    return new Map(placeResources(place).map((item) => [item.id, item]));
+  }
   // The living vault's stack: handles for matching, outputs for links.
   async function bind(entries) {
     return Promise.all(
@@ -49,6 +54,7 @@ export function createVaultView({ store, checker, stacks = null }) {
           links: resolved.links,
           checks: resolved.checks,
           resources: info?.handles?.size ? { ...entry.resources, handles: info.handles } : entry.resources,
+          logGroups: info?.logGroups || [],
           stackInfo: entry.stack
             ? {
                 stacks: (info?.stacks || []).filter((item) => !item.missing).map((item) => item.name),
@@ -62,7 +68,7 @@ export function createVaultView({ store, checker, stacks = null }) {
     );
   }
 
-  function shape(entry, owned, checks) {
+  function shape(entry, owned, checks, trouble = []) {
     return {
       key: entry.key,
       name: entry.name,
@@ -80,6 +86,8 @@ export function createVaultView({ store, checker, stacks = null }) {
       selector: { tags: entry.resources?.tags || {}, ids: entry.resources?.ids || [] },
       stack: entry.stack || null,
       stackInfo: entry.stackInfo || null,
+      trouble,
+      logGroups: entry.logGroups || [],
       owned,
       checks,
       status: entry.damaged ? "fail" : vaultStatus(checks, entry.checks.length),
@@ -87,16 +95,33 @@ export function createVaultView({ store, checker, stacks = null }) {
   }
 
   return {
-    async view(place) {
+    async view(place, { failures = [] } = {}) {
       const loaded = await store.load();
       const bound = await bind(loaded.vaults);
       const owned = matchVaults(bound, place);
+      const resources = byId(place);
       const vaults = bound.map((entry) => {
         const checks = entry.damaged ? [] : checker.peek(entry.checks);
-        return shape(entry, owned.get(entry.key) || [], checks);
+        const mine = owned.get(entry.key) || [];
+        const trouble = entry.damaged ? [] : vaultTrouble(vaultHandles(entry, mine, resources), failures);
+        const functions = mine.map((id) => resources.get(id)).filter((item) => item?.kind === "function").map((item) => item.name);
+        return shape({ ...entry, logGroups: vaultLogGroups(entry.logGroups, functions) }, mine, checks, trouble);
       });
       const templates = typeof store.templates === "function" ? await store.templates() : [];
       return { dir: loaded.dir, note: loaded.note, vaults, templates };
+    },
+    // Last error lines from the vault's log groups (on open; cached 60 s).
+    async logs(key, place, { logs, region }) {
+      const loaded = await store.load();
+      const bound = await bind(loaded.vaults);
+      const entry = bound.find((item) => item.key === key);
+      if (!entry) return { error: "no such vault" };
+      if (entry.damaged) return { error: "a damaged vault has no logs" };
+      const owned = matchVaults(bound, place).get(entry.key) || [];
+      const resources = byId(place);
+      const functions = owned.map((id) => resources.get(id)).filter((item) => item?.kind === "function").map((item) => item.name);
+      const groups = vaultLogGroups(entry.logGroups, functions);
+      return logCache.get(`${key}|${groups.join(",")}`, () => readErrorLines({ logs, region, groups, now: clock() }));
     },
     // TEST: run this vault's checks now and wait for them.
     async test(key, place) {

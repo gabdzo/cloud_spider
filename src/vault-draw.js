@@ -173,6 +173,17 @@ export function liveText(vault) {
   return `LIVE · ${vault.stack.name === "*" ? vault.stack.dir.split("/").pop() : vault.stack.name}`.toUpperCase();
 }
 
+// Under a closed door: trouble first, then LIVE and how many pieces it owns.
+export function closedText(vault) {
+  const owned = vault?.owned?.length || 0;
+  const parts = [];
+  if (vault?.trouble?.length) parts.push(`TROUBLE ×${vault.trouble.length}`);
+  // Trouble pushes LIVE out: the line has room for about 26 characters.
+  if (vault?.stack && !vault?.trouble?.length) parts.push(liveText(vault));
+  if (owned) parts.push(`${owned} ON MAP`);
+  return parts.join(" · ");
+}
+
 function drawCellLabel(ctx, cell) {
   const { x, y, w } = cell.nameAt;
   const vault = cell.vault;
@@ -182,12 +193,13 @@ function drawCellLabel(ctx, cell) {
   labelBacking(ctx, name, nx, y - 4, 14);
   ctx.fillStyle = vault.damaged ? STATUS.broken : PIP.bright;
   ctx.fillText(name, nx, y - 4);
-  if (vault.damaged || cell.open || vault.stack) {
+  const troubled = !vault.damaged && vault.trouble?.length > 0;
+  if (vault.damaged || cell.open || vault.stack || troubled || vault.owned?.length) {
     ctx.font = SMALL;
-    const sub = vault.damaged ? `DAMAGED  ${vault.file}` : cell.open ? [vault.type, vault.owner, liveText(vault)].filter(Boolean).join("  ·  ").toUpperCase() : liveText(vault);
+    const sub = vault.damaged ? `DAMAGED  ${vault.file}` : cell.open ? [vault.type, vault.owner, liveText(vault)].filter(Boolean).join("  ·  ").toUpperCase() : closedText(vault);
     const line = clipText(ctx, sub, w);
     const sx = cell.open ? x : Math.round(cell.x + (cell.w - ctx.measureText(line).width) / 2);
-    ctx.fillStyle = vault.damaged ? rgba(STATUS.broken, 0.85) : PIP.dim;
+    ctx.fillStyle = vault.damaged || (troubled && !cell.open) ? rgba(STATUS.broken, 0.85) : PIP.dim;
     ctx.fillText(line, sx, y + 12);
   }
   if (cell.open && cell.cardsAt && !vault.damaged) {

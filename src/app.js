@@ -258,9 +258,18 @@ export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, 
       const viewer = sample ? vaults?.sample : vaults?.live;
       if (!viewer) return { dir: "", note: "vaults are not set up", vaults: [] };
       try {
-        return await viewer.view(sample ? vaults.samplePlace?.() : place);
+        return await viewer.view(sample ? vaults.samplePlace?.() : place, { failures: sample ? vaults.sampleFailures?.() || [] : radio.failures() });
       } catch (failure) {
         return { dir: "", note: `the vaults did not load: ${failure?.message || "error"}`, vaults: [] };
+      }
+    },
+    async vaultLogs(key, { sample = false } = {}) {
+      const viewer = sample ? vaults?.sample : vaults?.live;
+      if (!viewer?.logs) return { error: "vaults are not set up" };
+      try {
+        return await viewer.logs(String(key || ""), sample ? vaults.samplePlace?.() : place, { logs: sample ? vaults.sampleLogs : logs, region: sample ? "eu-north-1" : region });
+      } catch (failure) {
+        return { error: failure?.message || "the logs did not load" };
       }
     },
     async vaultsTest(requestOrigin, key, { sample = false } = {}) {

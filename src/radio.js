@@ -122,6 +122,8 @@ function eventsFrom(result) {
 export function createRadio({ lookup }) {
   let line = "";
   let entries = [];
+  // Failed calls, kept raw (newest first, 50 at most) for vault trouble.
+  let failures = [];
   let ticket = 0;
 
   return {
@@ -131,9 +133,13 @@ export function createRadio({ lookup }) {
     entries() {
       return entries;
     },
+    failures() {
+      return failures;
+    },
     clear() {
       line = "";
       entries = [];
+      failures = [];
     },
     async refresh(region) {
       const mine = ++ticket;
@@ -144,6 +150,10 @@ export function createRadio({ lookup }) {
         line = formatEntry(entries[0]);
       } else {
         entries = radioEntries(eventsFrom(result));
+        failures = eventsFrom(result)
+          .filter((event) => event?.error)
+          .sort((a, b) => (b.time || 0) - (a.time || 0))
+          .slice(0, 50);
         line = entries.length ? entries.map(formatEntry).join("\n") : "the radio is quiet";
       }
       return { dropped: false, line };

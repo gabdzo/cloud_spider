@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { createVaultStore, vaultsDir } from "./vaults.js";
 import { createCheckRunner } from "./vault-checks.js";
 import { createVaultView } from "./vault-view.js";
-import { sampleFetch, samplePlace, sampleStacks } from "./sample.js";
+import { sampleFailures, sampleFetch, sampleLogs, samplePlace, sampleStacks } from "./sample.js";
 import { createStackReader } from "./vault-stacks.js";
 
 const port = Number(process.env.PORT || 9241);
@@ -26,6 +26,8 @@ const vaults = {
     stacks: sampleStacks(),
   }),
   samplePlace,
+  sampleFailures,
+  sampleLogs,
 };
 const app = createApp({
   ec2: aws.ec2,

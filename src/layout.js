@@ -284,7 +284,9 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
   for (const item of place.subnets || []) resources.set(item.id, { ...item, kind: "subnet" });
   const vaultArea = placeVaults(vaults, { top: cursorY, left: PAD, rowLimit, isOpen, resources });
   if (vaultArea) cursorY = vaultArea.bottom + GAP * 2;
-  const movesIn = (item) => owned.has(item.id) && !item.vpcId;
+  // Owned pieces stay on the map where they live (camp included); an open
+  // vault lists them as cards and the closed door counts them.
+  const movesIn = () => false;
   const instances = allInstances.filter((item) => !movesIn(item));
   const fixtures = (place.fixtures || []).filter((item) => !movesIn(item));
 

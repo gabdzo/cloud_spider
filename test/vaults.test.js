@@ -470,7 +470,7 @@ for (const width of [760, 1280, 1920]) {
   });
 }
 
-test("owned pieces leave the general camp; VPC-bound ones stay put", () => {
+test("owned pieces stay on the map (camp included); the open vault lists them as cards", () => {
   const sample = samplePlace();
   const plain = layout(sample, { rowLimit: 1100 });
   const withVaults = layout(sample, { rowLimit: 1100, vaults: viewVaults(), isOpen: (k) => k === "orders-api" });
@@ -478,7 +478,8 @@ test("owned pieces leave the general camp; VPC-bound ones stay put", () => {
   const before = campIds(plain);
   const after = campIds(withVaults);
   assert.ok(before.includes("camp-function"));
-  assert.ok(!after.includes("camp-function") && !after.includes("camp-table"), after.join(","));
+  assert.ok(after.includes("camp-function") && after.includes("camp-table"), after.join(","));
+  assert.deepEqual(after, before, "the camp is the same with or without vaults");
   const orders = withVaults.vaults.cells.find((c) => c.key === "orders-api");
   assert.deepEqual(orders.cards.map((c) => c.id).sort(), ["camp-function", "camp-table"]);
   // The owned EC2 machine is still drawn in its VPC.
