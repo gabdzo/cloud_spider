@@ -19,6 +19,9 @@ spec:
       project: eks
     ids:
       - cloudspider-up   # the first cluster's name
+  stack:
+    dir: upgrades/eks
+    name: "*"   # "upgrade" (the first cluster) and eks-<cluster>
   links:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/eks
     docs: https://github.com/gabdzo/cloud_spider#readme

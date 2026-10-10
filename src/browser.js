@@ -67,6 +67,8 @@ const upgradeButton = document.querySelector("#upgrade");
 const pipEl = document.querySelector("#pip");
 const vaultPanels = document.querySelector("#vault-panels");
 const vaultAll = document.querySelector("#vault-all");
+const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
+const vaultTemplates = document.querySelector("#vault-templates");
 const askTab = document.querySelector("#ask");
 const askThis = document.querySelector("#ask-this");
 const termEl = document.querySelector("#term");
@@ -105,7 +107,7 @@ let station = 0;
 let winking = -1;
 
 // Vaults: projects from YAML files, drawn as doors in a hillside.
-let vaultsData = { vaults: [], note: "" };
+let vaultsData = { vaults: [], note: "", templates: [] };
 let vaultsFor = null; // sample flag the vaults were read for
 let vaultsAt = 0;
 let vaultsLoading = false;
@@ -329,7 +331,7 @@ function placedMap() {
 // ---- vaults ----
 
 function vaultSignature(vaults) {
-  return vaults.map((vault) => `${vault.key}:${vault.number}:${vault.damaged ? 1 : 0}:${vault.title}:${(vault.owned || []).join(",")}`).join("|");
+  return vaults.map((vault) => `${vault.key}:${vault.number}:${vault.damaged ? 1 : 0}:${vault.title}:${vault.stack ? `${vault.stack.dir}/${vault.stack.name}` : ""}:${(vault.owned || []).join(",")}`).join("|");
 }
 
 async function loadVaults() {
@@ -339,7 +341,11 @@ async function loadVaults() {
   try {
     const body = await fetch(`/api/vaults${wasSample ? "?sample=1" : ""}`).then((response) => response.json());
     if (ticket !== vaultsTicket || wasSample !== sample) return;
-    vaultsData = { vaults: Array.isArray(body?.vaults) ? body.vaults : [], note: body?.note || "" };
+    vaultsData = {
+      vaults: Array.isArray(body?.vaults) ? body.vaults : [],
+      note: body?.note || "",
+      templates: Array.isArray(body?.templates) ? body.templates : [],
+    };
     vaultsFor = wasSample;
     vaultsAt = Date.now();
     vaultsShown = vaultSignature(vaultsData.vaults);
@@ -448,6 +454,7 @@ function vaultPanel(cell) {
       ["OWNER", vault.owner],
       ["TYPE", vault.type],
       ["TAGS", (vault.tags || []).join(", ")],
+      ["STACK", vault.stack ? `LIVE · ${vault.stack.name === "*" ? "every stack" : vault.stack.name} in ${vault.stack.dir}` : ""],
       ["OWNS", `${(vault.owned || []).length} resource${(vault.owned || []).length === 1 ? "" : "s"}`],
       ["FILE", vault.file],
     ]) {
@@ -520,7 +527,9 @@ let chromeFor = { placed: null, data: null };
 function placeVaultChrome(placed) {
   const area = mode === "map" ? placed?.vaults : null;
   vaultAll.hidden = !area;
+  vaultTemplatesButton.hidden = !area;
   if (!area) {
+    vaultTemplates.hidden = true;
     if (panelsShown) vaultPanels.replaceChildren();
     panelsShown = "";
     chromeFor = { placed: null, data: null };
@@ -535,6 +544,13 @@ function placeVaultChrome(placed) {
   vaultAll.setAttribute("aria-pressed", String(allOpen));
   vaultAll.style.left = `${area.x + 104}px`;
   vaultAll.style.top = `${area.y + 4}px`;
+  const templates = vaultsData.templates || [];
+  vaultTemplatesButton.textContent = `TEMPLATES (${templates.length})`;
+  vaultTemplatesButton.style.left = `${area.x + 104 + vaultAll.offsetWidth + 8}px`;
+  vaultTemplatesButton.style.top = `${area.y + 4}px`;
+  vaultTemplates.style.left = vaultTemplatesButton.style.left;
+  vaultTemplates.style.top = `${area.y + 36}px`;
+  if (!vaultTemplates.hidden) renderTemplates();
   const open = area.cells.filter((cell) => cell.open && cell.panel);
   const shown = open
     .map((cell) => `${cell.key}@${cell.panel.x},${cell.panel.y},${cell.panel.w},${cell.panel.h}:${JSON.stringify([cell.vault.checks, cell.vault.status, cell.vault.description, cell.vault.links, cell.vault.errors, (cell.vault.owned || []).length])}`)
@@ -1036,6 +1052,60 @@ canvas.addEventListener("mousemove", (event) => {
   const door = vaultAt(placedMap().vaults, event.offsetX, event.offsetY);
   const cursor = door ? "pointer" : "";
   if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
+});
+
+// TEMPLATES: vaults/templates/*.yaml, never drawn. NEW copies the command
+// that makes a living vault from one; the server never writes vault files.
+function newVaultCommand(template) {
+  const name = String(template?.file || "").replace(/^templates\//, "").replace(/\.ya?ml$/i, "");
+  return `npm run vaults:new -- ${name} <name>`;
+}
+
+let templatesShown = "";
+function renderTemplates() {
+  const templates = vaultsData.templates || [];
+  const shown = JSON.stringify(templates);
+  if (shown === templatesShown && vaultTemplates.children.length) return;
+  templatesShown = shown;
+  const head = vel("div", "vt-title");
+  head.append(vel("span", "", "VAULT TEMPLATES"), vel("span", "vt-where", "vaults/templates/"));
+  const list = vel("ul", "vt-list");
+  if (!templates.length) list.append(vel("li", "vt-empty", "No templates. Put one in vaults/templates/."));
+  for (const template of templates) {
+    const li = vel("li", template.damaged ? "damaged" : "");
+    const top = vel("div", "vt-row");
+    top.append(vel("span", "vt-name", template.title || template.name || template.file), vel("span", "vt-type", (template.type || "").toUpperCase()));
+    li.append(top);
+    li.append(vel("p", "vt-desc", template.damaged ? `DAMAGED · ${(template.errors || [])[0] || template.file}` : template.description || ""));
+    const command = newVaultCommand(template);
+    const row = vel("div", "vt-row");
+    row.append(vel("code", "vt-cmd", command));
+    const copy = vel("button", "cmd vt-copy", "COPY");
+    copy.type = "button";
+    copy.title = "copy the command; run it in the repo, then edit vaults/<name>.yaml";
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(command);
+        copy.textContent = "COPIED";
+      } catch {
+        copy.textContent = "SELECT IT";
+      }
+      setTimeout(() => (copy.textContent = "COPY"), 1600);
+    });
+    row.append(copy);
+    li.append(row);
+    list.append(li);
+  }
+  vaultTemplates.replaceChildren(head, list);
+}
+
+vaultTemplatesButton.addEventListener("click", () => {
+  vaultTemplates.hidden = !vaultTemplates.hidden;
+  vaultTemplatesButton.setAttribute("aria-expanded", String(!vaultTemplates.hidden));
+  if (!vaultTemplates.hidden) {
+    templatesShown = "";
+    renderTemplates();
+  }
 });
 
 vaultAll.addEventListener("click", () => {
