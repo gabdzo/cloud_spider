@@ -68,7 +68,7 @@ export function laneOpen(ns, system, state) {
   return typeof v === "boolean" ? v : !system;
 }
 
-export function layoutKube(diagram, { width = 0, state = {} } = {}) {
+export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
   const all = diagram?.nodes || [];
   const edgesIn = diagram?.edges || [];
   const expanded = new Set(state.expanded || []);
@@ -181,7 +181,7 @@ export function layoutKube(diagram, { width = 0, state = {} } = {}) {
   const placed = [];
   // Strip: control plane, then nodes (wrapping).
   let sx = L.PAD;
-  let sy = L.PAD;
+  let sy = top || L.PAD;
   if (cp) {
     placed.push({ ...cp, x: sx, y: sy, w: L.CP_W, h: L.STRIP_H });
     sx += L.CP_W + 14;
@@ -195,7 +195,7 @@ export function layoutKube(diagram, { width = 0, state = {} } = {}) {
     placed.push({ ...n, chip: i, x: sx, y: sy, w: nodeW, h: L.STRIP_H });
     sx += nodeW + 14;
   });
-  let y = (cp || hosts.length ? sy + L.STRIP_H + L.STRIP_GAP : L.PAD);
+  let y = (cp || hosts.length ? sy + L.STRIP_H + L.STRIP_GAP : top || L.PAD);
 
   const laneW = contentWidth - L.PAD * 2;
   const outLanes = [];

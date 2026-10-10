@@ -9,6 +9,11 @@ import { inheritTags, stackTags } from "../tags.js";
 //     - every demo pod's log lines (filelog) and OTLP logs → CloudWatch Logs
 //       /cloudspider/eks/<cluster>/demo (kept 1 day)
 //     - OTLP traces from podinfo → X-Ray
+//     - node/pod/container CPU, memory, filesystem and network (kubeletstats)
+//       and node disk, filesystem and load (hostmetrics), sent over OTLP to a
+//       one-replica otel-gateway that serves them as Prometheus text on the
+//       otel-metrics Service. Cloud Spider reads that read-only through the
+//       kube API service proxy: no CloudWatch custom metrics, no extra cost.
 //   The collector gets AWS credentials from EKS Pod Identity (no keys).
 // Also: the metrics-server add-on (pod CPU/memory for Cloud Spider) and the
 // ClusterRole that lets Cloud Spider's read-only viewer role list nodes and
@@ -86,6 +91,29 @@ const collectorRole = new aws.iam.Role("collector", {
 const collectorAccount = new k8s.core.v1.ServiceAccount("otel-collector", { metadata: { name: "otel-collector", namespace: ns } }, inNs);
 new aws.eks.PodIdentityAssociation("otel-collector", { clusterName, namespace: ns, serviceAccount: "otel-collector", roleArn: collectorRole.arn, tags }, { dependsOn: [podIdentity] });
 
+// The collector reads the kubelet's stats API on its own node.
+new k8s.rbac.v1.ClusterRole("otel-kubeletstats", {
+  metadata: { name: "cloudspider-otel-kubeletstats" },
+  rules: [{ apiGroups: [""], resources: ["nodes", "nodes/stats", "nodes/proxy"], verbs: ["get", "list", "watch"] }],
+}, k);
+new k8s.rbac.v1.ClusterRoleBinding("otel-kubeletstats", {
+  metadata: { name: "cloudspider-otel-kubeletstats" },
+  roleRef: { apiGroup: "rbac.authorization.k8s.io", kind: "ClusterRole", name: "cloudspider-otel-kubeletstats" },
+  subjects: [{ kind: "ServiceAccount", name: "otel-collector", namespace: ns }],
+}, inNs);
+
+// Cloud Spider's viewer may GET the otel-metrics Service through the API
+// server proxy, that one Service and nothing else in the namespace.
+new k8s.rbac.v1.Role("viewer-otel-metrics", {
+  metadata: { name: "cloudspider-viewer-otel-metrics", namespace: ns },
+  rules: [{ apiGroups: [""], resources: ["services/proxy"], resourceNames: ["otel-metrics"], verbs: ["get"] }],
+}, inNs);
+new k8s.rbac.v1.RoleBinding("viewer-otel-metrics", {
+  metadata: { name: "cloudspider-viewer-otel-metrics", namespace: ns },
+  roleRef: { apiGroup: "rbac.authorization.k8s.io", kind: "Role", name: "cloudspider-viewer-otel-metrics" },
+  subjects: [{ apiGroup: "rbac.authorization.k8s.io", kind: "Group", name: "cloudspider-viewers" }],
+}, inNs);
+
 export const collectorConfig = `receivers:
   otlp:
     protocols:
@@ -98,7 +126,26 @@ export const collectorConfig = `receivers:
     include_file_path: true
     operators:
       - type: container
+  kubeletstats:
+    collection_interval: 30s
+    auth_type: serviceAccount
+    endpoint: "https://\${env:K8S_NODE_IP}:10250"
+    insecure_skip_verify: true
+    metric_groups: [node, pod, container]
+  hostmetrics:
+    collection_interval: 30s
+    root_path: /hostfs
+    scrapers:
+      load: {}
+      memory: {}
+      disk: {}
+      filesystem:
+        exclude_fs_types: { fs_types: [autofs, binfmt_misc, cgroup2, configfs, debugfs, devpts, devtmpfs, fusectl, hugetlbfs, mqueue, nsfs, overlay, proc, procfs, pstore, rpc_pipefs, securityfs, selinuxfs, squashfs, sysfs, tracefs, tmpfs], match_type: strict }
+      network: {}
 processors:
+  resource/node:
+    attributes:
+      - { key: k8s.node.name, value: "\${env:K8S_NODE_NAME}", action: insert }
   batch: { timeout: 5s }
   memory_limiter: { check_interval: 5s, limit_mib: 150 }
 exporters:
@@ -108,6 +155,9 @@ exporters:
     log_stream_name: pods
   awsxray:
     region: ${region}
+  otlp/gateway:
+    endpoint: otel-gateway:4317
+    tls: { insecure: true }
 service:
   pipelines:
     logs:
@@ -118,6 +168,10 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [awsxray]
+    metrics:
+      receivers: [kubeletstats, hostmetrics]
+      processors: [memory_limiter, resource/node, batch]
+      exporters: [otlp/gateway]
 `;
 const collectorConfigMap = new k8s.core.v1.ConfigMap("otel-collector", { metadata: { name: "otel-collector", namespace: ns }, data: { "config.yaml": collectorConfig } }, inNs);
 const collectorLabels = { app: "otel-collector" };
@@ -133,16 +187,70 @@ new k8s.apps.v1.DaemonSet("otel-collector", {
           name: "collector",
           image: "public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0",
           args: ["--config=/conf/config.yaml"],
+          env: [
+            { name: "K8S_NODE_NAME", valueFrom: { fieldRef: { fieldPath: "spec.nodeName" } } },
+            { name: "K8S_NODE_IP", valueFrom: { fieldRef: { fieldPath: "status.hostIP" } } },
+          ],
           ports: [{ containerPort: 4317, name: "otlp-grpc" }, { containerPort: 4318, name: "otlp-http" }],
           resources: { requests: { cpu: "20m", memory: "64Mi" }, limits: { memory: "200Mi" } },
-          volumeMounts: [{ name: "conf", mountPath: "/conf" }, { name: "pods", mountPath: "/var/log/pods", readOnly: true }],
+          volumeMounts: [{ name: "conf", mountPath: "/conf" }, { name: "pods", mountPath: "/var/log/pods", readOnly: true }, { name: "hostfs", mountPath: "/hostfs", readOnly: true, mountPropagation: "HostToContainer" }],
         }],
-        volumes: [{ name: "conf", configMap: { name: collectorConfigMap.metadata.name } }, { name: "pods", hostPath: { path: "/var/log/pods" } }],
+        volumes: [{ name: "conf", configMap: { name: collectorConfigMap.metadata.name } }, { name: "pods", hostPath: { path: "/var/log/pods" } }, { name: "hostfs", hostPath: { path: "/" } }],
       },
     },
   },
 }, inNs);
 new k8s.core.v1.Service("otel-collector", { metadata: { name: "otel-collector", namespace: ns }, spec: { selector: collectorLabels, ports: [{ name: "otlp-grpc", port: 4317 }, { name: "otlp-http", port: 4318 }] } }, inNs);
+
+// The metrics gateway: one replica takes every node's OTLP metrics and serves
+// the latest values as Prometheus text on :8889 (the otel-metrics Service).
+// Nothing leaves the cluster; Cloud Spider reads it through the API proxy.
+export const gatewayConfig = `receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+processors:
+  batch: { timeout: 10s }
+  memory_limiter: { check_interval: 5s, limit_mib: 100 }
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    metric_expiration: 3m
+    resource_to_telemetry_conversion: { enabled: true }
+service:
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus]
+`;
+const gatewayConfigMap = new k8s.core.v1.ConfigMap("otel-gateway", { metadata: { name: "otel-gateway", namespace: ns }, data: { "config.yaml": gatewayConfig } }, inNs);
+const gatewayLabels = { app: "otel-gateway" };
+new k8s.apps.v1.Deployment("otel-gateway", {
+  metadata: { name: "otel-gateway", namespace: ns },
+  spec: {
+    replicas: 1,
+    selector: { matchLabels: gatewayLabels },
+    template: {
+      metadata: { labels: gatewayLabels },
+      spec: {
+        containers: [{
+          name: "gateway",
+          image: "public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0",
+          args: ["--config=/conf/config.yaml"],
+          ports: [{ containerPort: 4317, name: "otlp-grpc" }, { containerPort: 8889, name: "prom" }],
+          resources: { requests: { cpu: "10m", memory: "48Mi" }, limits: { memory: "128Mi" } },
+          volumeMounts: [{ name: "conf", mountPath: "/conf" }],
+        }],
+        volumes: [{ name: "conf", configMap: { name: gatewayConfigMap.metadata.name } }],
+      },
+    },
+  },
+}, inNs);
+new k8s.core.v1.Service("otel-gateway", { metadata: { name: "otel-gateway", namespace: ns }, spec: { selector: gatewayLabels, ports: [{ name: "otlp-grpc", port: 4317 }] } }, inNs);
+// One port only, so the proxy path is plain .../services/otel-metrics/proxy/metrics.
+new k8s.core.v1.Service("otel-metrics", { metadata: { name: "otel-metrics", namespace: ns }, spec: { selector: gatewayLabels, ports: [{ name: "prom", port: 8889, targetPort: 8889 }] } }, inNs);
+export const otelMetricsPath = `/api/v1/namespaces/${ns}/services/otel-metrics/proxy/metrics`;
 
 // The app: podinfo twice (web calls api), and a load generator.
 function podinfo(name, extraArgs = []) {

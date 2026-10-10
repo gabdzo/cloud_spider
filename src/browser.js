@@ -22,6 +22,7 @@ import { CLUSTER_COLUMNS } from "./cluster.js";
 import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
 import { paintKube } from "./kube-draw.js";
+import { renderTelemetry } from "./tele-view.js";
 import { upgradeSpiderLine } from "./upgrade-rules.js";
 import { costLine } from "./stack-costs.js";
 import {
@@ -99,6 +100,8 @@ const viewTagKey = document.querySelector("#view-tag-key");
 const MAP_VIEW_KEY = "cloudspider.mapView";
 const MAP_TAG_KEY = "cloudspider.mapTagKey";
 const kubePanel = document.querySelector("#kube-panel");
+const kubeTabs = document.querySelector("#kube-tabs");
+const kubeTele = document.querySelector("#kube-tele");
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
 const vaultStripEl = document.querySelector("#vault-strip");
@@ -1178,12 +1181,98 @@ function saveClusterLanes() {
   clusterPlaced = { key: null, data: null, placed: null };
 }
 
+// Cluster screens: tabs over the Cluster view. TOPOLOGY is the lane
+// picture; every other screen is an HTML section over the map. To add one
+// (events, policies…): push { id, label, show(), hide() } here.
+const CLUSTER_SCREENS = [
+  { id: "topology", label: "TOPOLOGY" },
+  { id: "telemetry", label: "TELEMETRY", show: showTelemetry, hide: hideTelemetry },
+];
+const CLUSTER_SCREEN_KEY = "cloudspider.cluster.screen";
+let clusterScreen = "topology";
+try {
+  const saved = window.localStorage.getItem(CLUSTER_SCREEN_KEY);
+  if (CLUSTER_SCREENS.some((item) => item.id === saved)) clusterScreen = saved;
+} catch {
+  // default screen
+}
+let clusterTabsShown = false;
+
+function clusterHasScreens() {
+  return mode === "cluster" && clusterData?.diagram?.layout === "kube";
+}
+
+function syncClusterScreens() {
+  const on = clusterHasScreens();
+  if (on && !kubeTabs.children.length) {
+    for (const item of CLUSTER_SCREENS) {
+      const button = vel("button", "", item.label);
+      button.type = "button";
+      button.dataset.screen = item.id;
+      button.addEventListener("click", () => setClusterScreen(item.id));
+      kubeTabs.append(button);
+    }
+  }
+  for (const button of kubeTabs.children) button.setAttribute("aria-pressed", String(button.dataset.screen === clusterScreen));
+  if (on === clusterTabsShown) return;
+  clusterTabsShown = on;
+  kubeTabs.hidden = !on;
+  const screen = CLUSTER_SCREENS.find((item) => item.id === clusterScreen);
+  if (on) screen?.show?.();
+  else for (const item of CLUSTER_SCREENS) item.hide?.();
+}
+
+function setClusterScreen(id) {
+  if (id === clusterScreen) return;
+  CLUSTER_SCREENS.find((item) => item.id === clusterScreen)?.hide?.();
+  clusterScreen = id;
+  try {
+    window.localStorage.setItem(CLUSTER_SCREEN_KEY, id);
+  } catch {
+    // not kept
+  }
+  for (const button of kubeTabs.children) button.setAttribute("aria-pressed", String(button.dataset.screen === id));
+  if (clusterTabsShown) CLUSTER_SCREENS.find((item) => item.id === id)?.show?.();
+  draw();
+}
+
+// TELEMETRY: asks every 30 s while shown (the server samples at most that
+// often and keeps an hour in memory). Nothing is read while hidden.
+let teleData = null;
+let teleTimer = 0;
+let teleTicket = 0;
+function showTelemetry() {
+  kubeTele.hidden = false;
+  showPod(null);
+  paintTelemetry();
+  pullTelemetry();
+  clearInterval(teleTimer);
+  teleTimer = setInterval(() => {
+    if (tabVisible) pullTelemetry();
+  }, 30_000);
+}
+function hideTelemetry() {
+  kubeTele.hidden = true;
+  clearInterval(teleTimer);
+  teleTimer = 0;
+}
+function paintTelemetry() {
+  renderTelemetry(kubeTele, teleData, { width: kubeTele.clientWidth || map.clientWidth || 1200, cloudwatch: metricsData?.targets || {}, metricValue });
+}
+async function pullTelemetry() {
+  const ticket = ++teleTicket;
+  const body = await fetch(`/api/cluster/telemetry${sample ? "?sample=1" : ""}`).then((r) => r.json()).catch(() => ({ error: "the telemetry did not answer" }));
+  if (ticket !== teleTicket || kubeTele.hidden) return;
+  teleData = body;
+  paintTelemetry();
+}
+
 function placedCluster() {
   if (clusterData?.diagram?.layout === "kube") {
     // Laid out once per answer, width and lane state; frames only paint.
     const key = `${map.clientWidth || 0}|${JSON.stringify(clusterLanes)}`;
     if (clusterPlaced.data !== clusterData || clusterPlaced.key !== key) {
-      clusterPlaced = { key, data: clusterData, placed: layoutKube(clusterData.diagram, { width: map.clientWidth || 0, state: clusterLanes }) };
+      clusterPlaced = { key, data: clusterData, placed: layoutKube(clusterData.diagram, { width: map.clientWidth || 0, state: clusterLanes, top: 52 }) };
     }
     return clusterPlaced.placed;
   }
@@ -1211,6 +1300,9 @@ function drawCluster() {
 }
 
 function draw() {
+  syncClusterScreens();
+  // An HTML screen covers the canvas: nothing to paint underneath.
+  if (clusterTabsShown && clusterScreen !== "topology") return;
   // The VAULTS page covers the map; the map does not draw under it.
   renderVaultPage();
   if (vaultPageOpen()) return;
@@ -2544,6 +2636,7 @@ setInterval(animate, FRAME_MS);
 
 window.addEventListener("resize", () => {
   draw();
+  if (!kubeTele.hidden) paintTelemetry();
   if (!radioPanel.hidden) drawScope(scope, reducedMotion ? 0 : animTime, stations.length);
 });
 

@@ -11,6 +11,7 @@ import { pathResult } from "./path-view.js";
 import { costFailure } from "./cost.js";
 import { diagramFromClusters } from "./cluster.js";
 import { diagramFromKube } from "./kube-diagram.js";
+import { createTelemetry } from "./kube-telemetry.js";
 import { campFixtures, watchLine } from "./upgrade-rules.js";
 import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
@@ -29,7 +30,7 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
-export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, telemetry, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -60,6 +61,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   });
 
   const now = typeof clock === "function" ? clock : Date.now;
+  const tele = telemetry || (kube ? createTelemetry({ kube, clock: now }) : null);
   const linkCache = createLinkCache({
     read: (name, balancers) => path.targetLines(name, balancers),
     clock: now,
@@ -441,6 +443,12 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         headline: diagram.nodes.length ? "" : "no cluster in this region",
         note: "EKS in this region. An OpenShift reader fills the same picture.",
       };
+    },
+    // The telemetry screen: node gauges, pressure lamps, top pods, 1 h of
+    // history kept in memory (kube-telemetry.js). Read-only kube reads.
+    async clusterTelemetry() {
+      if (!tele) return { error: "the kube context is not set up", unset: true };
+      return tele.get().catch((failure) => ({ error: failure?.message || "the cluster did not answer" }));
     },
     // One pod's last log lines and events (Cluster view, on click).
     async clusterPod({ ns, name, container } = {}) {
