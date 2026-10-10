@@ -1,0 +1,21 @@
+# upgrades/signal (Pulumi project cloudspider-signal, stack signal): one log
+# group, /cloudspider/<name> (default /cloudspider/cloudspider-signal), kept
+# one day. Almost nothing on the bill.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: signal
+  number: 120
+  title: Signal
+  description: A one-day log group, /cloudspider/cloudspider-signal, in its own stack from the Stacks panel.
+  owner: gabriel
+  tags: [upgrade, logs]
+spec:
+  type: data
+  resources:
+    tags:
+      project: signal
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/signal
+    docs: https://github.com/gabdzo/cloud_spider#readme
+    dashboard: https://eu-north-1.console.aws.amazon.com/cloudwatch/home?region=eu-north-1#logsV2:log-groups/log-group/$252Fcloudspider$252Fcloudspider-signal

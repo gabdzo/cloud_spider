@@ -1,0 +1,28 @@
+# upgrades/camp (Pulumi project cloudspider-camp, stack camp): a private
+# bucket with index.html, a Lambda (<name>-page) behind a public function URL
+# that returns the page only, a DynamoDB table (<name>-table) with one row, a
+# secret (<name>-secret) and the function's role. The function URL is random
+# per deploy, so there is no check; open it from the camp card on the map.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: camp
+  number: 140
+  title: Camp
+  description: A page served by a Lambda function URL, with a private bucket, a DynamoDB table and one secret behind it.
+  owner: gabriel
+  tags: [upgrade, serverless]
+spec:
+  type: static-site
+  resources:
+    tags:
+      project: camp
+    ids:
+      - cloudspider-camp-page
+      - cloudspider-camp-table
+      - cloudspider-camp-secret
+      - cloudspider-camp-550536272523
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/camp
+    docs: https://github.com/gabdzo/cloud_spider#readme
+    dashboard: https://eu-north-1.console.aws.amazon.com/lambda/home?region=eu-north-1#/functions/cloudspider-camp-page

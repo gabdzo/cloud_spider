@@ -1,6 +1,10 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { html } from "./page.js";
+import { inheritTags, stackTags } from "../tags.js";
+
+// Vault: vaults/camp.yaml selects project=camp.
+inheritTags(pulumi, stackTags("camp"));
 
 // gstack-shortcut(dec-6b984f98-b288-4b2f-b4e4-e203812e4644): one stack, upgrade when a second tear-down stack needs its own picture
 // gstack-shortcut(dec-ffe38b30-ac3a-43b0-901e-67c2cb161c56): page, function, table, secret, upgrade when a domain is owned or a paid database is wanted

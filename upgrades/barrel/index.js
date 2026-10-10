@@ -1,5 +1,9 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+import { inheritTags, stackTags } from "../tags.js";
+
+// Vault: vaults/barrel.yaml selects project=barrel.
+inheritTags(pulumi, stackTags("barrel"));
 
 const config = new pulumi.Config();
 const name = config.get("name") || "cloudspider-barrel";

@@ -1,0 +1,22 @@
+# The /cloudspider/test log group in infra/ (stack test), kept one day, with
+# one stream per expendable machine. CLOUDSPIDER_LOG_GROUP points the radio at
+# it; infra/seed-logs.js writes sample lines. Log groups are not drawn on the
+# map, so this vault is a door with links and no resources.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: test-logs
+  number: 103
+  title: Test log group
+  description: /cloudspider/test, one-day retention, a stream per expendable machine; the radio reads it via CLOUDSPIDER_LOG_GROUP.
+  owner: gabriel
+  tags: [test, logs]
+spec:
+  type: data
+  resources:
+    tags:
+      project: test-logs
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/infra
+    docs: https://github.com/gabdzo/cloud_spider#readme
+    dashboard: https://eu-north-1.console.aws.amazon.com/cloudwatch/home?region=eu-north-1#logsV2:log-groups/log-group/$252Fcloudspider$252Ftest

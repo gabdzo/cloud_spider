@@ -12,6 +12,8 @@ export function vaultsDir(env = process.env, cwd = process.cwd()) {
 }
 
 const FILE = /\.ya?ml$/i;
+// Templates are validated by `npm run vaults:check` but never drawn.
+export const TEMPLATE = /^(example|.+\.example)\.ya?ml$/i;
 const MAX_BYTES = 256 * 1024;
 
 export function parseVaultText(textBody, file) {
@@ -90,6 +92,16 @@ function keyed(entry, seen) {
   return entry;
 }
 
+// The row reads VAULT 100, 101, ... left to right; damaged files (no number)
+// go last. This order also decides which vault claims a shared resource.
+export function byNumber(entries) {
+  const rank = (entry) => (Number.isInteger(entry.number) && !entry.damaged ? entry.number : 1000);
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index)
+    .map((item) => item.entry);
+}
+
 export function createVaultStore({ dir, fs = { readdir, readFile, stat } } = {}) {
   let signature = null;
   let cached = { vaults: [], note: "", dir };
@@ -98,7 +110,7 @@ export function createVaultStore({ dir, fs = { readdir, readFile, stat } } = {})
   async function scan() {
     let names;
     try {
-      names = (await fs.readdir(dir)).filter((name) => FILE.test(name)).sort();
+      names = (await fs.readdir(dir)).filter((name) => FILE.test(name) && !TEMPLATE.test(name) && !name.startsWith(".")).sort();
     } catch (error) {
       const note = error?.code === "ENOENT" ? `no vaults folder at ${dir}` : `the vaults folder did not open: ${error?.code || error?.message}`;
       return { signature: `missing:${note}`, files: [], note };
@@ -135,7 +147,7 @@ export function createVaultStore({ dir, fs = { readdir, readFile, stat } } = {})
       entries.push(...parseVaultText(body, file.name));
     }
     signature = found.signature;
-    cached = { vaults: settleNames(entries), note: found.note, dir };
+    cached = { vaults: byNumber(settleNames(entries)), note: found.note, dir };
     return cached;
   }
 

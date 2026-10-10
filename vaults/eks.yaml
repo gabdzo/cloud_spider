@@ -1,0 +1,25 @@
+# EKS clusters from upgrades/eks (Pulumi project cloudspider-upgrade), started
+# from the Stacks panel. Each cluster is its own stack with its own VPC
+# (10.43.0.0/16, public subnets), IAM roles, an EKS 1.32 control plane and one
+# t4g node. Every resource carries project=eks and cluster=<name>. The control
+# plane is about $0.10 an hour. The API endpoint is per cluster, so no check.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: eks
+  number: 110
+  title: EKS clusters
+  description: Small EKS 1.32 clusters from the Stacks panel, one stack each, with their own VPC, roles and a single t4g node group.
+  owner: gabriel
+  tags: [upgrade, kubernetes]
+spec:
+  type: cluster
+  resources:
+    tags:
+      project: eks
+    ids:
+      - cloudspider-up   # the first cluster's name
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/eks
+    docs: https://github.com/gabdzo/cloud_spider#readme
+    dashboard: https://eu-north-1.console.aws.amazon.com/eks/clusters?region=eu-north-1

@@ -1,5 +1,6 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+import { inheritTags, stackTags } from "../tags.js";
 
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
@@ -11,6 +12,9 @@ if (!["t4g.small", "t4g.medium"].includes(instanceType)) {
   throw new Error("instanceType must be t4g.small or t4g.medium");
 }
 if (nodeCount !== 1) throw new Error("nodeCount must be 1");
+
+// Vault: vaults/eks.yaml selects project=eks (every cluster stack).
+inheritTags(pulumi, stackTags("eks", { cluster: clusterName }));
 
 const tags = { Name: clusterName, cloudspider: "expendable" };
 
