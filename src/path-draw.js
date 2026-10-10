@@ -132,15 +132,22 @@ function drawNode(ctx, node, selected) {
   }
 }
 
-function drawSentence(ctx, node, width, height) {
+// Where the diagnosis panel for a node goes on a canvas of this size. The
+// browser uses it too, to scroll the panel into view on a narrow window.
+export function sentenceRect(node, width, height) {
   const w = Math.min(440, Math.max(180, width - 16));
-  const lines = wrap(node.sentence, Math.max(12, Math.floor((w - 28) / 7.4)));
+  const lines = wrap(node.sentence || "", Math.max(12, Math.floor((w - 28) / 7.4)));
   const h = 40 + lines.length * 20 + 10;
   let x = node.x + node.w + 14;
   if (x + w > width - 8) x = Math.max(8, node.x - w - 14);
   if (x + w > width - 8) x = Math.max(8, width - w - 8);
   let y = node.y + node.h + 10;
   if (y + h > height - 8) y = Math.max(8, node.y - h - 10);
+  return { x, y, w, h, lines };
+}
+
+function drawSentence(ctx, node, width, height) {
+  const { x, y, w, h, lines } = sentenceRect(node, width, height);
   const color = STATUS[node.status] || MUTED;
   const top = pipPanel(ctx, x, y, w, h, { title: "DIAGNOSIS", icon: icon(node.status === "ok" ? "tg" : "warn"), accent: color === MUTED ? PIP.bright : color });
   ctx.font = SMALL;

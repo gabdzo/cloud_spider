@@ -91,6 +91,9 @@ test("the process binds loopback and a foreign stop does not describe", async ()
     const html = await page.text();
     assert.match(html, /CLOUD SPIDER/);
     assert.match(html, /<canvas/);
+    // A named icon, so the browser never logs a 404 for /favicon.ico.
+    assert.match(html, /<link rel="icon"/);
+    assert.match(html, /#place \{ display: block; \}/, "an inline canvas overflows the map and shows scrollbars");
     const hidden = await fetch(`http://127.0.0.1:${address.port}/aws.js`);
     assert.equal(hidden.status, 404);
     const stopped = await fetch(`http://127.0.0.1:${address.port}/api/stop`, {

@@ -14,9 +14,9 @@ import {
   switchRegion,
 } from "./ui.js";
 import { layoutPath, nodeAt } from "./path-layout.js";
-import { paintPath } from "./path-draw.js";
+import { paintPath, sentenceRect } from "./path-draw.js";
 import {
-  clockText, drawMascot, drawScope, mapStats, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
+  clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
 } from "./chrome.js";
 import { FRAME_MS } from "./theme.js";
 
@@ -112,13 +112,21 @@ function sizeCanvas(contentWidth, contentHeight) {
 function placedPath() {
   return pathData?.diagram
     ? layoutPath(pathData.diagram, map.clientWidth || 0)
-    : { nodes: [], edges: [], contentWidth: 960, contentHeight: 640 };
+    : { nodes: [], edges: [], contentWidth: 0, contentHeight: 0 };
 }
 
 function placedMap() {
   const width = map.clientWidth || 0;
   const rowLimit = width ? Math.min(ROW_LIMIT, width) : ROW_LIMIT;
   return layoutCache.get(place, rowLimit);
+}
+
+// On a narrow window the diagnosis can land past the edge of the scrolled
+// map; scroll just enough to show it, keeping its left edge in view.
+function revealPanel(rect) {
+  const left = scrollToShow(map.scrollLeft, map.clientWidth, rect.x, rect.w);
+  const top = scrollToShow(map.scrollTop, map.clientHeight, rect.y, rect.h);
+  if (left !== map.scrollLeft || top !== map.scrollTop) map.scrollTo({ left, top, behavior: reducedMotion ? "auto" : "smooth" });
 }
 
 function drawPath() {
@@ -147,8 +155,8 @@ function draw() {
     : {
         settlements: [],
         orphans: { items: [], label: "no VPC" },
-        contentWidth: 960,
-        contentHeight: 640,
+        contentWidth: 0,
+        contentHeight: 0,
       };
 
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
@@ -302,6 +310,10 @@ function dropSample() {
   sample = false;
   ui.sample = false;
   regionSelect.disabled = false;
+  // Forget the sample camp and stations at once; the live ones arrive with
+  // the next pull, and until then the screen must not pass sample off as LIVE.
+  place = null;
+  setRadio(ui, "");
 }
 
 // The radio panel remembers whether it is open per view; the path needs the
@@ -349,7 +361,7 @@ async function toggleSample() {
       const body = await fetch("/api/sample").then((response) => response.json()).catch(() => ({}));
       sampleRadio = body.radio || "";
     }
-    if (sample) setRadio(ui, sampleRadio);
+    setRadio(ui, sample ? sampleRadio : "");
     regionSelect.disabled = sample;
     pathData = null;
     pathSelected = null;
@@ -383,6 +395,7 @@ canvas.addEventListener("click", async (event) => {
     const hit = nodeAt(placedPath(), event.offsetX, event.offsetY);
     pathSelected = hit?.id || null;
     draw();
+    if (hit?.sentence) revealPanel(sentenceRect(hit, canvas.clientWidth, canvas.clientHeight));
     return;
   }
   if (!place) {
@@ -546,6 +559,7 @@ function animate() {
 }
 
 paintIcons();
+document.querySelector("link[rel=icon]").href = iconURL("map", 2);
 drawMascot(mascotCanvas, 0);
 clockEl.textContent = clockText(new Date());
 if (window.matchMedia("(max-width: 900px)").matches) {

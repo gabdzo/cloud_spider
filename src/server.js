@@ -36,6 +36,7 @@ const page = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cloud Spider</title>
+<link rel="icon" href="data:,">
 <style>
   ${cssVars()}
   :root { color-scheme: dark; }
@@ -50,6 +51,8 @@ const page = `<!doctype html>
     text-rendering: optimizeSpeed;
   }
   img.px, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
+  /* A block canvas: inline it would sit on the text baseline, overflow #map by a few pixels and summon both scrollbars. */
+  #place { display: block; }
   [hidden] { display: none !important; }
 
   /* ---- device casing ---- */
@@ -345,6 +348,9 @@ const page = `<!doctype html>
   @keyframes blink { 50% { opacity: 0; } }
   #confirm { flex: 1 1 420px; min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--status-hang); text-shadow: none; }
   #confirm:empty, #radio:empty { display: none; }
+  /* Y and N wrap together, to the right, so neither is ever left alone on a row. */
+  .choice { display: flex; gap: 12px; margin-left: auto; }
+  .choice:not(:has(button:not([hidden]))) { display: none; }
   #error {
     margin: 0;
     padding: 6px 18px 6px 40px;
@@ -360,6 +366,8 @@ const page = `<!doctype html>
 
   .body { flex: 1; min-height: 0; display: flex; }
   #map { flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--pip-screen); }
+  /* Phosphor scrollbars: the path is wider than a narrow window, so the bar must read as part of the screen. */
+  #map, #radio { scrollbar-width: thin; scrollbar-color: var(--pip-dim) var(--pip-ink); }
 
   /* ---- radio panel ---- */
   #radio-panel {
@@ -496,8 +504,10 @@ const page = `<!doctype html>
     <select id="lb" aria-label="load balancer" hidden></select>
     <input id="host" type="text" aria-label="URL or host" placeholder="paste a URL or host" hidden>
     <p id="confirm"></p>
-    <button id="yes" class="cmd" type="button" data-icon="stop" hidden>put it down</button>
-    <button id="no" class="cmd" type="button" hidden>leave it</button>
+    <span class="choice">
+      <button id="yes" class="cmd" type="button" data-icon="stop" hidden>put it down</button>
+      <button id="no" class="cmd" type="button" hidden>leave it</button>
+    </span>
   </div>
   <p id="error" hidden></p>
   <div class="body">

@@ -641,7 +641,7 @@ function drawPlate(ctx, building, ui, width, height, placed) {
   );
   const besideCamp = camp ? width - (camp.x + camp.w + 20) - 8 : 0;
   const hasLogs = (ui.logs || []).length || ui.logNote;
-  const plateW = besideCamp >= 380 ? Math.min(600, besideCamp) : Math.min(hasLogs ? 600 : 420, width - 16);
+  const plateW = besideCamp >= 280 ? Math.min(600, besideCamp) : Math.min(hasLogs ? 600 : 420, width - 16);
   const inner = plateW - PAD * 2;
 
   ctx.font = SMALL;
@@ -666,12 +666,7 @@ function drawPlate(ctx, building, ui, width, height, placed) {
   }
   const plateH = headH + logTitleH + heightOf(shown) + note.length * ROW + (hidden ? ROW : 0) + PAD;
 
-  // Beside the camp when there is room, so the plate never hides the
-  // neighbouring shacks; otherwise beside the shack.
-  let x = camp ? camp.x + camp.w + 20 : building.x + building.w + 16;
-  if (x + plateW > width - 8) x = building.x + building.w + 16;
-  if (x + plateW > width - 8) x = Math.max(8, building.x - plateW - 16);
-  const y = Math.max(8, Math.min(building.y, height - plateH - 8));
+  const { x, y } = platePosition({ building, camp, plateW, plateH, width, height });
 
   let textY = pipPanel(ctx, x, y, plateW, plateH, { title: clipTo(ctx, name || building.id, plateW - 140), icon: icon("ec2") });
   // Status pill on the header bar.
@@ -753,6 +748,22 @@ function clipTo(ctx, text, maxW) {
 function clock(ms) {
   const date = new Date(ms);
   return [date.getHours(), date.getMinutes(), date.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+// Where the selection plate goes. Beside the camp when there is room, so the
+// plate never hides the neighbouring shacks; under the camp when the window
+// is too narrow for that; beside (or left of) the shack only as a last resort.
+export function platePosition({ building, camp, plateW, plateH, width, height }) {
+  const clampY = (y) => Math.max(8, Math.min(y, height - plateH - 8));
+  if (camp && camp.x + camp.w + 20 + plateW <= width - 8) {
+    return { x: camp.x + camp.w + 20, y: clampY(building.y) };
+  }
+  if (camp && camp.y + camp.h + 12 + plateH <= height - 8) {
+    return { x: Math.max(8, Math.min(camp.x, width - plateW - 8)), y: camp.y + camp.h + 12 };
+  }
+  let x = building.x + building.w + 16;
+  if (x + plateW > width - 8) x = Math.max(8, building.x - plateW - 16);
+  return { x, y: clampY(building.y) };
 }
 
 export function wrapWords(text, fits) {

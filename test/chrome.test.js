@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clockText, mapStats, needleAt, pathStats, stationKind, stationsFrom } from "../src/chrome.js";
+import { clockText, mapStats, needleAt, pathStats, scrollToShow, stationKind, stationsFrom } from "../src/chrome.js";
 import { samplePlace, sampleRadio } from "../src/sample.js";
 
 test("radio lines become stations; quiet and errors are not stations", () => {
@@ -45,4 +45,11 @@ test("status bar counts the map and the path", () => {
 
 test("clock is HH:MM", () => {
   assert.equal(clockText(new Date(2026, 9, 10, 7, 5)), "07:05");
+});
+
+test("scrollToShow moves only as far as it must to show a panel", () => {
+  assert.equal(scrollToShow(0, 740, 100, 300), 0, "already visible");
+  assert.equal(scrollToShow(0, 740, 676, 440), 676 + 440 + 8 - 740, "past the right edge");
+  assert.equal(scrollToShow(300, 740, 100, 200), 92, "past the left edge");
+  assert.equal(scrollToShow(0, 300, 500, 440), 492, "wider than the view: its left edge wins");
 });

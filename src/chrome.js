@@ -195,3 +195,12 @@ export function renderStats(el, stats) {
   meter.append(document.createTextNode(stats.meter.label), bar);
   el.replaceChildren(...cells, meter);
 }
+
+// The scroll offset that brings [start, start + size) into a viewport of
+// `view` pixels scrolled to `scroll`, moving as little as possible. When the
+// thing is wider than the view, its start wins.
+export function scrollToShow(scroll, view, start, size) {
+  if (start < scroll) return Math.max(0, start - 8);
+  if (start + size > scroll + view) return Math.max(0, Math.min(start - 8, start + size + 8 - view));
+  return scroll;
+}
