@@ -66,7 +66,7 @@ export function paint(ctx, scene) {
   }
 
   const selected = ui.selection ? buildingAt(placed, null, null, ui.selection.id) : null;
-  if (selected) drawPlate(ctx, selected, ui, width);
+  if (selected) drawPlate(ctx, selected, ui, width, height);
 }
 
 export function buildingAt(placed, x, y, id) {
@@ -124,17 +124,44 @@ function drawBuilding(ctx, building, phase, ui) {
   ctx.textAlign = "left";
 }
 
-function drawPlate(ctx, building, ui, width) {
-  const lines = [];
-  if (ui.selection?.name) lines.push(ui.selection.name);
-  lines.push(building.id, ui.selection?.type || building.type || "", ui.selection?.state || building.state || "");
-  const notes = (ui.logNote ? [ui.logNote] : ui.logs || []).flatMap((note) => wrap(String(note), 46));
-  const plateW = 420;
-  const plateH = 24 + (lines.length + notes.length) * 20 + (notes.length ? 10 : 0) + 8;
+const STATE_COLOR = { running: TEXT, pending: "#4db8ff", stopping: "#ffa726", stopped: "#ffa726", terminated: "#ff4444" };
+const PAD = 14;
+const ROW = 18;
+
+function drawPlate(ctx, building, ui, width, height) {
+  const name = ui.selection?.name || "";
+  const type = ui.selection?.type || building.type || "";
+  const state = ui.selection?.state || building.state || "";
+  const plateW = Math.min(600, width - 16);
+  const inner = plateW - PAD * 2;
+
+  ctx.font = SMALL;
+  const timeW = ctx.measureText("00:00:00").width + 12;
+  const fits = (indent) => (text) => ctx.measureText(text).width <= inner - indent;
+  const entries = (ui.logs || []).map((entry) => (typeof entry === "string" ? { time: 0, text: entry } : entry));
+  const rows = entries.map((entry) => ({
+    time: entry.time ? clock(entry.time) : "",
+    lines: wrapWords(entry.text || " ", fits(entry.time ? timeW : 0)),
+  }));
+  const note = ui.logNote ? wrapWords(ui.logNote, fits(0)) : [];
+
+  const headH = PAD + 22 + (name ? 22 : 0) + 20 + 12;
+  const logTitleH = rows.length || note.length ? 34 : 0;
+  const maxH = Math.max(160, height - 16);
+  let shown = rows;
+  let hidden = 0;
+  const heightOf = (list) => list.reduce((sum, row) => sum + row.lines.length * ROW + 4, 0);
+  while (shown.length > 1 && headH + logTitleH + heightOf(shown) + ROW + PAD > maxH) {
+    shown = shown.slice(1);
+    hidden += 1;
+  }
+  const plateH = headH + logTitleH + heightOf(shown) + note.length * ROW + (hidden ? ROW : 0) + PAD;
+
   let x = building.x + building.w + 12;
-  const y = building.y;
   if (x + plateW > width - 8) x = Math.max(8, building.x - plateW - 12);
-  ctx.fillStyle = "rgba(10, 14, 26, 0.95)";
+  const y = Math.max(8, Math.min(building.y, height - plateH - 8));
+
+  ctx.fillStyle = "#0d1117";
   ctx.fillRect(x, y, plateW, plateH);
   ctx.strokeStyle = "#4db8ff";
   ctx.lineWidth = 3;
@@ -142,25 +169,89 @@ function drawPlate(ctx, building, ui, width) {
   ctx.fillStyle = "#4db8ff";
   ctx.fillRect(x, y, 6, 6);
   ctx.fillRect(x + plateW - 6, y, 6, 6);
+
+  let textY = y + PAD + 16;
   ctx.font = FONT;
   ctx.fillStyle = TEXT;
-  let textY = y + 26;
-  for (const line of lines) {
-    if (!line) continue;
-    ctx.fillText(line, x + 12, textY);
-    textY += 20;
+  ctx.fillText(name || building.id, x + PAD, textY);
+  textY += 22;
+  if (name) {
+    ctx.font = SMALL;
+    ctx.fillStyle = MUTED;
+    ctx.fillText(building.id, x + PAD, textY);
+    textY += 22;
   }
-  if (notes.length) textY += 10;
   ctx.font = SMALL;
   ctx.fillStyle = MUTED;
-  for (const note of notes) {
-    ctx.fillText(note, x + 12, textY);
-    textY += 20;
+  ctx.fillText(type, x + PAD, textY);
+  ctx.fillStyle = STATE_COLOR[state] || MUTED;
+  ctx.fillText(state, x + PAD + ctx.measureText(`${type}  `).width, textY);
+  textY += 12;
+
+  if (!logTitleH) return;
+  ctx.fillStyle = "#2a5f7f";
+  ctx.fillRect(x + PAD, textY, inner, 2);
+  textY += 22;
+  ctx.fillStyle = "#4db8ff";
+  ctx.fillText("LOGS", x + PAD, textY);
+  ctx.fillStyle = MUTED;
+  const count = rows.length ? `last ${rows.length} ${rows.length === 1 ? "line" : "lines"}, newest at the bottom` : "";
+  ctx.fillText(count, x + PAD + ctx.measureText("LOGS  ").width, textY);
+  textY += 12;
+
+  if (hidden) {
+    textY += ROW - 4;
+    ctx.fillStyle = MUTED;
+    ctx.fillText(`${hidden} earlier ${hidden === 1 ? "line" : "lines"} above`, x + PAD, textY);
+    textY += 4;
+  }
+  shown.forEach((row, index) => {
+    const rowH = row.lines.length * ROW + 4;
+    if ((index + hidden) % 2 === 0) {
+      ctx.fillStyle = "rgba(42, 63, 95, 0.35)";
+      ctx.fillRect(x + PAD - 6, textY, inner + 12, rowH);
+    }
+    const indent = row.time ? timeW : 0;
+    row.lines.forEach((line, lineIndex) => {
+      const lineY = textY + 15 + lineIndex * ROW;
+      if (lineIndex === 0 && row.time) {
+        ctx.fillStyle = MUTED;
+        ctx.fillText(row.time, x + PAD, lineY);
+      }
+      ctx.fillStyle = TEXT;
+      ctx.fillText(line, x + PAD + indent, lineY);
+    });
+    textY += rowH;
+  });
+  if (note.length) {
+    ctx.fillStyle = "#ffa726";
+    note.forEach((line, index) => ctx.fillText(line, x + PAD, textY + 15 + index * ROW));
   }
 }
 
-function wrap(text, max) {
+function clock(ms) {
+  const date = new Date(ms);
+  return [date.getHours(), date.getMinutes(), date.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+}
+
+export function wrapWords(text, fits) {
   const out = [];
-  for (let i = 0; i < text.length; i += max) out.push(text.slice(i, i + max));
-  return out.length ? out : [""];
+  let line = "";
+  for (const word of String(text).split(" ")) {
+    const next = line ? `${line} ${word}` : word;
+    if (fits(next)) {
+      line = next;
+      continue;
+    }
+    if (line) out.push(line);
+    line = word;
+    while (line.length > 1 && !fits(line)) {
+      let cut = line.length - 1;
+      while (cut > 1 && !fits(line.slice(0, cut))) cut -= 1;
+      out.push(line.slice(0, cut));
+      line = line.slice(cut);
+    }
+  }
+  out.push(line);
+  return out;
 }

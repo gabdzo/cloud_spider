@@ -142,7 +142,7 @@ async function readLogStream({ region, group, stream, limit }) {
       }),
     );
     return {
-      events: (out.events || []).map((event) => ({ message: event.message || "" })),
+      events: (out.events || []).map((event) => ({ message: event.message || "", time: event.timestamp || 0 })),
     };
   } catch (error) {
     if (error?.name === "ResourceNotFoundException") {

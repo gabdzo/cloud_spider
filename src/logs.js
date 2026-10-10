@@ -8,8 +8,9 @@ export async function readLogs({ logs, logGroup, region, id }) {
   const result = await logs.filter({ region, group: logGroup, stream: id, limit: 20 });
   if (result?.missing) return { note: "the log stream is missing", lines: [] };
   if (result?.error) return { note: `the logs cannot be read: ${result.error}`, lines: [] };
-  const lines = (result?.events || []).slice(-20).map((event) =>
-    String(event.message ?? "").replace(/\s+/g, " ").trim(),
-  );
-  return { note: "", lines };
+  const entries = (result?.events || []).slice(-20).map((event) => ({
+    time: Number(event.time) || 0,
+    text: String(event.message ?? "").replace(/\s+/g, " ").trim(),
+  }));
+  return { note: "", lines: entries.map((entry) => entry.text), entries };
 }

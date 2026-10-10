@@ -8,7 +8,7 @@ test("the stream name is the instance id, and a newline stays one line", async (
     async filter(request) {
       calls.push(request);
       return {
-        events: [{ message: "boot\nline" }, { message: "ready" }],
+        events: [{ message: "boot\nline", time: 1000 }, { message: "ready" }],
       };
     },
   };
@@ -27,6 +27,10 @@ test("the stream name is the instance id, and a newline stays one line", async (
   assert.equal(calls[0].stream, "i-0abc1234");
   assert.equal(calls[1].stream, "i-0bbb2222");
   assert.deepEqual(first.lines, ["boot line", "ready"]);
+  assert.deepEqual(first.entries, [
+    { time: 1000, text: "boot line" },
+    { time: 0, text: "ready" },
+  ]);
   assert.equal(second.lines.length, 2);
 });
 
