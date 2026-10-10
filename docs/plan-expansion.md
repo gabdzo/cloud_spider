@@ -103,19 +103,25 @@ terraform/
 
 A fourth view key on the console (next to RADIO/STACKS/ASK) opens a
 holotape shelf: one pixel-art holotape per lab, labelled like the Pip-Boy
-tapes, with a progress lamp (dark: not started, amber: started, green:
-check passed). Picking a tape "loads" it into a deck and shows the lab:
-task, setup commands, hints (revealed one by one), and the check.
+tapes, with a progress lamp (dark: not started, amber: started, red: last
+check failed, green: check passed). Picking a tape "loads" it into the
+player and shows the lab: task, requirements, setup commands, hints
+(revealed one by one), the check and its PASS/FAIL lines.
 
 - **Two tracks per lab**: `OpenShift (oc)` is the imported EX280 lab
-  unchanged; `Kubernetes (EKS)` is the variant. A two-position switch flips
-  between them.
+  unchanged; `Kubernetes (EKS)` is the variant. Track keys at the top switch
+  shelves, and every tape has an OPENSHIFT VERSION / K8S VERSION key to its twin.
 - **Lab format** `labs/<track>/<lab>/lab.yaml`: `title`, `task`, `setup`
   (commands to copy), `hints[]`, `check` (a script), `reset`, `mapping`
   (what changed from OC) and `noEquivalent` notes. Spoilers (`answer/`) stay
   on disk and are not served.
-- **Checks**: the app runs only the lab's `verify.sh`/`check.sh`, which only
-  read (`oc get`/`kubectl get`, `auth can-i`). Setup and reset commands are
+- **Checks**: the app runs only the lab's `verify.sh`/`check.sh`, and only
+  when a static scan of the script and every helper it calls (transitively)
+  finds no write, exec, port-forward or install. Every K8s `check.sh` passes
+  (they only `kubectl get`, `auth can-i` and `helm status`, which a test
+  proves with a logging fake kubectl). OpenShift lab03, lab06, lab15 and
+  mock02 `verify.sh` use `oc exec` (lab06 also rotates a secret), so they are
+  shown as copy-only. Setup and reset commands are
   shown for Gabriel to run. Results are stored in `.learn/progress.json`
   (gitignored) and mirrored in localStorage.
 - **Imported**: `openshift-ex280-labs` lab01–lab15, mock01–03 and `common/`;

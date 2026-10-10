@@ -48,6 +48,8 @@ export const FILES = new Set([
   "vault-draw.js",
   "agent-text.js",
   "terminal.js",
+  "learn-view.js",
+  "sprites/holotape.js",
 ]);
 
 const page = `<!doctype html>
@@ -933,6 +935,115 @@ const page = `<!doctype html>
   #wall-grain { position: absolute; z-index: 2; min-height: 26px; padding: 0 6px; font-size: 11px; }
   .vpc-fold { position: absolute; z-index: 2; min-height: 22px; padding: 0 6px; font-size: 11px; letter-spacing: 0.1em; }
   .vpc-fold:focus-visible { outline: 2px solid var(--pip-hot); outline-offset: 2px; }
+  /* ---- learn ---- LEARN: the holotape shelf (theme vars only). */
+  #learn {
+    position: absolute; inset: 10px 12px; z-index: 6; display: flex; flex-direction: column; min-height: 0;
+    color: var(--pip-bright); font-size: 13px; text-shadow: 0 0 4px var(--glow-soft);
+    background: radial-gradient(ellipse at 60% 30%, var(--pip-glass), var(--pip-ink) 80%);
+    border: 3px solid var(--pip-mid); box-shadow: 0 0 18px var(--glow-soft);
+  }
+  #learn[hidden] { display: none; }
+  .lx-top { display: flex; align-items: stretch; gap: 8px; background: var(--pip-ink); border-bottom: 2px solid var(--pip-mid); }
+  .lx-top .ptitle { flex: 0 0 auto; padding: 4px 12px; }
+  .lx-tracks { display: flex; gap: 6px; flex: 1 1 auto; align-items: center; min-width: 0; padding: 4px 0; }
+  .lx-track {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 0 10px; cursor: pointer;
+    font: inherit; font-size: 11px; letter-spacing: 0.1em; color: var(--pip-dim);
+    background: var(--pip-screen); border: 1px solid var(--pip-dark); border-radius: 0;
+  }
+  .lx-track small { color: var(--pip-dim); letter-spacing: 0.04em; }
+  .lx-track[aria-pressed="true"] { color: var(--pip-hot); border-color: var(--pip-bright); box-shadow: inset 0 0 10px var(--glow-soft), 0 0 6px var(--glow-soft); }
+  .lx-track[aria-pressed="true"] small { color: var(--pip-bright); }
+  .lx-track:hover { color: var(--pip-bright); }
+  .lx-track:focus-visible, .lx-slot:focus-visible { outline: 2px solid var(--pip-hot); outline-offset: 2px; }
+  .lx-band { width: 8px; height: 16px; border: 1px solid var(--case-seam); background: var(--world-vault); box-shadow: inset 0 -3px 0 var(--case-lo); }
+  .lx-track.ex280 .lx-band { background: var(--world-cloth); }
+  .lx-track.cloud .lx-band { background: var(--world-amber); }
+  .lx-close { flex: 0 0 auto; align-self: center; margin-right: 6px; min-width: 30px; min-height: 28px; font-size: 16px; }
+  .lx-body { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(250px, 33%) 1fr; }
+  /* The shelf: a steel rack, tapes standing on brass-edged boards. */
+  .lx-shelf {
+    overflow: auto; padding: 10px 10px 0; scrollbar-width: thin; scrollbar-color: var(--pip-dim) var(--pip-ink);
+    background: linear-gradient(90deg, var(--case-lo), var(--case-seam) 6%, var(--case-seam) 94%, var(--case-lo));
+    border-right: 3px solid var(--case-mid); box-shadow: inset 0 0 22px var(--pip-ink);
+  }
+  .lx-rack { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0 8px; }
+  .lx-rack li { padding: 8px 0 0; border-bottom: 5px solid var(--case-mid); box-shadow: 0 2px 0 var(--case-brass-lo), 0 5px 0 var(--case-seam); margin-bottom: 10px; }
+  .lx-slot {
+    width: 100%; display: grid; justify-items: center; gap: 2px; padding: 4px 2px 6px; cursor: pointer;
+    font: inherit; font-size: 11px; color: var(--world-muted); background: none; border: 1px solid transparent; border-radius: 0;
+    text-shadow: none;
+  }
+  .lx-slot .lx-tape { width: 72px; height: 51px; transition: transform 120ms steps(2); filter: drop-shadow(0 3px 0 var(--case-seam)); }
+  .lx-slot:hover .lx-tape { transform: translateY(-3px); }
+  .lx-slot[aria-pressed="true"] { border-color: var(--pip-bright); background: var(--pip-ink); box-shadow: 0 0 10px var(--glow-soft); }
+  .lx-slot[aria-pressed="true"] .lx-tape { transform: translateY(-5px); }
+  .lx-num { color: var(--world-text); letter-spacing: 0.12em; }
+  .lx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.02em; }
+  .lx-slot.passed .lx-num { color: var(--pip-bright); text-shadow: 0 0 5px var(--glow-bright); }
+  .lx-slot.failing .lx-num { color: var(--status-broken); }
+  .lx-slot.started .lx-num { color: var(--status-hang); }
+  .lx-player { overflow: auto; padding: 12px 16px 16px; scrollbar-width: thin; scrollbar-color: var(--pip-dim) var(--pip-ink); color: var(--pip-mid); }
+  .lx-head { display: flex; gap: 14px; align-items: center; padding-bottom: 10px; border-bottom: 2px solid var(--pip-dark); }
+  .lx-head .lx-tape { width: 96px; height: 68px; filter: drop-shadow(0 4px 0 var(--case-seam)); }
+  .lx-title { flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; }
+  .lx-title small { color: var(--pip-dim); letter-spacing: 0.16em; font-size: 11px; }
+  .lx-title h3 { margin: 0; color: var(--pip-hot); font-size: 20px; letter-spacing: 0.06em; text-shadow: 0 0 8px var(--glow-bright); }
+  .lx-state { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: 0.16em; color: var(--pip-dim); }
+  .lx-lamp { flex: 0 0 auto; width: 9px; height: 9px; background: var(--lamp-off); border: 1px solid var(--case-seam); box-shadow: inset 0 0 2px var(--lamp-off-hi); }
+  .lx-state.passed, .lx-results .ok { color: var(--pip-bright); }
+  .lx-state.passed .lx-lamp, .lx-results .ok .lx-lamp { background: var(--lamp-on); box-shadow: 0 0 6px var(--glow-bright), inset 0 0 2px var(--lamp-on-core); }
+  .lx-state.failing, .lx-results .fail { color: var(--status-broken); }
+  .lx-state.failing .lx-lamp, .lx-results .fail .lx-lamp { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
+  .lx-state.started { color: var(--status-hang); }
+  .lx-state.started .lx-lamp { background: var(--status-hang); box-shadow: 0 0 6px var(--status-hang); }
+  .lx-twin { flex: 0 0 auto; min-height: 28px; padding: 0 10px; font-size: 11px; letter-spacing: 0.12em; }
+  .lx-sec { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 0 6px; padding-bottom: 3px; border-bottom: 1px dashed var(--pip-dark); }
+  .lx-sec b { color: var(--pip-dim); letter-spacing: 0.18em; font-size: 11px; }
+  .lx-sec .cmd { min-height: 26px; padding: 0 10px; font-size: 11px; letter-spacing: 0.12em; }
+  .lx-needs { color: var(--pip-dim); font-size: 11px; letter-spacing: 0.04em; font-weight: normal; }
+  .lx-player p { margin: 0 0 6px; line-height: 1.45; }
+  .lx-task { color: var(--pip-bright); }
+  .lx-player code { font: inherit; color: var(--pip-hot); background: var(--pip-screen); padding: 0 3px; overflow-wrap: anywhere; }
+  .lx-reqs, .lx-hints, .lx-noeq { margin: 0; padding: 0 0 0 20px; display: grid; gap: 3px; line-height: 1.4; }
+  .lx-reqs li::marker { content: "▸ "; color: var(--pip-dim); }
+  .lx-hints li::marker { color: var(--status-hang); }
+  .lx-hints li { color: var(--pip-bright); }
+  .lx-hints .lx-hidden { color: var(--pip-dark); letter-spacing: -0.02em; overflow: hidden; white-space: nowrap; }
+  .lx-noeq li { color: var(--world-muted); }
+  .lx-cmds { display: grid; gap: 4px; margin-bottom: 4px; }
+  .lx-cmd { display: flex; align-items: center; gap: 8px; padding: 3px 4px 3px 6px; background: var(--pip-ink); border: 1px solid var(--pip-dark); }
+  .lx-cmd .lx-lbl { flex: 0 0 46px; color: var(--pip-dim); font-size: 10px; letter-spacing: 0.12em; }
+  .lx-cmd code { flex: 1 1 auto; min-width: 0; padding: 0; background: none; color: var(--pip-bright); font-size: 12px; }
+  .lx-copy { flex: 0 0 auto; min-height: 22px; padding: 0 8px; font-size: 10px; letter-spacing: 0.12em; }
+  .lx-check { display: grid; gap: 6px; }
+  .lx-run { color: var(--status-hang); letter-spacing: 0.16em; animation: vault-blink 0.8s steps(2) infinite; }
+  .lx-sum { padding: 4px 8px; letter-spacing: 0.14em; border: 1px solid currentColor; }
+  .lx-sum.ok { color: var(--pip-hot); background: var(--pip-dark); text-shadow: 0 0 6px var(--glow-bright); }
+  .lx-sum.fail { color: var(--status-broken); }
+  .lx-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+  .lx-results li { display: flex; align-items: baseline; gap: 8px; }
+  .lx-results .lx-lamp { align-self: center; }
+  .lx-word { flex: 0 0 36px; font-size: 11px; letter-spacing: 0.12em; }
+  .lx-note { color: var(--pip-dim); font-size: 12px; }
+  .lx-note.fail { color: var(--status-broken); }
+  .lx-why { color: var(--world-muted); font-size: 12px; }
+  .lx-map { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .lx-map th { text-align: left; color: var(--pip-dim); letter-spacing: 0.14em; font-size: 10px; padding: 3px 6px; border-bottom: 1px solid var(--pip-mid); }
+  .lx-map td { padding: 4px 6px; border-bottom: 1px solid var(--pip-dark); vertical-align: top; color: var(--pip-mid); }
+  .lx-map td:first-child { color: var(--world-muted); width: 42%; }
+  .lx-forget { opacity: 0.8; }
+  @media (prefers-reduced-motion: reduce) { .lx-run { animation: none; } .lx-slot .lx-tape { transition: none; } }
+  @media (max-width: 900px) {
+    #learn { inset: 6px; }
+    .lx-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .lx-shelf { padding: 6px 6px 0; border-right: 0; border-bottom: 3px solid var(--case-mid); overflow-x: auto; overflow-y: hidden; }
+    .lx-rack { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 84px; }
+    .lx-rack li { margin-bottom: 6px; }
+    .lx-track small { display: none; }
+    .lx-top .ptitle { padding: 4px 8px; }
+  }
+  /* ---- end learn ---- */
   #pip {
     position: absolute; top: 10px; left: 12px; z-index: 4; margin: 0;
     width: min(400px, calc(100% - 24px)); max-height: calc(100% - 20px); overflow: auto;
@@ -1217,6 +1328,7 @@ const page = `<!doctype html>
     <div class="keys" role="group" aria-label="panels">
       <button id="tab-radio" class="key" type="button" aria-pressed="true" title="radio: the account's recent calls"><span class="cap" data-icon="radio"></span><span class="tag">Radio</span></button>
       <button id="upgrade" class="key" type="button" aria-pressed="false" title="stacks: Pulumi upgrades"><span class="cap" data-icon="stack"></span><span class="tag">Stacks</span></button>
+      <button id="learn-key" class="key" type="button" aria-pressed="false" title="learn: holotape labs for Kubernetes and OpenShift"><span class="cap" data-icon="learn"></span><span class="tag">Learn</span></button>
       <button id="ask" class="key" type="button" aria-pressed="false" title="ask your local agent (runs only when you press ASK)"><span class="cap" data-icon="terminal"></span><span class="tag">Ask</span></button>
     </div>
   <button id="sample" class="switch" type="button" role="switch" aria-checked="false" aria-label="Sample mode" title="Sample mode: a made-up account, nothing read from AWS"><span class="well" aria-hidden="true"><span class="nut"></span><span class="lever"></span></span><span class="marks" aria-hidden="true"><span>ON</span><span>OFF</span></span><span class="name" aria-hidden="true">SAMPLE</span><span class="led" aria-hidden="true"></span></button>
@@ -1275,6 +1387,7 @@ const page = `<!doctype html>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
       <form id="pip" hidden></form>
       <section id="term" hidden></section>
+      <section id="learn" aria-label="learn" hidden></section>
     </div>
     <aside id="radio-panel" aria-label="radio">
       <div class="ptitle"><img class="px" data-icon="radio" alt="">RADIO<span id="station-count"></span></div>
@@ -1414,6 +1527,23 @@ async function route(app, req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/terraform/state") {
     send(res, 200, await app.terraformState(url.searchParams.get("id") || "", { fresh: url.searchParams.get("fresh") === "1", sample: url.searchParams.get("sample") === "1" }));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/learn") {
+    send(res, 200, app.learnList ? app.learnList({ sample: url.searchParams.get("sample") === "1" }) : { tracks: [], labs: [], progress: {} });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/learn/check") {
+    const body = await readJson(req);
+    send(res, 200, await app.learnCheck(req.headers.origin, body));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/learn/progress") {
+    const body = await readJson(req);
+    send(res, 200, app.learnProgress(req.headers.origin, body));
     return;
   }
 

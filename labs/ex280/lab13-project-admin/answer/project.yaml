@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: project-quota
+  namespace: ex280-lab13-app
+spec:
+  hard:
+    pods: "10"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: ex280-lab13-app
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 200m
+      memory: 256Mi
+    defaultRequest:
+      cpu: 50m
+      memory: 64Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: ex280-lab13-app
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: admin
+  namespace: ex280-lab13-app
+subjects:
+- kind: User
+  name: ex280-dev
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+  namespace: ex280-lab13-app
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: data-consumer
+  namespace: ex280-lab13-app
+spec:
+  containers:
+  - name: app
+    image: registry.access.redhat.com/ubi9/httpd-24:latest
+    command: ["sleep", "infinity"]
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    volumeMounts:
+    - name: data
+      mountPath: /data
+  volumes:
+  - name: data
+    persistentVolumeClaim:
+      claimName: data

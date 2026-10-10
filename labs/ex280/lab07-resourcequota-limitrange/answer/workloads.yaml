@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: ex280-lab07
+spec:
+  limits:
+  - type: Container
+    min:
+      cpu: 50m
+      memory: 32Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 32Mi
+    default:
+      cpu: 200m
+      memory: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alpha
+  namespace: ex280-lab07
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: alpha
+  template:
+    metadata:
+      labels:
+        app: alpha
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/ubi9/httpd-24:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 64Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beta
+  namespace: ex280-lab07
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: beta
+  template:
+    metadata:
+      labels:
+        app: beta
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/ubi9/httpd-24:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 64Mi

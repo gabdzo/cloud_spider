@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notice
+  template:
+    metadata:
+      labels:
+        app: notice
+    spec:
+      containers:
+      - name: app
+        image: notice-image:1
+        ports:
+        - name: http
+          containerPort: 8080
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: html
+          mountPath: /var/www/html/index.html
+          subPath: index.html
+      volumes:
+      - name: html
+        configMap:
+          name: notice-html

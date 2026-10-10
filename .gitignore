@@ -11,3 +11,7 @@ terraform/**/.terraform/
 *.tfstate
 *.tfstate.*
 tfplan
+
+# Lab run state (generated passwords, chosen variants) and Learn progress.
+labs/**/.state/
+.learn/

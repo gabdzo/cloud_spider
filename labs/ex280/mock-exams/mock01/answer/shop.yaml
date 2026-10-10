@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shop-config
+  namespace: ex280-mock01
+data:
+  title: summer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop
+  namespace: ex280-mock01
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/ubi9/httpd-24:latest
+        env:
+        - name: TITLE
+          valueFrom:
+            configMapKeyRef:
+              name: shop-config
+              key: title
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: html
+          mountPath: /var/www/html/index.html
+          subPath: index.html
+      volumes:
+      - name: html
+        configMap:
+          name: shop-html

@@ -1,0 +1,37 @@
+# Kubernetes (EKS) variant of labs/ex280/lab01-workloads (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab01-workloads
+title: Workloads
+track: k8s
+openshift: labs/ex280/lab01-workloads
+task: Namespace `k8s-lab01` runs `catalog` and `inventory`. The catalog rollout is stuck and inventory serves nothing. Restore both.
+requirements:
+  - "Deployment `catalog`: 3 ready replicas, its latest rollout complete"
+  - "Deployment `inventory`: 2 ready replicas, image pinned to `nginxinc/nginx-unprivileged:1.27-alpine`"
+  - "Both: requests cpu `50m` memory `64Mi`, limits cpu `200m` memory `256Mi`"
+setup:
+  - kubectl apply -f labs/k8s/lab01-workloads/setup.yaml
+hints:
+  - "`kubectl rollout status` and `kubectl rollout history deploy/catalog` show which revision broke."
+  - "`kubectl describe pod` on a pending pod names the image it cannot pull."
+  - "`kubectl set resources` and `kubectl scale` change one field without editing YAML."
+check: labs/k8s/lab01-workloads/check.sh
+reset:
+  - kubectl delete namespace k8s-lab01 --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab01-workloads/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab01 --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: oc rollout history / undo
+    kubernetes: kubectl rollout history / undo
+  - openshift: ImageStream `inventory:current`
+    kubernetes: a pinned image tag (or digest)
+  - openshift: Route
+    kubernetes: "none needed: the check reads readiness"
+noEquivalent:
+  - "ImageStreams and image triggers: Kubernetes only has image references."
+docs:
+  - https://kubernetes.io/docs/concepts/workloads/controllers/deployment/

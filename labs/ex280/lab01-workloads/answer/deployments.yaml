@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog
+  namespace: ex280-lab01
+  labels:
+    app: catalog
+    ex280.lab: lab01
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: catalog
+  template:
+    metadata:
+      labels:
+        app: catalog
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/ubi9/httpd-24:latest
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: html
+          mountPath: /var/www/html/index.html
+          subPath: index.html
+      volumes:
+      - name: html
+        configMap:
+          name: catalog-html
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventory
+  namespace: ex280-lab01
+  labels:
+    app: inventory
+    ex280.lab: lab01
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: inventory
+  template:
+    metadata:
+      labels:
+        app: inventory
+    spec:
+      containers:
+      - name: app
+        image: image-registry.openshift-image-registry.svc:5000/ex280-lab01/inventory:current
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: html
+          mountPath: /var/www/html/index.html
+          subPath: index.html
+      volumes:
+      - name: html
+        configMap:
+          name: inventory-html

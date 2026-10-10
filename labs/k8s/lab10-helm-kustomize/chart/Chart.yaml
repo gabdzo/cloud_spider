@@ -1,0 +1,6 @@
+apiVersion: v2
+name: catalog
+description: The lab10 catalog web page (Kubernetes variant of EX280 lab 10).
+type: application
+version: 0.1.0
+appVersion: "1.27"

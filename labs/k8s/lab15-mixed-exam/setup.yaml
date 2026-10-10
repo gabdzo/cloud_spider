@@ -1,0 +1,93 @@
+# Starting state for lab15-mixed-exam (deliberately broken). Apply with:
+#   kubectl apply -f labs/k8s/lab15-mixed-exam/setup.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8s-lab15
+  labels:
+    cloudspider.lab: k8s
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8s-lab15-peer
+  labels:
+    cloudspider.lab: k8s
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: k8s-lab15
+data:
+  greeting: hi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-page
+  namespace: k8s-lab15
+data:
+  index.html: |
+    <h1>WEB-OK</h1>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: k8s-lab15
+  labels:
+    app: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: page
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+      volumes:
+        - name: page
+          configMap:
+            name: web-page
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: k8s-lab15
+spec:
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

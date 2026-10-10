@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: batch
+  namespace: ex280-lab09
+spec:
+  completions: 3
+  parallelism: 2
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: batch
+        image: registry.access.redhat.com/ubi9/httpd-24:latest
+        command: ["/bin/sh", "-c", "exit 0"]
+        resources:
+          requests:
+            cpu: 20m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tick
+  namespace: ex280-lab09
+spec:
+  schedule: "*/1 * * * *"
+  suspend: false
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: tick
+            image: registry.access.redhat.com/ubi9/httpd-24:latest
+            command: ["/bin/sh", "-c", "exit 0"]
+            resources:
+              requests:
+                cpu: 20m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 256Mi

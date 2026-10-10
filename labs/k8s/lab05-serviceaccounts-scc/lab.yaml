@@ -1,0 +1,40 @@
+# Kubernetes (EKS) variant of labs/ex280/lab05-serviceaccounts-scc (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab05-serviceaccounts-scc
+title: ServiceAccounts and Pod Security
+track: k8s
+openshift: labs/ex280/lab05-serviceaccounts-scc
+task: "`k8s-lab05` enforces the `restricted` Pod Security level. Three workloads are not admitted and one ServiceAccount cannot read ConfigMaps."
+requirements:
+  - Deployment `fixed-uid` is ready and runs as UID `1000` in `k8s-lab05` (still `restricted`)
+  - Deployment `priv` is ready with a privileged container, in namespace `k8s-lab05-priv` labelled `pod-security.kubernetes.io/enforce=privileged`
+  - Deployment `normal` is ready in `k8s-lab05` under `restricted`
+  - Deployment `collector` uses ServiceAccount `collector`, is ready, and that ServiceAccount can get ConfigMaps in `k8s-lab05`
+  - "`k8s-lab05` keeps `pod-security.kubernetes.io/enforce=restricted`"
+setup:
+  - kubectl apply -f labs/k8s/lab05-serviceaccounts-scc/setup.yaml
+hints:
+  - "`kubectl get events -n k8s-lab05` shows `violates PodSecurity` with the exact fields."
+  - restricted needs runAsNonRoot, seccompProfile RuntimeDefault, no privilege escalation and drop ALL.
+  - "Pod Security is per namespace: a privileged workload needs its own namespace."
+check: labs/k8s/lab05-serviceaccounts-scc/check.sh
+reset:
+  - kubectl delete namespace k8s-lab05 --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab05-serviceaccounts-scc/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab05 --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: SCC `restricted-v2`
+    kubernetes: Pod Security level `restricted`
+  - openshift: "`oc adm policy add-scc-to-user <scc> -z <sa>`"
+    kubernetes: a namespace label (per namespace, not per ServiceAccount)
+  - openshift: custom SCC with a UID range
+    kubernetes: "`runAsUser` in the pod + `restricted` (or a policy engine like Kyverno)"
+noEquivalent:
+  - "Per-ServiceAccount SCC grants and SCC UID ranges: Pod Security Admission is per namespace and has three fixed levels."
+docs:
+  - https://kubernetes.io/docs/concepts/security/pod-security-admission/
+  - https://kubernetes.io/docs/concepts/security/pod-security-standards/

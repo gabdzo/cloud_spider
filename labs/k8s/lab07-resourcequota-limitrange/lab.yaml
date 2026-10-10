@@ -1,0 +1,35 @@
+# Kubernetes (EKS) variant of labs/ex280/lab07-resourcequota-limitrange (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab07-resourcequota-limitrange
+title: ResourceQuota and LimitRange
+track: k8s
+openshift: labs/ex280/lab07-resourcequota-limitrange
+task: "`k8s-lab07` should run `alpha` and `beta`, and new pods are rejected."
+requirements:
+  - "ResourceQuota `project-quota` stays exactly: pods 4, requests.cpu 1, requests.memory 1Gi, limits.cpu 2, limits.memory 2Gi"
+  - "Deployments `alpha` and `beta`: 2 ready replicas each"
+  - Every container requests at least cpu `50m` and memory `32Mi`, and has requests and limits (set them, or add a LimitRange with defaults)
+setup:
+  - kubectl apply -f labs/k8s/lab07-resourcequota-limitrange/setup.yaml
+hints:
+  - "`kubectl get events -n k8s-lab07` / `kubectl describe rs` shows `failed quota: must specify ...`."
+  - A LimitRange `default` / `defaultRequest` fills in what a pod leaves out.
+  - Do not raise the quota.
+check: labs/k8s/lab07-resourcequota-limitrange/check.sh
+reset:
+  - kubectl delete namespace k8s-lab07 --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab07-resourcequota-limitrange/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab07 --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: project quota
+    kubernetes: ResourceQuota (same object)
+  - openshift: LimitRange
+    kubernetes: LimitRange (same object)
+noEquivalent: []
+docs:
+  - https://kubernetes.io/docs/concepts/policy/resource-quotas/
+  - https://kubernetes.io/docs/concepts/policy/limit-range/

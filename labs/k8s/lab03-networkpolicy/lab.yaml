@@ -1,0 +1,37 @@
+# Kubernetes (EKS) variant of labs/ex280/lab03-networkpolicy (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab03-networkpolicy
+title: NetworkPolicy
+track: k8s
+openshift: labs/ex280/lab03-networkpolicy
+task: "`k8s-lab03-back` runs `web`. Clients run in `k8s-lab03-front` and `k8s-lab03-other`. The backend is locked down too far: front cannot reach it and its pods cannot resolve DNS."
+requirements:
+  - Ingress to `web` on 8080 is allowed from namespace `k8s-lab03-front` only (select it by `kubernetes.io/metadata.name`)
+  - Nothing allows `k8s-lab03-other`
+  - Pods in `k8s-lab03-back` may send DNS (UDP and TCP 53) to `kube-system`
+  - Keep `default-deny` in place
+setup:
+  - kubectl apply -f labs/k8s/lab03-networkpolicy/setup.yaml
+hints:
+  - "`kubectl get ns --show-labels`: is there a `team` label at all?"
+  - A policy port is the container port the traffic arrives on.
+  - "Egress deny also blocks DNS: add an egress rule to kube-dns."
+check: labs/k8s/lab03-networkpolicy/check.sh
+reset:
+  - kubectl delete namespace k8s-lab03-back k8s-lab03-front k8s-lab03-other --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab03-networkpolicy/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab03-back k8s-lab03-front k8s-lab03-other --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: "`oc adm pod-network`"
+    kubernetes: NetworkPolicy only
+  - openshift: allow-from-openshift-ingress (router namespace)
+    kubernetes: the ingress controller's namespace, if you add one
+noEquivalent:
+  - "EKS enforces NetworkPolicy only when the VPC CNI's network policy agent is on (`enableNetworkPolicy: true` on the vpc-cni add-on). The check reads the policies; it does not send traffic."
+docs:
+  - https://kubernetes.io/docs/concepts/services-networking/network-policies/
+  - https://docs.aws.amazon.com/eks/latest/userguide/cni-network-policy.html

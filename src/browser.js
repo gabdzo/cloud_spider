@@ -33,6 +33,7 @@ import { vaultAt } from "./vault-layout.js";
 import { plateText } from "./vault-schema.js";
 import { snapshot } from "./agent-text.js";
 import { createTerminal } from "./terminal.js";
+import { createLearnView } from "./learn-view.js";
 import { metricAlerts, paintPlace } from "./metrics.js";
 import { sunrise } from "./sprites/landmarks.js";
 import { drawSprite } from "./draw-kit.js";
@@ -1739,8 +1740,9 @@ async function act(action) {
   await pull();
 }
 
-sampleButton.addEventListener("click", () => {
-  toggleSample();
+sampleButton.addEventListener("click", async () => {
+  await toggleSample();
+  learnView.refresh();
 });
 
 regionSelect.addEventListener("change", async () => {
@@ -1853,7 +1855,37 @@ const terminal = createTerminal({
 });
 
 termReady = true;
-askTab.addEventListener("click", () => terminal.toggle());
+askTab.addEventListener("click", () => {
+  if (learnView.isOpen()) learnView.setOpen(false);
+  terminal.toggle();
+});
+
+// ---- LEARN: holotape labs over the map ----
+const learnView = createLearnView({
+  root: document.querySelector("#learn"),
+  toggleButton: document.querySelector("#learn-key"),
+  iconURL,
+  isSample: () => sample,
+  storage: (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })(),
+  reducedMotion: () => reducedMotion,
+  onNote(text, status) {
+    noteSpider(text, status);
+    renderRadioPanel();
+  },
+});
+document.querySelector("#learn-key").addEventListener("click", () => {
+  if (!learnView.isOpen()) {
+    if (terminal.isOpen()) terminal.setOpen(false);
+    if (pipOpen) toggleUpgrade();
+  }
+  learnView.toggle();
+});
 askThis.addEventListener("click", () => {
   const question = askThisQuestion();
   if (question) terminal.prefill(question);
@@ -1863,7 +1895,7 @@ askThis.addEventListener("click", () => {
 
 const CARD_ICON = {
   eks: "cluster", signal: "radio", barrel: "stack", camp: "bucket",
-  rds: "database", pgcluster: "database", shopapi: "pod", site: "url", worker: "queue", "tf-rds": "terraform",
+  rds: "database", pgcluster: "database", shopapi: "pod", site: "url", worker: "queue", openshift: "openshift", "tf-rds": "terraform",
 };
 
 function el(tag, props = {}, ...children) {

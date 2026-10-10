@@ -375,6 +375,43 @@ const GRIDS = {
     "................",
   ],
   // Chrome
+  // A fedora: OpenShift (Red Hat) on EC2.
+  openshift: [
+    "................",
+    "................",
+    "................",
+    "......BBBB......",
+    ".....BMMMMB.....",
+    "....BMMKKMMB....",
+    "....BMMMMMMB....",
+    "...BHHHHHHHHB...",
+    "...BMMMMMMMMB...",
+    ".DBMMMMMMMMMMBD.",
+    "DMMMMMMMMMMMMMMD",
+    ".DMMMMMMMMMMMMD.",
+    "..DDDDDDDDDDDD..",
+    "................",
+    "................",
+    "................",
+  ],
+  learn: [
+    "................",
+    "................",
+    ".DDDDDDDDDDDDDD.",
+    ".DMMMMMMMMMMMMD.",
+    ".DMBBBBBBBBBBMD.",
+    ".DMB.......HBMD.",
+    ".DMBBBBBBBBBBMD.",
+    ".DMMMMMMMMMMMMD.",
+    ".DMD........DMD.",
+    ".DMD.HH..HH.DMD.",
+    ".DMD........DMD.",
+    ".DMMMMMMMMMMMMD.",
+    ".DMDMDMDMDMDMDD.",
+    ".DDDDDDDDDDDDDD.",
+    "................",
+    "................",
+  ],
   stack: [
     "................",
     "......BBBB......",
@@ -661,7 +698,7 @@ function square(grid) {
 const ALIAS = {
   alb: "lb", service: "lb", instance: "ec2", eks: "cluster", region: "map",
   "control-plane": "cluster", workload: "pod", route: "lb", ingress: "lb", project: "namespace", generic: "ec2",
-  rds: "database", db: "database", postgres: "database", sqs: "queue", worker: "queue", site: "url", cdn: "url",
+  rds: "database", db: "database", postgres: "database", sqs: "queue", worker: "queue", site: "url", cdn: "url", holotape: "learn", lab: "learn", crc: "openshift", redhat: "openshift",
 };
 const cache = new Map();
 

@@ -1,0 +1,37 @@
+# Kubernetes (EKS) variant of labs/ex280/lab10-helm-kustomize (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab10-helm-kustomize
+title: Helm and Kustomize
+track: k8s
+openshift: labs/ex280/lab10-helm-kustomize
+task: "`k8s-lab10` has a Helm release `catalog` with the wrong image and port, and `notice` should come from the `prod` overlay."
+requirements:
+  - "Release `catalog`: status deployed, more than one revision, 3 ready replicas, image `nginxinc/nginx-unprivileged:1.27-alpine`, Service and container port 8080 (do not delete the release)"
+  - "Deployment `notice` built from `labs/k8s/lab10-helm-kustomize/overlays/prod`: 2 ready replicas"
+setup:
+  - kubectl create namespace k8s-lab10
+  - helm install catalog labs/k8s/lab10-helm-kustomize/chart -n k8s-lab10 --set image.tag=1.27-alpine-old --set port=80
+  - kubectl apply -k labs/k8s/lab10-helm-kustomize/overlays/dev -n k8s-lab10
+hints:
+  - "`helm get values catalog -n k8s-lab10` and `helm history catalog -n k8s-lab10`."
+  - "`helm upgrade catalog ./chart -n k8s-lab10 --set ...` makes a new revision."
+  - "`kubectl kustomize overlays/prod` shows what the overlay renders before you apply it."
+check: labs/k8s/lab10-helm-kustomize/check.sh
+reset:
+  - helm uninstall catalog -n k8s-lab10 || true
+  - kubectl delete namespace k8s-lab10 --wait=true
+cleanup:
+  - kubectl delete namespace k8s-lab10 --ignore-not-found
+needs:
+  - kubectl
+  - python3
+  - helm
+mapping:
+  - openshift: "`oc new-app` templates"
+    kubernetes: Helm charts
+  - openshift: the same Helm and Kustomize
+    kubernetes: the same Helm and Kustomize
+noEquivalent: []
+docs:
+  - https://helm.sh/docs/helm/helm_upgrade/
+  - https://kubectl.docs.kubernetes.io/references/kustomize/

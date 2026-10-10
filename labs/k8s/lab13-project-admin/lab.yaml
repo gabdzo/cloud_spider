@@ -1,0 +1,40 @@
+# Kubernetes (EKS) variant of labs/ex280/lab13-project-admin (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab13-project-admin
+title: Namespace governance
+track: k8s
+openshift: labs/ex280/lab13-project-admin
+task: "OpenShift stamps every new project from a template. Kubernetes has no project template: you set the same governance on `k8s-lab13-app` by hand (or with a policy engine), and fix its volume."
+requirements:
+  - "`k8s-lab13-app` has label `ex280.governance=enforced` and annotation `ex280.owner=platform`"
+  - 'ResourceQuota `project-quota` with `pods: "10"`, LimitRange `default-limits`'
+  - NetworkPolicy `default-deny` denies all ingress
+  - User `dev` is bound to ClusterRole `admin` in the namespace
+  - PVC `data` is Bound (1Gi, ReadWriteOnce; on EKS use the gp3 class from the pgcluster stack, `cloudspider-gp3`, or any class with a provisioner)
+setup:
+  - kubectl apply -f labs/k8s/lab13-project-admin/setup.yaml
+hints:
+  - EBS volumes are ReadWriteOnce only.
+  - "A PVC's storageClassName cannot be edited: delete and re-create it."
+  - "`kubectl create rolebinding dev-admin --clusterrole admin --user dev -n k8s-lab13-app`."
+check: labs/k8s/lab13-project-admin/check.sh
+reset:
+  - kubectl delete namespace k8s-lab13-app --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab13-project-admin/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab13-app --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: project request template
+    kubernetes: none (Kyverno/Gatekeeper generate rules, or a namespace-provisioning script)
+  - openshift: "`oc new-project`"
+    kubernetes: "`kubectl create namespace`"
+  - openshift: self-provisioner role
+    kubernetes: none
+noEquivalent:
+  - "Project request templates and self-provisioning: Kubernetes namespaces are created bare."
+docs:
+  - https://kubernetes.io/docs/concepts/storage/persistent-volumes/
+  - https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html

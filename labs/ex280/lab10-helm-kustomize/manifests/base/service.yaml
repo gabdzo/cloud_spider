@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: notice
+spec:
+  selector:
+    app: notice
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http

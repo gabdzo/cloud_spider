@@ -1,0 +1,12 @@
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: backend
+  namespace: ex280-app
+spec:
+  path: /api
+  to:
+    kind: Service
+    name: backend
+  port:
+    targetPort: 8080

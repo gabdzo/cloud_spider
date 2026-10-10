@@ -5,6 +5,7 @@ import { createPathAws } from "./aws-path.js";
 import { createCost } from "./cost.js";
 import { createUpgrade, pulumiWarning } from "./upgrade.js";
 import { createTerraformReader } from "./terraform.js";
+import { createLearn } from "./learn.js";
 import { createAgent } from "./agent.js";
 import { createKube } from "./kube.js";
 import { listen, listenExit } from "./server.js";
@@ -40,6 +41,7 @@ const app = createApp({
   cost: createCost(),
   upgrade: createUpgrade(),
   terraform: createTerraformReader(),
+  learn: createLearn(),
   eks: aws.eks,
   vaults,
   agent: createAgent({ cwd: root }),

@@ -72,6 +72,7 @@ const PROGRAMS = [
   { dir: "upgrades/pgcluster", project: "cloudspider-pgcluster", stack: "pgcluster", vaults: ["pgcluster"], template: true },
   { dir: "upgrades/site", project: "cloudspider-site", stack: "site", vaults: ["site"], template: true },
   { dir: "upgrades/worker", project: "cloudspider-worker", stack: "worker", vaults: ["worker"], template: true },
+  { dir: "upgrades/openshift", project: "cloudspider-openshift", stack: "openshift", vaults: ["openshift"], template: true },
 ];
 
 async function mocked(program, config = {}) {

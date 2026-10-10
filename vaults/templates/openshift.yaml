@@ -1,0 +1,32 @@
+# Template (the openshift stack is not up). When it is, make it living with:
+#   npm run vaults:new -- openshift openshift
+# upgrades/openshift (Pulumi project cloudspider-openshift, stack openshift):
+# a VPC with one public subnet, a security group with no inbound rules, an
+# SSM role, one m7i-flex.2xlarge (nested virtualization) with a 120 GB gp3
+# disk for OpenShift Local (CRC), and an EventBridge Scheduler schedule that
+# stops it every night at 22:00 Europe/Prague. The host also stops itself
+# maxHours after each boot.
+# Running about $0.43/h, $10.22/day; stopped about $10/month (the disk).
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: openshift
+  number: 185
+  title: OpenShift Local
+  description: One EC2 host running OpenShift Local (CRC) for the EX280 labs, reached only through Session Manager, stopping itself every night.
+  owner: gabriel
+  tags: [upgrade, openshift, learn]
+spec:
+  type: cluster
+  resources:
+    tags:
+      project: openshift
+    ids:
+      - cloudspider-openshift
+  stack:
+    dir: upgrades/openshift
+    name: openshift
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/openshift
+    docs: https://github.com/gabdzo/cloud_spider/blob/main/docs/RUN-ME.md
+    dashboard: https://eu-north-1.console.aws.amazon.com/ec2/home?region=eu-north-1#Instances:tag:project=openshift

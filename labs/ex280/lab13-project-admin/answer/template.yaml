@@ -1,0 +1,67 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: ex280-project-request
+  namespace: openshift-config
+objects:
+- apiVersion: project.openshift.io/v1
+  kind: Project
+  metadata:
+    name: ${PROJECT_NAME}
+    annotations:
+      openshift.io/description: ${PROJECT_DESCRIPTION}
+      openshift.io/display-name: ${PROJECT_DISPLAYNAME}
+      openshift.io/requester: ${PROJECT_REQUESTING_USER}
+      ex280.owner: platform
+    labels:
+      ex280.governance: enforced
+- apiVersion: v1
+  kind: ResourceQuota
+  metadata:
+    name: project-quota
+    namespace: ${PROJECT_NAME}
+  spec:
+    hard:
+      pods: "10"
+- apiVersion: v1
+  kind: LimitRange
+  metadata:
+    name: default-limits
+    namespace: ${PROJECT_NAME}
+  spec:
+    limits:
+    - type: Container
+      default:
+        cpu: 200m
+        memory: 256Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 64Mi
+- apiVersion: networking.k8s.io/v1
+  kind: NetworkPolicy
+  metadata:
+    name: default-deny
+    namespace: ${PROJECT_NAME}
+  spec:
+    podSelector: {}
+    policyTypes:
+    - Ingress
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata:
+    name: admin
+    namespace: ${PROJECT_NAME}
+  subjects:
+  - kind: User
+    name: ${PROJECT_ADMIN_USER}
+    apiGroup: rbac.authorization.k8s.io
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: admin
+parameters:
+- name: PROJECT_NAME
+- name: PROJECT_DISPLAYNAME
+- name: PROJECT_DESCRIPTION
+- name: PROJECT_ADMIN_USER
+- name: PROJECT_REQUESTING_USER

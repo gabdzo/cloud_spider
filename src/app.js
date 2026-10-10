@@ -29,7 +29,7 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
-export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, eks, vaults, agent, kube, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -263,6 +263,27 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       } catch (failure) {
         return { error: failure?.message || "terraform did not answer" };
       }
+    },
+    // LEARN: the lab shelf. Listing is read-only; a check or a progress
+    // change needs a same-origin POST like every other action.
+    learnList({ sample = false } = {}) {
+      if (!learn?.list) return { tracks: [], labs: [], progress: {} };
+      const list = learn.list();
+      return sample ? { ...list, progress: {}, sample: true } : list;
+    },
+    async learnCheck(requestOrigin, body = {}) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the check did not run" };
+      if (!learn?.check) return { error: "labs are not set up" };
+      return learn.check(String(body?.key || ""), { sample: Boolean(body?.sample), attempt: Number(body?.attempt) || 0 });
+    },
+    learnProgress(requestOrigin, body = {}) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { error: "progress was not saved" };
+      if (!learn?.progress) return { error: "labs are not set up" };
+      const change = {};
+      if (Number.isFinite(Number(body?.hints))) change.hints = Number(body.hints);
+      if (body?.started) change.started = true;
+      if (body?.reset) change.reset = true;
+      return learn.progress(String(body?.key || ""), change);
     },
     async upgradeStatus(module = "", fresh = false, values = {}) {
       const job = upgrade?.status?.() || { running: false, lines: [] };

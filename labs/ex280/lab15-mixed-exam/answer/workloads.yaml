@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+  namespace: ex280-lab15
+data:
+  greeting: hello
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-html
+  namespace: ex280-lab15
+data:
+  index.html: |
+    WEB-OK
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: ex280-lab15
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+      - name: app
+        image: registry.access.redhat.com/ubi9/httpd-24:latest
+        env:
+        - name: GREETING
+          valueFrom:
+            configMapKeyRef:
+              name: web-config
+              key: greeting
+        ports:
+        - name: http
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        volumeMounts:
+        - name: html
+          mountPath: /var/www/html/index.html
+          subPath: index.html
+      volumes:
+      - name: html
+        configMap:
+          name: web-html
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: ex280-lab15
+spec:
+  selector:
+    app: web
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: project-quota
+  namespace: ex280-lab15
+spec:
+  hard:
+    pods: "5"
+    requests.cpu: "1"
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-router-and-local
+  namespace: ex280-lab15
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          network.openshift.io/policy-group: ingress
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ex280-lab15
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: readers
+  namespace: ex280-lab15
+subjects:
+- kind: Group
+  name: ex280-lab15-readers
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io
