@@ -1,0 +1,9 @@
+id: fake-001
+version: 1
+provider: aws
+region: eu-central-1
+ttl_minutes: 30
+faults: [break-a, break-b]
+handover: [endpoint]
+baseline_timeout_s: 0
+fault_timeout_s: 0

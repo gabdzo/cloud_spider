@@ -198,7 +198,8 @@ AWS Price List bulk files for eu-north-1 (below).
 
 ### What is broken or unfinished
 
-Its own tests pass (`uv run pytest`: 179 passed; scenario tests: 26 passed),
+Its own tests passed on import (`uv run pytest`: 179 passed; scenario tests:
+26 passed),
 but it has never run end to end:
 
 1. **The account structure it needs was never built.** A dedicated AWS
@@ -233,6 +234,24 @@ world guard on any port, and inventory scoped to the scenario's tags.
 Items 1, 2, 5 and 8 are decisions for Gabriel (questions below). The LEARN
 view lists the scenarios (brief only, no spoilers), reads `.lab/` run state
 read-only, and shows the `labctl up/validate/down` commands to copy.
+
+### Status after PR C
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | No org / sandbox / SSO / boundary built; solver role trusts SSO only | **Open, Gabriel decides** (question 2). `lab up` will fail at the solver role in a single account until then. |
+| 2 | 0/105 plan checkboxes | Open; the plans are kept as history in `docs/cloud-platform/superpowers/`. |
+| 3 | Region hardcoded to eu-central-1 | **Fixed**: scenarios and the janitor default to eu-north-1; `LAB_REGION` overrides (validated). `platform/` policies (region lock, boundary, BOOTSTRAP.md) still say eu-central-1 because they belong to the unbuilt org design (item 1). |
+| 4 | `lab-env.sh` macOS only | **Fixed**: env var → macOS keychain → `secret-tool` → a chmod-600 file under `~/.config/cloud-platform/`. |
+| 5 | SCPs deny EKS and RDS | Open, part of item 1. |
+| 6 | aws-smoke-001 accepted world on 8080 | **Fixed**: the outcome needs 8080 from inside 10.0.0.0/8; the guard (`no-world-ingress`) fails any 0.0.0.0/0 or ::/0 rule, any port. |
+| 7 | web-unreachable inventory account-wide | **Fixed**: only the lab VPC, run-tagged VPCs/gateways/addresses, gateways attached to the lab VPC and addresses on its interfaces count. |
+| 8 | Strict health check (operator IP + nonce) | Open, by design; the tape tells the solver to curl from the `lab up` machine. |
+
+Tests: `labs/cloud-platform`: 189 (labctl) + 28 (scenarios) passed, 12 of
+them new (region, lab-env.sh on Linux, smoke guard, scoped inventory).
+`test/learn-cloud.test.js` runs that suite from `npm test` when `uv` is
+installed and checks the tapes carry no spoilers.
 
 ---
 

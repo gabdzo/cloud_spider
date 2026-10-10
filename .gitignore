@@ -15,3 +15,7 @@ tfplan
 # Lab run state (generated passwords, chosen variants) and Learn progress.
 labs/**/.state/
 .learn/
+
+# cloud-platform (labctl) run state, Pulumi state and its venv.
+labs/cloud-platform/.lab/
+labs/cloud-platform/.venv/

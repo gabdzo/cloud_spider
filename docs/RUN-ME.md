@@ -273,13 +273,14 @@ It stops itself in two ways. A timer powers it off `maxHours` (default 4, 1–12
 
 ## 13. LEARN: the lab shelf (free in Cloud Spider; the clusters cost what they cost)
 
-The LEARN key on the console opens the holotape shelf. It has two tracks:
+The LEARN key on the console opens the holotape shelf. It has three tracks:
 
 - **KUBERNETES / EKS**: `labs/k8s/lab01…lab15`, the EX280 labs rewritten for `kubectl` (namespaces `k8s-labNN`, Pod Security `restricted`, an unprivileged nginx on 8080). They run on the `cloudspider-up` EKS cluster (§6, about $0.13/h; pick t4g.medium for the bigger labs) or any kind/k3s cluster. Some labs need extras:
   - lab03 NetworkPolicy needs the VPC CNI network policy agent: `aws eks update-addon --cluster-name cloudspider-up --addon-name vpc-cni --configuration-values '{"enableNetworkPolicy":"true"}'` (free).
   - lab10 and lab11 need `helm`. Lab11 installs cert-manager into `k8s-lab11` (free).
   - lab12 reads the Ingress objects and the TLS secrets only, so it needs no ingress controller. Installing ingress-nginx to curl them would add an NLB, about $0.024/h, $17/month.
 - **OPENSHIFT EX280**: `labs/ex280/…`, the original labs and mock exams. They need `oc` as cluster-admin, which means the §12 host.
+- **CLOUD PLATFORM**: the AWS break-fix scenarios of `labs/cloud-platform` (§15). Their check is `lab validate`, which Cloud Spider never runs; the tape shows the last result `labctl` recorded.
 
 Each tape shows the task, the setup commands (COPY), hints one at a time and the check. Cloud Spider runs a check only when a scan of the script and every helper it calls finds no write, exec or install. All 15 Kubernetes checks qualify, and so do 14 of the 18 OpenShift ones. The OpenShift lab03, lab06, lab15 and mock02 checks exec into pods or rotate a secret, so their RUN CHECK stays off; copy the command instead. Progress is kept in `.learn/progress.json` (gitignored); with SAMPLE on it is kept in the browser instead, and nothing runs. FORGET PROGRESS clears a lab.
 
@@ -319,3 +320,32 @@ kubectl -n demo get pods -l app=otel-gateway       # 1/1 Running
 **Cost:** $0 in AWS. No CloudWatch custom metrics, no new load balancer, no new log group. The gateway uses about 10m CPU and 48–128 Mi of memory on the node you already pay for, and the collector's extra receivers add a few millicores. The only AWS calls are the EC2 CloudWatch reads the map already makes.
 
 **EC2 memory and disk in CloudWatch** are *not* published by EC2 itself. They need the CloudWatch agent, which bills as custom metrics: about $0.30 per metric per month, so a node with memory plus 2 disk metrics costs about $0.90/month. node-exporter scraped into CloudWatch would cost the same. Because the OTel path above already shows memory and disk for free, this isn't set up. If you ever add the CloudWatch agent, reading its `CWAgent` namespace next to the EC2 series is a small follow-up.
+
+## 15. cloud-platform scenarios (`labs/cloud-platform`, about $0.02 per run)
+
+`labctl` (`lab`) builds a small network with Pulumi, proves it healthy, breaks one hidden thing and hands it over; `lab validate` checks your fix and the guards (no world-open rules, no new infrastructure). Cloud Spider only lists the scenarios on the CLOUD PLATFORM shelf and reads `labs/cloud-platform/.lab/` (gitignored) to show the run's state and last validate result. It never calls AWS for them.
+
+**Before the first run.** It was designed for a separate AWS Organization with a `labs-sandbox` account, IAM Identity Center (`cp-lab` profile) and the `lab-solver-boundary` policy (`docs/cloud-platform/ARCHITECTURE.md`, `labs/cloud-platform/platform/BOOTSTRAP.md`). That is not built yet, so `lab up` stops at the solver role in a single account. See the open question in `docs/plan-expansion.md`.
+
+```bash
+cd labs/cloud-platform
+uv sync --frozen                                   # Python 3.12 + deps into .venv
+uv run --frozen pytest -q tests scenarios          # offline, no AWS
+# Pulumi passphrase for the local state: env var, keychain, secret-tool, or a private file
+mkdir -p ~/.config/cloud-platform && (umask 077; printf '%s' 'choose-one' > ~/.config/cloud-platform/pulumi-passphrase)
+source scripts/lab-env.sh                          # LAB_REGION defaults to eu-north-1
+uv run lab up aws-web-unreachable-001              # builds, breaks, prints endpoint + instance_id
+uv run lab shell                                   # 1 h solver credentials
+uv run lab status                                  # time left
+uv run lab validate                                # repeat until it passes
+uv run lab reveal                                  # the cause, after a pass
+uv run lab down                                    # tear down (idempotent)
+uv run lab janitor                                 # list anything left tagged lab_run_id
+```
+
+| Scenario | What runs | Cost |
+|---|---|---|
+| aws-smoke-001 | VPC + security group, no instance, TTL 15 min | free |
+| aws-web-unreachable-001 | VPC, subnet, IGW, NACL, t4g.micro + public IPv4, TTL 90 min | $0.0136/h: about $0.02 per run, $0.33/day if left up |
+
+**Teardown**: `uv run lab down` (or `lab down <run_id>`), then `uv run lab janitor` must print `clean`. Runs past their TTL are not deleted automatically; `lab status` and the tape say EXPIRED.

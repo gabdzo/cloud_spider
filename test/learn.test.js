@@ -20,9 +20,10 @@ const read = (path) => readFileSync(join(root, path), "utf8");
 const K8S = readdirSync(join(root, "labs/k8s")).filter((name) => /^lab\d\d-/.test(name)).sort();
 
 test("the shelf has 15 Kubernetes labs and the 15 EX280 labs plus 3 mock exams", () => {
-  const { tracks, labs } = loadLabs({ root });
-  assert.deepEqual(tracks.map((track) => [track.id, track.count]), [["k8s", 15], ["ex280", 18]]);
+  const { tracks, labs: all } = loadLabs({ root });
+  assert.deepEqual(tracks.map((track) => [track.id, track.count]), [["k8s", 15], ["ex280", 18], ["cloud", 2]]);
   assert.equal(K8S.length, 15);
+  const labs = all.filter((lab) => lab.track !== "cloud"); // see learn-cloud.test.js
   for (const lab of labs) {
     assert.ok(lab.title && lab.task.length > 40, `${lab.key} has a task`);
     assert.ok(lab.setup.length && lab.hints.length >= 2, `${lab.key} has setup and hints`);
@@ -271,7 +272,7 @@ test("LEARN routes: listing is open, checks and progress need the page's origin"
   try {
     const base = `http://127.0.0.1:${server.address().port}`;
     const list = await fetch(`${base}/api/learn`).then((response) => response.json());
-    assert.equal(list.labs.length, 33);
+    assert.equal(list.labs.length, 35);
     const sample = await fetch(`${base}/api/learn?sample=1`).then((response) => response.json());
     assert.deepEqual(sample.progress, {});
     const post = (path, body, origin) => fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json", ...(origin ? { origin } : {}) }, body: JSON.stringify(body) }).then((response) => response.json());

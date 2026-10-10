@@ -1150,7 +1150,9 @@ const page = `<!doctype html>
   .lx-sec .cmd { min-height: 26px; padding: 0 10px; font-size: 11px; letter-spacing: 0.12em; }
   .lx-needs { color: var(--pip-dim); font-size: 11px; letter-spacing: 0.04em; font-weight: normal; }
   .lx-player p { margin: 0 0 6px; line-height: 1.45; }
-  .lx-task { color: var(--pip-bright); }
+  .lx-task { color: var(--pip-bright); white-space: pre-line; }
+  .lx-runstate { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px dashed var(--case-seam); color: var(--pip-dim); letter-spacing: 0.06em; font-size: 12px; }
+  .lx-runstate .lx-lamp.live { background: var(--world-amber); box-shadow: 0 0 6px var(--world-amber); animation: vault-blink 1.2s steps(2) infinite; }
   .lx-player code { font: inherit; color: var(--pip-hot); background: var(--pip-screen); padding: 0 3px; overflow-wrap: anywhere; }
   .lx-reqs, .lx-hints, .lx-noeq { margin: 0; padding: 0 0 0 20px; display: grid; gap: 3px; line-height: 1.4; }
   .lx-reqs li::marker { content: "▸ "; color: var(--pip-dim); }

@@ -1,0 +1,7 @@
+name: aws-smoke-001
+description: labctl smoke test scenario
+runtime:
+  name: python
+  options:
+    toolchain: pip
+    virtualenv: ../../../.venv

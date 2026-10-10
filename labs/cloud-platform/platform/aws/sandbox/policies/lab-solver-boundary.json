@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowEc2InHomeRegion",
+      "Effect": "Allow",
+      "Action": "ec2:*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "eu-central-1"
+        }
+      }
+    },
+    {
+      "Sid": "AllowWhoAmI",
+      "Effect": "Allow",
+      "Action": "sts:GetCallerIdentity",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyEscalationAndSpoilers",
+      "Effect": "Deny",
+      "Action": ["iam:*", "cloudtrail:*", "organizations:*", "ssm:*", "ec2:*NetworkInsights*"],
+      "Resource": "*"
+    }
+  ]
+}

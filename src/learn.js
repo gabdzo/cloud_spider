@@ -15,10 +15,12 @@ import YAML from "yaml";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const CHECK_TIMEOUT = { ex280: 300_000, k8s: 120_000 };
+export const CLOUD_DIR = "labs/cloud-platform";
 
 export const TRACKS = [
   { id: "k8s", title: "KUBERNETES / EKS", tool: "kubectl", note: "The EX280 labs rewritten for any Kubernetes cluster (EKS, kind, k3s): oc → kubectl, Routes → Ingress, SCC → Pod Security, projects → namespaces." },
   { id: "ex280", title: "OPENSHIFT EX280", tool: "oc", note: "The original labs for OpenShift Local (CRC) 4.22. Run them on the OpenShift stack or any cluster where you are cluster-admin." },
+  { id: "cloud", title: "CLOUD PLATFORM", tool: "lab", note: "AWS break-fix scenarios from cloud-platform: `lab up` builds a small network, proves it healthy, breaks one hidden thing and hands it to you. Runs in your own AWS account and costs money while up." },
 ];
 
 // Commands that change a cluster, open a shell in a pod or install things.
@@ -208,8 +210,111 @@ function k8sLabs(root) {
     });
 }
 
+// ---- cloud-platform scenarios ---------------------------------------------
+// Only the brief (README.md) and scenario.yaml are read. AUTHOR.md, PLAN.md,
+// faults/ and validate.py name the hidden fault, so they are never opened here.
+
+function scenarioBrief(markdown) {
+  const lines = String(markdown).split("\n");
+  const heading = lines.find((line) => /^#\s/.test(line)) || "";
+  const title = heading.replace(/^#\s*/, "").replace(/^[\w-]+:\s*/, "").trim();
+  const paragraphs = lines.filter((line) => !/^#/.test(line)).join("\n").split(/\n\s*\n/).map((block) => block.replace(/\s*\n\s*/g, " ").trim()).filter(Boolean);
+  return { title, paragraphs };
+}
+
+// The labctl run for a scenario, read from .lab/ without running labctl:
+// the active run if it is this scenario's, else the newest one. Secrets in
+// run.json (nonce, operator IP, outputs) are left out.
+export function cloudRun(root, scenarioId) {
+  const state = join(root, CLOUD_DIR, ".lab");
+  const runsDir = join(state, "runs");
+  if (!existsSync(runsDir)) return null;
+  const read = (id) => {
+    try {
+      const data = JSON.parse(readFileSync(join(runsDir, id, "run.json"), "utf8"));
+      return data && typeof data === "object" ? data : null;
+    } catch {
+      return null;
+    }
+  };
+  const active = readText(join(state, "active")).trim();
+  let run = active && /^[\w.-]+$/.test(active) ? read(active) : null;
+  if (!run || run.scenario !== scenarioId) {
+    run = readdirSync(runsDir)
+      .filter((id) => /^[\w.-]+$/.test(id))
+      .map(read)
+      .filter((data) => data && data.scenario === scenarioId && data.purpose !== "selftest")
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+  }
+  if (!run) return null;
+  const solves = (Array.isArray(run.attempts) ? run.attempts : []).filter((attempt) => attempt.purpose === "solve");
+  const last = solves[solves.length - 1];
+  const result = last && Array.isArray(last.checks)
+    ? (() => {
+        const lines = last.checks.map((check) => ({ ok: Boolean(check.passed), text: `${check.kind === "guard" ? "guard " : ""}${check.name}${check.detail ? `: ${check.detail}` : ""}` }));
+        const failed = lines.filter((line) => !line.ok).length;
+        return { ok: Boolean(last.passed), passed: lines.length - failed, failed, lines, note: `last lab validate ${String(last.at).replace("T", " ").slice(0, 16)}`, at: last.at };
+      })()
+    : null;
+  return {
+    runId: String(run.run_id || ""),
+    state: String(run.state || ""),
+    active: run.run_id === active,
+    createdAt: run.created_at || "",
+    expiresAt: run.expires_at || "",
+    validations: solves.length,
+    solved: solves.some((attempt) => attempt.passed),
+    result,
+  };
+}
+
+function cloudLabs(root) {
+  const base = join(root, CLOUD_DIR, "scenarios");
+  if (!existsSync(base)) return [];
+  const meta = YAML.parse(readText(join(root, CLOUD_DIR, "learn.yaml")) || "{}") || {};
+  const cd = `cd ${CLOUD_DIR} && source scripts/lab-env.sh`;
+  return readdirSync(base)
+    .filter((id) => /^[a-z0-9-]+$/.test(id) && existsSync(join(base, id, "scenario.yaml")))
+    .sort((a, b) => (meta[a]?.order ?? 99) - (meta[b]?.order ?? 99) || a.localeCompare(b))
+    .map((id, index) => {
+      const spec = YAML.parse(readText(join(base, id, "scenario.yaml"))) || {};
+      const brief = scenarioBrief(readText(join(base, id, "README.md")));
+      const extra = meta[id] || {};
+      return {
+        track: "cloud",
+        key: labKey("cloud", id),
+        id,
+        num: String(index + 1).padStart(2, "0"),
+        mock: false,
+        title: extra.title || brief.title || id,
+        task: brief.paragraphs.join("\n\n"),
+        requirements: extra.requirements || [],
+        success: [],
+        note: [extra.cost, `Time to live ${spec.ttl_minutes || "?"} min, region ${spec.region || "?"} (LAB_REGION overrides it).`].filter(Boolean).join(" "),
+        setup: [`${cd} && uv run lab up ${id}`, `${cd} && uv run lab shell`],
+        hints: extra.hints || [],
+        check: {
+          command: `${cd} && uv run lab validate`,
+          path: `${CLOUD_DIR}/scenarios/${id}/validate.py`,
+          runnable: false,
+          reasons: ["needs AWS credentials and the solver role"],
+          why: "Cloud Spider does not call AWS for this: run `lab validate` in your terminal. The last result it recorded under .lab/ shows here.",
+        },
+        reset: [`${cd} && uv run lab status`, `${cd} && uv run lab reveal`],
+        cleanup: [`${cd} && uv run lab down`, `${cd} && uv run lab janitor`],
+        needs: ["uv", "AWS credentials", "pulumi"],
+        twin: "",
+        mapping: [],
+        noEquivalent: [],
+        docs: extra.docs || [],
+        cost: extra.cost || "",
+        run: cloudRun(root, id),
+      };
+    });
+}
+
 export function loadLabs({ root = repoRoot, extraTracks = [] } = {}) {
-  const labs = [...k8sLabs(root), ...ex280Labs(root), ...extraTracks.flatMap((track) => track.labs || [])];
+  const labs = [...k8sLabs(root), ...ex280Labs(root), ...cloudLabs(root), ...extraTracks.flatMap((track) => track.labs || [])];
   const tracks = [...TRACKS, ...extraTracks.map(({ labs: _labs, ...track }) => track)]
     .map((track) => ({ ...track, count: labs.filter((lab) => lab.track === track.id).length }))
     .filter((track) => track.count > 0);

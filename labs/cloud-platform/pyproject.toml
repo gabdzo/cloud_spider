@@ -1,0 +1,29 @@
+[project]
+name = "labctl"
+version = "0.1.0"
+description = "Sealed outage lab loop"
+requires-python = ">=3.12"
+dependencies = [
+    "boto3>=1.35",
+    "pulumi>=3.130,<4",
+    "pulumi-aws>=6.50,<7",
+    "pyyaml>=6",
+]
+
+[project.scripts]
+lab = "labctl.cli:main"
+
+[dependency-groups]
+# Pulumi's `toolchain: pip` runs `python -m pip` in .venv, and uv venvs ship without pip.
+dev = ["pytest>=8", "pip"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["labctl"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -28,6 +28,35 @@ export function trackTally(labs, progress, track) {
   return { passed, total: mine.length, text: `${passed}/${mine.length} PASSED` };
 }
 
+// Cloud scenarios are checked by `lab validate` outside the app; the run it
+// recorded under .lab/ decides their lamp (a pass sticks, like a check pass).
+export function withRunStatus(progress, labs) {
+  const out = { ...(progress || {}) };
+  for (const lab of labs || []) {
+    const run = lab.run;
+    if (!run?.result) continue;
+    const entry = out[lab.key] || { status: "new", hints: 0 };
+    const status = run.solved || entry.status === "passed" ? "passed" : "failing";
+    out[lab.key] = { ...entry, status };
+  }
+  return out;
+}
+
+// "RUN r-… · HANDED OVER · 37 MIN LEFT" for a labctl run.
+export function runLine(run, now = Date.now()) {
+  if (!run) return "";
+  const state = String(run.state || "unknown").replace(/_/g, " ").toUpperCase();
+  const parts = [`RUN ${run.runId}`, state];
+  const live = !["down", "solved"].includes(run.state);
+  const expires = Date.parse(run.expiresAt);
+  if (live && Number.isFinite(expires)) {
+    const minutes = Math.round((expires - now) / 60000);
+    parts.push(minutes >= 0 ? `${minutes} MIN LEFT` : `EXPIRED ${-minutes} MIN AGO · RUN lab down`);
+  }
+  parts.push(`${run.validations} VALIDATE${run.validations === 1 ? "" : "S"}`);
+  return parts.join(" · ");
+}
+
 export const STATUS_WORD = { new: "NEW", started: "STARTED", failing: "FAILING", passed: "PASSED" };
 
 // SAMPLE progress: the same shape as the server's, kept in the browser.
@@ -102,7 +131,7 @@ export function createLearnView({ root, toggleButton, iconURL, isSample, storage
   const sampleProgress = createSampleProgress(storage);
   const attempts = new Map();
 
-  const progress = () => (isSample() ? sampleProgress.all() : data.progress || {});
+  const progress = () => (isSample() ? sampleProgress.all() : withRunStatus(data.progress, data.labs));
   const labsOf = (id) => data.labs.filter((lab) => lab.track === id);
   const current = () => data.labs.find((lab) => lab.key === selected);
 
@@ -195,14 +224,17 @@ export function createLearnView({ root, toggleButton, iconURL, isSample, storage
     shelf.replaceChildren(list);
   }
 
-  function paintResult(box, lab) {
-    const result = results.get(lab.key);
+  function paintResult(box, lab, fixed) {
+    const result = fixed || results.get(lab.key);
     box.replaceChildren();
     if (running === lab.key) {
       box.append(el("p", "lx-run", "RUNNING CHECK…"));
       return;
     }
-    if (!result) return;
+    if (!result) {
+      if (lab.run?.result && !isSample()) paintResult(box, { ...lab, key: `${lab.key}#run` }, { result: lab.run.result });
+      return;
+    }
     if (result.error) {
       box.append(el("p", "lx-note fail", result.error));
       for (const reason of result.reasons || []) box.append(el("p", "lx-why", reason));
@@ -234,7 +266,7 @@ export function createLearnView({ root, toggleButton, iconURL, isSample, storage
     const head = el("div", "lx-head");
     head.append(tapeCanvas(lab, 4));
     const name = el("div", "lx-title");
-    name.append(el("small", "", `${lab.track === "ex280" ? "OPENSHIFT" : lab.track === "k8s" ? "KUBERNETES" : "CLOUD"} · ${lab.mock ? "MOCK EXAM" : "LAB"} ${lab.num}`), el("h3", "", lab.title));
+    name.append(el("small", "", `${lab.track === "ex280" ? "OPENSHIFT" : lab.track === "k8s" ? "KUBERNETES" : "CLOUD"} · ${lab.mock ? "MOCK EXAM" : lab.track === "cloud" ? "SCENARIO" : "LAB"} ${lab.num}`), el("h3", "", lab.title));
     const state = el("span", `lx-state ${status}`);
     state.append(el("i", "lx-lamp"), document.createTextNode(STATUS_WORD[status] || "NEW"));
     name.append(state);
@@ -257,6 +289,11 @@ export function createLearnView({ root, toggleButton, iconURL, isSample, storage
       player.append(sectionHead("REQUIREMENTS"), list);
     }
     if (lab.note) player.append(rich("p", "lx-note", lab.note));
+    if (lab.track === "cloud") {
+      const box = el("div", "lx-runstate");
+      box.append(el("i", `lx-lamp ${lab.run && !["down", "solved"].includes(lab.run.state) ? "live" : ""}`), el("span", "", lab.run ? runLine(lab.run) : "NO RUN YET · nothing in labs/cloud-platform/.lab/"));
+      player.append(sectionHead("LAB RUN", el("span", "lx-needs", "read from .lab/, no AWS calls")), box);
+    }
 
     player.append(sectionHead("SETUP", el("span", "lx-needs", `needs ${lab.needs.join(", ")}`)), commandRows(lab.setup, "SETUP", () => {
       if (status === "new") saveProgress(lab.key, { started: true }).then(paint);
@@ -295,7 +332,7 @@ export function createLearnView({ root, toggleButton, iconURL, isSample, storage
     runButton.disabled = Boolean(running) || (!lab.check.runnable && !isSample());
     const checkHead = sectionHead("CHECK", runButton);
     player.append(checkHead, commandRows([lab.check.command], "CHECK"));
-    if (!lab.check.runnable) player.append(el("p", "lx-why", "Cloud Spider will not run this one: it execs into pods or writes to the cluster. Copy it into your terminal."));
+    if (!lab.check.runnable) player.append(rich("p", "lx-why", lab.check.why || "Cloud Spider will not run this one: it execs into pods or writes to the cluster. Copy it into your terminal."));
     paintResult(checkBox, lab);
     player.append(checkBox);
 

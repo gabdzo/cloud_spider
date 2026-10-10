@@ -1,0 +1,24 @@
+# Learn shelf metadata for the cloud-platform scenarios (CLOUD PLATFORM track).
+# Only spoiler-free text belongs here: the cause stays in AUTHOR.md / faults/.
+aws-web-unreachable-001:
+  order: 1
+  title: The health endpoint stopped responding
+  cost: "Costs about $0.02 per run: one t4g.micro ($0.0086/h) plus its public IPv4 ($0.005/h) for at most the 90 minute TTL, about $0.33/day if forgotten; `lab down` removes everything."
+  requirements:
+    - "`curl` to the printed `endpoint` from this machine's IP answers again (the app only trusts the operator IP recorded at `lab up`)"
+    - "Same instance: no replacement, no new VPC, gateway, interface or Elastic IP"
+    - "No inbound rule from `0.0.0.0/0` or `::/0`, on any port"
+  hints:
+    - "Work from the outside in: is the instance running, and does anything between you and port 80 drop the packet? `lab shell` gives you read access to EC2."
+    - "Follow the path hop by hop: security group, subnet route table, network ACL. There may be more than one break."
+    - "Network ACLs are stateless: a reply leaves on an ephemeral port, so both directions need a rule."
+    - "Stuck? `lab reveal --give-up` names the cause (it ends the attempt)."
+aws-smoke-001:
+  order: 2
+  title: Harness smoke test
+  cost: "Free: a security group in its own VPC, no instance."
+  requirements:
+    - "The security group allows TCP 8080 from `10.0.0.0/8`"
+    - "No inbound rule from `0.0.0.0/0` or `::/0`, on any port"
+  hints:
+    - "`aws ec2 describe-security-group-rules --filters Name=group-id,Values=<sg_id>` shows what is there now."
