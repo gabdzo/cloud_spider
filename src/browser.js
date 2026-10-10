@@ -440,9 +440,22 @@ setInterval(() => {
   if (mode === "path") pullPath();
 }, 15_000);
 
+let animationEnabled = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let tabVisible = !document.hidden;
+
+window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", (e) => {
+  animationEnabled = !e.matches;
+});
+
+document.addEventListener("visibilitychange", () => {
+  tabVisible = !document.hidden;
+});
+
 setInterval(() => {
-  phase = (phase + 1) % 2;
-  if (canvas.width) draw();
+  if (animationEnabled && tabVisible) {
+    phase = (phase + 1) % 4;
+    if (canvas.width) draw();
+  }
 }, 420);
 
 window.addEventListener("resize", () => draw());

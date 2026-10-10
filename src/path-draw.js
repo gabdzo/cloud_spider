@@ -1,12 +1,12 @@
 import { FONT_PX } from "./layout.js";
 
-const FONT = `bold ${FONT_PX}px Menlo, Monaco, "Courier New", monospace`;
-const SMALL = `bold ${FONT_PX - 2}px Menlo, Monaco, "Courier New", monospace`;
-const TEXT = "#5fcf95";
-const MUTED = "#4a9a6a";
-const PANEL = "rgba(10, 14, 26, 0.95)";
+const FONT = `bold ${FONT_PX}px Menlo, Monaco, Consolas, monospace`;
+const SMALL = `bold ${FONT_PX - 2}px Menlo, Monaco, Consolas, monospace`;
+const TEXT = "#f2e3b8";
+const MUTED = "#c2a978";
+const PANEL = "rgba(16, 13, 8, 0.82)";
 
-export const STATUS_COLOR = { ok: "#6dff6d", broken: "#ff4444", hang: "#ffa726", unknown: "#4db8ff" };
+export const STATUS_COLOR = { ok: "#a9cf86", broken: "#ff8a6b", hang: "#ffcc33", unknown: "#c2a978" };
 
 export function paintPath(ctx, { placed, selectedId, phase, width, height, empty }) {
   ctx.imageSmoothingEnabled = false;
@@ -65,10 +65,10 @@ function drawSentence(ctx, node, width) {
   const y = node.y + node.h + 8;
   ctx.fillStyle = PANEL;
   ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = "#4db8ff";
+  ctx.strokeStyle = "#7a5f48";
   ctx.lineWidth = 3;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
-  ctx.fillStyle = "#4db8ff";
+  ctx.fillStyle = "#4a3519";
   ctx.fillRect(x, y, 6, 6);
   ctx.fillRect(x + w - 6, y, 6, 6);
   ctx.font = SMALL;
