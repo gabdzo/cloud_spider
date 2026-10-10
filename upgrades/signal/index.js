@@ -1,5 +1,9 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+import { inheritTags, stackTags } from "../tags.js";
+
+// Vault: vaults/signal.yaml selects project=signal.
+inheritTags(pulumi, stackTags("signal"));
 
 const config = new pulumi.Config();
 const name = config.get("name") || "cloudspider-signal";

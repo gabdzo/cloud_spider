@@ -1,0 +1,23 @@
+# upgrades/barrel (Pulumi project cloudspider-barrel, stack barrel): one empty
+# bucket, <name>-<account id> (default cloudspider-barrel-550536272523),
+# force-destroy so Take it down always works.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: barrel
+  number: 130
+  title: Barrel
+  description: An empty S3 bucket, cloudspider-barrel-550536272523, in its own stack from the Stacks panel.
+  owner: gabriel
+  tags: [upgrade, s3]
+spec:
+  type: data
+  resources:
+    tags:
+      project: barrel
+    ids:
+      - cloudspider-barrel-550536272523
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/barrel
+    docs: https://github.com/gabdzo/cloud_spider#readme
+    dashboard: https://eu-north-1.console.aws.amazon.com/s3/buckets/cloudspider-barrel-550536272523?region=eu-north-1

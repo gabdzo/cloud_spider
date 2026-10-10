@@ -1,0 +1,25 @@
+# The two t4g.nano machines tagged cloudspider=expendable in infra/ (stack
+# test): cloudspider-running (left running) and cloudspider-stopped (held
+# stopped). The only machines the map may stop or start. Each has a log
+# stream in /cloudspider/test and is an ip target of the api target group.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: test-machines
+  number: 102
+  title: Expendable machines
+  description: Two t4g.nano machines tagged cloudspider=expendable, one running and one stopped, the only ones the map may stop or start.
+  owner: gabriel
+  tags: [test, ec2]
+spec:
+  type: worker
+  resources:
+    tags:
+      project: test-machines
+    ids:
+      - cloudspider-running
+      - cloudspider-stopped
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/infra
+    docs: https://github.com/gabdzo/cloud_spider#readme
+    dashboard: https://eu-north-1.console.aws.amazon.com/ec2/home?region=eu-north-1#Instances:tag:cloudspider=expendable

@@ -1,6 +1,7 @@
 #!/bin/sh
 # One-time state bucket. The stack cannot create the bucket that stores its own state.
-# Idempotent: a second run only re-applies versioning and the public access block.
+# Idempotent: a second run only re-applies versioning, the public access block
+# and the vault tag.
 set -eu
 export AWS_PROFILE=default
 export AWS_REGION=eu-north-1
@@ -27,4 +28,11 @@ aws s3api put-public-access-block \
   --public-access-block-configuration \
   BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 
-echo "versioning enabled, public access blocked: $BUCKET"
+# Vault tag (vaults/pulumi-state.yaml). tag-resources merges, it never drops
+# other tags.
+aws resourcegroupstaggingapi tag-resources \
+  --region eu-north-1 \
+  --resource-arn-list "arn:aws:s3:::$BUCKET" \
+  --tags project=pulumi-state,managed-by=bootstrap >/dev/null
+
+echo "versioning enabled, public access blocked, tagged project=pulumi-state: $BUCKET"

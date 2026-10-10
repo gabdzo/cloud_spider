@@ -1,0 +1,24 @@
+# The test stack's base camp: infra/ (Pulumi project cloudspider, stack test).
+# The stack's aws:defaultTags put project=cloudspider on every resource; the
+# load balancer, the two expendable machines and the log group override it and
+# have their own vaults (alb-test, test-machines, test-logs). What stays here:
+# the 10.42.0.0/16 VPC, its two subnets, and the "untagged" t4g.nano that the
+# map must refuse to stop or start.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: cloudspider
+  number: 100
+  title: Test camp
+  description: The live test VPC in eu-north-1 (10.42.0.0/16, two private subnets) and the untagged nano the map must never touch.
+  owner: gabriel
+  tags: [test, infra]
+spec:
+  type: other
+  resources:
+    tags:
+      project: cloudspider
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/infra
+    docs: https://github.com/gabdzo/cloud_spider#readme
+    dashboard: https://eu-north-1.console.aws.amazon.com/vpcconsole/home?region=eu-north-1#vpcs:tag:project=cloudspider

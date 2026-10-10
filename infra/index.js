@@ -5,6 +5,14 @@ import * as aws from "@pulumi/aws";
 // On-demand quota is 5 vCPU and t4g.nano is 2, so at most one of these is running
 // at rest and starting the stopped tagged one peaks at 4.
 
+// Vault tags. The stack's aws:defaultTags (Pulumi.test.yaml) put
+// project=cloudspider on everything, which vaults/cloudspider.yaml claims;
+// these override it for the parts that are their own vault. Tags only:
+// changing them updates in place, nothing is replaced.
+const ALB_TEST = { project: "alb-test" }; // vaults/alb-test.yaml
+const TEST_MACHINES = { project: "test-machines" }; // vaults/test-machines.yaml
+const TEST_LOGS = { project: "test-logs" }; // vaults/test-logs.yaml
+
 const ami = aws.ssm.getParameterOutput({
   name: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64",
 });
@@ -56,10 +64,10 @@ function machine(name, { tags, stop }) {
 }
 
 const running = machine("expendable-running", {
-  tags: { Name: "cloudspider-running", cloudspider: "expendable" },
+  tags: { Name: "cloudspider-running", cloudspider: "expendable", ...TEST_MACHINES },
 });
 const stopped = machine("expendable-stopped", {
-  tags: { Name: "cloudspider-stopped", cloudspider: "expendable" },
+  tags: { Name: "cloudspider-stopped", cloudspider: "expendable", ...TEST_MACHINES },
   stop: true,
 });
 const untagged = machine("untagged", { stop: true });
@@ -67,6 +75,7 @@ const untagged = machine("untagged", { stop: true });
 const logs = new aws.cloudwatch.LogGroup("test", {
   name: "/cloudspider/test",
   retentionInDays: 1,
+  tags: TEST_LOGS,
 });
 
 for (const [name, instance] of [
@@ -92,7 +101,7 @@ if (withAlb) {
     description: "cloudspider test load balancer",
     ingress: [{ protocol: "tcp", fromPort: 80, toPort: 80, cidrBlocks: ["10.42.0.0/16"] }],
     egress: [{ protocol: "tcp", fromPort: 8080, toPort: 8080, cidrBlocks: ["10.42.0.0/16"] }],
-    tags: { Name: "cloudspider-alb" },
+    tags: { Name: "cloudspider-alb", ...ALB_TEST },
   });
   loadBalancer = new aws.lb.LoadBalancer("api", {
     name: "cloudspider-api",
@@ -100,6 +109,7 @@ if (withAlb) {
     loadBalancerType: "application",
     securityGroups: [albGroup.id],
     subnets: [subnetA.id, subnetB.id],
+    tags: ALB_TEST,
   });
   // ip targets, as EKS registers pods: a stopped instance cannot be an instance target.
   const group = (name) =>
@@ -110,6 +120,7 @@ if (withAlb) {
       targetType: "ip",
       vpcId: vpc.id,
       healthCheck: { path: "/healthz", interval: 15, timeout: 5, healthyThreshold: 2, unhealthyThreshold: 2 },
+      tags: ALB_TEST,
     }, { deleteBeforeReplace: false });
   const api = group("api");
   const web = group("web");
@@ -126,6 +137,7 @@ if (withAlb) {
     defaultActions: [
       { type: "fixed-response", fixedResponse: { contentType: "text/plain", statusCode: "404", messageBody: "no rule" } },
     ],
+    tags: ALB_TEST,
   });
   for (const [name, priority, target] of [
     ["api", 10, api],
@@ -136,6 +148,7 @@ if (withAlb) {
       priority,
       conditions: [{ hostHeader: { values: [`${name}.cloudspider.test`] } }],
       actions: [{ type: "forward", targetGroupArn: target.arn }],
+      tags: ALB_TEST,
     });
   }
 }

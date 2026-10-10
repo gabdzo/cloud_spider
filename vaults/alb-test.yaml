@@ -1,0 +1,27 @@
+# The broken request path from PR #6, in infra/ (stack test). Internal ALB
+# cloudspider-api, its security group, the api and web target groups (ip
+# targets on 8080), the port 80 listener (404 "no rule") and the two
+# host-header rules. Deliberately broken: the instances' default security
+# group refuses the load balancer on 8080, which the Path view must name.
+# Internal and without public DNS, so there is no HTTP check.
+# Turn it off with: pulumi config set cloudspider:alb false --stack test
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: alb-test
+  number: 101
+  title: ALB test path
+  description: Internal ALB cloudspider-api with api/web host rules, refused on 8080 on purpose so the Path view has a real break to find.
+  owner: gabriel
+  tags: [test, path]
+spec:
+  type: service
+  resources:
+    tags:
+      project: alb-test
+    ids:
+      - cloudspider-api   # the load balancer's name, so it is claimed even before the tags land
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/infra
+    docs: https://github.com/gabdzo/cloud_spider#readme
+    dashboard: https://eu-north-1.console.aws.amazon.com/ec2/home?region=eu-north-1#LoadBalancers:search=cloudspider-api

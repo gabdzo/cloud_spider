@@ -18,7 +18,8 @@ Cluster is a separate tab. It draws EKS in this region, or an OpenShift-shaped s
 
 Vaults are your projects on the map, written as YAML files like a Backstage catalog-info.yaml.
 Cloud Spider reads every *.yaml in ./vaults (set CLOUDSPIDER_VAULTS_DIR to use another folder) and picks up changes on the next refresh.
-Start from vaults/example.yaml:
+vaults/example.yaml is the template with every field explained; it and any *.example.yaml are never drawn. The doors are ordered by number.
+In short:
 
     apiVersion: cloudspider/v1
     kind: Vault
@@ -42,9 +43,52 @@ Start from vaults/example.yaml:
             contains: Welcome  # optional
             timeout: 5000      # ms, default 5000, 100-30000
 
-A vault owns the machines, gates, buckets, functions, tables and secrets it selects. Tags or ids, either one counts; the first vault to claim a resource keeps it.
+A vault owns the machines, gates, buckets, functions, tables and secrets it selects. Tags or ids, either one counts; the vault with the lowest number keeps a resource two of them claim.
 Owned pieces outside a VPC move from the camp into the vault. Machines in a VPC stay in their camp and the open vault draws a line to them.
 The server runs the checks with a timeout and keeps each answer for a minute. The light is green when every check passes, amber when one is slow (over half its timeout, or 2s), and red when one fails.
 Click a door to open the vault: its resources, the description, owner, type, check results, and VIEW, REPO, DOCS and TEST. OPEN ALL / CLOSE ALL is beside the VAULTS sign. Open doors are remembered in the browser.
 A file that does not parse or pass the check shows as a damaged vault with each error. It never stops the page.
 Sample shows three vaults: a landing page that passes, an API whose health check fails, and a damaged file.
+
+To add a vault:
+
+1. Copy vaults/example.yaml to vaults/<name>.yaml. Pick an unused number.
+2. Tag the project's resources project=<name>. In Pulumi, put it on the stack, not on each resource (below).
+3. Run npm run vaults:check. It validates every file in vaults/ (templates too) and fails on a reused number, or on a project tag that is not the vault's name.
+4. Refresh the page.
+
+The tag convention is one tag, project=<vault name>, on every taggable resource. Each vault selects spec.resources.tags: {project: <name>}. A few also list ids (names or ARNs), so they match before the tags land.
+The Pulumi stacks set the tag stack-wide, so new resources inherit it:
+
+- infra/ (stack test): aws:defaultTags in Pulumi.test.yaml puts project=cloudspider and managed-by=pulumi on everything. The parts with their own vault override project in index.js: the load balancer, its group, target groups, listener and rules (alb-test); the two expendable machines (test-machines); and /cloudspider/test (test-logs).
+- upgrades/eks, signal, barrel, camp: upgrades/tags.js adds project=<eks|signal|barrel|camp> and managed-by=pulumi to every AWS resource that has tags. EKS also gets cluster=<cluster name>. It is a stack transformation, not provider defaultTags, because the Stacks panel makes these stack files itself and camp uses its own provider.
+
+Vaults for this repo:
+
+| file | number | covers |
+| --- | --- | --- |
+| cloudspider.yaml | 100 | infra/: the test VPC, two subnets and the untagged nano |
+| alb-test.yaml | 101 | infra/: internal ALB cloudspider-api, its group, target groups, listener and rules (the PR #6 broken path) |
+| test-machines.yaml | 102 | infra/: cloudspider-running and cloudspider-stopped, the expendable nanos |
+| test-logs.yaml | 103 | infra/: log group /cloudspider/test |
+| eks.yaml | 110 | upgrades/eks: every EKS cluster stack, with its VPC, roles and node group |
+| signal.yaml | 120 | upgrades/signal: log group /cloudspider/cloudspider-signal |
+| barrel.yaml | 130 | upgrades/barrel: bucket cloudspider-barrel-550536272523 |
+| camp.yaml | 140 | upgrades/camp: page bucket, function, function URL, table, secret, role |
+| pulumi-state.yaml | 150 | the state bucket cloudspider-state-550536272523 (made by infra/bootstrap.sh) |
+
+None has an HTTP check. The ALB is internal, and the function URL and EKS endpoint change with each deploy. Add a check once a stack has a stable URL.
+
+Existing stacks get the tags on their next pulumi up. The change is tags only: preview shows ~ update on tags and nothing replaced. Use the passphrase the Stacks panel uses (empty unless you set PULUMI_CONFIG_PASSPHRASE):
+
+    cd infra && npm ci && pulumi preview --stack test --diff && pulumi up --stack test
+    cd upgrades/eks && npm ci && pulumi preview --stack upgrade --diff && pulumi up --stack upgrade
+    cd upgrades/signal && npm ci && pulumi preview --stack signal --diff && pulumi up --stack signal
+    cd upgrades/barrel && npm ci && pulumi preview --stack barrel --diff && pulumi up --stack barrel
+    cd upgrades/camp && npm ci && pulumi preview --stack camp --diff && pulumi up --stack camp
+
+Skip a stack that is not up. Running Up again from the Stacks panel does the same. The state bucket is not in Pulumi, so tag it once (infra/bootstrap.sh does this from now on):
+
+    aws resourcegroupstaggingapi tag-resources --region eu-north-1 --resource-arn-list arn:aws:s3:::cloudspider-state-550536272523 --tags project=pulumi-state,managed-by=bootstrap
+
+Load balancer tags are read with elasticloadbalancing:DescribeTags. Without that permission, ALBs match by name only.

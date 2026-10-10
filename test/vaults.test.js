@@ -4,7 +4,7 @@ import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { API_VERSION, plateText, validateVault } from "../src/vault-schema.js";
-import { createVaultStore, parseVaultText, settleNames, vaultsDir } from "../src/vaults.js";
+import { byNumber, createVaultStore, parseVaultText, settleNames, vaultsDir } from "../src/vaults.js";
 import { matchVaults, matches, ownedIds, placeResources, tagMap } from "../src/vault-match.js";
 import { createCheckRunner, runCheck, slowAfter, vaultStatus } from "../src/vault-checks.js";
 import { DOOR_MS, STORAGE_KEY, createVaultState, readOpen } from "../src/vault-state.js";
@@ -146,8 +146,10 @@ test("the store reads *.yaml, skips other files and reloads on change", async ()
     await utimes(join(dir, "a.yaml"), later, later);
     const next = await store.load();
     assert.notEqual(next, first);
-    assert.equal(next.vaults[0].damaged, true);
-    assert.equal(next.vaults[0].key, "a.yaml#0");
+    const broken = next.vaults.find((v) => v.file === "a.yaml");
+    assert.equal(broken.damaged, true);
+    assert.equal(broken.key, "a.yaml#0");
+    assert.equal(next.vaults.at(-1), broken, "damaged vaults sort last");
 
     await writeFile(join(dir, "big.yaml"), "#".repeat(300 * 1024));
     const big = (await store.load()).vaults.find((v) => v.file === "big.yaml");
@@ -155,6 +157,16 @@ test("the store reads *.yaml, skips other files and reloads on change", async ()
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("vaults sort by number, damaged last, file order breaks ties", () => {
+  const order = byNumber([
+    { key: "z", number: 5 },
+    { key: "bad", number: null, damaged: true },
+    { key: "a", number: 100 },
+    { key: "b", number: 5 },
+  ]).map((v) => v.key);
+  assert.deepEqual(order, ["z", "b", "a", "bad"]);
 });
 
 test("a missing folder is a note, not a crash", async () => {

@@ -1,30 +1,40 @@
-# An example vault. Copy this file, change it, and the map picks it up on the
-# next refresh. Point CLOUDSPIDER_VAULTS_DIR at another folder to keep vault
-# files elsewhere (for example next to each project's catalog-info.yaml).
-apiVersion: cloudspider/v1
-kind: Vault
+# Template: copy to vaults/<name>.yaml and fill it in. This file itself is not
+# drawn on the map (example.yaml and *.example.yaml are templates), but
+# `npm run vaults:check` still validates it.
+#
+# One vault per project. The map shows it as a door in the hillside; click it
+# to see the project's resources, these links and its check results.
+apiVersion: cloudspider/v1          # required, exactly this
+kind: Vault                         # required, exactly this
 metadata:
-  name: example-site            # lowercase, digits, dashes; unique
-  number: 101                   # 0-999, shown as "VAULT 101" on the door
-  title: Example site           # optional display name
-  description: A short sentence about what this project is.
-  owner: your-team
-  tags: [example]
+  name: example-site                # required: lowercase letters, digits, dashes (max 63), unique.
+                                    # Convention: the same as the project tag below.
+  number: 199                       # required: 0-999, the plate reads "VAULT 199". Keep them unique.
+  title: Example site               # optional: display name (defaults to name)
+  description: >-                   # required: one or two sentences, under 280 characters
+    A short sentence about what this project is and why it exists.
+  owner: gabriel                    # required: a person or team
+  tags: [example, web]              # optional: words, shown in the panel
 spec:
-  type: static-site             # static-site | service | api | cluster | worker | data | other
-  resources:                    # what belongs to this vault (any match counts)
-    tags:                       # every tag listed must match
-      project: example-site
-    # ids:                      # instance ids, ARNs, or names
-    #   - i-0123456789abcdef0
-  links:
-    view: https://example.com/
-    repo: https://github.com/your-org/example-site
-    docs: https://github.com/your-org/example-site#readme
-    # dashboard: https://console.aws.amazon.com/cloudwatch/
-  checks:
+  type: static-site                 # required: static-site | service | api | cluster | worker | data | other
+  resources:                        # what belongs to this vault; a resource matches if
+                                    # ALL the tags match, OR any id matches
+    tags:
+      project: example-site         # the convention: project=<vault name> on every resource
+    ids:                            # optional: instance ids, ARNs, or names
+      - i-0123456789abcdef0         #   an EC2 instance id
+      - arn:aws:s3:::example-site-bucket   # an ARN (an ARN ending in a known id matches too)
+      - example-site-alb            #   a name (load balancer, cluster, function, table...)
+  links:                            # all optional, http(s) only
+    view: https://example.com/      # the live thing (VIEW button)
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/example   # REPO
+    docs: https://github.com/gabdzo/cloud_spider#readme                        # DOCS
+    dashboard: https://eu-north-1.console.aws.amazon.com/cloudwatch/home?region=eu-north-1   # DASHBOARD
+  checks:                           # optional; run by the Cloud Spider server, cached ~60s
     http:
-      - url: https://example.com/
-        expect: 200             # status to expect (default 200)
-        contains: Example Domain   # optional text the page must contain
-        timeout: 5000           # ms (default 5000); over half of it is "slow"
+      - url: https://example.com/   # required per check, http(s)
+        name: home page             # optional label
+        expect: 200                 # optional, default 200 (100-599)
+        contains: Example Domain    # optional text the body must contain
+        timeout: 5000               # optional ms, default 5000 (100-30000); over half of it,
+                                    # or over 2s, is "slow" (amber)
