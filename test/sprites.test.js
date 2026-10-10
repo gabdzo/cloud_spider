@@ -46,6 +46,14 @@ test("the campfire has four distinct flicker frames over the same logs", () => {
   }
 });
 
+test("the radiation mark is a yellow trefoil on a clear field", () => {
+  const sprite = art.radiationMark();
+  assert.equal(sprite.length, 12);
+  assert.ok(sprite[0].includes(12));
+  assert.equal(sprite[0][0], 0);
+  assert.equal(sprite[11].every((cell) => cell === 0), true);
+});
+
 test("the dweller wears the blue suit with a yellow stripe and belt", () => {
   const sprite = art.vaultDwellerSitting();
   const flat = pixels(sprite);

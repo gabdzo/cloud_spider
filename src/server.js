@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { samplePlace } from "./sample.js";
 import { samplePathGraph } from "./path-sample.js";
 import { pathResult } from "./path-view.js";
+import { sampleCost } from "./cost.js";
+import { sampleCluster } from "./cluster.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const FILES = new Set([
@@ -20,6 +22,9 @@ const FILES = new Set([
   "report.js",
   "path-layout.js",
   "path-draw.js",
+  "scene.js",
+  "cluster.js",
+  "upgrade-rules.js",
 ]);
 
 const page = `<!doctype html>
@@ -160,6 +165,12 @@ const page = `<!doctype html>
     overflow-wrap: anywhere;
     color: #fff2c8;
   }
+  #status.issue {
+    color: #ff8a6b;
+    background: #2a1510;
+    padding: 2px 8px;
+    border: 2px solid #e0603f;
+  }
   #confirm {
     flex-basis: 100%;
     min-width: 0;
@@ -169,23 +180,178 @@ const page = `<!doctype html>
     font-size: 16px;
     color: #c2a978;
   }
-  #confirm:empty, #status:empty, #radio:empty { display: none; }
+  #home {
+    width: 48px;
+    height: 44px;
+    padding: 0;
+    cursor: pointer;
+    background: #2a2218;
+    border: 2px solid #b08f52;
+    box-shadow: inset 0 0 0 1px #1f1a14, 2px 2px 0 rgba(0, 0, 0, 0.4);
+  }
+  #upgrade { color: #b6ff9a; }
+  #pip {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 2;
+    width: min(360px, calc(100% - 24px));
+    max-height: calc(100% - 24px);
+    overflow: auto;
+    margin: 0;
+    padding: 10px 12px;
+    color: #39ff14;
+    background: #061208;
+    border: 2px solid #39ff14;
+    box-shadow: 0 0 16px rgba(57, 255, 20, 0.28);
+    font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+  }
+  #pip .card { margin: 0 0 8px; border: 1px solid #1f8a32; background: #041006; }
+  #pip .card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 36px;
+    padding: 4px 8px;
+    background: transparent;
+    color: #39ff14;
+    border: 0;
+    box-shadow: none;
+    font: inherit;
+    text-align: left;
+  }
+  #pip .card-head::before { display: none; }
+  #pip .card-head:hover { background: #0a1f0c; box-shadow: none; }
+  #pip .card-mark { width: 24px; height: 24px; flex: 0 0 24px; image-rendering: pixelated; }
+  #pip .card-body { padding: 4px 8px 8px; }
+  #pip label { display: flex; gap: 8px; align-items: center; margin: 6px 0; color: #39ff14; }
+  #pip input, #pip select, #pip button {
+    background: #041006;
+    color: #b6ff9a;
+    border-color: #1f8a32;
+  }
+  #pip-watch { margin: 0 0 8px; color: #b6ff9a; }
+  #pip-watch.fail { color: #ff8a6b; }
+  #pip pre {
+    margin: 8px 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #b6ff9a;
+  }
+  #corner {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+    width: min(420px, calc(100% - 24px));
+    max-height: calc(100% - 24px);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow: auto;
+  }
+  #tally {
+    position: sticky;
+    top: 8px;
+    z-index: 4;
+    height: 0;
+    margin: 0;
+    pointer-events: none;
+    white-space: pre-line;
+  }
+  #tally span {
+    display: inline-block;
+    margin: 8px;
+    max-width: min(560px, calc(100% - 280px));
+    padding: 8px 12px;
+    color: #fff2c8;
+    background: #1a1510;
+    border: 4px solid #4a3519;
+    box-shadow: inset 0 0 0 1px #14110d;
+    font: inherit;
+    font-size: 13px;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+  }
+  #wall-grain {
+    position: absolute;
+    z-index: 3;
+    background: #041006;
+    color: #b6ff9a;
+    border: 3px solid #1f8a32;
+    font: inherit;
+    font-size: 12px;
+  }
+  #spend {
+    margin: 0;
+    padding: 8px 12px;
+    color: #fff2c8;
+    background: #1a1510;
+    border: 4px solid #4a3519;
+    box-shadow: inset 0 0 0 1px #14110d;
+    font: inherit;
+    font-size: 13px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    cursor: pointer;
+    text-align: left;
+  }
+  #confirm:empty, #status:empty { display: none; }
   #radio {
     margin: 0;
     min-width: 0;
-    max-width: 100%;
-    padding: 8px 24px;
-    max-height: calc(6 * 1.4em + 16px);
-    overflow: auto;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    color: #a9cf86;
-    background: #1a1510;
-    border: 4px solid #4a3519;
-    border-width: 0 0 4px 0;
-    box-shadow: inset 0 0 0 1px #14110d;
+    color: #39ff14;
+    background: #061208;
+    border: 2px solid #39ff14;
+    box-shadow: 0 0 12px rgba(57, 255, 20, 0.22);
+    font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
     font-size: 13px;
   }
+  #radio.issue {
+    border-color: #ff5a36;
+    box-shadow: 0 0 12px rgba(255, 90, 54, 0.45);
+  }
+  #radio-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 32px;
+    padding: 4px 12px;
+    background: transparent;
+    color: #39ff14;
+    border: 0;
+    box-shadow: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  #radio-toggle::before { display: none; }
+  #radio-toggle:hover { background: #0a1f0c; box-shadow: none; }
+  #radio-toggle.issue, #radio-toggle.issue #radio-summary { color: #ff8a6b; }
+  #radio-mark { width: 16px; height: 16px; flex: 0 0 16px; }
+  #radio-summary { min-width: 0; overflow-wrap: anywhere; }
+  #radio-lines {
+    margin: 0;
+    padding: 0 10px 8px;
+    max-height: calc(8 * 1.4em);
+    overflow: auto;
+    color: #b6ff9a;
+  }
+  #radio-lines .log {
+    display: grid;
+    grid-template-columns: 8.5em 2.8em minmax(0, 1fr);
+    gap: 6px;
+    align-items: baseline;
+  }
+  #radio-lines .when { color: #1f8a32; }
+  #radio-lines .mark { color: #39ff14; }
+  #radio-lines .what { overflow-wrap: anywhere; }
+  #radio-lines .log.fail .when,
+  #radio-lines .log.fail .mark,
+  #radio-lines .log.fail .what { color: #ff8a6b; }
   select:disabled { opacity: 0.45; filter: grayscale(0.5); }
   input { min-width: 0; flex: 1 1 240px; max-width: 420px; }
   input::placeholder { color: #c2a978; opacity: 0.6; }
@@ -228,21 +394,24 @@ const page = `<!doctype html>
     h1 { font-size: 15px; letter-spacing: 0.08em; }
     #status, #confirm { flex-basis: 100%; }
     select, button, input { padding: 0 8px; }
-    #radio, #error { padding-left: 12px; padding-right: 12px; }
+    #error { padding-left: 12px; padding-right: 12px; }
   }
   @media (max-height: 700px) {
     header { padding: 6px 12px; }
     select, button, input { min-height: 36px; }
-    #radio { max-height: calc(3 * 1.4em + 12px); padding-top: 6px; padding-bottom: 6px; }
+    #radio-lines { max-height: calc(4 * 1.4em); }
   }
 </style>
 </head>
 <body>
 <header>
+  <canvas id="home" width="48" height="44" role="button" tabindex="0" aria-label="overview"></canvas>
   <h1>CLOUD SPIDER</h1>
   <label>region <select id="region"></select></label>
   <button id="sample" type="button">Sample</button>
   <button id="path" type="button">Path</button>
+  <button id="cluster" type="button">Cluster</button>
+  <button id="upgrade" type="button">Stacks</button>
   <select id="lb" aria-label="load balancer" hidden></select>
   <input id="host" type="text" aria-label="URL or host" placeholder="paste a URL or host" hidden>
   <span id="status"></span>
@@ -250,9 +419,26 @@ const page = `<!doctype html>
   <button id="yes" type="button" hidden>put it down</button>
   <button id="no" type="button" hidden>leave it</button>
 </header>
-<pre id="radio"></pre>
 <p id="error" hidden></p>
-<div id="map"><canvas id="place"></canvas></div>
+<div id="map">
+  <p id="tally" hidden><span id="tally-text"></span></p>
+  <canvas id="place"></canvas>
+  <select id="wall-grain" aria-label="camp grain" hidden>
+    <option value="coarse">coarse</option>
+    <option value="fine">fine</option>
+  </select>
+  <div id="corner">
+    <pre id="spend" hidden></pre>
+    <div id="radio" hidden>
+      <button id="radio-toggle" type="button" aria-expanded="false">
+        <canvas id="radio-mark" width="16" height="16" aria-hidden="true"></canvas>
+        <span id="radio-summary"></span>
+      </button>
+      <div id="radio-lines" hidden></div>
+    </div>
+  </div>
+  <form id="pip" hidden></form>
+</div>
 <script type="module" src="/browser.js"></script>
 </body>
 </html>
@@ -345,8 +531,49 @@ async function route(app, req, res) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/cost-sample") {
+    send(res, 200, sampleCost());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cost") {
+    send(res, 200, await app.costView());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/upgrades") {
+    send(res, 200, { modules: app.upgrades() });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/upgrade") {
+    send(res, 200, await app.upgradeStatus(url.searchParams.get("module") || "", url.searchParams.get("fresh") === "1"));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/upgrade") {
+    const body = await readJson(req);
+    send(res, 200, await app.upgradeRun(req.headers.origin, body));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cluster-sample") {
+    send(res, 200, sampleCluster());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cluster") {
+    await app.boot();
+    send(res, 200, await app.clusterView());
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/view") {
     await app.boot();
+    if (url.searchParams.get("sample") !== "1") {
+      await app.mergeCamp(url.searchParams.get("grain") || "coarse");
+      app.kickLinks();
+    }
     send(res, 200, app.view());
     return;
   }

@@ -107,7 +107,8 @@ try {
   }`);
   check("Path reads the live region", read, `${await status()} ${await js(`document.querySelector("#error").textContent`)}`);
   check("Path shows the load balancer menu and host box", await js(`!document.querySelector("#lb").hidden && !document.querySelector("#host").hidden`));
-  check("the Path button reads Map", (await js(`document.querySelector("#path").textContent`)) === "Map");
+  check("the Path button still reads Path", (await js(`document.querySelector("#path").textContent`)) === "Path");
+  check("the header overview control is on the page", await js(`document.querySelector("#home") !== null`));
 
   const liveHost = process.env.CLOUDSPIDER_LIVE_HOST;
   const liveHeadline = process.env.CLOUDSPIDER_LIVE_HEADLINE;

@@ -6,6 +6,7 @@ export function createUi() {
     confirmation: null,
     status: "",
     radio: "",
+    trail: [],
     logs: [],
     logNote: "",
   };
@@ -16,6 +17,18 @@ export function clickBuilding(ui, building, region) {
   ui.logs = [];
   ui.logNote = "";
   ui.confirmation = confirmationFor(building, region, ui.sample);
+}
+
+export function clickFixture(ui, fixture, note = "") {
+  ui.selection = {
+    id: fixture.id,
+    name: fixture.name || fixture.label || fixture.id,
+    type: fixture.kind || "",
+    state: fixture.status || "",
+  };
+  ui.logs = [];
+  ui.logNote = note;
+  ui.confirmation = null;
 }
 
 export function clickGround(ui) {
@@ -44,6 +57,10 @@ export function setRadio(ui, line) {
   ui.radio = line;
 }
 
+export function setTrail(ui, entries) {
+  ui.trail = Array.isArray(entries) ? entries : [];
+}
+
 export function setLogs(ui, lines, note = "") {
   ui.logs = lines;
   ui.logNote = note;
@@ -57,6 +74,7 @@ export function switchRegion(ui) {
   ui.selection = null;
   ui.confirmation = null;
   ui.radio = "";
+  ui.trail = [];
   ui.logs = [];
   ui.logNote = "";
 }

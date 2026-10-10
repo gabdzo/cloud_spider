@@ -24,6 +24,8 @@ import {
 } from "@aws-sdk/client-eks";
 import { CloudWatchClient, GetMetricDataCommand } from "@aws-sdk/client-cloudwatch";
 import { publicError } from "./aws.js";
+import { isInstanceId } from "./ids.js";
+import { linesFromTargets } from "./path-diagnose.js";
 
 const METRICS = {
   elb502: "HTTPCode_ELB_502_Count",
@@ -132,6 +134,43 @@ export function createPathAws() {
         (page) => ({ items: (page.NetworkInterfaces || []).flatMap(interfacesFrom), next: page.NextToken }),
       );
     },
+    async interfacesByAddress(region, ips) {
+      const wanted = [...new Set((ips || []).filter(Boolean))];
+      if (!wanted.length) return { items: [] };
+      const client = ec2(region);
+      const items = [];
+      for (const part of chunks(wanted, 200)) {
+        const out = await collect(
+          (command) => client.send(command),
+          (NextToken) =>
+            new DescribeNetworkInterfacesCommand({
+              Filters: [{ Name: "addresses.private-ip-address", Values: part }],
+              NextToken,
+            }),
+          (page) => ({ items: (page.NetworkInterfaces || []).flatMap(interfacesFrom), next: page.NextToken }),
+        );
+        if (out.error) return out;
+        items.push(...out.items);
+      }
+      return { items };
+    },
+    async targetLines(region, balancers) {
+      const groups = await this.targetGroups(region);
+      if (groups.error) return { edges: [], error: groups.error };
+      const wanted = new Set((balancers || []).flatMap((lb) => [lb.id, lb.arn].filter(Boolean)));
+      const mine = groups.items.filter((group) => (group.lbArns || []).some((arn) => wanted.has(arn)));
+      const health = {};
+      const ips = [];
+      for (const group of mine) {
+        const out = await this.targetHealth(region, group.arn);
+        if (out.error) return { edges: [], error: out.error };
+        health[group.arn] = out.items;
+        for (const item of out.items) if (item.id && !isInstanceId(item.id)) ips.push(item.id);
+      }
+      const faces = await this.interfacesByAddress(region, ips);
+      if (faces.error) return { edges: [], error: faces.error };
+      return { edges: linesFromTargets(balancers, mine, health, faces.items), error: "" };
+    },
     async instancesById(region, ids) {
       const client = ec2(region);
       const items = [];
@@ -216,6 +255,47 @@ export async function collect(send, makeCommand, readPage) {
   } catch (error) {
     return publicError(error);
   }
+}
+
+export function createLinkCache({ read, clock = Date.now, ttl = 30_000 }) {
+  const slots = new Map();
+  return {
+    current(region) {
+      const slot = slots.get(region);
+      if (!slot?.at) return { edges: [], error: "", known: false };
+      return { edges: slot.edges || [], error: slot.error || "", known: true };
+    },
+    kick(region, balancers) {
+      const slot = slots.get(region);
+      const now = clock();
+      if (slot?.inflight) return;
+      if (slot?.at && now - slot.at < ttl) return;
+      slots.set(region, slot ? { ...slot, inflight: true } : { edges: [], error: "", at: 0, inflight: true });
+      let pending;
+      try {
+        pending = read(region, balancers);
+      } catch (error) {
+        pending = Promise.reject(error);
+      }
+      Promise.resolve(pending)
+        .then((result) => {
+          slots.set(region, {
+            edges: result?.error ? [] : result?.edges || [],
+            error: result?.error || "",
+            at: clock(),
+            inflight: false,
+          });
+        })
+        .catch((error) => {
+          slots.set(region, {
+            edges: [],
+            error: error?.message || "the target read failed",
+            at: clock(),
+            inflight: false,
+          });
+        });
+    },
+  };
 }
 
 export function chunks(list, size) {
