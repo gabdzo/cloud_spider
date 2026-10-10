@@ -29,6 +29,7 @@ import { vaultAt } from "./vault-layout.js";
 import { plateText } from "./vault-schema.js";
 import { snapshot } from "./agent-text.js";
 import { createTerminal } from "./terminal.js";
+import { metricAlerts, paintPlace } from "./metrics.js";
 
 const ui = createUi();
 const canvas = document.querySelector("#place");
@@ -483,6 +484,104 @@ function errorLinesBlock(vault) {
   return block;
 }
 
+// METRICS: CloudWatch numbers for what this vault owns (EC2, ALB, Lambda),
+// 3 hours at 5-minute points, read in one batch for the whole map.
+let metricsData = null;
+let metricsPulling = false;
+const metricsSeen = new Set();
+const METRICS_CHECK_MS = 30_000;
+const SVG = "http://www.w3.org/2000/svg";
+
+function sparkline(points) {
+  const svg = document.createElementNS(SVG, "svg");
+  svg.setAttribute("viewBox", "0 0 100 16");
+  svg.setAttribute("preserveAspectRatio", "none");
+  const values = points.map((p) => (p == null ? null : Number(p)));
+  const seen = values.filter((v) => v != null);
+  const top = Math.max(...seen, 0) || 1;
+  const step = values.length > 1 ? 100 / (values.length - 1) : 100;
+  const line = document.createElementNS(SVG, "polyline");
+  line.setAttribute("points", values.map((v, i) => (v == null ? null : `${(i * step).toFixed(1)},${(15 - (v / top) * 13).toFixed(1)}`)).filter(Boolean).join(" "));
+  svg.append(line);
+  return svg;
+}
+
+function metricValue(item) {
+  if (item.last == null) return "—";
+  if (item.unit === "%") return `${Math.round(item.last)}%`;
+  if (item.unit === "s") return `${Math.round(item.last * 1000)}ms`;
+  if (item.unit === "ms") return `${Math.round(item.last)}ms`;
+  if (item.unit === "fail") return item.last > 0 ? "FAILED" : "OK";
+  return `${item.hour ?? item.last}/h`;
+}
+
+function metricHot(item) {
+  if (/5XX|ERR|THROTTLE/.test(item.label)) return (item.hour || 0) > 0;
+  if (item.unit === "%") return (item.last || 0) >= 75;
+  if (item.unit === "fail") return (item.last || 0) > 0;
+  return false;
+}
+
+function vaultMetrics(vault) {
+  return (vault.owned || []).map((id) => metricsData?.targets?.[id]).filter(Boolean);
+}
+
+function metricsBlock(vault) {
+  const hits = vaultMetrics(vault);
+  const block = vel("div", "vp-metrics");
+  const head = vel("h4");
+  head.append(vel("span", "", `METRICS · 3H · ${hits.length} RESOURCE${hits.length === 1 ? "" : "S"}`));
+  if (metricsData?.at) head.append(vel("span", "", `READ ${hhmm(metricsData.at)}`));
+  block.append(head);
+  for (const hit of hits) {
+    const res = vel("div", `res ${hit.flag || "ok"}`);
+    res.append(vel("span", "name", hit.name), vel("span", "head", `${hit.flag && hit.flag !== "ok" ? "! " : ""}${hit.headline}`));
+    block.append(res);
+    const list = vel("ul");
+    for (const item of hit.series || []) {
+      const li = vel("li", metricHot(item) ? "hot" : "");
+      li.title = `${item.metric} · peak ${item.peak ?? "—"}`;
+      li.append(vel("span", "lbl", item.label), sparkline(item.points || []), vel("span", "val", metricValue(item)));
+      list.append(li);
+    }
+    block.append(list);
+  }
+  return block;
+}
+
+function applyMetrics() {
+  if (!place) return;
+  paintPlace(place, metricsData);
+  layoutCache.invalidate();
+}
+
+async function pullMetrics(force = false) {
+  if (!tabVisible || metricsPulling) return;
+  if (mode === "path" && !force) return;
+  if (!force && metricsData && Date.now() < (metricsData.nextAt || 0)) return;
+  if (!sample && !place) return;
+  metricsPulling = true;
+  const wasSample = sample;
+  try {
+    const body = await fetch(`/api/metrics${wasSample ? "?sample=1" : ""}`).then((response) => response.json());
+    if (wasSample !== sample) return;
+    metricsData = body?.targets ? body : null;
+    if (body?.error) noteSpider(body.error, "fail");
+    for (const alert of metricAlerts(metricsData)) {
+      const key = `${alert.id}|${alert.text}`;
+      if (metricsSeen.has(key)) continue;
+      metricsSeen.add(key);
+      noteSpider(alert.text, alert.flag === "broken" ? "fail" : "ok");
+    }
+    applyMetrics();
+    repaintPanels();
+  } catch {
+    // The next check tries again.
+  } finally {
+    metricsPulling = false;
+  }
+}
+
 async function loadVaultLogs(key, force = false) {
   const state = vaultLogState.get(key);
   if (state?.loading) return;
@@ -563,6 +662,7 @@ function vaultPanel(cell) {
     for (const check of vault.checks || []) list.append(checkLine(check));
     checks.append(list);
     body.append(checks);
+    if (vaultMetrics(vault).length) body.append(metricsBlock(vault));
     if (vault.trouble?.length) body.append(troubleBlock(vault));
     if (vault.logGroups?.length) body.append(errorLinesBlock(vault));
   }
@@ -650,7 +750,7 @@ function placeVaultChrome(placed) {
   if (!vaultTemplates.hidden) renderTemplates();
   const open = area.cells.filter((cell) => cell.open && cell.panel);
   const shown = open
-    .map((cell) => `${cell.key}@${cell.panel.x},${cell.panel.y},${cell.panel.w},${cell.panel.h}:${JSON.stringify([cell.vault.checks, cell.vault.status, cell.vault.description, cell.vault.links, cell.vault.errors, (cell.vault.owned || []).length, cell.vault.stackInfo, cell.vault.trouble, vaultLogState.get(cell.key)])}`)
+    .map((cell) => `${cell.key}@${cell.panel.x},${cell.panel.y},${cell.panel.w},${cell.panel.h}:${JSON.stringify([cell.vault.checks, cell.vault.status, cell.vault.description, cell.vault.links, cell.vault.errors, (cell.vault.owned || []).length, cell.vault.stackInfo, cell.vault.trouble, vaultLogState.get(cell.key), vaultMetrics(cell.vault).map((hit) => `${hit.id}:${metricsData?.at}`)])}`)
     .join("|");
   if (shown === panelsShown) return;
   panelsShown = shown;
@@ -800,7 +900,10 @@ async function pull() {
       return;
     }
     region = view.region || "";
+    if (region !== metricsData?.region && metricsData && !metricsData.sample) metricsData = null;
     place = view.place;
+    applyMetrics();
+    if (!metricsData) pullMetrics();
     if (region && region !== spiderRegion) {
       spiderRegion = region;
       noteSpider(`read ${region}`);
@@ -826,6 +929,8 @@ function showSample(next) {
   sample = true;
   ui.sample = true;
   place = next;
+  metricsData = null;
+  pullMetrics(true);
   regionSelect.disabled = true;
   clickGround(ui);
   setStatus(ui, "sample, not the account");
@@ -840,6 +945,7 @@ function leaveSample() {
   clickGround(ui);
   setStatus(ui, "");
   setTrail(ui, []);
+  metricsData = null;
   pull();
 queueSpend();
   queueSpend();
@@ -1101,6 +1207,64 @@ wallGrain.addEventListener("change", () => {
   pull();
 });
 
+// Cluster view: a node's load (metrics-server) and, when the map has read
+// it, its EC2 instance's CloudWatch CPU, on click.
+function meter(label, pct, text) {
+  const li = vel("li", pct >= 85 ? "hot" : "");
+  const bar = vel("div", "kp-meter");
+  const fill = vel("span");
+  fill.style.width = `${Math.max(0, Math.min(100, pct || 0))}%`;
+  bar.append(fill);
+  li.append(vel("span", "lbl", label), bar, vel("span", "val", text));
+  return li;
+}
+
+function showNode(node) {
+  ++podTicket;
+  const host = node.host;
+  const head = vel("div", "kp-title");
+  head.append(vel("span", "kp-name", `NODE · ${node.label}`));
+  const close = vel("button", "vp-close", "CLOSE");
+  close.type = "button";
+  close.addEventListener("click", () => {
+    clusterSelected = null;
+    showPod(null);
+    draw();
+  });
+  head.append(close);
+  const facts = vel("dl", "vp-facts");
+  for (const [label, value] of [["STATE", host.ready === null ? "not listed" : host.ready ? "Ready" : "NotReady"], ["TYPE", host.type], ["PODS", `${host.pods} running`], ["INSTANCE", host.instanceId]]) {
+    if (value) facts.append(vel("dt", "", label), vel("dd", "", value));
+  }
+  const body = vel("div", "kp-body vp-metrics");
+  body.append(facts);
+  const loadHead = vel("h4");
+  loadHead.append(vel("span", "", "LOAD · METRICS-SERVER · NOW"));
+  body.append(loadHead);
+  const load = host.load || {};
+  if (load.cpuPct == null) body.append(vel("p", "vp-note", load.text || "no metrics-server: install it (RUN-ME §8) to see node load"));
+  else {
+    const list = vel("ul");
+    list.append(meter("CPU", load.cpuPct, `${load.cpu}m / ${load.cpuOf}m`), meter("MEM", load.memPct, `${load.mem}Mi / ${load.memOf}Mi`));
+    body.append(list);
+  }
+  const hit = host.instanceId ? metricsData?.targets?.[host.instanceId] : null;
+  if (hit) {
+    const cwHead = vel("h4");
+    cwHead.append(vel("span", "", "EC2 · CLOUDWATCH · 3H"), vel("span", "", hit.headline));
+    body.append(cwHead);
+    const list = vel("ul");
+    for (const item of hit.series || []) {
+      const li = vel("li", metricHot(item) ? "hot" : "");
+      li.append(vel("span", "lbl", item.label), sparkline(item.points || []), vel("span", "val", metricValue(item)));
+      list.append(li);
+    }
+    body.append(list);
+  }
+  kubePanel.replaceChildren(head, body);
+  kubePanel.hidden = false;
+}
+
 // Cluster view: a pod's last log lines and events, read-only, on click.
 let podTicket = 0;
 function showPod(node) {
@@ -1167,7 +1331,8 @@ canvas.addEventListener("click", async (event) => {
     if (mode === "path") pathSelected = hit?.id || null;
     else {
       clusterSelected = hit?.id || null;
-      showPod(hit?.pod ? hit : null);
+      if (hit?.host) showNode(hit);
+      else showPod(hit?.pod ? hit : null);
     }
     draw();
     if (hit?.sentence) revealPanel(sentenceRect(hit, canvas.clientWidth, canvas.clientHeight));
@@ -1678,7 +1843,14 @@ window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change",
 
 document.addEventListener("visibilitychange", () => {
   tabVisible = !document.hidden;
+  if (tabVisible) pullMetrics();
 });
+
+// Metrics: the server caches 5 minutes; this only asks when the answer is
+// due (nextAt) and the tab is visible, so a hidden tab costs nothing.
+setInterval(() => {
+  pullMetrics();
+}, METRICS_CHECK_MS);
 
 // Animation loop: a plain 10fps timer. requestAnimationFrame would wake the
 // page 60 times a second just to skip 5 of every 6 frames.

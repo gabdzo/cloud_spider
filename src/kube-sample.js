@@ -11,7 +11,7 @@ export function sampleKubeSnapshot() {
     clusterName: "cloudspider-up",
     notes: [],
     namespaces: ["default", "kube-system", "kube-public", "kube-node-lease", "demo"].map((name) => meta(undefined, name)),
-    nodes: [{ metadata: { name: NODE, labels: { "node.kubernetes.io/instance-type": "t4g.small" } }, status: { conditions: [{ type: "Ready", status: "True" }] } }],
+    nodes: [{ metadata: { name: NODE, labels: { "node.kubernetes.io/instance-type": "t4g.small" } }, spec: { providerID: "aws:///eu-north-1a/i-0node" }, status: { allocatable: { cpu: "1930m", memory: "1531Mi" }, conditions: [{ type: "Ready", status: "True" }] } }],
     pods: [
       pod("demo", "web-7c9f6d8b5-x2lqp", rs("web-7c9f6d8b5"), running(), { app: "web" }),
       pod("demo", "api-5d8c7b9f4-k8zts", rs("api-5d8c7b9f4"), running(2), { app: "api" }),
@@ -39,6 +39,7 @@ export function sampleKubeSnapshot() {
       { ...meta("demo", "otel-collector"), spec: { type: "ClusterIP", selector: { app: "otel-collector" }, ports: [{ port: 4317 }, { port: 4318 }] } },
     ],
     ingresses: [],
+    nodeMetrics: [{ metadata: { name: NODE }, usage: { cpu: "212m", memory: "1186Mi" } }],
     podMetrics: [
       { ...meta("demo", "web-7c9f6d8b5-x2lqp"), containers: [{ usage: { cpu: "4m", memory: "18Mi" } }] },
       { ...meta("demo", "api-5d8c7b9f4-k8zts"), containers: [{ usage: { cpu: "11m", memory: "22Mi" } }] },

@@ -189,10 +189,10 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     async snapshot() {
       const t = await resolveTarget();
       if (t.error) return { error: t.error, unset: true };
-      const names = ["namespaces", "nodes", "pods", "services", "deployments", "daemonsets", "statefulsets", "ingresses", "podMetrics"];
+      const names = ["namespaces", "nodes", "pods", "services", "deployments", "daemonsets", "statefulsets", "ingresses", "podMetrics", "nodeMetrics"];
       const results = await Promise.all(names.map((name) => getPath(PATHS[name]())));
       const out = { clusterName: t.clusterName, notes: [] };
-      const fatal = results.find((r, i) => r.error && !r.forbidden && !r.missing && names[i] !== "podMetrics");
+      const fatal = results.find((r, i) => r.error && !r.forbidden && !r.missing && !/Metrics$/.test(names[i]));
       if (fatal) return { error: fatal.error, clusterName: t.clusterName };
       names.forEach((name, i) => {
         out[name] = results[i].json?.items || [];

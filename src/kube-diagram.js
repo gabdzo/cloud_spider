@@ -37,6 +37,20 @@ export function mem(text) {
   return Math.round(Number(m[1]) * (m[2] ? units[m[2]] : 1 / (1024 * 1024)));
 }
 
+// metrics-server node usage against allocatable: "CPU 11% MEM 77%".
+// 85% or more of either is hot (the map shows the node as hanging).
+export function nodeLoad(usage, allocatable) {
+  if (!usage) return { text: "", hot: false };
+  const c = cpu(usage.cpu);
+  const m = mem(usage.memory);
+  const ca = cpu(allocatable?.cpu);
+  const ma = mem(allocatable?.memory);
+  if (!ca || !ma) return { text: `${c}m · ${m}Mi`, hot: false, cpu: c, mem: m };
+  const cp = Math.round((c / ca) * 100);
+  const mp = Math.round((m / ma) * 100);
+  return { text: `CPU ${cp}% MEM ${mp}%`, hot: cp >= 85 || mp >= 85, cpu: c, mem: m, cpuOf: ca, memOf: ma, cpuPct: cp, memPct: mp };
+}
+
 export function podState(pod) {
   const status = pod?.status || {};
   const containers = status.containerStatuses || [];
@@ -162,6 +176,7 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
   // Pods and the nodes they run on.
   const nodeIds = new Set();
   const knownNodes = new Map((snapshot.nodes || []).map((n) => [meta(n).name, n]));
+  const nodeUsage = new Map((snapshot.nodeMetrics || []).map((m) => [meta(m).name, m.usage || {}]));
   for (const pod of pods.filter(inUserNs)) {
     const state = podState(pod);
     const id = `pod:${key(pod)}`;
@@ -189,12 +204,15 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
     const ready = item?.status?.conditions?.find((c) => c.type === "Ready");
     const type = item?.metadata?.labels?.["node.kubernetes.io/instance-type"] || "";
     const running = pods.filter((p) => p.spec?.nodeName === nodeName && p.status?.phase === "Running").length;
+    const load = nodeLoad(nodeUsage.get(nodeName), item?.status?.allocatable);
+    const healthy = ready?.status === "True";
     nodes.push({
       id: `node:${nodeName}`,
       kind: "node",
       label: nodeName.replace(/\.[a-z0-9-]+\.compute\.internal$/, ""),
-      caption: [item ? (ready?.status === "True" ? "Ready" : "NotReady") : "node", type, `${running} pods`].filter(Boolean).join(" · "),
-      status: item ? (ready?.status === "True" ? "ok" : "broken") : "unknown",
+      caption: [item ? (healthy ? "Ready" : "NotReady") : "node", load.text, type, `${running} pods`].filter(Boolean).join(" · "),
+      status: item ? (!healthy ? "broken" : load.hot ? "hang" : "ok") : "unknown",
+      host: { name: nodeName, type, pods: running, ready: item ? healthy : null, instanceId: (/\/(i-[0-9a-z]+)$/.exec(item?.spec?.providerID || "") || [])[1] || "", load },
     });
   }
   for (const n of nodes) {

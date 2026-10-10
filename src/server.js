@@ -27,6 +27,7 @@ export const FILES = new Set([
   "scene.js",
   "cluster.js",
   "kube-diagram.js",
+  "metrics.js",
   "upgrade-rules.js",
   "theme.js",
   "draw-kit.js",
@@ -509,6 +510,28 @@ const page = `<!doctype html>
   .vp-trouble .when, .vp-errlines .when { color: var(--pip-dim); font-size: 11px; }
   .vp-trouble .call { color: var(--pip-bright); overflow-wrap: anywhere; }
   .vp-trouble .err { color: var(--status-broken); overflow-wrap: anywhere; }
+  .vp-metrics h4 {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin: 8px 0 4px; padding-top: 8px; border-top: 1px dashed var(--pip-dark);
+    font-size: 11px; letter-spacing: 0.14em; color: var(--pip-dim);
+  }
+  .vp-metrics .res { margin: 6px 0 2px; display: flex; justify-content: space-between; gap: 8px; font-size: 11px; }
+  .vp-metrics .res .name { color: var(--pip-bright); overflow-wrap: anywhere; min-width: 0; }
+  .vp-metrics .res .head { color: var(--pip-mid); white-space: nowrap; }
+  .vp-metrics .res.hang .head { color: var(--status-hang); }
+  .vp-metrics .res.broken .head { color: var(--status-broken); }
+  .vp-metrics ul { list-style: none; margin: 0; padding: 0; }
+  .vp-metrics li { display: grid; grid-template-columns: 64px 1fr 74px; align-items: center; gap: 6px; padding: 1px 0; font-size: 10px; }
+  .vp-metrics li .lbl { color: var(--pip-dim); letter-spacing: 0.1em; }
+  .vp-metrics li .val { color: var(--pip-bright); text-align: right; white-space: nowrap; }
+  .vp-metrics li.hot .val { color: var(--status-hang); }
+  .vp-metrics svg { display: block; width: 100%; height: 16px; background: var(--pip-ink); border: 1px solid var(--pip-dark); }
+  .vp-metrics svg polyline { fill: none; stroke: var(--pip-bright); stroke-width: 1.2; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 2px var(--pip-mid)); }
+  .vp-metrics li.hot svg polyline { stroke: var(--status-hang); }
+  .vp-metrics .kp-meter { height: 10px; background: var(--pip-ink); border: 1px solid var(--pip-dark); }
+  .vp-metrics .kp-meter span { display: block; height: 100%; background: var(--pip-mid); box-shadow: 0 0 6px var(--glow-soft); }
+  .vp-metrics li.hot .kp-meter span { background: var(--status-hang); }
+  .vp-metrics.kp-body li { grid-template-columns: 64px 1fr 110px; }
   .vp-reload { min-height: 20px; padding: 0 6px; font: inherit; font-size: 10px; letter-spacing: 0.12em; color: var(--pip-mid); background: transparent; border: 1px solid var(--pip-dim); cursor: pointer; }
   .vp-reload:hover, .vp-reload:focus-visible { outline: none; color: var(--pip-hot); border-color: var(--pip-hot); }
   .vp-reload:disabled { opacity: 0.6; cursor: default; }
@@ -1008,6 +1031,13 @@ async function route(app, req, res) {
       return;
     }
     send(res, 200, await app.clusterPod({ ns: url.searchParams.get("ns"), name: url.searchParams.get("name"), container: url.searchParams.get("container") }));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/metrics") {
+    const sample = url.searchParams.get("sample") === "1";
+    if (!sample) await app.boot();
+    send(res, 200, await app.metricsView({ sample }));
     return;
   }
 

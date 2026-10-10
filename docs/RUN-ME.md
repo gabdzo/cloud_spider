@@ -112,3 +112,33 @@ cd infra && pulumi destroy --stack test --yes && cd ..                # only if 
 | **total with the cluster and demo up** | **≈ $0.13/h** | **≈ $3.00–3.20** |
 
 When you're done, run the destroys in §9. Nothing in Cloud Spider keeps resources alive.
+
+## 10. Monitoring: metrics, logs and failures (PR 24, about $0.01/day, no AWS writes)
+
+Nothing to deploy. Restart Cloud Spider (§2) and keep the tab open:
+
+- **Metrics:** Cloud Spider makes one batched CloudWatch `GetMetricData` call for everything on the map. That covers EC2 (`CPUUtilization`, `StatusCheckFailed`), ALB (`RequestCount`, ELB and target 5XX, `TargetResponseTime`) and Lambda (`Invocations`, `Errors`, `Throttles`, `Duration`). It reads 3 hours at 5-minute points and caches the answer for 5 minutes. The page asks only while the tab is visible, so a hidden tab costs nothing. EKS nodes are EC2 instances, so they get the same numbers.
+  - **On the map:** the numbers show on the pieces (`CPU 86%` under a house, `5XX 13/h · 791 REQ` on an ALB card, `9 ERR · 92 INV/h` on the Lambda). A `!` marks a reading worth a look. A piece burns when it is clearly bad: CPU ≥ 90%, a failed status check, or ≥ 25% errors. Each new alert also gets one spider line on the radio.
+  - **In the vaults:** an open vault shows METRICS, with a sparkline and the latest value for each resource it owns.
+- **Cluster:** metrics-server, installed by the demo in §8, gives `CPU n% MEM n%` on each node card. Clicking a node opens its load meters and its EC2 CloudWatch CPU. Pod CPU and memory stay on the pod cards, and clicking a pod still shows its logs and events (PR 23). The viewer role needs no changes, because §8's ClusterRole already allows `metrics.k8s.io` pods and nodes.
+- **Logs and failures:** a vault's ERROR LINES (CloudWatch Logs, on open) and TROUBLE (CloudTrail failed calls) come from PR 22. Pod logs come from PR 23.
+- **Not used, on purpose:** Container Insights, VPC flow logs and ALB access logs.
+
+Your profile needs `cloudwatch:GetMetricData`, which ReadOnlyAccess or an admin profile already has. To check from the repo root while it runs:
+
+```sh
+curl -s http://127.0.0.1:9241/api/metrics | head -c 600; echo     # region, queries, targets{headline, flag, series}
+```
+
+If the answer says `GetMetricData: AccessDenied…`, add the permission to the profile's user or role. That is a read-only action, so nothing else changes.
+
+### Monitoring cost
+
+| piece | rate | a day (tab open ~8 h) |
+| --- | --- | --- |
+| GetMetricData: today's map is ~12 metrics (2 instances, 1 ALB, 1 Lambda), 12 calls/h | $0.01 per 1,000 metrics requested | ~1,150 metrics ≈ $0.012 |
+| same, with a bigger map (~40 metrics) | | ≈ $0.04 |
+| FilterLogEvents (vault ERROR LINES), CloudTrail LookupEvents, k8s API | free to call | $0 |
+| vended EC2/ALB/Lambda metrics themselves | free | $0 |
+
+The first 1 million GetMetricData metrics a month may fall under the free tier, depending on the account. Either way it is pennies a month.

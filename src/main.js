@@ -34,6 +34,7 @@ const app = createApp({
   ec2: aws.ec2,
   trail: aws.trail,
   logs: aws.logs,
+  metrics: aws.metrics,
   path: createPathAws(),
   cost: createCost(),
   upgrade: createUpgrade(),
