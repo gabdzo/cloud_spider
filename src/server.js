@@ -1491,6 +1491,7 @@ async function route(app, req, res) {
   if (req.method === "GET" && url.pathname === "/api/view") {
     await app.boot();
     if (url.searchParams.get("sample") !== "1") {
+      app.freshen?.();
       await app.mergeCamp(url.searchParams.get("grain") || "coarse");
       app.kickLinks();
     }

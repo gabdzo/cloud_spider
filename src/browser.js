@@ -1021,6 +1021,7 @@ async function pull() {
     }
     if (place?.shelfNote) noteSpider(place.shelfNote, "fail");
     if (place?.linkNote) noteSpider(place.linkNote, "fail");
+    if (place?.diagramNote) noteSpider(place.diagramNote, "fail");
     setStatus(ui, view.status || "");
     errorEl.hidden = !view.error;
     errorEl.textContent = view.error || "";

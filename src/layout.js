@@ -89,6 +89,37 @@ function placePlot(subnet, x, y, columns, buildings) {
   };
 }
 
+function tagOf(item, key) {
+  const tags = item?.tags;
+  if (Array.isArray(tags)) return tags.find((tag) => (tag.key ?? tag.Key) === key)?.value ?? tags.find((tag) => tag.Key === key)?.Value ?? "";
+  return tags?.[key] ?? "";
+}
+
+// An EKS node has no Name tag by default; say whose node it is instead of
+// leaving an unlabeled shack.
+export function buildingFace(item) {
+  if (item.label) return item;
+  const group = tagOf(item, "eks:nodegroup-name");
+  const cluster = tagOf(item, "eks:cluster-name");
+  if (!item.name && (group || cluster)) return { ...item, label: group ? `node · ${group}` : `node · ${cluster}` };
+  return item;
+}
+
+// The control plane's second line: version, node groups and how many of
+// their nodes are on the map.
+export function fixtureFace(item, place) {
+  if (item.kind !== "eks" || item.caption) return item;
+  const nodes = (place?.instances || []).filter((node) => tagOf(node, "eks:cluster-name") === item.name);
+  const running = nodes.filter((node) => node.state === "running").length;
+  const groups = item.nodegroups || [];
+  const want = groups.reduce((sum, group) => sum + (Number(group.desired) || 0), 0);
+  const bits = [`EKS${item.version ? ` ${item.version}` : ""}`];
+  if (groups.length) bits.push(`${groups.length} node group${groups.length === 1 ? "" : "s"}`);
+  bits.push(`${running}/${want || nodes.length} nodes`);
+  if (item.phase && item.phase !== "ACTIVE") bits.push(item.phase);
+  return { ...item, caption: bits.join(" · ") };
+}
+
 const CAMP_KIND = new Set(["bucket", "function", "table", "secret"]);
 const CAMP_COL = 132;
 const CAMP_ROW = 72;
@@ -295,7 +326,9 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
   for (const vpc of vpcs) {
     const label = vpc.name ? joinLabel(vpc.name, vpc.cidr) : joinLabel(vpc.id, vpc.cidr);
     const vpcInstances = instances.filter((item) => item.vpcId === vpc.id);
-    if (!vpcInstances.length) {
+    // Empty means nothing at all: a VPC holding only a cluster control plane
+    // or a balancer (a fresh EKS VPC before its nodes join) is still drawn.
+    if (!vpcInstances.length && !fixtures.some((item) => item.vpcId === vpc.id)) {
       const text = `${label}  empty`;
       const settlement = {
         id: vpc.id,
@@ -333,7 +366,7 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
         let y = plotsTop + (zone ? LINE : 0);
         let colW = textWidth(zone);
         for (const subnet of owned.filter((item) => (item.zone || "") === zone)) {
-          const buildings = instances.filter((item) => item.subnetId === subnet.id);
+          const buildings = instances.filter((item) => item.subnetId === subnet.id).map(buildingFace);
           const plot = placePlot(subnet, cursorX, y, columns, buildings);
           plots.push(plot);
           y += plot.h + GAP;
@@ -345,7 +378,7 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
       }
     } else {
       for (const subnet of owned) {
-        const buildings = instances.filter((item) => item.subnetId === subnet.id);
+        const buildings = instances.filter((item) => item.subnetId === subnet.id).map(buildingFace);
         const sized = plotSize(subnet, buildings, columns);
         if (cursorX > left + INSET && cursorX + sized.w > left + rowLimit) {
           cursorX = left + INSET;
@@ -359,7 +392,7 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
       }
     }
 
-    const ownedFixtures = fixtures.filter((item) => item.vpcId === vpc.id);
+    const ownedFixtures = fixtures.filter((item) => item.vpcId === vpc.id).map((item) => fixtureFace(item, place));
     let fixtureItems = [];
     if (ownedFixtures.length) {
       const fixtureTop = plots.length ? rowBottom + GAP : plotsTop;

@@ -23,6 +23,10 @@ export async function readPlace(ec2, region) {
       instances: instances.items.filter((item) => !OMITTED.has(item.state)),
       gateways: diagram?.gateways || [],
       fixtures: diagram?.fixtures || [],
+      // A diagram read that failed (no eks:ListClusters, say) used to vanish;
+      // now the map says which call was refused.
+      diagramNote: diagram?.error || "",
+      readAt: Date.now(),
     },
   };
 }
