@@ -17,7 +17,7 @@ test("every file in vaults/ is a valid vault and follows the conventions", async
   assert.deepEqual(result.problems, [], result.problems.map((item) => item.text).join("\n"));
   assert.ok(result.ok);
   assert.ok(result.files.includes("templates/example.yaml"));
-  assert.ok(result.vaults >= 10);
+  assert.ok(result.vaults >= 7);
 });
 
 test("vaults/templates/ holds templates: checked and listed, never drawn", async () => {
@@ -62,10 +62,10 @@ test("npm run vaults:check passes on vaults/ and fails on the damaged sample", a
 // The Pulumi programs, run under mocks: every taggable resource carries the
 // project tag of exactly one vault file, and each vault selects it.
 const PROGRAMS = [
-  { dir: "infra", project: "cloudspider", stack: "test", stackDefault: "cloudspider", vaults: ["cloudspider", "alb-test", "test-machines", "test-logs"] },
+  { dir: "infra", project: "cloudspider", stack: "test", stackDefault: "cloudspider", vaults: ["cloudspider"] },
   { dir: "upgrades/eks", project: "cloudspider-upgrade", stack: "upgrade", vaults: ["eks"] },
-  { dir: "upgrades/signal", project: "cloudspider-signal", stack: "signal", vaults: ["signal"] },
-  { dir: "upgrades/barrel", project: "cloudspider-barrel", stack: "barrel", vaults: ["barrel"] },
+  { dir: "upgrades/signal", project: "cloudspider-signal", stack: "signal", vaults: ["signal"], template: true },
+  { dir: "upgrades/barrel", project: "cloudspider-barrel", stack: "barrel", vaults: ["barrel"], template: true },
   { dir: "upgrades/camp", project: "cloudspider-camp", stack: "camp", vaults: ["camp"] },
 ];
 
@@ -74,8 +74,8 @@ async function mocked(program, config = {}) {
   return JSON.parse(stdout);
 }
 
-function vaultFile(name) {
-  return parse(readFileSync(`${vaultsDir}/${name}.yaml`, "utf8"));
+function vaultFile(name, template = false) {
+  return parse(readFileSync(`${vaultsDir}/${template ? "templates/" : ""}${name}.yaml`, "utf8"));
 }
 
 for (const program of PROGRAMS) {
@@ -97,7 +97,7 @@ for (const program of PROGRAMS) {
     }
     assert.deepEqual([...seen].sort(), [...program.vaults].sort(), "each vault of this stack tags something");
     for (const name of program.vaults) {
-      const doc = vaultFile(name);
+      const doc = vaultFile(name, program.template);
       assert.deepEqual(doc.spec.resources.tags, { project: name }, `vaults/${name}.yaml selects project=${name}`);
     }
     // Tagged the way the map will read them: each tagged resource lands in its vault.
@@ -105,7 +105,8 @@ for (const program of PROGRAMS) {
       instances: taggable.filter((item) => item.type === "aws:ec2/instance:Instance").map((item) => ({ id: `${item.name}-id`, name: item.inputs.tags?.Name || "", tags: Object.entries({ project: program.stackDefault, ...item.inputs.tags }).filter(([, v]) => v).map(([key, value]) => ({ key, value })) })),
       fixtures: taggable.filter((item) => item.type !== "aws:ec2/instance:Instance").map((item) => ({ id: `${item.type}:${item.name}`, kind: "generic", name: item.name, tags: { project: program.stackDefault, ...item.inputs.tags } })),
     };
-    const loaded = await createVaultStore({ dir: vaultsDir }).load();
+    const store = createVaultStore({ dir: program.template ? `${vaultsDir}/templates` : vaultsDir, templates: program.template });
+    const loaded = await store.load();
     const owned = matchVaults(loaded.vaults, place);
     const claimed = new Map();
     for (const [key, ids] of owned) for (const id of ids) claimed.set(id, key);

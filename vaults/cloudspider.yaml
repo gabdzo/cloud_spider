@@ -1,16 +1,17 @@
-# The test stack's base camp: infra/ (Pulumi project cloudspider, stack test).
-# The stack's aws:defaultTags put project=cloudspider on every resource; the
-# load balancer, the two expendable machines and the log group override it and
-# have their own vaults (alb-test, test-machines, test-logs). What stays here:
-# the 10.42.0.0/16 VPC, its two subnets, and the "untagged" t4g.nano that the
-# map must refuse to stop or start.
+# The test stack: infra/ (Pulumi project cloudspider, stack test). One stack,
+# one vault. The stack's aws:defaultTags put project=cloudspider on every
+# resource, and spec.stack claims whatever the stack made even before the tags
+# land. Inside: the 10.42.0.0/16 VPC and its two subnets, the internal ALB
+# cloudspider-api with its rules (the broken path, component=alb-test), the
+# expendable nanos (component=test-machines), the "untagged" t4g.nano the map
+# must refuse to stop or start, and /cloudspider/test (component=test-logs).
 apiVersion: cloudspider/v1
 kind: Vault
 metadata:
   name: cloudspider
   number: 100
-  title: Test camp
-  description: The live test VPC in eu-north-1 (10.42.0.0/16, two private subnets) and the untagged nano the map must never touch.
+  title: Test stack
+  description: The infra/ test stack in eu-north-1. The 10.42.0.0/16 VPC, the internal ALB cloudspider-api (the broken path), the expendable nanos and /cloudspider/test.
   owner: gabriel
   tags: [test, infra]
 spec:
@@ -18,6 +19,10 @@ spec:
   resources:
     tags:
       project: cloudspider
+    ids:
+      - cloudspider-api        # the load balancer's name
+      - cloudspider-running
+      - cloudspider-stopped
   stack:
     dir: infra
     name: test

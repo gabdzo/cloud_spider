@@ -11,17 +11,19 @@ import { fileURLToPath } from "node:url";
 import { createVaultStore, vaultsDir } from "./vaults.js";
 import { createCheckRunner } from "./vault-checks.js";
 import { createVaultView } from "./vault-view.js";
-import { sampleFetch, samplePlace } from "./sample.js";
+import { sampleFetch, samplePlace, sampleStacks } from "./sample.js";
+import { createStackReader } from "./vault-stacks.js";
 
 const port = Number(process.env.PORT || 9241);
 const pageOrigin = `http://127.0.0.1:${port}`;
 const aws = createAws();
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const vaults = {
-  live: createVaultView({ store: createVaultStore({ dir: vaultsDir() }), checker: createCheckRunner() }),
+  live: createVaultView({ store: createVaultStore({ dir: vaultsDir() }), checker: createCheckRunner(), stacks: createStackReader() }),
   sample: createVaultView({
     store: createVaultStore({ dir: join(root, "samples", "vaults") }),
     checker: createCheckRunner({ fetch: sampleFetch }),
+    stacks: sampleStacks(),
   }),
   samplePlace,
 };

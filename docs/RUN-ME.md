@@ -28,3 +28,16 @@ npm run vaults:new -- service shop-api      # writes vaults/shop-api.yaml (name,
 $EDITOR vaults/shop-api.yaml                # set spec.stack {dir, name} to the stack that deploys it
 npm run vaults:check
 ```
+
+## 4. Tags-only `pulumi up`s (PR 21, free, a minute each)
+
+One stack is one vault now. The infra parts swap `project=alb-test|test-machines|test-logs` for `component=…`, so `project=cloudspider` (the stack default) shows through. Camp gains a `pageUrl` output, which VIEW and the HTTP check read. Preview first. You should see only `~ update` on `tags`/`tagsAll` (plus camp's new output): nothing to create, replace or delete. If a preview shows anything else, stop.
+
+```sh
+cd infra && npm ci && pulumi preview --stack test --diff     # only if the test stack is up (pulumi stack ls)
+pulumi up --stack test && cd ..
+cd upgrades/camp && npm ci && pulumi preview --stack camp --diff
+pulumi up --stack camp && cd ../..                           # adds the pageUrl output; resources unchanged
+```
+
+The cloudspider, eks and camp vaults also own whatever their stack made (Cloud Spider reads `pulumi stack export`, which is read-only), so even before these ups the doors show LIVE and the resources. signal and barrel are now templates (vaults/templates/), since their stacks are not up. alb-test, test-machines, test-logs and pulumi-state are gone.

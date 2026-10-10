@@ -1,3 +1,5 @@
+# Template (moved here from vaults/: the signal stack is not up). When it is,
+# make it living with: npm run vaults:new -- signal signal
 # upgrades/signal (Pulumi project cloudspider-signal, stack signal): one log
 # group, /cloudspider/<name> (default /cloudspider/cloudspider-signal), kept
 # one day. Almost nothing on the bill.

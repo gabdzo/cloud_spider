@@ -106,7 +106,7 @@ const page = new aws.lambda.Function("page-fn", {
   tags: { Name: name, cloudspider: "expendable" },
 }, opts);
 
-new aws.lambda.FunctionUrl("page-url", {
+const pageUrlResource = new aws.lambda.FunctionUrl("page-url", {
   functionName: page.name,
   authorizationType: "NONE",
 }, opts);
@@ -122,3 +122,6 @@ export const bucketName = bucket.bucket;
 export const functionName = page.name;
 export const tableName = table.name;
 export const secretName = secret.name;
+// vaults/camp.yaml: VIEW and the HTTP check read this output. Adding an
+// output changes no resource.
+export const pageUrl = pageUrlResource.functionUrl;

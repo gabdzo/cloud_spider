@@ -169,6 +169,7 @@ export function drawVaultLabels(ctx, area, settled = new Set()) {
 // A vault bound to a Pulumi stack is a living vault.
 export function liveText(vault) {
   if (!vault?.stack) return "";
+  if (vault.stackInfo && !vault.stackInfo.stacks?.length) return `NOT UP · ${vault.stack.name === "*" ? vault.stack.dir.split("/").pop() : vault.stack.name}`.toUpperCase();
   return `LIVE · ${vault.stack.name === "*" ? vault.stack.dir.split("/").pop() : vault.stack.name}`.toUpperCase();
 }
 

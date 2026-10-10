@@ -280,6 +280,8 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
   const resources = new Map();
   for (const item of allInstances) resources.set(item.id, { ...item, kind: "ec2" });
   for (const item of place.fixtures || []) resources.set(item.id, item);
+  for (const item of place.vpcs || []) resources.set(item.id, { ...item, kind: "vpc", vpcId: item.id });
+  for (const item of place.subnets || []) resources.set(item.id, { ...item, kind: "subnet" });
   const vaultArea = placeVaults(vaults, { top: cursorY, left: PAD, rowLimit, isOpen, resources });
   if (vaultArea) cursorY = vaultArea.bottom + GAP * 2;
   const movesIn = (item) => owned.has(item.id) && !item.vpcId;
