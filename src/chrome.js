@@ -86,8 +86,15 @@ export function needleAt(index, count) {
 // count, issue }. They come from CloudTrail (the trail), from the spider's
 // own reads (the bill, a region) and from a page failure, newest first.
 export function rowKind(row) {
-  if (row?.status === "fail") return "warn";
   const text = String(row?.text || "");
+  // Cluster events (kube-ops.js kubeRadioRows) keep their own icon.
+  if (row?.kube) {
+    if (/^policy\b/.test(text)) return "policy";
+    if (/^karpenter\b/.test(text)) return row.status === "fail" ? "warn" : "node";
+    if (/^keda\b/.test(text)) return "queue";
+    if (/^(scaled|hpa)\b/.test(text)) return "scale";
+  }
+  if (row?.status === "fail") return "warn";
   if (/^[A-Z][a-z]+[A-Z]/.test(text)) return stationKind(text);
   if (/^(tore|took|closed|cleared)\b/.test(text)) return "warn";
   if (/^put\b/.test(text)) return "stop";

@@ -1,0 +1,27 @@
+# Template (the kyverno add-on is not up). One stack per cluster:
+#   cd upgrades/addons && pulumi stack select --create kyverno-cloudspider-up
+# When it is up: npm run vaults:new -- kyverno kyverno
+# upgrades/addons (Pulumi project cloudspider-addons, stack kyverno-<cluster>):
+# no AWS resources (Helm release, four ClusterPolicies, viewer RBAC). AWS resources carry project=kyverno and cluster=<cluster>;
+# the pods are in the Cluster view, namespace kyverno.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: kyverno
+  number: 202
+  title: Kyverno
+  description: "Policy engine with four baseline policies in Audit mode (no privileged containers, no hostPath, CPU/memory requests set, no :latest images)."
+  owner: gabriel
+  tags: [upgrade, eks, addon]
+spec:
+  type: other
+  resources:
+    tags:
+      project: kyverno
+  stack:
+    dir: upgrades/addons
+    name: kyverno-cloudspider-up
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/addons
+    docs: https://kyverno.io/docs/
+    dashboard: https://eu-north-1.console.aws.amazon.com/eks/home?region=eu-north-1#/clusters/cloudspider-up

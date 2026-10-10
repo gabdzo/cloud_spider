@@ -1,0 +1,5 @@
+name: cloudspider-addons
+runtime: nodejs
+description: "Cluster add-ons for an EKS cluster from upgrades/eks: one stack per add-on and cluster, named <addon>-<cluster> (kyverno-cloudspider-up). See catalog.js."
+backend:
+  url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"

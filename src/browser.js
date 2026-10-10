@@ -24,7 +24,8 @@ import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
 import { paintKube } from "./kube-draw.js";
 import { renderTelemetry } from "./tele-view.js";
 import { createPodInspector } from "./pod-inspect-view.js";
-import { upgradeSpiderLine } from "./upgrade-rules.js";
+import { renderOps } from "./ops-view.js";
+import { addonCommands, upgradeSpiderLine } from "./upgrade-rules.js";
 import { costLine } from "./stack-costs.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
@@ -103,6 +104,7 @@ const MAP_TAG_KEY = "cloudspider.mapTagKey";
 const kubePanel = document.querySelector("#kube-panel");
 const kubeTabs = document.querySelector("#kube-tabs");
 const kubeTele = document.querySelector("#kube-tele");
+const kubeOps = document.querySelector("#kube-ops");
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
 const tabVaults = document.querySelector("#tab-vaults");
@@ -128,6 +130,9 @@ let sampleTrail = [];
 let stations = [];
 // The spider's own notes for the radio: a region read, the bill, a stack.
 const spider = [];
+// Kubernetes events worth hearing (scaling, Karpenter nodes, policy,
+// warnings), from /api/cluster/ops; newest first, at most three.
+let kubeRows = [];
 let spiderRegion = "";
 let spend = null;
 let spendSample = null;
@@ -255,7 +260,7 @@ function logRows() {
     ? [{ time: 0, status: "fail", text: errorEl.textContent, issue: "", count: 1 }]
     : [];
   const trail = (ui.trail || []).filter((row) => row?.text && row.text !== "the radio is quiet");
-  return [...pageIssue, ...spider, ...trail].slice(0, 8);
+  return [...pageIssue, ...spider, ...kubeRows, ...trail].slice(0, 8);
 }
 
 function renderRadioPanel() {
@@ -1175,6 +1180,7 @@ function saveClusterLanes() {
 const CLUSTER_SCREENS = [
   { id: "topology", label: "TOPOLOGY" },
   { id: "telemetry", label: "TELEMETRY", show: showTelemetry, hide: hideTelemetry },
+  { id: "ops", label: "OPS", show: showOps, hide: hideOps },
 ];
 const CLUSTER_SCREEN_KEY = "cloudspider.cluster.screen";
 let clusterScreen = "topology";
@@ -1253,6 +1259,56 @@ async function pullTelemetry() {
   if (ticket !== teleTicket || kubeTele.hidden) return;
   teleData = body;
   paintTelemetry();
+}
+
+// OPS: what the add-ons report (Kyverno, HPA, Karpenter, KEDA, events).
+// Asks every 15 s while shown.
+let opsData = null;
+let opsTimer = 0;
+let opsTicket = 0;
+function showOps() {
+  kubeOps.hidden = false;
+  showPod(null);
+  renderOps(kubeOps, opsData);
+  pullOps();
+  clearInterval(opsTimer);
+  opsTimer = setInterval(() => {
+    if (tabVisible) pullOps();
+  }, 15_000);
+}
+function hideOps() {
+  kubeOps.hidden = true;
+  clearInterval(opsTimer);
+  opsTimer = 0;
+}
+async function pullOps() {
+  const ticket = ++opsTicket;
+  const body = await fetch(`/api/cluster/ops${sample ? "?sample=1" : ""}`).then((r) => r.json()).catch(() => ({ error: "the add-ons did not answer" }));
+  if (ticket !== opsTicket) return;
+  takeKubeRadio(body);
+  if (kubeOps.hidden) return;
+  opsData = body;
+  renderOps(kubeOps, opsData);
+}
+
+// The radio hears the cluster's events whether or not OPS is open: every
+// 30 s, only when a kube context answers.
+function takeKubeRadio(body) {
+  const rows = Array.isArray(body?.radio) ? body.radio : [];
+  if (JSON.stringify(rows) === JSON.stringify(kubeRows)) return;
+  kubeRows = rows;
+  renderRadioPanel();
+}
+let kubeRadioOff = false;
+async function pullKubeRadio() {
+  if (!tabVisible || (kubeRadioOff && !sample)) return;
+  const body = await fetch(`/api/cluster/ops${sample ? "?sample=1" : ""}`).then((r) => r.json()).catch(() => null);
+  if (!body) return;
+  if (body.unset) {
+    kubeRadioOff = true;
+    return;
+  }
+  takeKubeRadio(body);
 }
 
 function placedCluster() {
@@ -1481,6 +1537,9 @@ async function pull() {
 function showSample(next) {
   sample = true;
   ui.sample = true;
+  kubeRows = [];
+  setTimeout(pullKubeRadio, 0);
+  if (pipOpen) setTimeout(() => pullAddons(true), 0);
   place = next;
   metricsData = null;
   pullMetrics(true);
@@ -1500,8 +1559,11 @@ function leaveSample() {
   setTrail(ui, []);
   metricsData = null;
   pull();
-queueSpend();
   queueSpend();
+  kubeRows = [];
+  kubeRadioOff = false;
+  setTimeout(pullKubeRadio, 0);
+  if (pipOpen) pullAddons(true);
   if (pipOpen && openCard) refreshUpgrade(true);
 }
 
@@ -1575,6 +1637,7 @@ function dropSample() {
   place = null;
   setRadio(ui, "");
   setTrail(ui, []);
+  kubeRows = [];
 }
 
 // The radio panel remembers whether it is open per view; the path needs the
@@ -2230,6 +2293,7 @@ askThis.addEventListener("click", () => {
 const CARD_ICON = {
   eks: "cluster", signal: "radio", barrel: "stack", camp: "bucket",
   rds: "database", pgcluster: "database", shopapi: "pod", site: "url", worker: "queue", openshift: "openshift", "tf-rds": "terraform",
+  "pod-identity": "secret", "metrics-server": "addon", kyverno: "policy", karpenter: "node", "scaling-demo": "scale", lbc: "lb", "cert-manager": "secret", keda: "queue",
 };
 
 function el(tag, props = {}, ...children) {
@@ -2287,6 +2351,173 @@ function costBlock(spec) {
   return block;
 }
 
+// The body of an open Pulumi card: note, bill, watch line, parameters, the
+// three buttons (PREVIEW changes nothing) and, for a cluster add-on, the
+// commands to run it yourself. `preset` fixes parameters (an add-on row
+// knows its cluster).
+function cardBody(spec, preset = {}) {
+  const body = el("div", { className: "card-body" });
+  const watch = el("div", { id: "pip-watch" });
+  watch.hidden = true;
+  body.append(el("div", { textContent: spec.note || "" }), costBlock(spec));
+  if (spec.nodeCost) body.append(nodeCostBlock(spec.nodeCost));
+  body.append(watch);
+  if (spec.id === "camp") {
+    const grain = el("select", { id: "camp-grain" });
+    for (const choice of ["coarse", "fine"]) {
+      grain.append(el("option", { value: choice, textContent: choice, selected: choice === campGrain }));
+    }
+    grain.addEventListener("change", () => {
+      campGrain = grain.value;
+      wallGrain.value = campGrain;
+      pull();
+    });
+    body.append(el("label", {}, "grain ", grain));
+  }
+  for (const parameter of spec.parameters || []) {
+    let field;
+    const fixed = preset[parameter.name];
+    if (parameter.choices) {
+      field = el("select");
+      for (const choice of parameter.choices) {
+        field.append(el("option", { value: choice, textContent: choice, selected: choice === parameter.default }));
+      }
+    } else {
+      field = el("input", { value: fixed ?? parameter.default ?? "" });
+      if (fixed !== undefined) field.readOnly = true;
+    }
+    field.name = parameter.name;
+    if (parameter.name === "clusterName" || parameter.name === "name") field.addEventListener("change", () => refreshUpgrade(true));
+    body.append(el("label", {}, `${parameter.name} `, field));
+  }
+  const confirm = el("input", { name: "confirmName", placeholder: "type the name", autocomplete: "off" });
+  const preview = el("button", { type: "button", className: "cmd", textContent: "preview", title: "pulumi preview --diff: shows what run would change, changes nothing" });
+  preview.addEventListener("click", () => postUpgrade("preview"));
+  const run = el("button", { type: "button", className: "cmd", textContent: "run" });
+  run.addEventListener("click", () => postUpgrade("up"));
+  const down = el("button", { type: "button", className: "cmd danger", textContent: "take it down" });
+  down.addEventListener("click", () => postUpgrade("destroy"));
+  body.append(el("div", { className: "actions" }, confirm, preview, run, down));
+  if (spec.addon) body.append(commandRows(addonCommands(spec, preset.clusterName)));
+  body.append(el("pre", { id: "pip-out" }));
+  return body;
+}
+
+// What Karpenter's nodes cost while they run (each one), apart from the
+// controller's own bill.
+function nodeCostBlock(cost) {
+  const [hour, , month] = costLine(cost).replace(/ \+ usage$/, "").split(" · ");
+  const block = el("div", { className: "bill nodebill" });
+  block.append(el("div", { className: "nodebill-head" }, iconImg("node"), el("span", { textContent: "EACH NODE IT ADDS" }), el("b", { textContent: `${hour} · ${month}` })));
+  const lines = el("ul", { className: "lines" });
+  for (const item of cost.items) lines.append(el("li", {}, el("span", { textContent: item.text }), el("span", { textContent: `$${item.month.toFixed(2)}/mo` })));
+  block.append(lines);
+  return block;
+}
+
+function commandRows(commands) {
+  const cmds = el("div", { className: "cmds", role: "list", ariaLabel: "commands to run yourself" });
+  for (const command of commands) {
+    const copy = el("button", { type: "button", className: "cmd copy", textContent: "COPY", ariaLabel: `copy the ${command.label} command` });
+    copy.addEventListener("click", () => copyCommand(command.text, copy));
+    cmds.append(el("div", { className: `cmdrow ${command.label}`, role: "listitem" }, el("span", { className: "lbl", textContent: command.label.toUpperCase() }), el("code", { textContent: command.text }), copy));
+  }
+  return cmds;
+}
+
+// ---- CLUSTER ADD-ONS: nested under their cluster in the Stacks panel ----
+// From /api/addons: per cluster, every add-on with its state (installed by
+// its stack, present but not ours, not installed, needs a domain) and version.
+let addonData = null;
+let addonTicket = 0;
+const ADDON_STATE = {
+  installed: { word: "INSTALLED", lamp: "on" },
+  present: { word: "PRESENT", lamp: "warn" },
+  absent: { word: "NOT INSTALLED", lamp: "off" },
+  "n/a": { word: "NEEDS A DOMAIN", lamp: "na" },
+};
+
+async function pullAddons(fresh = false) {
+  const ticket = ++addonTicket;
+  const query = new URLSearchParams();
+  if (sample) query.set("sample", "1");
+  if (fresh) query.set("fresh", "1");
+  const body = await fetch(`/api/addons?${query}`).then((response) => response.json()).catch(() => ({ tree: [], notes: ["the add-ons did not answer"] }));
+  if (ticket !== addonTicket || !pipOpen) return;
+  addonData = body;
+  drawAddonTree();
+}
+
+function addonRow(spec, item, cluster) {
+  const key = `${item.id}@${cluster.cluster}`;
+  const state = ADDON_STATE[item.state] || ADDON_STATE.absent;
+  const card = el("section", { className: `card addon ${item.state === "n/a" ? "na" : item.state}` });
+  card.dataset.id = key;
+  const sub = [item.version || item.pinned || "", spec?.cost ? costLine(spec.cost).split(" · ")[0] : ""].filter(Boolean).join(" · ");
+  const head = el(
+    "button",
+    { type: "button", className: "card-head addon-head", disabled: !spec },
+    iconImg(CARD_ICON[item.id] || "addon"),
+    el("span", { className: "ad-name" }, el("span", { className: "card-title", textContent: item.title }), el("small", { className: "ad-ver", textContent: sub || "—", title: item.source ? `version from ${item.source}` : `pinned ${item.pinned || "by EKS"}` })),
+    el("span", { className: `ad-state ${state.lamp}` }, el("i"), el("b", { textContent: item.busy ? "BUSY" : state.word })),
+  );
+  head.setAttribute("aria-expanded", String(openCard === key));
+  head.addEventListener("click", () => {
+    openCard = openCard === key ? null : key;
+    drawPipForm();
+    if (openCard) refreshUpgrade(true);
+  });
+  card.append(head);
+  const tags = [];
+  if (item.state === "present") tags.push(el("span", { className: "ad-tag warn", textContent: "NOT FROM ITS STACK: UP IS REFUSED" }));
+  if (item.state === "n/a") tags.push(el("span", { className: "ad-tag dim", textContent: "NOT BUILT YET: NEEDS A DOMAIN AND A ROUTE 53 ZONE" }));
+  else if (item.missing?.length && item.state !== "installed") tags.push(el("span", { className: "ad-tag", textContent: `NEEDS ${item.missing.map((id) => (addonTitle(id) || id).toUpperCase()).join(", ")} FIRST` }));
+  if (!item.recommended && item.offered) tags.push(el("span", { className: "ad-tag dim", textContent: "OPTIONAL" }));
+  if (tags.length) card.append(el("div", { className: "ad-tags" }, ...tags));
+  if (openCard === key && spec) {
+    card.classList.add("open");
+    card.append(cardBody(spec, { clusterName: cluster.cluster }));
+  }
+  return card;
+}
+
+function addonTitle(id) {
+  for (const cluster of addonData?.tree || []) for (const item of cluster.addons) if (item.id === id) return item.title;
+  return "";
+}
+
+function drawAddonTree() {
+  const box = pipEl.querySelector("#addon-tree");
+  if (!box) return;
+  // Keep an open card's body (typed confirm, the run's output) across a pull.
+  const openBody = box.querySelector(".card.open > .card-body");
+  const tree = addonData?.tree || [];
+  const plates = [];
+  if (!addonData) plates.push(el("div", { className: "quiet", textContent: "reading the clusters…" }));
+  else if (!tree.length) plates.push(el("div", { className: "quiet", textContent: (addonData.notes || []).join(" · ") || "no EKS cluster yet: raise one with the EKS card" }));
+  for (const cluster of tree) {
+    const plate = el("section", { className: `ad-cluster${cluster.live ? "" : " gone"}` });
+    const count = `${cluster.installed} INSTALLED${cluster.present ? ` · ${cluster.present} PRESENT` : ""}`;
+    plate.append(
+      el("header", { className: "ad-plate" },
+        iconImg("cluster"),
+        el("b", { textContent: cluster.cluster }),
+        el("span", { className: `ad-live ${cluster.live ? "on" : "off"}`, textContent: cluster.live ? "LIVE" : "NO CLUSTER" }),
+        el("span", { className: "ad-count", textContent: count }),
+      ),
+    );
+    const rows = el("div", { className: "ad-rows" });
+    for (const item of cluster.addons) rows.append(addonRow(pipModules.find((spec) => spec.id === item.id && spec.addon), item, cluster));
+    plate.append(rows);
+    plates.push(plate);
+  }
+  box.replaceChildren(...plates);
+  if (openBody) {
+    const fresh = box.querySelector(".card.open > .card-body");
+    if (fresh) fresh.replaceWith(openBody);
+  }
+}
+
 function drawPipForm() {
   const title = el("div", { className: "ptitle" }, iconImg("stack"), "STACKS");
   pipEl.replaceChildren(title);
@@ -2295,50 +2526,20 @@ function drawPipForm() {
     return;
   }
   for (const spec of pipModules) {
+    if (spec.addon) continue;
     const card = el("section", { className: "card" });
     card.dataset.id = spec.id;
     card.append(cardHead(spec));
     if (openCard === spec.id) {
       card.classList.add("open");
-      const body = el("div", { className: "card-body" });
-      const watch = el("div", { id: "pip-watch" });
-      watch.hidden = true;
-      body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), watch);
-      if (spec.id === "camp") {
-        const grain = el("select", { id: "camp-grain" });
-        for (const choice of ["coarse", "fine"]) {
-          grain.append(el("option", { value: choice, textContent: choice, selected: choice === campGrain }));
-        }
-        grain.addEventListener("change", () => {
-          campGrain = grain.value;
-          wallGrain.value = campGrain;
-          pull();
-        });
-        body.append(el("label", {}, "grain ", grain));
-      }
-      for (const parameter of spec.parameters || []) {
-        let field;
-        if (parameter.choices) {
-          field = el("select");
-          for (const choice of parameter.choices) {
-            field.append(el("option", { value: choice, textContent: choice, selected: choice === parameter.default }));
-          }
-        } else {
-          field = el("input", { value: parameter.default ?? "" });
-        }
-        field.name = parameter.name;
-        if (parameter.name === "clusterName" || parameter.name === "name") field.addEventListener("change", () => refreshUpgrade(true));
-        body.append(el("label", {}, `${parameter.name} `, field));
-      }
-      const confirm = el("input", { name: "confirmName", placeholder: "type the name", autocomplete: "off" });
-      const run = el("button", { type: "button", className: "cmd", textContent: "run" });
-      run.addEventListener("click", () => postUpgrade("up"));
-      const down = el("button", { type: "button", className: "cmd danger", textContent: "take it down" });
-      down.addEventListener("click", () => postUpgrade("destroy"));
-      body.append(el("div", { className: "actions" }, confirm, run, down), el("pre", { id: "pip-out" }));
-      card.append(body);
+      card.append(cardBody(spec));
     }
     pipEl.append(card);
+  }
+  if (pipModules.some((spec) => spec.addon)) {
+    pipEl.append(el("div", { className: "pdiv addons", role: "separator" }, iconImg("addon"), el("span", { textContent: "CLUSTER ADD-ONS" }), el("span", { className: "ro", textContent: "ONE STACK EACH" })));
+    pipEl.append(el("div", { id: "addon-tree" }));
+    drawAddonTree();
   }
   if (!pipTerraform.length) return;
   pipEl.append(el("div", { className: "pdiv", role: "separator" }, iconImg("terraform"), el("span", { textContent: "TERRAFORM" }), el("span", { className: "ro", textContent: "READ-ONLY" })));
@@ -2350,13 +2551,7 @@ function drawPipForm() {
       card.classList.add("open");
       const body = el("div", { className: "card-body" });
       body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), el("div", { id: "tf-state", className: "tf-state", textContent: "reading state…" }), el("ul", { id: "tf-outputs", className: "lines" }));
-      const cmds = el("div", { className: "cmds", role: "list", ariaLabel: "commands to run yourself" });
-      for (const command of spec.commands || []) {
-        const copy = el("button", { type: "button", className: "cmd copy", textContent: "COPY", ariaLabel: `copy the ${command.label} command` });
-        copy.addEventListener("click", () => copyCommand(command.text, copy));
-        cmds.append(el("div", { className: `cmdrow ${command.label}`, role: "listitem" }, el("span", { className: "lbl", textContent: command.label.toUpperCase() }), el("code", { textContent: command.text }), copy));
-      }
-      body.append(cmds);
+      body.append(commandRows(spec.commands || []));
       card.append(body);
     }
     pipEl.append(card);
@@ -2391,8 +2586,13 @@ async function refreshTerraform(id, fresh) {
   }
 }
 
+// An add-on row's key is "<addon>@<cluster>"; the module is the part before.
+function openModule() {
+  return String(openCard || "").split("@")[0];
+}
+
 function openSpec() {
-  return pipModules.find((item) => item.id === openCard) || null;
+  return pipModules.find((item) => item.id === openModule()) || null;
 }
 
 function pipParams() {
@@ -2432,7 +2632,7 @@ async function refreshUpgrade(fresh) {
     return;
   }
   if (sample) return;
-  const query = new URLSearchParams({ module: openCard });
+  const query = new URLSearchParams({ module: openModule() });
   if (fresh) query.set("fresh", "1");
   // Which stack to watch: the cluster (or name) typed in the card.
   const params = pipParams();
@@ -2461,6 +2661,7 @@ async function postUpgrade(action) {
   noteSpider(line.text, line.status);
   renderRadioPanel();
   paintUpgrade(body);
+  if (spec.addon) setTimeout(() => pullAddons(true), 1500);
 }
 
 async function toggleUpgrade() {
@@ -2474,7 +2675,13 @@ async function toggleUpgrade() {
   }
   drawPipForm();
   refreshUpgrade(true);
+  if (pipModules.some((spec) => spec.addon)) pullAddons(true);
 }
+
+// While the panel is open the add-on tree follows the clusters.
+setInterval(() => {
+  if (pipOpen && tabVisible && pipModules.some((spec) => spec.addon)) pullAddons(false);
+}, 20_000);
 
 tabMap.addEventListener("click", goOverview);
 tabVaults.addEventListener("click", () => {
@@ -2545,6 +2752,11 @@ setInterval(() => {
 setInterval(() => {
   if (pipOpen && openCard) refreshUpgrade(false);
 }, 2000);
+
+setInterval(() => {
+  pullKubeRadio();
+}, 30_000);
+setTimeout(pullKubeRadio, 4000);
 
 window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", (e) => {
   reducedMotion = e.matches;

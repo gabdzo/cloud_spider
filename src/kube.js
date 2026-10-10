@@ -57,6 +57,16 @@ export const PATHS = {
   daemonsets: () => "/apis/apps/v1/daemonsets",
   statefulsets: () => "/apis/apps/v1/statefulsets",
   ingresses: () => "/apis/networking.k8s.io/v1/ingresses",
+  // Cluster add-ons (OPS screen, radio). A missing CRD answers 404: that
+  // add-on is simply not installed.
+  events: () => "/api/v1/events?limit=500",
+  hpas: () => "/apis/autoscaling/v2/horizontalpodautoscalers",
+  policyReports: () => "/apis/wgpolicyk8s.io/v1alpha2/policyreports",
+  clusterPolicyReports: () => "/apis/wgpolicyk8s.io/v1alpha2/clusterpolicyreports",
+  clusterPolicies: () => "/apis/kyverno.io/v1/clusterpolicies",
+  nodePools: () => "/apis/karpenter.sh/v1/nodepools",
+  nodeClaims: () => "/apis/karpenter.sh/v1/nodeclaims",
+  scaledObjects: () => "/apis/keda.sh/v1alpha1/scaledobjects",
   podMetrics: () => "/apis/metrics.k8s.io/v1beta1/pods",
   nodeMetrics: () => "/apis/metrics.k8s.io/v1beta1/nodes",
   // The OTel gateway's Prometheus text, through the API server's service
@@ -212,6 +222,26 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
         out[name] = results[i].json?.items || [];
         if (results[i].forbidden) out.notes.push(`${name}: forbidden for the viewer role`);
         if (name === "podMetrics" && (results[i].missing || results[i].error)) out.notes.push("no metrics-server (pod CPU/memory hidden)");
+      });
+      return out;
+    },
+    // What the add-ons report: events, HPAs, Kyverno policy reports,
+    // Karpenter node pools and claims, KEDA scaled objects. Each piece that
+    // is missing (CRD not installed) or forbidden comes back empty, named in
+    // `absent` / `forbidden`.
+    async ops() {
+      const t = await resolveTarget();
+      if (t.error) return { error: t.error, unset: true };
+      const names = ["events", "hpas", "deployments", "daemonsets", "nodes", "policyReports", "clusterPolicyReports", "clusterPolicies", "nodePools", "nodeClaims", "scaledObjects"];
+      const results = await Promise.all(names.map((name) => getPath(PATHS[name]())));
+      const fatal = results.find((r) => r.error && !r.forbidden && !r.missing);
+      if (fatal && results.every((r) => r.error)) return { error: fatal.error, clusterName: t.clusterName };
+      const out = { clusterName: t.clusterName, absent: [], forbidden: [], errors: [] };
+      names.forEach((name, i) => {
+        out[name] = results[i].json?.items || [];
+        if (results[i].missing) out.absent.push(name);
+        else if (results[i].forbidden) out.forbidden.push(name);
+        else if (results[i].error) out.errors.push(`${name}: ${results[i].error}`);
       });
       return out;
     },

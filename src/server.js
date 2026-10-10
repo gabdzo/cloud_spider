@@ -37,6 +37,7 @@ export const FILES = new Set([
   "tele-draw.js",
   "tele-view.js",
   "pod-inspect-view.js",
+  "ops-view.js",
   "metrics.js",
   "upgrade-rules.js",
   "stack-costs.js",
@@ -987,6 +988,84 @@ const page = `<!doctype html>
   .kt-flags { display: flex; gap: 4px; }
   .kt-flags em { font-style: normal; font-size: 9px; padding: 0 4px; border: 1px solid var(--pip-dim); color: var(--pip-mid); }
   .kt-flags em.bad { color: var(--status-broken); border-color: var(--status-broken); }
+  #kube-ops { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 50px 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; }
+  .ko-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-top: 12px; align-items: start; }
+  .ko-panel { padding: 0 0 10px; border: 2px solid var(--pip-dim); background: var(--pip-ink); box-shadow: inset 0 0 24px var(--glow-soft), 0 0 0 1px var(--pip-dark); min-width: 0; }
+  .ko-head { display: flex; align-items: center; gap: 8px; padding: 4px 8px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.14em; border-bottom: 2px solid var(--pip-dark); }
+  .ko-head .px { image-rendering: pixelated; filter: brightness(0.25); }
+  .ko-head b { flex: 1; font-weight: normal; }
+  .ko-chip { font-size: 9px; padding: 0 5px; border: 1px solid var(--pip-ink); letter-spacing: 0.12em; }
+  .ko-chip.audit { color: var(--status-hang); background: var(--pip-ink); border-color: var(--status-hang); }
+  .ko-chip.off { color: var(--pip-dim); background: var(--pip-ink); }
+  .ko-chip.radio { color: var(--pip-ink); }
+  .ko-panel h4 { margin: 10px 10px 4px; padding-top: 6px; border-top: 1px dashed var(--pip-dark); font-size: 10px; font-weight: normal; letter-spacing: 0.14em; color: var(--pip-dim); }
+  .ko-empty { margin: 8px 10px; padding: 8px; border: 1px dashed var(--pip-dark); color: var(--pip-mid); }
+  .ko-empty p { margin: 0 0 4px; }
+  .ko-hint { margin: 6px 10px; color: var(--pip-dim); font-size: 10px; }
+  .ko-empty .ko-hint { margin: 0; }
+  .ko-strip { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; margin: 10px 10px 4px; padding: 3px; border: 1px solid var(--pip-dark); background: var(--pip-screen); }
+  .ko-strip i { height: 12px; background: var(--pip-mid); box-shadow: inset 0 -3px 0 var(--btn-shade); }
+  .ko-strip i.fail { background: var(--status-broken); }
+  .ko-strip i.warn { background: var(--status-hang); }
+  .ko-strip i.off { background: var(--pip-dark); box-shadow: none; }
+  .ko-tally { display: flex; gap: 14px; margin: 0 10px 6px; letter-spacing: 0.12em; font-size: 10px; }
+  .ko-tally .pass { color: var(--pip-bright); }
+  .ko-tally .fail { color: var(--status-broken); }
+  .ko-tally .warn { color: var(--status-hang); }
+  .ko-policies, .ko-viol, .ko-claims, .ko-events { list-style: none; margin: 0; padding: 0 10px; }
+  .ko-policies li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 64px; gap: 8px; align-items: center; padding: 3px 0; border-bottom: 1px solid var(--pip-dark); }
+  .ko-lamp { width: 8px; height: 8px; background: var(--lamp-on); box-shadow: 0 0 5px var(--btn-glow); }
+  .ko-policies li.bad .ko-lamp { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
+  .ko-policies b { font-weight: normal; text-align: right; color: var(--pip-bright); }
+  .ko-policies li.bad b { color: var(--status-broken); }
+  .ko-pname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pip-mid); }
+  .ko-sev { font-style: normal; font-size: 9px; padding: 0 4px; border: 1px solid var(--pip-dim); color: var(--pip-dim); }
+  .ko-sev.high, .ko-sev.critical { color: var(--status-hang); border-color: var(--status-hang); }
+  .ko-viol li { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 8px; padding: 4px 0 4px 8px; border-left: 3px solid var(--status-broken); margin-bottom: 4px; background: var(--pip-screen); }
+  .ko-viol li.warn { border-left-color: var(--status-hang); }
+  .ko-what { display: flex; flex-direction: column; min-width: 0; }
+  .ko-what b { color: var(--pip-bright); font-weight: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ko-what small { color: var(--pip-dim); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ko-msg { color: var(--pip-mid); font-size: 10px; overflow-wrap: anywhere; }
+  .ko-hpa, .ko-pool { display: grid; grid-template-columns: minmax(0, 1fr) auto 40px minmax(64px, 1fr); gap: 10px; align-items: center; margin: 4px 10px; padding: 5px 6px; border: 1px solid var(--pip-dark); background: var(--pip-screen); position: relative; }
+  .ko-pool { grid-template-columns: minmax(0, 1fr) minmax(60px, 1.4fr) auto; }
+  .ko-rack { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--pip-dim); background: var(--pip-ink); }
+  .ko-rack i { width: 10px; height: 16px; background: var(--pip-dark); box-shadow: inset 0 0 0 1px var(--btn-rim); }
+  .ko-rack i.ready { background: var(--pip-bright); box-shadow: 0 0 5px var(--glow-soft), inset 0 -4px 0 var(--btn-shade); }
+  .ko-rack i.starting { background: var(--pip-mid); box-shadow: inset 0 -8px 0 var(--btn-shade); }
+  .ko-rack i.wanted { background: var(--pip-ink); box-shadow: inset 0 0 0 1px var(--status-hang); animation: kt-blink 1s steps(2) infinite; }
+  .ko-rack i.free { background: var(--pip-ink); }
+  @media (prefers-reduced-motion: reduce) { .ko-rack i.wanted { animation: none; } }
+  .ko-count { color: var(--pip-hot); font-size: 14px; text-align: center; letter-spacing: 0.06em; }
+  .ko-count.moving { color: var(--status-hang); }
+  .ko-cpu { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow: hidden; padding-top: 3px; }
+  .ko-cpu small, .ko-pool > small { color: var(--pip-dim); font-size: 9px; letter-spacing: 0.08em; white-space: nowrap; }
+  .ko-bar { position: relative; height: 8px; border: 1px solid var(--pip-dim); background: var(--pip-ink); }
+  .ko-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--pip-mid); }
+  .ko-bar i.hot { background: var(--status-hang); }
+  .ko-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--pip-hot); }
+  .ko-flag { position: absolute; right: 4px; top: -7px; font-style: normal; font-size: 8px; letter-spacing: 0.12em; padding: 0 3px; color: var(--pip-ink); background: var(--status-hang); }
+  .ko-claims { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .ko-claims li { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border: 1px solid var(--pip-dim); background: var(--pip-screen); }
+  .ko-claims li .px { image-rendering: pixelated; }
+  .ko-claims b { font-weight: normal; color: var(--pip-bright); }
+  .ko-claims em { font-style: normal; font-size: 8px; padding: 0 3px; border: 1px solid var(--pip-dim); color: var(--pip-mid); }
+  .ko-claims em.spot { color: var(--world-amber); border-color: var(--world-amber); }
+  .ko-claims small { color: var(--pip-dim); font-size: 9px; }
+  .ko-state { font-size: 9px; letter-spacing: 0.12em; color: var(--pip-bright); }
+  .ko-claims li.launching { border-style: dashed; border-color: var(--status-hang); }
+  .ko-claims li.launching .ko-state { color: var(--status-hang); }
+  .ko-claims li.going .ko-state { color: var(--pip-dim); }
+  .ko-events { max-height: 560px; overflow: auto; margin-top: 6px; }
+  .ko-events li { display: grid; grid-template-columns: 54px 16px minmax(0, 1fr); gap: 8px; align-items: start; padding: 4px 0; border-bottom: 1px solid var(--pip-dark); }
+  .ko-events time { color: var(--pip-dim); font-size: 10px; }
+  .ko-events .px { image-rendering: pixelated; }
+  .ko-ev { display: flex; flex-direction: column; min-width: 0; }
+  .ko-ev b { font-weight: normal; color: var(--pip-bright); letter-spacing: 0.06em; }
+  .ko-ev span { color: var(--pip-mid); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ko-ev small { color: var(--pip-dim); font-size: 9px; overflow-wrap: anywhere; }
+  .ko-events li.policy b, .ko-events li.warning b { color: var(--status-broken); }
+  .ko-events li.node b { color: var(--world-amber); }
   /* ---- end cluster screens ---- */
   #kube-panel { position: absolute; z-index: 5; right: 12px; top: 48px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 60px); }
   .kp-title { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.12em; font-size: 11px; }
@@ -1294,6 +1373,56 @@ const page = `<!doctype html>
   #pip .cmdrow.destroy .lbl { color: var(--status-broken); }
   #pip .cmdrow code { font: inherit; font-size: 11px; color: var(--pip-bright); overflow-wrap: anywhere; }
   #pip .cmdrow .copy { min-height: 22px; padding: 0 6px; font-size: 10px; letter-spacing: 0.12em; }
+  /* Cluster add-ons: a riveted plate per cluster, add-on rows hung under it. */
+  #pip .pdiv.addons { color: var(--pip-bright); border-top-color: var(--pip-dim); border-bottom-color: var(--pip-dim); }
+  #pip .pdiv.addons img { image-rendering: pixelated; }
+  #pip .ad-cluster { margin: 0 8px 8px; border: 2px solid var(--pip-dim); background: var(--pip-ink); box-shadow: inset 0 0 14px var(--glow-soft); }
+  #pip .ad-cluster.gone { border-style: dashed; border-color: var(--pip-dark); box-shadow: none; }
+  #pip .ad-plate {
+    display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12px; letter-spacing: 0.08em;
+    background: linear-gradient(var(--plate-steel), var(--case-lo)); color: var(--plate-stencil); border-bottom: 2px solid var(--pip-dark);
+    box-shadow: inset 0 1px 0 var(--btn-rim-hi);
+  }
+  #pip .ad-plate::before, #pip .ad-plate::after { content: ""; width: 5px; height: 5px; flex: 0 0 auto; background: var(--case-screw); box-shadow: inset -1px -1px 0 var(--case-lo); }
+  #pip .ad-plate::after { order: 9; }
+  #pip .ad-plate img { image-rendering: pixelated; }
+  #pip .ad-plate b { font-weight: normal; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #pip .ad-live { font-size: 9px; letter-spacing: 0.16em; padding: 0 4px; border: 1px solid var(--pip-dark); background: var(--pip-ink); }
+  #pip .ad-live.on { color: var(--pip-bright); box-shadow: 0 0 6px var(--glow-soft); }
+  #pip .ad-live.off { color: var(--pip-dim); }
+  #pip .ad-count { font-size: 9px; letter-spacing: 0.12em; }
+  #pip .ad-rows { position: relative; padding: 6px 0 2px 14px; }
+  #pip .ad-rows::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 14px; border-left: 2px dotted var(--pip-dark); }
+  #pip .card.addon { position: relative; margin: 0 8px 4px 6px; background: var(--pip-screen); }
+  #pip .card.addon::before { content: ""; position: absolute; left: -10px; top: 15px; width: 9px; border-top: 2px dotted var(--pip-dark); }
+  #pip .card.addon.installed { border-color: var(--pip-dim); }
+  #pip .card.addon.present { border-color: var(--status-hang); }
+  #pip .card.addon.na { opacity: 0.7; border-style: dashed; }
+  #pip .addon-head { min-height: 30px; gap: 8px; font-size: 12px; }
+  #pip .addon-head:disabled { cursor: default; }
+  #pip .addon-head:disabled:hover { color: var(--pip-mid); background: transparent; }
+  #pip .addon-head:disabled:hover img { filter: none; }
+  #pip .ad-name { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+  #pip .ad-ver { font-size: 10px; letter-spacing: 0.04em; text-transform: none; color: var(--pip-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #pip .card-head:hover .ad-ver, #pip .card.open .card-head .ad-ver { color: var(--pip-ink); }
+  #pip .ad-state { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 1px 5px; font-size: 9px; letter-spacing: 0.14em; color: var(--pip-dim); background: var(--pip-ink); border: 1px solid var(--pip-dark); }
+  #pip .ad-state i { width: 7px; height: 7px; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim); }
+  #pip .ad-state b { font-weight: normal; }
+  #pip .ad-state.on { color: var(--pip-bright); }
+  #pip .ad-state.on i { background: var(--lamp-on); box-shadow: 0 0 5px var(--btn-glow), inset 0 0 0 1px var(--lamp-on-core); }
+  #pip .ad-state.warn { color: var(--status-hang); border-color: var(--status-hang); }
+  #pip .ad-state.warn i { background: var(--status-hang); box-shadow: 0 0 5px var(--status-hang); }
+  #pip .ad-state.na { color: var(--world-amber); }
+  #pip .ad-state.na i { background: var(--case-brass-lo); }
+  #pip .ad-tags { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 4px 32px; }
+  #pip .ad-tag { font-size: 9px; letter-spacing: 0.12em; padding: 0 4px; color: var(--world-amber); border: 1px solid var(--case-brass-lo); }
+  #pip .ad-tag.warn { color: var(--status-hang); border-color: var(--status-hang); }
+  #pip .ad-tag.dim { color: var(--pip-dim); border-color: var(--pip-dark); }
+  #pip .nodebill { padding: 4px 6px; border: 1px dashed var(--pip-dim); }
+  #pip .nodebill-head { display: flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 0.14em; color: var(--pip-dim); }
+  #pip .nodebill-head img { image-rendering: pixelated; }
+  #pip .nodebill-head b { margin-left: auto; font-weight: normal; color: var(--pip-bright); letter-spacing: 0.02em; }
+  #pip input[readonly] { color: var(--pip-dim); border-style: dashed; }
   /* ---- TERMINAL: a RobCo CRT over the right side of the map ---- */
   #term {
     position: absolute; top: 10px; right: 12px; bottom: 10px; z-index: 5;
@@ -1565,6 +1694,7 @@ const page = `<!doctype html>
       <section id="vault-page" aria-label="vaults page" hidden></section>
       <nav id="kube-tabs" aria-label="cluster screens" hidden></nav>
       <section id="kube-tele" aria-label="cluster telemetry" hidden></section>
+      <section id="kube-ops" aria-label="cluster add-ons" hidden></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
       <form id="pip" hidden></form>
       <section id="term" hidden></section>
@@ -1789,6 +1919,16 @@ async function route(app, req, res) {
     }
     await app.boot();
     send(res, 200, await app.clusterTelemetry());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cluster/ops") {
+    send(res, 200, app.clusterOps ? await app.clusterOps({ sample: url.searchParams.get("sample") === "1" }) : { error: "not set up" });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/addons") {
+    send(res, 200, app.addonsView ? await app.addonsView({ sample: url.searchParams.get("sample") === "1", fresh: url.searchParams.get("fresh") === "1" }) : { tree: [] });
     return;
   }
 

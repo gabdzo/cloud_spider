@@ -1,0 +1,27 @@
+# Template (the cert-manager add-on is not up). One stack per cluster:
+#   cd upgrades/addons && pulumi stack select --create cert-manager-cloudspider-up
+# When it is up: npm run vaults:new -- cert-manager cert-manager
+# upgrades/addons (Pulumi project cloudspider-addons, stack cert-manager-<cluster>):
+# no AWS resources (Helm release, a self-signed ClusterIssuer). AWS resources carry project=cert-manager and cluster=<cluster>;
+# the pods are in the Cluster view, namespace cert-manager.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: cert-manager
+  number: 206
+  title: cert-manager
+  description: "Certificates as Kubernetes objects, with a self-signed ClusterIssuer (cloudspider-selfsigned)."
+  owner: gabriel
+  tags: [upgrade, eks, addon]
+spec:
+  type: other
+  resources:
+    tags:
+      project: cert-manager
+  stack:
+    dir: upgrades/addons
+    name: cert-manager-cloudspider-up
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/addons
+    docs: https://cert-manager.io/docs/
+    dashboard: https://eu-north-1.console.aws.amazon.com/eks/home?region=eu-north-1#/clusters/cloudspider-up

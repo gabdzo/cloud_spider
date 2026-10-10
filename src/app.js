@@ -13,6 +13,9 @@ import { diagramFromClusters } from "./cluster.js";
 import { diagramFromKube } from "./kube-diagram.js";
 import { createTelemetry } from "./kube-telemetry.js";
 import { inspectPod } from "./kube-inspect.js";
+import { opsView, sampleOps } from "./kube-ops.js";
+import { refuseUp, sampleAddons } from "./addons.js";
+import { addonById } from "../upgrades/addons/catalog.js";
 import { campFixtures, watchLine } from "./upgrade-rules.js";
 import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
@@ -31,7 +34,7 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
-export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, telemetry, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, telemetry, addons, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -54,6 +57,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   let costFlight = null;
   let watchCache = null;
   let sawRunning = false;
+  let opsCache = null;
+  let opsFlight = null;
   // The idle-fire guard: per object, how many target reads in a row it
   // looked idle on (layout.js nextIdleStreak).
   let idleStreak = {};
@@ -332,6 +337,14 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     async upgradeRun(requestOrigin, body = {}) {
       if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the upgrade did not happen" };
       if (!upgrade?.run) return { error: "upgrades are not set up" };
+      // An add-on is not raised twice (the demo's metrics-server) or before
+      // what it needs (Karpenter before the Pod Identity agent).
+      if (addonById(body.module) && body.action === "up" && addons?.view) {
+        const view = await addons.view({ fresh: true }).catch(() => null);
+        const refusal = view ? refuseUp(view.tree, body.module, body.params?.clusterName || "cloudspider-up") : "";
+        if (refusal) return { error: refusal };
+      }
+      if (addonById(body.module)) addons?.forget?.();
       let clusters;
       if (body.module === "eks" && body.action === "up" && eks?.listClusters) {
         const listed = await eks.listClusters();
@@ -450,6 +463,32 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     async clusterTelemetry() {
       if (!tele) return { error: "the kube context is not set up", unset: true };
       return tele.get().catch((failure) => ({ error: failure?.message || "the cluster did not answer" }));
+    },
+    // Cluster add-ons per cluster (Stacks view): Pulumi stacks + in-cluster.
+    async addonsView({ sample = false, fresh = false } = {}) {
+      if (sample) return sampleAddons();
+      if (!addons?.view) return { tree: [], notes: ["add-ons are not set up"] };
+      return addons.view({ fresh }).catch((failure) => ({ tree: [], notes: [failure?.message || "the add-ons did not load"] }));
+    },
+    // OPS screen and radio: policy reports, scaling, events (read-only).
+    async clusterOps({ sample = false } = {}) {
+      if (sample) return opsView(sampleOps(now()), { now: now() });
+      if (!kube?.ops) return { error: "the kube context is not set up", unset: true };
+      const at = now();
+      if (opsCache && at - opsCache.at < 10_000) return opsCache.value;
+      if (!opsFlight) {
+        opsFlight = kube.ops()
+          .then((ops) => {
+            const value = opsView(ops, { now: at });
+            opsCache = { at, value };
+            return value;
+          })
+          .catch((failure) => ({ error: failure?.message || "the cluster did not answer" }))
+          .finally(() => {
+            opsFlight = null;
+          });
+      }
+      return opsFlight;
     },
     // One pod's last log lines and events (Cluster view, on click).
     async clusterPod({ ns, name, container, previous = false, tail = 80 } = {}) {

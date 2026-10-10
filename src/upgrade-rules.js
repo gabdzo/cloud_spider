@@ -1,5 +1,7 @@
 export function cardName(spec, values = {}) {
   if (spec?.id === "eks") return values.clusterName || ""
+  // An add-on confirms with its whole stack name: kyverno-cloudspider-up.
+  if (spec?.addon) return stackFor(spec, values)
   // Cards without a name (pgcluster, shopapi) confirm with the stack name.
   if (!spec?.parameters?.some((item) => item.name === "name")) return spec?.stack || ""
   return values.name || ""
@@ -13,7 +15,7 @@ export function upgradeSpiderLine({ action, title, sample, response }) {
   if (sample) return { status: "fail", text: "sample, not the account." }
   if (response?.error) return { status: "fail", text: response.error }
   if (response?.running) {
-    const text = action === "destroy" ? `taking ${title} down` : `raising ${title}`
+    const text = action === "destroy" ? `taking ${title} down` : action === "preview" ? `previewing ${title}` : `raising ${title}`
     return { status: "ok", text }
   }
   return { status: "fail", text: "the upgrade did not start" }
@@ -49,6 +51,7 @@ export const LEGACY_CLUSTER = "cloudspider-up"
 // legacyName: the cluster the old stack actually holds (its `name` output),
 // in case it is not cloudspider-up.
 export function stackFor(spec, values = {}, legacyName = LEGACY_CLUSTER) {
+  if (spec?.addon) return `${spec.stack}-${values.clusterName || LEGACY_CLUSTER}`
   if (spec?.id !== "eks") return spec?.stack || ""
   const name = values.clusterName || LEGACY_CLUSTER
   return name === (legacyName || LEGACY_CLUSTER) ? spec.stack : `eks-${name}`
@@ -184,4 +187,16 @@ export function resourceFact(text, stackName) {
   const rows = Array.isArray(data) ? data : []
   const row = rows.find((item) => item.name === stackName) || rows.find((item) => item.current)
   return Number.isInteger(row?.resourceCount) ? row.resourceCount : 0
+}
+
+// The same steps by hand, from the repo root (docs/RUN-ME.md §16).
+export function addonCommands(spec, cluster) {
+  const stack = `${spec.id}-${cluster}`
+  const extras = (spec.parameters || []).filter((item) => item.name !== "clusterName").map((item) => ` && pulumi config set ${item.name} ${item.default}`).join("")
+  return [
+    { label: "select", text: `cd upgrades/addons && pulumi stack select --create ${stack} && pulumi config set clusterName ${cluster}${extras}` },
+    { label: "preview", text: "pulumi preview --diff" },
+    { label: "up", text: "pulumi up" },
+    { label: "destroy", text: `pulumi destroy && pulumi stack rm ${stack}` },
+  ]
 }

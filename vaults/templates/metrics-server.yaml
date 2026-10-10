@@ -1,0 +1,27 @@
+# Template (the metrics-server add-on is not up). One stack per cluster:
+#   cd upgrades/addons && pulumi stack select --create metrics-server-cloudspider-up
+# When it is up: npm run vaults:new -- metrics-server metrics-server
+# upgrades/addons (Pulumi project cloudspider-addons, stack metrics-server-<cluster>):
+# the metrics-server EKS add-on. AWS resources carry project=metrics-server and cluster=<cluster>;
+# the pods are in the Cluster view, namespace kube-system.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: metrics-server
+  number: 201
+  title: metrics-server
+  description: "Pod and node CPU/memory for kubectl top, the HPA and the Cluster view."
+  owner: gabriel
+  tags: [upgrade, eks, addon]
+spec:
+  type: cluster
+  resources:
+    tags:
+      project: metrics-server
+  stack:
+    dir: upgrades/addons
+    name: metrics-server-cloudspider-up
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/addons
+    docs: https://docs.aws.amazon.com/eks/latest/userguide/metrics-server.html
+    dashboard: https://eu-north-1.console.aws.amazon.com/eks/home?region=eu-north-1#/clusters/cloudspider-up

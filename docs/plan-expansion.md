@@ -255,6 +255,26 @@ installed and checks the tapes carry no spoilers.
 
 ---
 
+## Thread 4: cluster add-ons
+
+A DevOps toolbox that deploys onto an existing EKS cluster (`upgrades/addons`, RUN-ME §16).
+
+| Add-on | Choice | Why |
+|---|---|---|
+| Policy | **Kyverno** 1.19, 4 baseline policies, Audit | YAML policies, reports as CRDs the viewer can read; Audit first so nothing breaks |
+| Node scaling | **Karpenter** 1.15 (not Cluster Autoscaler) | No node groups to size; picks the instance, spot first, consolidates; capped at 4 vCPU |
+| Pod scaling | HPA on demo web/api + burst/inflate knobs | Shows replicas and nodes moving in Cluster → OPS |
+| Event scaling | **KEDA** 2.21, optional | Scales a worker 0→3 on its own SQS queue; does not compete with the Lambda worker |
+| Ingress | **AWS Load Balancer Controller** 3.6 | ALB/NLB from Ingress/Service; service mutator off |
+| Certificates | **cert-manager** 1.21, self-signed issuer | Free; Let's Encrypt waits for a domain |
+| DNS | ExternalDNS: **not built** | Needs a domain + Route 53 zone (question 6) |
+| Metrics | metrics-server (EKS add-on) | Only where the demo has not installed it (state PRESENT refuses `up`) |
+| Credentials | EKS Pod Identity agent | Karpenter, LBC and KEDA use Pod Identity, no IRSA/OIDC provider |
+
+The Stacks view nests every add-on under its cluster (INSTALLED / PRESENT / NOT INSTALLED, version); Cluster → OPS shows policy reports and violations, HPA replica racks, Karpenter node claims, KEDA and the cluster's events, and the radio hears scaling, node, policy and warning events.
+
+---
+
 ## Price sources
 
 AWS Price List bulk CSVs, read 2026-10-10:
@@ -293,3 +313,6 @@ AmazonVPC.
    VPC) so the API can switch to RDS, or is CNPG enough?
 5. **PostgREST vs a small Node API** for the sample backend: PostgREST was
    chosen (no image build); say if you want code you can step through.
+6. **ExternalDNS domain**: which domain (and is a Route 53 hosted zone at
+   $0.50/month OK)? With one, ExternalDNS and Let's Encrypt via
+   cert-manager are a small stack each.
