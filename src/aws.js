@@ -13,6 +13,7 @@ import { EKSClient, ListClustersCommand, DescribeClusterCommand } from "@aws-sdk
 import {
   ElasticLoadBalancingV2Client,
   DescribeLoadBalancersCommand,
+  DescribeTagsCommand as DescribeElbTagsCommand,
 } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { CloudTrailClient, LookupEventsCommand } from "@aws-sdk/client-cloudtrail";
 import {
@@ -242,6 +243,7 @@ export async function describeDiagram(region, clientFactory = diagramClients) {
       }
       marker = out.NextMarker;
     } while (marker);
+    await tagLoadBalancers(elb, fixtures.filter((item) => item.kind === "alb"));
   } catch (error) {
     errors.push(`DescribeLoadBalancers: ${publicError(error).error}`);
   }
@@ -264,6 +266,7 @@ export async function describeDiagram(region, clientFactory = diagramClients) {
         kind: "eks",
         name,
         status,
+        tags: cluster?.tags || {},
       });
     }
   } catch (error) {
@@ -272,6 +275,23 @@ export async function describeDiagram(region, clientFactory = diagramClients) {
   const value = errors.length ? { gateways, fixtures, error: errors.join("  ") } : { gateways, fixtures };
   diagramCache = { at: now, region, value };
   return value;
+}
+
+// Vaults can claim load balancers by tag. Tags are a second call, 20 ARNs at
+// a time; without elasticloadbalancing:DescribeTags the gates just have none.
+async function tagLoadBalancers(elb, albs) {
+  for (let start = 0; start < albs.length; start += 20) {
+    const batch = albs.slice(start, start + 20);
+    try {
+      const out = await elb.send(new DescribeElbTagsCommand({ ResourceArns: batch.map((item) => item.id) }));
+      for (const found of out?.TagDescriptions || []) {
+        const item = batch.find((alb) => alb.id === found.ResourceArn);
+        if (item) item.tags = found.Tags || [];
+      }
+    } catch {
+      return;
+    }
+  }
 }
 
 export async function listUpgradeClusters() {
