@@ -120,6 +120,55 @@ function kebab(name) {
   return name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 }
 
+// Derived shades for the header's physical controls: the unlit and lit
+// phosphor push-buttons and the worn metal SAMPLE toggle. All from the ramps
+// above, so the header never carries a colour of its own.
+export function hardwareVars() {
+  return {
+    // push-button, unlit: dark green glass in a black rim
+    "btn-off-top": rgba(PIP.dark, 0.95),
+    "btn-off-mid": rgba(PIP.glass, 0.98),
+    "btn-off-low": rgba(PIP.ink, 1),
+    "btn-off-label": PIP.dim,
+    "btn-gloss": rgba(PIP.hot, 0.1),
+    "btn-gloss-lit": rgba(PIP.hot, 0.42),
+    "btn-shade": "rgba(0, 0, 0, 0.75)",
+    "btn-rim": "rgba(0, 0, 0, 0.9)",
+    "btn-rim-hi": rgba(CASE.screw, 0.32),
+    "btn-skirt": rgba(PIP.ink, 1),
+    // push-button, lit: the phosphor behind the glass is on
+    "btn-lit-top": rgba(PIP.bright, 0.5),
+    "btn-lit-mid": rgba(PIP.mid, 0.34),
+    "btn-lit-low": rgba(PIP.dim, 0.55),
+    "btn-lit-label": PIP.hot,
+    "btn-glow": rgba(PIP.bright, 0.45),
+    "btn-glow-far": rgba(PIP.bright, 0.16),
+    "btn-hover": rgba(PIP.bright, 0.08),
+    // lamps
+    "lamp-off": PIP.dark,
+    "lamp-off-hi": rgba(PIP.mid, 0.16),
+    "lamp-on": PIP.bright,
+    "lamp-on-core": PIP.hot,
+    // SAMPLE toggle: chipped olive paint over bare steel
+    "plate-paint-hi": CASE.hi,
+    "plate-paint": CASE.mid,
+    "plate-paint-lo": CASE.lo,
+    "plate-seam": CASE.seam,
+    "plate-steel": rgba(CASE.screw, 0.55),
+    "plate-steel-dim": rgba(CASE.screw, 0.22),
+    "plate-brush": rgba(CASE.screw, 0.07),
+    "plate-scratch": rgba(WORLD.metalLight, 0.18),
+    "plate-grime": rgba(WORLD.rustShade, 0.45),
+    "plate-rust": rgba(WORLD.rust, 0.5),
+    "plate-stencil": WORLD.text,
+    "plate-stencil-dim": rgba(WORLD.text, 0.45),
+    "lever-hi": PALETTE[20],
+    "lever-mid": PALETTE[18],
+    "lever-lo": PALETTE[19],
+    "lever-tip": rgba(PIP.hot, 0.9),
+  };
+}
+
 // CSS custom properties for the page chrome, generated from the same values
 // the canvas uses.
 export function cssVars() {
@@ -129,6 +178,8 @@ export function cssVars() {
   }
   lines.push(`--glow-bright: ${rgba(PIP.bright, 0.55)};`);
   lines.push(`--glow-soft: ${rgba(PIP.bright, 0.18)};`);
+  // Hardware buttons and the SAMPLE toggle (server.js header CSS).
+  for (const [name, value] of Object.entries(hardwareVars())) lines.push(`--${name}: ${value};`);
   lines.push(`--font: ${FONT_STACK};`);
   return `:root { ${lines.join(" ")} }`;
 }

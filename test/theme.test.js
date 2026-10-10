@@ -43,3 +43,26 @@ test("canvas and sprite modules carry no raw hex colours", async () => {
     assert.equal(source.match(/#[0-9a-fA-F]{6}\b/), null, `${name} has a raw hex colour`);
   }
 });
+
+// The header's physical controls (push-buttons and the SAMPLE toggle) take
+// every colour from theme.js through --btn-*, --lamp-*, --plate-* and
+// --lever-* vars.
+test("the hardware buttons carry no raw colours and keep their ARIA states", async () => {
+  const { hardwareVars } = await import("../src/theme.js");
+  const source = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
+  const start = source.indexOf("/* ---- hardware buttons ---- */");
+  const end = source.indexOf("/* ---- end hardware buttons ---- */");
+  assert.ok(start > 0 && end > start, "the hardware buttons block is marked");
+  const block = source.slice(start, end);
+  assert.equal(block.match(/#[0-9a-fA-F]{3,8}\b/), null, "no hex in the hardware buttons");
+  assert.equal(block.match(/rgba?\(/), null, "no rgba() in the hardware buttons; use a theme var");
+  const css = cssVars();
+  for (const name of new Set(block.match(/--(btn|lamp|plate|lever)-[a-z-]+/g))) {
+    assert.ok(css.includes(`${name}:`), `${name} comes from theme.js`);
+  }
+  assert.ok(Object.keys(hardwareVars()).length > 20);
+  assert.match(source, /<button id="sample" class="switch" type="button" role="switch" aria-checked="false"/);
+  assert.match(block, /\.tab\[aria-pressed="true"\]/);
+  assert.match(block, /\.tab:focus-visible/);
+  assert.match(block, /prefers-reduced-motion/);
+});

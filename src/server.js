@@ -159,95 +159,248 @@ const page = `<!doctype html>
     text-shadow: 0 1px 0 rgba(255, 240, 200, 0.4);
   }
 
-  /* Tabs live on a strip of screen set into the bezel. */
+  /* ---- hardware buttons ---- */
+  /* The view and panel buttons are physical Pip-Boy push-buttons set into a
+     recessed strip: dark unlit green glass in a black rim when off, phosphor
+     lit from behind (and pressed in) when on. Every colour is a theme var. */
   .tabs {
     display: flex;
-    align-items: flex-end;
-    gap: 2px;
-    padding: 6px 10px 0;
-    border-radius: 6px;
-    background: radial-gradient(ellipse at 50% 0%, var(--pip-glass), var(--pip-ink));
-    box-shadow: inset 0 0 0 2px #000, inset 0 0 12px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.12);
-    border-bottom: 2px solid var(--pip-mid);
+    align-items: center;
+    gap: 9px;
+    padding: 7px 10px 9px;
+    border-radius: 7px;
+    background:
+      linear-gradient(180deg, var(--btn-rim) 0, transparent 7px),
+      radial-gradient(ellipse at 50% 0%, var(--pip-glass), var(--pip-ink));
+    box-shadow:
+      inset 0 0 0 2px var(--btn-rim),
+      inset 0 3px 10px var(--btn-shade),
+      0 1px 0 var(--btn-rim-hi);
   }
   .tab {
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    min-height: 40px;
-    padding: 0 14px;
-    margin-bottom: -2px;
-    border: 2px solid transparent;
-    border-bottom: 0;
-    background: transparent;
-    color: var(--pip-dim);
+    min-height: 36px;
+    padding: 0 12px 0 11px;
+    border: 1px solid var(--btn-rim);
+    border-radius: 5px;
+    background:
+      linear-gradient(180deg, var(--btn-off-top) 0%, var(--btn-off-mid) 48%, var(--btn-off-low) 100%);
+    box-shadow:
+      0 0 0 2px var(--btn-rim),
+      0 0 0 3px var(--btn-rim-hi),
+      inset 0 1px 0 var(--btn-gloss),
+      inset 0 -3px 4px var(--btn-shade),
+      inset 0 0 0 1px var(--btn-rim),
+      0 3px 0 1px var(--btn-skirt),
+      0 5px 6px var(--btn-shade);
+    color: var(--btn-off-label);
     font: inherit;
-    font-size: 16px;
+    font-size: 15px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
+    text-shadow: 0 -1px 0 var(--btn-rim);
     cursor: pointer;
+    transform: translateY(0);
+    transition: transform 0.08s ease-out, box-shadow 0.12s, color 0.12s, background 0.12s;
   }
-  .tab img { opacity: 0.6; }
-  .tab:hover { color: var(--pip-mid); }
-  .tab[aria-pressed="true"] {
-    color: var(--pip-bright);
-    border-color: var(--pip-mid);
-    background: linear-gradient(180deg, var(--glow-soft), transparent);
-    text-shadow: 0 0 6px var(--glow-bright);
-  }
-  .tab[aria-pressed="true"] img { opacity: 1; filter: drop-shadow(0 0 3px var(--glow-bright)); }
-  /* RADIO opens a side panel rather than a view, so it lights up instead of
-     taking the tab bracket. */
-  .tab.toggle { margin-left: 10px; border-left: 2px solid var(--pip-dark); }
-  .tab.toggle[aria-pressed="true"] { border-color: transparent; border-left-color: var(--pip-dark); background: transparent; }
-  .tab.toggle::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pip-dark); }
-  .tab.toggle[aria-pressed="true"]::after { background: var(--pip-bright); box-shadow: 0 0 6px var(--pip-bright); }
-
-  /* SAMPLE: a physical toggle switch with an LED. */
-  .switch {
-    display: inline-flex;
-    align-items: center;
-    gap: 9px;
-    min-height: 40px;
-    padding: 0 12px 0 8px;
-    border: 0;
-    border-radius: 6px;
-    background: linear-gradient(180deg, #5d5c46, #33321f);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 -2px 0 rgba(0, 0, 0, 0.5), 0 2px 3px rgba(0, 0, 0, 0.6);
-    color: #e9e3c4;
-    font: inherit;
-    font-size: 12px;
-    letter-spacing: 0.16em;
-    cursor: pointer;
-  }
-  .lever {
-    position: relative;
-    width: 14px;
-    height: 26px;
-    border-radius: 7px;
-    background: linear-gradient(90deg, #111, #2c2c22 50%, #111);
-    box-shadow: inset 0 0 0 1px #000;
-  }
-  .lever::after {
+  /* glass sheen across the top half of the cap */
+  .tab::before {
     content: "";
     position: absolute;
-    left: 1px;
-    top: 13px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #f3f1de, #9c9b86 55%, #4d4c3c);
-    transition: top 0.12s;
+    inset: 2px 3px 55% 3px;
+    border-radius: 3px 3px 8px 8px;
+    background: linear-gradient(180deg, var(--btn-gloss), transparent);
+    pointer-events: none;
   }
-  .switch[aria-pressed="true"] .lever::after { top: 1px; }
-  .led {
-    width: 9px;
-    height: 9px;
+  /* indicator lamp: a small bulb in its own socket */
+  .tab::after {
+    content: "";
+    flex: none;
+    width: 7px;
+    height: 7px;
+    margin-left: 2px;
     border-radius: 50%;
-    background: #3a2c08;
-    box-shadow: inset 0 0 0 1px #000;
+    background: radial-gradient(circle at 35% 30%, var(--lamp-off-hi), var(--lamp-off) 60%);
+    box-shadow: 0 0 0 1px var(--btn-rim), inset 0 1px 2px var(--btn-shade);
   }
-  .switch[aria-pressed="true"] .led { background: var(--world-amber); box-shadow: 0 0 8px var(--world-amber), inset 0 0 0 1px #000; }
+  .tab img { opacity: 0.45; filter: saturate(0.6) brightness(0.8); transition: opacity 0.12s, filter 0.12s; }
+  .tab:hover, .tab:focus-visible {
+    color: var(--pip-mid);
+    background:
+      linear-gradient(180deg, var(--btn-hover), transparent),
+      linear-gradient(180deg, var(--btn-off-top) 0%, var(--btn-off-mid) 48%, var(--btn-off-low) 100%);
+  }
+  .tab:hover img, .tab:focus-visible img { opacity: 0.7; }
+  .tab:focus-visible { outline: 2px dashed var(--pip-bright); outline-offset: 5px; }
+  .tab:focus:not(:focus-visible) { outline: none; }
+  .tab:active { transform: translateY(2px); }
+  .tab[aria-pressed="true"] {
+    color: var(--btn-lit-label);
+    background:
+      radial-gradient(ellipse at 50% 120%, var(--btn-glow), transparent 70%),
+      linear-gradient(180deg, var(--btn-lit-top) 0%, var(--btn-lit-mid) 50%, var(--btn-lit-low) 100%),
+      var(--pip-ink);
+    box-shadow:
+      0 0 0 2px var(--btn-rim),
+      0 0 0 3px var(--btn-rim-hi),
+      inset 0 1px 0 var(--btn-gloss-lit),
+      inset 0 -2px 6px var(--btn-shade),
+      inset 0 0 10px var(--btn-glow-far),
+      0 1px 0 1px var(--btn-skirt),
+      0 0 14px var(--btn-glow-far),
+      0 0 4px var(--btn-glow);
+    text-shadow: 0 0 6px var(--glow-bright), 0 0 1px var(--btn-lit-label);
+    transform: translateY(2px);
+  }
+  .tab[aria-pressed="true"]::before { background: linear-gradient(180deg, var(--btn-gloss-lit), transparent); opacity: 0.6; }
+  .tab[aria-pressed="true"]::after {
+    background: radial-gradient(circle at 40% 35%, var(--lamp-on-core), var(--lamp-on) 55%, var(--pip-mid));
+    box-shadow: 0 0 0 1px var(--btn-rim), 0 0 6px var(--lamp-on), 0 0 12px var(--btn-glow);
+  }
+  .tab[aria-pressed="true"] img { opacity: 1; filter: drop-shadow(0 0 3px var(--glow-bright)); }
+  .tab[aria-pressed="true"]:hover { color: var(--btn-lit-label); filter: brightness(1.08); }
+  /* RADIO, STACKS and ASK open panels rather than views: an engraved gap
+     on the strip sets them apart from MAP / PATH / CLUSTER. */
+  .tab:not(.toggle) + .tab.toggle { margin-left: 14px; }
+
+  /* SAMPLE: a worn lever toggle on a riveted, chipped plate. role=switch,
+     aria-checked; the lever snaps up for ON. */
+  .switch {
+    position: relative;
+    display: inline-grid;
+    grid-template-columns: auto auto auto auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 4px 12px 4px 10px;
+    border: 0;
+    border-radius: 4px;
+    color: var(--plate-stencil);
+    font: inherit;
+    cursor: pointer;
+    background:
+      /* rivets */
+      radial-gradient(circle at 5px 5px, var(--plate-steel) 0 1.5px, var(--plate-seam) 2.2px, transparent 2.8px),
+      radial-gradient(circle at calc(100% - 5px) 5px, var(--plate-steel) 0 1.5px, var(--plate-seam) 2.2px, transparent 2.8px),
+      radial-gradient(circle at 5px calc(100% - 5px), var(--plate-steel) 0 1.5px, var(--plate-seam) 2.2px, transparent 2.8px),
+      radial-gradient(circle at calc(100% - 5px) calc(100% - 5px), var(--plate-steel) 0 1.5px, var(--plate-seam) 2.2px, transparent 2.8px),
+      /* chipped paint showing steel */
+      radial-gradient(ellipse 6px 3px at 18% 88%, var(--plate-steel) 0 60%, transparent 70%),
+      radial-gradient(ellipse 4px 2px at 71% 12%, var(--plate-steel) 0 60%, transparent 70%),
+      radial-gradient(ellipse 3px 2px at 92% 64%, var(--plate-steel-dim) 0 60%, transparent 70%),
+      radial-gradient(ellipse 9px 5px at 96% 96%, var(--plate-rust) 0 40%, transparent 75%),
+      /* scratches */
+      linear-gradient(112deg, transparent 31%, var(--plate-scratch) 31.5%, transparent 33%),
+      linear-gradient(74deg, transparent 63%, var(--plate-scratch) 63.4%, transparent 64.6%),
+      linear-gradient(160deg, transparent 80%, var(--plate-scratch) 80.4%, transparent 81.2%),
+      /* grime gathers at the edges */
+      radial-gradient(ellipse at 50% 45%, transparent 55%, var(--plate-grime) 100%),
+      /* brushed metal under olive paint */
+      repeating-linear-gradient(90deg, transparent 0 2px, var(--plate-brush) 2px 3px, transparent 3px 5px),
+      linear-gradient(180deg, var(--plate-paint-hi) 0%, var(--plate-paint) 45%, var(--plate-paint-lo) 100%);
+    box-shadow:
+      inset 0 1px 0 var(--btn-rim-hi),
+      inset 0 -2px 0 var(--btn-shade),
+      inset 0 0 0 1px var(--plate-seam),
+      0 2px 0 var(--plate-seam),
+      0 4px 6px var(--btn-shade);
+  }
+  .switch:focus-visible { outline: 2px dashed var(--pip-bright); outline-offset: 4px; }
+  .switch:focus:not(:focus-visible) { outline: none; }
+  /* the threaded bushing and its hex nut */
+  .switch .well {
+    position: relative;
+    width: 24px;
+    height: 34px;
+  }
+  .switch .nut {
+    position: absolute;
+    left: 3px;
+    top: 10px;
+    width: 18px;
+    height: 14px;
+    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+    background: linear-gradient(180deg, var(--lever-hi), var(--lever-mid) 45%, var(--lever-lo));
+  }
+  .switch .nut::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 40%, var(--plate-seam) 0 45%, var(--lever-lo) 70%, var(--lever-hi));
+  }
+  /* the bat-handle lever pivots on the nut's centre */
+  .switch .lever {
+    position: absolute;
+    left: 9px;
+    top: 0;
+    width: 6px;
+    height: 17px;
+    border-radius: 3px 3px 2px 2px;
+    transform-origin: 50% 100%;
+    transform: rotate(160deg);
+    background: linear-gradient(90deg, var(--lever-lo), var(--lever-hi) 40%, var(--lever-mid) 70%, var(--lever-lo));
+    box-shadow: 1px 2px 2px var(--btn-shade);
+    transition: transform 0.22s cubic-bezier(0.3, 1.7, 0.5, 1);
+  }
+  .switch .lever::before {
+    content: "";
+    position: absolute;
+    left: -2px;
+    top: -4px;
+    width: 10px;
+    height: 8px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--lever-tip), var(--lever-hi) 35%, var(--lever-mid) 65%, var(--lever-lo));
+    box-shadow: 0 1px 2px var(--btn-shade);
+  }
+  .switch[aria-checked="true"] .lever { transform: rotate(20deg); }
+  .switch:active .lever { transform: rotate(90deg); }
+  .switch .marks {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    align-content: space-between;
+    height: 34px;
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    line-height: 1;
+    color: var(--plate-stencil-dim);
+    text-shadow: 0 1px 0 var(--btn-shade);
+  }
+  .switch .marks span:last-child { align-self: end; }
+  .switch .name {
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    color: var(--plate-stencil);
+    text-shadow: 0 -1px 0 var(--btn-shade), 0 1px 0 var(--btn-rim-hi);
+    opacity: 0.85;
+  }
+  .switch[aria-checked="true"] .marks span:first-child,
+  .switch[aria-checked="false"] .marks span:last-child { color: var(--plate-stencil); }
+  /* the lamp sits in a steel bezel beside the name */
+  .switch .led {
+    grid-column: 4;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--lamp-off-hi), var(--lamp-off) 60%);
+    box-shadow: 0 0 0 2px var(--lever-lo), 0 0 0 3px var(--lever-hi), inset 0 1px 2px var(--btn-shade);
+    transition: background 0.15s, box-shadow 0.15s;
+  }
+  .switch[aria-checked="true"] .led {
+    background: radial-gradient(circle at 40% 35%, var(--lamp-on-core), var(--lamp-on) 55%, var(--pip-mid));
+    box-shadow: 0 0 0 2px var(--lever-lo), 0 0 0 3px var(--lever-hi), 0 0 8px var(--lamp-on), 0 0 16px var(--btn-glow);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tab, .switch .lever, .switch .led { transition: none; }
+  }
+  /* ---- end hardware buttons ---- */
 
   .readout {
     display: flex;
@@ -721,7 +874,7 @@ const page = `<!doctype html>
   #radio li.fail { color: var(--status-broken); }
   #radio li.fail time { color: var(--status-broken); opacity: 0.75; }
   #radio-panel.issue .ptitle { background: var(--status-broken); }
-  .tab.toggle.issue::after { background: var(--status-broken) !important; box-shadow: 0 0 6px var(--status-broken) !important; }
+  .tab.toggle.issue::after { background: radial-gradient(circle at 40% 35%, var(--lamp-on-core), var(--status-broken) 55%) !important; box-shadow: 0 0 0 1px var(--btn-rim), 0 0 6px var(--status-broken) !important; }
   #radio li[aria-current="true"] { background: var(--pip-bright); color: var(--pip-ink); }
   #radio li[aria-current="true"] img { filter: brightness(0); }
   .quiet { color: var(--pip-dim); font-size: 12px; }
@@ -770,7 +923,8 @@ const page = `<!doctype html>
   @media (max-height: 700px) {
     .porthole { width: 36px; height: 36px; }
     #mascot { width: 26px; height: 24px; }
-    .tab, .switch { min-height: 30px; }
+    .tab { min-height: 30px; }
+    .switch { min-height: 36px; }
     .statusbar { display: none; }
   }
 </style>
@@ -790,7 +944,7 @@ const page = `<!doctype html>
     <button id="upgrade" class="tab toggle" type="button" data-icon="stack" aria-pressed="false">Stacks</button>
     <button id="ask" class="tab toggle" type="button" data-icon="terminal" aria-pressed="false" title="ask your local agent (runs only when you press ASK)">Ask</button>
   </nav>
-  <button id="sample" class="switch" type="button" aria-pressed="false"><span class="lever"></span>SAMPLE<span class="led"></span></button>
+  <button id="sample" class="switch" type="button" role="switch" aria-checked="false" aria-label="Sample mode" title="Sample mode: a made-up account, nothing read from AWS"><span class="well" aria-hidden="true"><span class="nut"></span><span class="lever"></span></span><span class="marks" aria-hidden="true"><span>ON</span><span>OFF</span></span><span class="name" aria-hidden="true">SAMPLE</span><span class="led" aria-hidden="true"></span></button>
   <div class="gauges" aria-label="map readouts">
     <p id="tally" class="lcd" hidden><img class="px" data-icon="map" alt=""><span id="tally-text"></span><span id="tally-issue"></span></p>
     <div id="corner">
