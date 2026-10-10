@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { estimate } from "./stack-costs.js";
+import { ADDONS, DIR as ADDON_DIR, PROJECT as ADDON_PROJECT } from "../upgrades/addons/catalog.js";
 import { LEGACY_CLUSTER, cardName, confirmMatches, failureText, historyFact, resourceFact, stackFor, tooManyClusters } from "./upgrade-rules.js";
 
 
@@ -18,6 +19,14 @@ export { LEGACY_CLUSTER, failureText, stackFor, tooManyClusters } from "./upgrad
 export { campFixtures, cardName, confirmMatches, historyFact, pulumiMissing, pulumiWarning, resourceFact, upgradeSpiderLine, watchLine } from "./upgrade-rules.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+const ADDON_PARAMETERS = {
+  karpenter: [{ name: "capacity", type: "string", default: "spot", choices: ["spot", "on-demand"] }],
+  "scaling-demo": [
+    { name: "burst", type: "string", default: "off", choices: ["off", "on"] },
+    { name: "inflate", type: "number", default: 0, min: 0, max: 6 },
+  ],
+};
 
 // Every card: what it makes (note), the stack it runs, its parameters, what
 // must be up first (needs), and its cost lines (src/stack-costs.js) for the
@@ -155,7 +164,28 @@ export const UPGRADES = [
       { name: "maxHours", type: "number", default: 4, min: 1, max: 12 },
     ],
   },
+  ...addonCards(),
 ];
+
+// Cluster add-ons (upgrades/addons/catalog.js): one card each, one stack per
+// add-on and cluster (<addon>-<cluster>). The Stacks view draws them nested
+// under their cluster, not in the main list.
+function addonCards() {
+  return ADDONS.filter((addon) => addon.offered !== false).map((addon) => ({
+    id: addon.id,
+    title: addon.title,
+    note: addon.note,
+    dir: ADDON_DIR,
+    stack: addon.id,
+    project: ADDON_PROJECT,
+    vault: addon.id,
+    needs: ["eks", ...addon.needs],
+    cost: addon.cost,
+    nodeCost: addon.nodeCost,
+    addon: true,
+    parameters: [{ name: "clusterName", type: "string", default: "cloudspider-up" }, ...(ADDON_PARAMETERS[addon.id] || [])],
+  }));
+}
 
 const NAME = /^[a-z][a-z0-9-]{1,27}$/;
 
@@ -212,6 +242,8 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
         needs: spec.needs || [],
         vault: spec.vault || "",
         cost: estimate(spec.cost || []),
+        ...(spec.nodeCost ? { nodeCost: estimate(spec.nodeCost) } : {}),
+        ...(spec.addon ? { addon: true } : {}),
         parameters: spec.parameters,
       }));
     },
@@ -274,8 +306,8 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
     run({ module, params, action, clusters, legacyName, maxClusters = Number(env.CLOUDSPIDER_MAX_CLUSTERS) || 2 }) {
       const spec = UPGRADES.find((item) => item.id === module);
       if (!spec) return { error: "no such upgrade" };
-      const verb = action === "destroy" ? "destroy" : action === "up" ? "up" : "";
-      if (!verb) return { error: "action must be up or destroy" };
+      const verb = ["destroy", "up", "preview"].includes(action) ? action : "";
+      if (!verb) return { error: "action must be preview, up or destroy" };
       const checked = checkParams(spec, params);
       if (checked.error) return { error: checked.error };
       if (verb === "destroy" && !confirmMatches(cardName(spec, checked.values), params?.confirmName)) {
@@ -325,7 +357,8 @@ export function upgradeSteps(spec, stack, verb, values) {
       ]),
     );
   }
-  steps.push([verb, "--yes", "--non-interactive", "--stack", stack]);
+  // preview changes nothing: it shows what up would do.
+  steps.push(verb === "preview" ? ["preview", "--non-interactive", "--diff", "--stack", stack] : [verb, "--yes", "--non-interactive", "--stack", stack]);
   return steps;
 }
 
@@ -429,7 +462,7 @@ export function capture(run, directory, env, args) {
 
 async function readFacts(run, directory, spec, env, stack = spec.stack) {
   const history = await capture(run, directory, env, ["stack", "history", "--json", "--stack", stack]);
-  const nameKey = spec.id === "eks" ? "clusterName" : "name";
+  const nameKey = spec.id === "eks" || spec.addon ? "clusterName" : "name";
   if (history.error) {
     if (/no stack named|not found|does not exist/i.test(history.error)) {
       return { kind: "", resources: 0, missing: true, stack, name: "" };

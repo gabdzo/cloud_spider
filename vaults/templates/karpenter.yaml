@@ -1,0 +1,27 @@
+# Template (the karpenter add-on is not up). One stack per cluster:
+#   cd upgrades/addons && pulumi stack select --create karpenter-cloudspider-up
+# When it is up: npm run vaults:new -- karpenter karpenter
+# upgrades/addons (Pulumi project cloudspider-addons, stack karpenter-<cluster>):
+# the node role and its access entry, the controller role and policies, the interruption queue and five EventBridge rules; every node Karpenter launches and its volume carry project=karpenter too (the EC2NodeClass tags them). AWS resources carry project=karpenter and cluster=<cluster>;
+# the pods are in the Cluster view, namespace kube-system.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: karpenter
+  number: 203
+  title: Karpenter
+  description: "Node autoscaler: when pods do not fit, it launches a t4g.small or t4g.medium (spot first, on-demand if spot is short) in the cluster's subnets and removes it again a minute after it is empty."
+  owner: gabriel
+  tags: [upgrade, eks, addon]
+spec:
+  type: cluster
+  resources:
+    tags:
+      project: karpenter
+  stack:
+    dir: upgrades/addons
+    name: karpenter-cloudspider-up
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/addons
+    docs: https://karpenter.sh/docs/
+    dashboard: https://eu-north-1.console.aws.amazon.com/eks/home?region=eu-north-1#/clusters/cloudspider-up

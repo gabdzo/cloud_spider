@@ -8,6 +8,7 @@ import { createTerraformReader } from "./terraform.js";
 import { createLearn } from "./learn.js";
 import { createAgent } from "./agent.js";
 import { createKube } from "./kube.js";
+import { createAddons } from "./addons.js";
 import { listen, listenExit } from "./server.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +33,7 @@ const vaults = {
   sampleFailures,
   sampleLogs,
 };
+const kube = createKube();
 const app = createApp({
   ec2: aws.ec2,
   trail: aws.trail,
@@ -45,7 +47,8 @@ const app = createApp({
   eks: aws.eks,
   vaults,
   agent: createAgent({ cwd: root }),
-  kube: createKube(),
+  kube,
+  addons: createAddons({ eks: aws.eks, kube }),
   logGroup: process.env.CLOUDSPIDER_LOG_GROUP || "",
   pageOrigin,
   clock: () => Date.now(),

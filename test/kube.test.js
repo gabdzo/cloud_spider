@@ -128,3 +128,30 @@ test("clusterView: inside the cluster when the kube context answers, a pointer t
   assert.notEqual(plain.diagram.layout, "kube");
   assert.match(plain.note, /RUN-ME\.md §7/);
 });
+
+test("ops(): fixed read-only paths; a missing CRD is absent, a 403 is forbidden, not an error", async () => {
+  const urls = [];
+  const kube = createKube({
+    env: { KUBECONFIG: "/kc", PATH: "/bin" },
+    run: fakeRun([]),
+    read: async () => stringify(CONFIG),
+    get: async (url) => {
+      urls.push(url.replace(/^https:\/\/[^/]+/, ""));
+      if (url.includes("keda.sh")) return { status: 404, body: "" };
+      if (url.includes("wgpolicyk8s.io/v1alpha2/policyreports")) return { status: 403, body: "{}" };
+      if (url.includes("horizontalpodautoscalers")) return { status: 200, body: JSON.stringify({ items: [{ metadata: { name: "web" } }] }) };
+      return { status: 200, body: JSON.stringify({ items: [] }) };
+    },
+  });
+  const ops = await kube.ops();
+  assert.equal(ops.clusterName, "cloudspider-up");
+  assert.deepEqual(ops.absent, ["scaledObjects"]);
+  assert.deepEqual(ops.forbidden, ["policyReports"]);
+  assert.deepEqual(ops.errors, []);
+  assert.equal(ops.hpas[0].metadata.name, "web");
+  assert.equal(urls.length, 11);
+  assert.ok(urls.includes("/api/v1/events?limit=500"));
+  assert.ok(urls.includes("/apis/karpenter.sh/v1/nodepools"));
+  const none = await createKube({ env: { KUBECONFIG: "/none" }, read: async () => { throw new Error("ENOENT"); } }).ops();
+  assert.equal(none.unset, true);
+});

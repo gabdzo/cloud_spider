@@ -99,7 +99,7 @@ test("the upgrade route refuses a foreign page", async () => {
     const listed = await fetch(`${base}/api/upgrades`).then((response) => response.json());
     assert.equal(listed.modules[0].id, "eks");
     assert.equal(listed.modules[0].parameters[0].name, "clusterName");
-    assert.deepEqual(listed.modules.map((item) => item.id), ["eks", "signal", "barrel", "camp", "rds", "pgcluster", "shopapi", "site", "worker", "openshift"]);
+    assert.deepEqual(listed.modules.map((item) => item.id), ["eks", "signal", "barrel", "camp", "rds", "pgcluster", "shopapi", "site", "worker", "openshift", "pod-identity", "metrics-server", "kyverno", "karpenter", "scaling-demo", "lbc", "cert-manager", "keda"]);
     assert.ok(listed.modules.every((item) => item.engine === "pulumi" && typeof item.cost.month === "number"));
   } finally {
     server.close();

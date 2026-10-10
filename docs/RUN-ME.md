@@ -349,3 +349,64 @@ uv run lab janitor                                 # list anything left tagged l
 | aws-web-unreachable-001 | VPC, subnet, IGW, NACL, t4g.micro + public IPv4, TTL 90 min | $0.0136/h: about $0.02 per run, $0.33/day if left up |
 
 **Teardown**: `uv run lab down` (or `lab down <run_id>`), then `uv run lab janitor` must print `clean`. Runs past their TTL are not deleted automatically; `lab status` and the tape say EXPIRED.
+
+## 16. Cluster add-ons (`upgrades/addons`, $0 idle; Karpenter nodes $0.0245/h each)
+
+A DevOps toolbox for an EKS cluster you already have (section 6). It is one Pulumi project (`cloudspider-addons`) with **one stack per add-on and cluster**, named `<addon>-<cluster>`, for example `kyverno-cloudspider-up`. The program reads `clusterName` from config and refuses to run when it does not match the stack name. Every AWS resource carries `project=<addon>`, `cluster=<cluster>` and `cloudspider=expendable`, and each add-on has a vault template (`vaults/templates/<addon>.yaml`, numbers 200–207).
+
+In Cloud Spider, **STACKS → CLUSTER ADD-ONS** lists every cluster (EKS `ListClusters` plus any cluster an add-on stack names). Under each cluster, every add-on shows one of these states, with its version:
+- **INSTALLED**: its stack holds resources.
+- **PRESENT**: it is in the cluster but came from somewhere else, such as the demo's metrics-server. `up` is refused.
+- **NOT INSTALLED**
+- **NEEDS A DOMAIN**: ExternalDNS.
+
+A row opens the usual card, with the cluster filled in and three buttons: **PREVIEW** (`pulumi preview --diff`, changes nothing), **RUN** and **TAKE IT DOWN**. It also has the same commands to copy. **Cluster → OPS** shows Kyverno policy reports and violations, HPA replica racks with CPU against target, Karpenter's pool and its node claims, KEDA, and the cluster's events. Scaling, node, policy and warning events also go on the radio. Everything is read-only, through the viewer context (section 7). Kyverno, Karpenter, cert-manager, KEDA and the scaling demo each grant the `cloudspider-viewers` group get/list/watch on their own kinds, and nothing more.
+
+**Once:**
+```bash
+cd upgrades/addons && npm ci
+export CLUSTER=cloudspider-up
+```
+
+**Per add-on** (replace `kyverno` with the add-on's id):
+```bash
+pulumi stack select --create kyverno-$CLUSTER && pulumi config set clusterName $CLUSTER
+pulumi preview --diff        # read it
+pulumi up                    # raise it
+pulumi destroy && pulumi stack rm kyverno-$CLUSTER    # take it away again
+```
+
+| Order | Add-on (id) | What you get | Cost |
+|---|---|---|---|
+| 1 | Pod Identity agent (`pod-identity`) | EKS add-on; how the next three get AWS credentials. Skip it if the tree says PRESENT (the demo installs it). | $0 |
+| 1 | metrics-server (`metrics-server`) | EKS add-on for `kubectl top` and HPAs. Skip it if PRESENT (the demo installs it). | $0 |
+| 2 | Kyverno (`kyverno`) | Four baseline policies in **Audit** mode: no privileged containers, no hostPath, requests set, no `:latest`. Nothing is blocked. | $0 (about 200m CPU, 600 Mi on your node) |
+| 2 | Karpenter (`karpenter`) | Controller, interruption queue + 5 EventBridge rules, node role. NodePool `default`: t4g.small/medium arm64, spot first, **capped at 4 vCPU**, empty nodes removed after 1 min, every node replaced after 24 h. `pulumi config set capacity on-demand` to skip spot. | $0 idle (SQS free tier); **each node $0.0245/h, $0.59/day, $17.88/month** (t4g.small + 20 GB gp3 + public IPv4), at most 4 vCPU |
+| 3 | HPA scaling demo (`scaling-demo`) | HPAs on demo `web` and `api` (1–4 at 60% CPU). `config set burst on` adds load; `config set inflate 3` adds 3 pause pods of 500m that Karpenter has to place. | $0 itself; inflate pods can make Karpenter add a node |
+| 2 | AWS Load Balancer Controller (`lbc`) | ALBs for Ingress, NLBs for annotated Services. It does not touch existing Services (service mutator off). | $0 until something asks; each ALB/NLB about $0.024/h ($17.48/month) + LCUs |
+| 2 | cert-manager (`cert-manager`) | CRDs + a self-signed ClusterIssuer `cloudspider-selfsigned`. | $0 |
+| 3 | KEDA (`keda`), optional | A `jobs-worker` that scales 0→3 on its own SQS queue `<cluster>-keda-jobs`. | $0 at this volume (SQS free tier) |
+| – | ExternalDNS | Not built: needs a domain and a Route 53 zone ($0.50/month). | – |
+
+**Watch it scale:**
+```bash
+pulumi stack select scaling-demo-$CLUSTER && pulumi config set burst on && pulumi config set inflate 3 && pulumi up
+# Cluster → OPS: web goes 1→4, a t4g node claim appears (LAUNCHING → READY); the radio says so
+pulumi config set burst off && pulumi config set inflate 0 && pulumi up    # Karpenter removes the node a minute later
+```
+
+**Notes:**
+- **Spot** needs the EC2 Spot service-linked role. If Karpenter's events say `AuthFailure.ServiceLinkedRoleCreationNotPermitted`, run `aws iam create-service-linked-role --aws-service-name spot.amazonaws.com` once, or switch the pool with `capacity on-demand`.
+- A `pulumi up` on `upgrades/demo` resets `web` and `api` to their own replica counts. The HPA moves them back within a minute.
+- The **Kubernetes lab 11** installs its own cert-manager. Raise only one of the two on a cluster.
+- The kube viewer context (section 7) must exist for PRESENT detection and the OPS screen. Without it, the tree shows only what the stacks say, and RUN does not check needs.
+
+**Teardown** (reverse order; Karpenter last, after its nodes are gone):
+```bash
+for a in keda scaling-demo cert-manager lbc kyverno; do pulumi destroy -s $a-$CLUSTER --yes && pulumi stack rm -s $a-$CLUSTER --yes; done
+kubectl get nodeclaims    # wait until empty (scale the demo down first)
+pulumi destroy -s karpenter-$CLUSTER --yes && pulumi stack rm -s karpenter-$CLUSTER --yes
+for a in metrics-server pod-identity; do pulumi destroy -s $a-$CLUSTER --yes && pulumi stack rm -s $a-$CLUSTER --yes; done
+aws ec2 describe-instances --region eu-north-1 --filters Name=tag:project,Values=karpenter Name=instance-state-name,Values=running --query 'Reservations[].Instances[].InstanceId'   # must be []
+```
+Take the add-ons down before the cluster itself (section 9). A destroyed cluster leaves add-on stacks that can no longer reach it; `pulumi stack rm --force -s <addon>-<cluster>` drops them.

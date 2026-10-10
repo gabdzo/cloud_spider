@@ -26,7 +26,7 @@ await pulumi.runtime.setMocks(
       const token = String(args.token);
       if (token.includes("getCallerIdentity")) return { accountId: "550536272523", arn: "arn:aws:iam::550536272523:user/mock", userId: "mock" };
       if (token.includes("getParameter")) return { value: "ami-test", name: args.inputs?.name, type: "String" };
-      if (token.includes("eks/getCluster")) return { name: args.inputs?.name, endpoint: "https://mock.eks", certificateAuthorities: [{ data: "bW9jaw==" }], arn: `arn:aws:eks:eu-north-1:550536272523:cluster/${args.inputs?.name}` };
+      if (token.includes("eks/getCluster")) return { name: args.inputs?.name, endpoint: "https://mock.eks", certificateAuthorities: [{ data: "bW9jaw==" }], arn: `arn:aws:eks:eu-north-1:550536272523:cluster/${args.inputs?.name}`, vpcConfig: { vpcId: "vpc-mock", subnetIds: ["subnet-a", "subnet-b"], clusterSecurityGroupId: "sg-cluster" } };
       return args.inputs ?? {};
     },
   },
