@@ -157,7 +157,7 @@ function renderChrome() {
   statusEl.classList.toggle("issue", hasTrouble() || /did not|cannot|fail|denied|broken|trouble/i.test(words));
   renderRadioPanel();
   showSpend();
-  sampleButton.setAttribute("aria-pressed", String(sample));
+  sampleButton.setAttribute("aria-checked", String(sample));
   tabMap.setAttribute("aria-pressed", String(mode === "map"));
   pathButton.setAttribute("aria-pressed", String(mode === "path"));
   clusterButton.setAttribute("aria-pressed", String(mode === "cluster"));
