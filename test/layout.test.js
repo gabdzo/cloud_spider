@@ -192,6 +192,25 @@ test("camp resources share a wall, align in columns, and connect to what they us
   assert.ok(place.orphans.y >= camp.y + camp.h);
 });
 
+test("the camp fits a narrow map instead of scrolling sideways", () => {
+  const fixtures = [
+    { id: "page", vpcId: "", kind: "bucket", name: "cloudspider-camp-550536272523", status: "ok" },
+    { id: "table", vpcId: "", kind: "table", name: "cloudspider-camp-table", status: "ok" },
+    { id: "secret", vpcId: "", kind: "secret", name: "cloudspider-camp-secret", status: "ok" },
+    { id: "fn", vpcId: "", kind: "function", name: "cloudspider-camp-page", status: "ok", uses: ["page", "table", "secret"] },
+  ];
+  for (const rowLimit of [730, 520, 300]) {
+    const place = layout({ region: "eu-north-1", vpcs: [], subnets: [], instances: [], fixtures }, { rowLimit });
+    const camp = place.camp;
+    assert.ok(camp.x + camp.w <= rowLimit, `camp ${camp.x + camp.w} > ${rowLimit}`);
+    for (const node of camp.nodes) assert.ok(node.x + node.w <= camp.x + camp.w, `${node.id} pokes out at ${rowLimit}`);
+    const fn = camp.nodes.find((node) => node.kind === "function");
+    const sources = camp.nodes.filter((node) => node.kind !== "function");
+    assert.ok(sources.every((node) => fn.y > node.y));
+    assert.equal(camp.edges.length, 3);
+  }
+});
+
 test("an instance with no VPC is outside every settlement", () => {
   const place = layout({
     region: "us-east-1",

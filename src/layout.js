@@ -130,7 +130,21 @@ export function newestFail(rows) {
 
 const CAMP_ORDER = { bucket: 0, table: 1, secret: 2, function: 3 };
 
-function placeCamp(items, originY) {
+// Fit the camp's columns into the row limit: shrink the gaps and the cards
+// (labels are clipped when drawn) and wrap to more rows only when even the
+// narrowest cards do not fit side by side.
+function campGrid(want, count, room) {
+  for (const gap of [CAMP_GAP_X, 24]) {
+    const fitW = Math.floor((room - (count - 1) * gap) / count);
+    if (fitW >= CAMP_COL) return { colW: Math.min(want, fitW), gap, perRow: count };
+  }
+  const gap = 24;
+  const colW = Math.min(want, Math.max(CAMP_COL, room));
+  const perRow = Math.max(1, Math.floor((room + gap) / (colW + gap)));
+  return { colW, gap, perRow };
+}
+
+function placeCamp(items, originY, rowLimit = ROW_LIMIT) {
   if (!items.length) return null;
   const fn = items.find((item) => item.kind === "function");
   const used = new Set(fn?.uses || []);
@@ -138,18 +152,31 @@ function placeCamp(items, originY) {
   const rest = items.filter((item) => item !== fn && !used.has(item.id)).sort(byId);
   const left = PAD + INSET;
   const top = originY + LINE + INSET + 8;
-  const colW = Math.max(CAMP_COL, ...items.map((item) => textWidth(campLabel(item)) + 24));
+  const want = Math.max(CAMP_COL, ...items.map((item) => textWidth(campLabel(item)) + 24));
+  const room = rowLimit - PAD * 2 - INSET * 2;
+  const widest = fn && sources.length ? Math.max(sources.length, rest.length) : items.length;
+  const { colW, gap, perRow } = campGrid(want, Math.max(1, widest), room);
   const nodes = [];
   function put(item, x, y) {
     nodes.push({ ...item, label: campLabel(item), x, y, w: colW, h: CAMP_ROW });
   }
+  function rowOf(list, y) {
+    list.forEach((item, index) => {
+      const col = index % perRow;
+      const row = Math.floor(index / perRow);
+      put(item, left + col * (colW + gap), y + row * (CAMP_ROW + CAMP_GAP_Y));
+    });
+    return y + Math.ceil(list.length / perRow) * (CAMP_ROW + CAMP_GAP_Y);
+  }
   if (fn && sources.length) {
-    sources.forEach((item, index) => put(item, left + index * (colW + CAMP_GAP_X), top));
-    const rowWidth = sources.length * colW + (sources.length - 1) * CAMP_GAP_X;
-    put(fn, left + Math.floor((rowWidth - colW) / 2), top + CAMP_ROW + CAMP_GAP_Y);
-    rest.forEach((item, index) => put(item, left + index * (colW + CAMP_GAP_X), top + (CAMP_ROW + CAMP_GAP_Y) * 2));
+    let y = rowOf(sources, top);
+    const across = Math.min(perRow, sources.length);
+    const rowWidth = across * colW + (across - 1) * gap;
+    put(fn, left + Math.floor((rowWidth - colW) / 2), y);
+    y += CAMP_ROW + CAMP_GAP_Y;
+    rowOf(rest, y);
   } else {
-    items.sort(byId).forEach((item, index) => put(item, left + index * (colW + CAMP_GAP_X), top));
+    rowOf(items.sort(byId), top);
   }
   const byIdMap = new Map(nodes.map((node) => [node.id, node]));
   const edges = [];
@@ -341,7 +368,7 @@ export function layout(place, { rowLimit = ROW_LIMIT } = {}) {
 
   const orphanItems = instances.filter((item) => !item.vpcId);
   const looseFixtures = (place.fixtures || []).filter((item) => !item.vpcId && !campMember(item));
-  const camp = placeCamp((place.fixtures || []).filter(campMember), cursorY);
+  const camp = placeCamp((place.fixtures || []).filter(campMember), cursorY, rowLimit);
   if (camp) cursorY = camp.y + camp.h + GAP * 2;
   const packedOrphans = pack(orphanItems, PAD + INSET, cursorY + LINE + INSET, columns);
   const fixtureTop = orphanItems.length ? packedOrphans.bottom + GAP : cursorY + LINE + INSET;

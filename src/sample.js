@@ -52,3 +52,17 @@ export function samplePlace() {
     ],
   };
 }
+
+// Sample radio chatter, newest first, in the same row shape as the trail
+// (radioEntries), so the radio panel has stations without CloudTrail.
+export function sampleTrail(now = Date.now()) {
+  const ago = (minutes) => now - minutes * 60_000;
+  return [
+    { time: ago(2), status: "ok", text: "put a machine down  sample-stopped", issue: "", count: 1 },
+    { time: ago(9), status: "ok", text: "raised a machine  sample-running", issue: "", count: 1 },
+    { time: ago(31), status: "ok", text: "opened a fence  sg-0sample0001", issue: "", count: 1 },
+    { time: ago(47), status: "ok", text: "tagged a thing  sample-running", issue: "", count: 2 },
+    { time: ago(65), status: "fail", text: "tore a machine down  i-0wasteland01", issue: "AccessDenied", count: 1 },
+    { time: ago(90), status: "ok", text: "changed a node group  sample-ng", issue: "", count: 1 },
+  ];
+}
