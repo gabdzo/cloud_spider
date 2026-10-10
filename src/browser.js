@@ -23,6 +23,7 @@ import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
 import { paintKube } from "./kube-draw.js";
 import { renderTelemetry } from "./tele-view.js";
+import { createPodInspector } from "./pod-inspect-view.js";
 import { upgradeSpiderLine } from "./upgrade-rules.js";
 import { costLine } from "./stack-costs.js";
 import {
@@ -1788,6 +1789,7 @@ function meter(label, pct, text) {
 
 function showNode(node) {
   ++podTicket;
+  podInspector.close();
   const host = node.host;
   const head = vel("div", "kp-title");
   head.append(vel("span", "kp-name", `NODE · ${node.label}`));
@@ -1832,63 +1834,24 @@ function showNode(node) {
   kubePanel.hidden = false;
 }
 
-// Cluster view: a pod's last log lines and events, read-only, on click.
+// Cluster view: click a pod for the deep-inspect panel (pod-inspect-view.js).
 let podTicket = 0;
+const podInspector = createPodInspector(kubePanel, {
+  sample: () => sample,
+  onClose: () => {
+    clusterSelected = null;
+    draw();
+  },
+});
 function showPod(node) {
-  const ticket = ++podTicket;
+  ++podTicket;
   if (!node) {
+    podInspector.close();
     kubePanel.hidden = true;
     kubePanel.replaceChildren();
     return;
   }
-  const { ns, name, containers, node: host } = node.pod;
-  const head = vel("div", "kp-title");
-  head.append(vel("span", "kp-name", `POD · ${ns}/${name}`));
-  const close = vel("button", "vp-close", "CLOSE");
-  close.type = "button";
-  close.addEventListener("click", () => {
-    clusterSelected = null;
-    showPod(null);
-    draw();
-  });
-  head.append(close);
-  const facts = vel("dl", "vp-facts");
-  for (const [label, value] of [["STATE", node.caption], ["NODE", host], ["CONTAINERS", (containers || []).join(", ")]]) {
-    if (value) facts.append(vel("dt", "", label), vel("dd", "", value));
-  }
-  const body = vel("div", "kp-body");
-  body.append(facts, vel("p", "vp-note", "reading logs and events…"));
-  kubePanel.replaceChildren(head, body);
-  kubePanel.hidden = false;
-  const query = new URLSearchParams({ ns, name });
-  if (sample) query.set("sample", "1");
-  fetch(`/api/cluster/pod?${query}`)
-    .then((response) => response.json())
-    .catch(() => ({ error: "the pod did not answer" }))
-    .then((detail) => {
-      if (ticket !== podTicket) return;
-      body.replaceChildren(facts);
-      if (detail.error) {
-        body.append(vel("p", "vp-note err", detail.error));
-        return;
-      }
-      const logsHead = vel("h4", "", `LOG · LAST ${detail.lines?.length || 0} LINES`);
-      body.append(logsHead);
-      if (detail.logNote) body.append(vel("p", "vp-note err", detail.logNote));
-      const lines = vel("ol", "vp-lines kp-log");
-      for (const line of detail.lines || []) lines.append(vel("li", /error|fail|panic|exception|giving up/i.test(line) ? "bad" : "", line));
-      body.append(lines);
-      body.append(vel("h4", "", `EVENTS · ${detail.events?.length || 0}`));
-      if (detail.eventNote) body.append(vel("p", "vp-note err", detail.eventNote));
-      const events = vel("ul", "kp-events");
-      for (const event of detail.events || []) {
-        const li = vel("li", event.type === "Warning" ? "warn" : "");
-        li.append(vel("span", "when", hhmm(event.time)), vel("span", "reason", `${event.reason}${event.count > 1 ? ` ×${event.count}` : ""}`), vel("span", "msg", event.message));
-        events.append(li);
-      }
-      body.append(events);
-      lines.scrollTop = lines.scrollHeight;
-    });
+  podInspector.open(node);
 }
 
 canvas.addEventListener("mouseleave", () => {

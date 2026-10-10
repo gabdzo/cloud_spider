@@ -8,7 +8,8 @@ import { pathResult } from "./path-view.js";
 import { cssVars } from "./theme.js";
 import { sampleCost } from "./cost.js";
 import { sampleCluster } from "./cluster.js";
-import { samplePodDetail } from "./kube-sample.js";
+import { samplePodDetail, samplePodInspect } from "./kube-sample.js";
+import { inspectPod } from "./kube-inspect.js";
 import { sampleTelemetry } from "./kube-telemetry.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,7 @@ export const FILES = new Set([
   "kube-telemetry.js",
   "tele-draw.js",
   "tele-view.js",
+  "pod-inspect-view.js",
   "metrics.js",
   "upgrade-rules.js",
   "stack-costs.js",
@@ -926,6 +928,41 @@ const page = `<!doctype html>
   .vt-cmd { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--pip-hot); font-size: 11px; user-select: all; }
   .vt-copy { flex: none; min-height: 24px; padding: 0 8px; font-size: 11px; }
   .vt-empty { color: var(--pip-dim); }
+  /* ---- pod deep-inspect ---- */
+  #kube-panel.kp-wide { width: min(820px, calc(100% - 24px)); display: flex; flex-direction: column; background: var(--pip-screen); box-shadow: 0 0 0 1px var(--pip-dim), 0 8px 30px var(--btn-shade); }
+  #kube-panel.kp-wide .kp-body { flex: 1; min-height: 0; max-height: none; }
+  .pi-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 8px 0; border-bottom: 1px solid var(--pip-dim); }
+  .pi-tabs button { font: inherit; font-size: 10px; letter-spacing: 0.14em; padding: 4px 10px; color: var(--pip-dim); background: var(--pip-ink); border: 1px solid var(--pip-dark); border-bottom: none; cursor: pointer; }
+  .pi-tabs button:hover { color: var(--pip-bright); }
+  .pi-tabs button[aria-selected="true"] { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); }
+  .pi-body dd.bad { color: var(--status-broken); }
+  .pi-body dd.warn { color: var(--status-hang); }
+  .pi-chain { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+  .pi-chain li { color: var(--pip-bright); border: 1px solid var(--pip-dim); padding: 1px 6px; }
+  .pi-chain li + li::before { content: "→ "; color: var(--pip-dim); }
+  .pi-conds { display: flex; flex-wrap: wrap; gap: 14px; }
+  .pi-container { margin: 8px 0; padding: 6px 8px; border: 1px solid var(--pip-dark); }
+  .pi-chead { display: flex; gap: 10px; align-items: baseline; }
+  .pi-chead b { color: var(--pip-hot); font-weight: normal; }
+  .pi-chead .ok { color: var(--pip-bright); }
+  .pi-chead .warn { color: var(--status-hang); }
+  .pi-env { list-style: none; margin: 0; padding: 0; font-size: 11px; }
+  .pi-env li { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; border-bottom: 1px dotted var(--pip-dark); }
+  .pi-env code { font: inherit; color: var(--pip-bright); overflow-wrap: anywhere; }
+  .pi-env span { color: var(--pip-dim); white-space: nowrap; }
+  .pi-env span.warn { color: var(--status-hang); }
+  .pi-logbar { display: flex; gap: 6px; align-items: center; }
+  .pi-logbar select { font: inherit; font-size: 11px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); }
+  .pi-logbar button[aria-pressed="true"] { color: var(--pip-ink); background: var(--pip-bright); }
+  .pi-log { max-height: 46vh; overflow: auto; }
+  .pi-yaml { margin: 0; max-height: 52vh; overflow: auto; padding: 8px; font-size: 11px; color: var(--pip-mid); background: var(--pip-ink); border: 1px solid var(--pip-dark); white-space: pre; }
+  .vp-metrics .pi-meters li { grid-template-columns: 70px minmax(60px, 1fr) max-content; }
+  .vp-metrics .pi-meters li .val { white-space: nowrap; text-align: right; }
+  .pi-bar { position: relative; height: 10px; background: var(--pip-ink); border: 1px solid var(--pip-dark); }
+  .pi-bar .used { position: absolute; left: 0; top: 1px; bottom: 1px; background: var(--pip-bright); box-shadow: 0 0 4px var(--glow-soft); }
+  .pi-bar .req { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--pip-hot); }
+  .pi-meters li.hot .used { background: var(--status-hang); }
+  /* ---- end pod deep-inspect ---- */
   /* ---- cluster screens: tabs + telemetry ---- */
   #kube-tabs { position: absolute; z-index: 4; left: 14px; top: 10px; display: flex; gap: 6px; }
   #kube-tabs button { font: inherit; font-size: 11px; letter-spacing: 0.14em; padding: 5px 12px; color: var(--pip-dim); background: var(--pip-ink); border: 1px solid var(--pip-dark); cursor: pointer; }
@@ -970,7 +1007,7 @@ const page = `<!doctype html>
   .kt-flags em { font-style: normal; font-size: 9px; padding: 0 4px; border: 1px solid var(--pip-dim); color: var(--pip-mid); }
   .kt-flags em.bad { color: var(--status-broken); border-color: var(--status-broken); }
   /* ---- end cluster screens ---- */
-  #kube-panel { position: absolute; z-index: 3; right: 12px; top: 12px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 24px); }
+  #kube-panel { position: absolute; z-index: 5; right: 12px; top: 48px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 60px); }
   .kp-title { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.12em; font-size: 11px; }
   .kp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kp-body { overflow: auto; padding: 6px 12px 10px; }
@@ -1776,10 +1813,23 @@ async function route(app, req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/cluster/pod") {
     if (url.searchParams.get("sample") === "1") {
-      send(res, 200, samplePodDetail(url.searchParams.get("name") || ""));
+      send(res, 200, samplePodDetail(url.searchParams.get("name") || "", { previous: url.searchParams.get("previous") === "1" }));
       return;
     }
-    send(res, 200, await app.clusterPod({ ns: url.searchParams.get("ns"), name: url.searchParams.get("name"), container: url.searchParams.get("container") }));
+    send(res, 200, await app.clusterPod({ ns: url.searchParams.get("ns"), name: url.searchParams.get("name"), container: url.searchParams.get("container"), previous: url.searchParams.get("previous") === "1", tail: url.searchParams.get("tail") }));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cluster/pod/inspect") {
+    if (url.searchParams.get("sample") === "1") {
+      const raw = samplePodInspect(url.searchParams.get("name") || "");
+      const tele = await sampleTelemetry();
+      const pod = tele.pods.find((p) => p.name === raw.pod.metadata.name);
+      send(res, 200, inspectPod(raw.pod, { events: raw.events, chain: raw.chain, usage: raw.usage, history: pod ? { ...pod.history, sampleMs: tele.sampleMs } : null }));
+      return;
+    }
+    await app.boot();
+    send(res, 200, await app.clusterPodInspect({ ns: url.searchParams.get("ns"), name: url.searchParams.get("name") }));
     return;
   }
 
