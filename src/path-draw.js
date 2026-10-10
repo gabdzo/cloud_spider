@@ -52,13 +52,14 @@ export function paintPath(ctx, { placed, selectedId, animTime, width, height, em
     
     ctx.beginPath();
     ctx.moveTo(edge.x1, edge.y1);
-    ctx.bezierCurveTo(edge.x1 + 28, edge.y1, edge.x2 - 28, edge.y2, edge.x2, edge.y2);
+    const pull = Math.max(8, Math.min(28, (edge.x2 - edge.x1) / 2));
+    ctx.bezierCurveTo(edge.x1 + pull, edge.y1, edge.x2 - pull, edge.y2, edge.x2, edge.y2);
     ctx.stroke();
   }
   ctx.setLineDash([]);
   for (const node of placed.nodes) drawNode(ctx, node, node.id === selectedId);
   const selected = placed.nodes.find((node) => node.id === selectedId);
-  if (selected?.sentence) drawSentence(ctx, selected, width);
+  if (selected?.sentence) drawSentence(ctx, selected, width, height);
 }
 
 function drawSprite(ctx, sprite, x, y, scale = 2) {
@@ -95,19 +96,23 @@ function drawNode(ctx, node, selected) {
   
   ctx.font = FONT;
   ctx.fillStyle = TEXT;
-  ctx.fillText(clip(node.label, 24), node.x + 10, node.y + 26);
+  const labelChars = node.w >= 200 ? 24 : Math.max(8, Math.floor((node.w - 48) / 8.5));
+  ctx.fillText(clip(node.label, labelChars), node.x + 10, node.y + 26);
   ctx.font = SMALL;
   ctx.fillStyle = MUTED;
-  ctx.fillText(clip(`${node.kind}  ${node.caption || ""}`, 28), node.x + 10, node.y + 46);
+  const captionChars = node.w >= 200 ? 28 : Math.max(8, Math.floor((node.w - 20) / 7.5));
+  ctx.fillText(clip(`${node.kind}  ${node.caption || ""}`, captionChars), node.x + 10, node.y + 46);
 }
 
-function drawSentence(ctx, node, width) {
-  const lines = wrap(node.sentence, 46);
-  const w = 420;
+function drawSentence(ctx, node, width, height) {
+  const w = Math.min(420, Math.max(160, width - 16));
+  const lines = wrap(node.sentence, Math.max(12, Math.floor((w - 24) / 7.2)));
   const h = 16 + lines.length * 20;
   let x = node.x + node.w + 12;
   if (x + w > width - 8) x = Math.max(8, node.x - w - 12);
-  const y = node.y + node.h + 8;
+  if (x + w > width - 8) x = Math.max(8, width - w - 8);
+  let y = node.y + node.h + 8;
+  if (y + h > height - 8) y = Math.max(8, node.y - h - 8);
   ctx.fillStyle = PANEL;
   ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = "#7a5f48";

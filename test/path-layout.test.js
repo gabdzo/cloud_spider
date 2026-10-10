@@ -35,6 +35,26 @@ test("a thread runs from the right side of its source to the left side of its ta
   }
 });
 
+test("a supplied width squeezes columns and a tiny width stops at the floor", () => {
+  const wide = layoutPath(diagram());
+  const fitted = layoutPath(diagram(), wide.contentWidth - 1);
+  assert.ok(fitted.contentWidth < wide.contentWidth);
+  assert.ok(fitted.contentWidth <= wide.contentWidth - 1);
+  for (const node of fitted.nodes) {
+    assert.ok(node.w <= wide.nodes[0].w);
+    assert.ok(node.x + node.w <= fitted.contentWidth, `${node.id} is outside the width`);
+  }
+  const floor = layoutPath(diagram(), 200);
+  assert.equal(floor.nodes[0].w, 140);
+  assert.ok(floor.contentWidth > 200);
+  for (const a of floor.nodes) {
+    for (const b of floor.nodes) {
+      if (a === b || a.x !== b.x) continue;
+      assert.ok(a.y + a.h <= b.y || b.y + b.h <= a.y, `${a.id} overlaps ${b.id}`);
+    }
+  }
+});
+
 test("a point on a box finds it and a point in the gap finds nothing", () => {
   const placed = layoutPath(diagram());
   const first = placed.nodes[0];

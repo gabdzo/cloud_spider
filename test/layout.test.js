@@ -20,6 +20,37 @@ function inside(outer, inner) {
   );
 }
 
+test("a short row limit wraps the next subnet under the first", () => {
+  const place = {
+    region: "eu-north-1",
+    vpcs: [{ id: "vpc-1" }],
+    subnets: [
+      { id: "subnet-1", vpcId: "vpc-1" },
+      { id: "subnet-2", vpcId: "vpc-1" },
+    ],
+    instances: [],
+  };
+  const wide = layout(place);
+  const narrow = layout(place, { rowLimit: 200 });
+  assert.equal(wide.settlements[0].plots[0].y, wide.settlements[0].plots[1].y);
+  assert.ok(narrow.settlements[0].plots[1].y > narrow.settlements[0].plots[0].y);
+  assert.ok(narrow.contentWidth < wide.contentWidth);
+});
+
+test("a narrow row stacks buildings so the settlement fits", () => {
+  const place = {
+    region: "eu-north-1",
+    vpcs: [{ id: "vpc-1", cidr: "10.0.0.0/16" }],
+    subnets: [{ id: "subnet-1", vpcId: "vpc-1", cidr: "10.0.1.0/24" }],
+    instances: [1, 2, 3].map((n) => building(`i-0000000${n}`, { vpcId: "vpc-1", subnetId: "subnet-1" })),
+  };
+  const narrow = layout(place, { rowLimit: 390 });
+  const buildings = narrow.settlements[0].plots[0].buildings;
+  assert.ok(buildings[2].y > buildings[0].y);
+  assert.ok(narrow.contentWidth <= 390);
+  assert.equal(layout(place).settlements[0].plots[0].buildings[2].y, layout(place).settlements[0].plots[0].buildings[0].y);
+});
+
 test("the same ids draw the same places, and a new id can shift a neighbor", () => {
   const subnet = { id: "subnet-1", vpcId: "vpc-1" };
   const vpc = { id: "vpc-1" };

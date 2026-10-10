@@ -1,25 +1,29 @@
 const COL_W = 220;
 const COL_GAP = 56;
+const MIN_COL_W = 140;
+const MIN_COL_GAP = 16;
 const ROW_H = 64;
 const ROW_GAP = 14;
 const PAD = 24;
 const COLUMN = { lb: 0, listener: 1, rule: 2, tg: 3, target: 4, node: 5, cluster: 6 };
 
-export function layoutPath(diagram) {
+export function layoutPath(diagram, maxWidth = 0) {
   const columns = new Map();
   for (const node of diagram?.nodes || []) {
     const col = COLUMN[node.kind] ?? 0;
     if (!columns.has(col)) columns.set(col, []);
     columns.get(col).push(node);
   }
+  const cols = (columns.size ? Math.max(...columns.keys()) : 0) + 1;
+  const { colW, gap } = fitColumns(cols, maxWidth);
   const nodes = [];
   for (const [col, list] of columns) {
     list.forEach((node, row) => {
       nodes.push({
         ...node,
-        x: PAD + col * (COL_W + COL_GAP),
+        x: PAD + col * (colW + gap),
         y: PAD + row * (ROW_H + ROW_GAP),
-        w: COL_W,
+        w: colW,
         h: ROW_H,
       });
     });
@@ -38,9 +42,18 @@ export function layoutPath(diagram) {
   return {
     nodes,
     edges,
-    contentWidth: PAD * 2 + (maxCol + 1) * COL_W + maxCol * COL_GAP,
+    contentWidth: PAD * 2 + (maxCol + 1) * colW + maxCol * gap,
     contentHeight: PAD * 2 + maxRows * ROW_H + Math.max(0, maxRows - 1) * ROW_GAP,
   };
+}
+
+function fitColumns(cols, maxWidth) {
+  const natural = PAD * 2 + cols * COL_W + (cols - 1) * COL_GAP;
+  if (!maxWidth || natural <= maxWidth) return { colW: COL_W, gap: COL_GAP };
+  const room = maxWidth - PAD * 2 - Math.max(0, cols - 1) * MIN_COL_GAP;
+  const colW = Math.min(COL_W, Math.floor(room / cols));
+  if (colW >= MIN_COL_W) return { colW, gap: MIN_COL_GAP };
+  return { colW: MIN_COL_W, gap: MIN_COL_GAP };
 }
 
 export function nodeAt(placed, x, y) {

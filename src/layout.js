@@ -7,7 +7,7 @@ const CELL_H = 92;
 const GAP = 16;
 const PAD = 24;
 const INSET = 12;
-const ROW_LIMIT = 1100;
+export const ROW_LIMIT = 1100;
 // Strip along the bottom of each camp, between the plots and the wall, where
 // the wanderers walk (32px figures + 18px wall + a little air).
 export const WALKWAY_PX = 40;
@@ -23,10 +23,10 @@ function byId(a, b) {
   return a.id.localeCompare(b.id);
 }
 
-function pack(items, originX, originY) {
+function pack(items, originX, originY, columns) {
   const placed = items.map((item, index) => {
-    const col = index % COLS;
-    const row = Math.floor(index / COLS);
+    const col = index % columns;
+    const row = Math.floor(index / columns);
     return {
       ...item,
       x: originX + col * (CELL_W + GAP),
@@ -35,22 +35,29 @@ function pack(items, originX, originY) {
       h: CELL_H,
     };
   });
-  const rows = Math.ceil(items.length / COLS);
-  const cols = Math.min(COLS, items.length);
-  const width = cols === 0 ? 0 : cols * (CELL_W + GAP) - GAP;
+  const rows = Math.ceil(items.length / columns);
+  const used = Math.min(columns, items.length);
+  const width = used === 0 ? 0 : used * (CELL_W + GAP) - GAP;
   const height = rows === 0 ? 0 : rows * (CELL_H + GAP) - GAP;
   return { items: placed, width, height, bottom: originY + height };
+}
+
+function columnsFor(rowLimit) {
+  const room = rowLimit - PAD * 2 - INSET * 4;
+  const fit = Math.floor((room + GAP) / (CELL_W + GAP));
+  return Math.max(1, Math.min(COLS, fit || 1));
 }
 
 function joinLabel(id, cidr) {
   return cidr ? `${id}  ${cidr}` : id;
 }
 
-export function layout(place) {
+export function layout(place, { rowLimit = ROW_LIMIT } = {}) {
   const vpcs = [...place.vpcs].sort(byId);
   const subnets = [...place.subnets].sort(byId);
   const instances = [...place.instances].sort(byId);
   const settlements = [];
+  const columns = columnsFor(rowLimit);
   let cursorY = PAD;
 
   for (const vpc of vpcs) {
@@ -66,7 +73,7 @@ export function layout(place) {
     for (const subnet of subnets.filter((item) => item.vpcId === vpc.id)) {
       const buildings = instances.filter((item) => item.subnetId === subnet.id);
       const headerH = LINE * 2 + 8 + SMOKE_PX;
-      const sizing = pack(buildings, 0, 0);
+      const sizing = pack(buildings, 0, 0, columns);
       const w = Math.max(
         textWidth(subnet.id) + 2 * INSET,
         textWidth(subnet.cidr) + 2 * INSET,
@@ -74,11 +81,11 @@ export function layout(place) {
         CELL_W + 2 * INSET,
       );
       const h = headerH + Math.max(sizing.height, LINE) + INSET;
-      if (cursorX > left + INSET && cursorX + w > left + ROW_LIMIT) {
+      if (cursorX > left + INSET && cursorX + w > left + rowLimit) {
         cursorX = left + INSET;
         rowTop = rowBottom + GAP;
       }
-      const packed = pack(buildings, cursorX + INSET, rowTop + headerH);
+      const packed = pack(buildings, cursorX + INSET, rowTop + headerH, columns);
       plots.push({
         id: subnet.id,
         label: subnet.id,
@@ -96,7 +103,7 @@ export function layout(place) {
 
     const outsiders = instances.filter((item) => item.vpcId === vpc.id && !item.subnetId);
     const outsideTop = plots.length ? rowBottom + GAP : plotsTop;
-    const outside = pack(outsiders, left + INSET, outsideTop);
+    const outside = pack(outsiders, left + INSET, outsideTop, columns);
     const labeled = outside.items.map((item) => ({ ...item, label: "no subnet" }));
     if (labeled.length) right = Math.max(right, left + INSET + outside.width);
     const bottom = Math.max(
@@ -120,7 +127,7 @@ export function layout(place) {
   }
 
   const orphanItems = instances.filter((item) => !item.vpcId);
-  const packedOrphans = pack(orphanItems, PAD + INSET, cursorY + LINE + INSET);
+  const packedOrphans = pack(orphanItems, PAD + INSET, cursorY + LINE + INSET, columns);
   const contentHeight = Math.max(
     cursorY + PAD,
     orphanItems.length ? packedOrphans.bottom + PAD : 0,
