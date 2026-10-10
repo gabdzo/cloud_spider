@@ -166,3 +166,64 @@ test("a failed diagram read is said on the place instead of vanishing", async ()
   const { place } = await readPlace(ec2, "eu-north-1");
   assert.equal(place.diagramNote, "ListClusters: AccessDenied");
 });
+
+// ---- collapsible VPC camps ----
+import { foldAt, vpcSummary, CLOSED_H } from "../src/layout.js";
+import { createVaultState, VPC_FOLD_KEY, STORAGE_KEY } from "../src/vault-state.js";
+
+const both = () => ({ vpcs: [defaultVpc, eksVpc], subnets: [...defaultSubnets, ...eksSubnets], instances: nodes, fixtures: [cluster], gateways: [{ vpcId: eksVpc.id, kind: "igw", id: "igw-eks" }] });
+
+test("a collapsed VPC is a short closed camp with its name, CIDR, count and gate; the rest moves up", () => {
+  const open = layout(both());
+  const closed = layout(both(), { isClosed: (id) => id === eksVpc.id });
+  const camp = closed.settlements.find((item) => item.id === eksVpc.id);
+  assert.equal(camp.closed, true);
+  assert.equal(camp.h, CLOSED_H);
+  assert.equal(camp.label, "cloudspider-up  10.43.0.0/16");
+  assert.equal(camp.caption, "3 resources · 2/2 running · 3 subnets · 2 AZs");
+  assert.equal(camp.gate, "igw");
+  assert.equal(camp.status, "ok");
+  assert.deepEqual([camp.plots.length, camp.fixtures.length], [0, 0]);
+  assert.ok(closed.contentHeight < open.contentHeight);
+});
+
+test("the status light shows trouble inside: a broken card or an unhealthy target turns it red, a pending machine amber", () => {
+  const place = both();
+  assert.equal(vpcSummary(place, eksVpc).status, "ok");
+  assert.equal(vpcSummary({ ...place, fixtures: [{ ...cluster, status: "broken" }] }, eksVpc).status, "broken");
+  const unhealthy = vpcSummary({ ...place, links: [{ from: "alb", to: "i-0node0001", state: "unhealthy" }] }, eksVpc);
+  assert.equal(unhealthy.status, "broken");
+  assert.match(unhealthy.troubles[0], /i-0node0001 fails its health check/);
+  assert.equal(vpcSummary({ ...place, instances: [{ ...nodes[0], state: "pending" }] }, eksVpc).status, "hang");
+});
+
+test("an empty VPC stays a strip even when marked closed (nothing to fold)", () => {
+  const placed = layout(both(), { isClosed: () => true });
+  const empty = placed.settlements.find((item) => item.id === defaultVpc.id);
+  assert.equal(empty.empty, true);
+  assert.equal(empty.closed, undefined);
+});
+
+test("a click on the banner or wall folds; a click inside the yard does not; a closed camp opens anywhere", () => {
+  const placed = layout(both());
+  const camp = placed.settlements.find((item) => item.id === eksVpc.id);
+  assert.equal(foldAt(placed, camp.x + 60, camp.y + 10)?.id, eksVpc.id, "banner");
+  assert.equal(foldAt(placed, camp.x + 4, camp.y + 120)?.id, eksVpc.id, "left wall");
+  assert.equal(foldAt(placed, camp.x + Math.floor(camp.w / 2), camp.y + Math.floor(camp.h / 2)), null, "inside");
+  const closed = layout(both(), { isClosed: (id) => id === eksVpc.id });
+  const shut = closed.settlements.find((item) => item.id === eksVpc.id);
+  assert.equal(foldAt(closed, shut.x + Math.floor(shut.w / 2), shut.y + 40)?.id, eksVpc.id);
+  assert.equal(foldAt(closed, 2, 2), null);
+});
+
+test("folded VPCs persist under their own storage key, apart from the vault doors", () => {
+  const store = new Map();
+  const storage = { getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) };
+  const folds = createVaultState({ storage, storageKey: VPC_FOLD_KEY });
+  folds.toggle(eksVpc.id);
+  assert.equal(store.get(VPC_FOLD_KEY), JSON.stringify([eksVpc.id]));
+  assert.equal(store.has(STORAGE_KEY), false);
+  const again = createVaultState({ storage, storageKey: VPC_FOLD_KEY });
+  assert.equal(again.isOpen(eksVpc.id), true);
+  assert.equal(again.key([defaultVpc.id, eksVpc.id]), eksVpc.id, "part of the layout cache key");
+});

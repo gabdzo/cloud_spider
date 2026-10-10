@@ -297,7 +297,45 @@ function findPlaced(settlements, id) {
   return null;
 }
 
-export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false } = {}) {
+// A collapsed VPC: a short walled camp with its gate, name and CIDR, what
+// it holds, and one status light for any trouble inside.
+export const CLOSED_H = 72;
+
+export function vpcSummary(place, vpc) {
+  const instances = (place?.instances || []).filter((item) => item.vpcId === vpc.id);
+  const fixtures = (place?.fixtures || []).filter((item) => item.vpcId === vpc.id);
+  const subnets = (place?.subnets || []).filter((item) => item.vpcId === vpc.id);
+  const zones = new Set(subnets.map((item) => item.zone).filter(Boolean));
+  const ids = new Set([...instances, ...fixtures].map((item) => item.id));
+  const troubles = [];
+  for (const item of fixtures) if (item.status === "broken") troubles.push(`${item.name || item.id} is in trouble`);
+  for (const link of place?.links || []) {
+    if (ids.has(link.to) && targetState(link.state) === "unhealthy") troubles.push(`${link.to} fails its health check`);
+  }
+  const changing = instances.filter((item) => !["running", "stopped"].includes(item.state)).length;
+  const running = instances.filter((item) => item.state === "running").length;
+  const count = instances.length + fixtures.length;
+  const bits = [`${count} resource${count === 1 ? "" : "s"}`];
+  if (instances.length) bits.push(`${running}/${instances.length} running`);
+  bits.push(`${subnets.length} subnet${subnets.length === 1 ? "" : "s"}${zones.size ? ` · ${zones.size} AZ${zones.size === 1 ? "" : "s"}` : ""}`);
+  const status = troubles.length ? "broken" : changing ? "hang" : "ok";
+  return { count, caption: bits.join(" · "), status, troubles };
+}
+
+// Where a click folds a VPC: its banner row or its walls (never a shack or
+// a card inside), or anywhere on a collapsed camp.
+export function foldAt(placed, x, y) {
+  for (const s of placed?.settlements || []) {
+    if (s.empty || x < s.x || x >= s.x + s.w || y < s.y || y >= s.y + s.h) continue;
+    if (s.closed) return s;
+    const banner = y < s.y + 32;
+    const wall = x - s.x < 16 || s.x + s.w - x < 16 || s.y + s.h - y < 18;
+    if (banner || wall) return s;
+  }
+  return null;
+}
+
+export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false, isClosed = () => false } = {}) {
   const vpcs = [...(place.vpcs || [])].sort(byId);
   const subnets = [...(place.subnets || [])].sort(byId);
   const allInstances = [...(place.instances || [])].sort(byId);
@@ -326,6 +364,32 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
   for (const vpc of vpcs) {
     const label = vpc.name ? joinLabel(vpc.name, vpc.cidr) : joinLabel(vpc.id, vpc.cidr);
     const vpcInstances = instances.filter((item) => item.vpcId === vpc.id);
+    if (isClosed(vpc.id) && (vpcInstances.length || fixtures.some((item) => item.vpcId === vpc.id))) {
+      const label = vpc.name ? joinLabel(vpc.name, vpc.cidr) : joinLabel(vpc.id, vpc.cidr);
+      const summary = vpcSummary(place, vpc);
+      const settlement = {
+        id: vpc.id,
+        label,
+        caption: summary.caption,
+        status: summary.status,
+        troubles: summary.troubles,
+        closed: true,
+        empty: false,
+        x: PAD,
+        y: cursorY,
+        w: Math.min(rowLimit - PAD * 2, Math.max(textWidth(label) + 220, textWidth(summary.caption) + 96, 420)),
+        h: CLOSED_H,
+        plots: [],
+        outsiders: [],
+        fixtures: [],
+        columns: [],
+        gate: gateKind(place, vpc.id),
+        edges: [],
+      };
+      settlements.push(settlement);
+      cursorY = settlement.y + settlement.h + GAP * 2;
+      continue;
+    }
     // Empty means nothing at all: a VPC holding only a cluster control plane
     // or a balancer (a fresh EKS VPC before its nodes join) is still drawn.
     if (!vpcInstances.length && !fixtures.some((item) => item.vpcId === vpc.id)) {

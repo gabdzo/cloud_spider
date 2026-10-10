@@ -929,6 +929,8 @@ const page = `<!doctype html>
   @keyframes vault-blink { 50% { opacity: 0.25; } }
   @media (prefers-reduced-motion: reduce) { .vp-checks li.pending .dot { animation: none; } }
   #wall-grain { position: absolute; z-index: 2; min-height: 26px; padding: 0 6px; font-size: 11px; }
+  .vpc-fold { position: absolute; z-index: 2; min-height: 22px; padding: 0 6px; font-size: 11px; letter-spacing: 0.1em; }
+  .vpc-fold:focus-visible { outline: 2px solid var(--pip-hot); outline-offset: 2px; }
   #pip {
     position: absolute; top: 10px; left: 12px; z-index: 4; margin: 0;
     width: min(400px, calc(100% - 24px)); max-height: calc(100% - 20px); overflow: auto;
@@ -1262,6 +1264,7 @@ const page = `<!doctype html>
           <option value="coarse">coarse</option>
           <option value="fine">fine</option>
         </select>
+        <div id="vpc-folds"></div>
         <button id="vault-all" class="cmd" type="button" aria-pressed="false" hidden>OPEN ALL</button>
         <button id="vault-templates-btn" class="cmd" type="button" aria-expanded="false" aria-controls="vault-templates" hidden>TEMPLATES</button>
         <section id="vault-templates" aria-label="vault templates" hidden></section>

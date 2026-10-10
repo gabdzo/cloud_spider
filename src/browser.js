@@ -1,4 +1,4 @@
-import { ROW_LIMIT, accountLine, blastLine, layout, newestFail } from "./layout.js";
+import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, paint } from "./draw.js";
 import { isInstanceId } from "./ids.js";
@@ -26,7 +26,7 @@ import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
 } from "./chrome.js";
 import { FRAME_MS } from "./theme.js";
-import { createVaultState } from "./vault-state.js";
+import { createVaultState, VPC_FOLD_KEY } from "./vault-state.js";
 import { vaultAt } from "./vault-layout.js";
 import { plateText } from "./vault-schema.js";
 import { snapshot } from "./agent-text.js";
@@ -85,6 +85,8 @@ const upgradeButton = document.querySelector("#upgrade");
 const pipEl = document.querySelector("#pip");
 const vaultPanels = document.querySelector("#vault-panels");
 const vaultAll = document.querySelector("#vault-all");
+const vpcFoldsEl = document.querySelector("#vpc-folds");
+let foldsFor = null;
 const kubePanel = document.querySelector("#kube-panel");
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
@@ -135,6 +137,18 @@ let vaultsTicket = 0;
 let vaultsShown = "";
 let doorFrame = 0;
 const vaultLights = new Map();
+// Collapsed VPC camps (a member of this set is a closed VPC), kept like the
+// vault doors.
+const vpcFold = createVaultState({
+  storageKey: VPC_FOLD_KEY,
+  storage: (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })(),
+});
 const vaultState = createVaultState({
   storage: (() => {
     try {
@@ -424,8 +438,8 @@ function placedMap() {
   const rowLimit = width ? Math.min(ROW_LIMIT, width) : ROW_LIMIT;
   const vaults = vaultsData.vaults;
   const extra = {
-    key: `${vaultsShown}|${vaultState.key(vaultKeys())}`,
-    options: { vaults, isOpen: (key) => vaultState.isOpen(key) },
+    key: `${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}`,
+    options: { vaults, isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id) },
   };
   const placed = layoutCache.get(place || EMPTY_PLACE, rowLimit, extra);
   // A reload with the same vaults keeps the layout but brings new check
@@ -923,6 +937,7 @@ function draw() {
   if (mode === "path" || mode === "cluster") {
     wallGrain.hidden = true;
     tallyEl.hidden = true;
+    placeFolds(null);
     placeVaultChrome(null);
     if (mode === "path") drawPath();
     else drawCluster();
@@ -953,6 +968,39 @@ function draw() {
   });
   placeGrain(placed);
   placeVaultChrome(placed);
+  placeFolds(placed);
+}
+
+// One real button per VPC camp (top-right of its wall), so Tab and
+// Enter/Space fold it too. Rebuilt only when the layout changes.
+function placeFolds(placed) {
+  const camps = mode === "map" ? (placed?.settlements || []).filter((item) => !item.empty) : [];
+  if (foldsFor === placed && vpcFoldsEl.childElementCount === camps.length) return;
+  foldsFor = placed;
+  const focused = document.activeElement?.dataset?.vpc || "";
+  vpcFoldsEl.replaceChildren(
+    ...camps.map((camp) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "cmd vpc-fold";
+      button.dataset.vpc = camp.id;
+      button.textContent = camp.closed ? "OPEN" : "FOLD";
+      button.setAttribute("aria-expanded", String(!camp.closed));
+      button.setAttribute("aria-label", `${camp.closed ? "Expand" : "Collapse"} VPC ${camp.label}`);
+      button.style.left = `${camp.x + camp.w - (camp.closed ? 124 : 84)}px`;
+      button.style.top = `${camp.y + 4}px`;
+      button.addEventListener("click", () => toggleVpc(camp.id));
+      return button;
+    }),
+  );
+  if (focused) vpcFoldsEl.querySelector(`[data-vpc="${CSS.escape(focused)}"]`)?.focus();
+}
+
+function toggleVpc(id) {
+  vpcFold.toggle(id);
+  clickGround(ui);
+  renderChrome();
+  draw();
 }
 
 function syncSelection() {
@@ -1469,7 +1517,14 @@ canvas.addEventListener("click", async (event) => {
     if (fixture) {
       clickFixture(ui, fixture, fixtureNote(fixture));
       setFacts(ui, plateFacts(fixture.id));
-    } else clickGround(ui);
+    } else {
+      const camp = foldAt(placed, event.offsetX, event.offsetY);
+      if (camp) {
+        toggleVpc(camp.id);
+        return;
+      }
+      clickGround(ui);
+    }
     renderChrome();
     draw();
     return;
