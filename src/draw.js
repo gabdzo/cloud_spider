@@ -19,6 +19,9 @@ const COLORS = {
   10: "#a9cf86",
   11: "#4a7a9a",
   12: "#ffcc33",
+  13: "#b0381f",
+  14: "#2e4f68",
+  15: "#ff9a3c",
 };
 const PIXEL = 4;
 const WANDERER_SCALE = 2;
@@ -28,7 +31,14 @@ const TEXT = "#f2e3b8";
 const MUTED = "#c2a978";
 
 // Campfire scene always visible in bottom-right
-const CAMPFIRE_AREA = { x: null, y: null, w: 200, h: 160, margin: 24 };
+const CAMPFIRE_AREA = { x: null, y: null, w: 232, h: 150, margin: 24 };
+// Everything in the corner shares one pixel size so it reads as one scene.
+const CAMP_SCALE = 3;
+// Positions inside the corner, in CSS px from its top-left. The ground line
+// is where boots, logs and the dog's paws rest.
+const CAMP = { ground: 136, dwellerX: 0, fireX: 80, dogX: 146 };
+// Flicker order: four frames, not played in a plain loop.
+const FLICKER = [0, 1, 2, 1, 3, 0, 2, 3];
 
 // Cache for debris to avoid recomputing every frame
 let debrisCache = { key: null, debris: [] };
@@ -277,50 +287,52 @@ function campfireOrigin(width, height) {
   };
 }
 
+function campSprite(sprite, left, ground) {
+  return { sprite, x: left, y: ground - sprite.length * CAMP_SCALE };
+}
+
 function drawCampfireStill(ctx, width, height) {
   const { x, y } = campfireOrigin(width, height);
-  
-  // Draw subtle glow on ground
-  const glowRadius = 70;
-  const gradient = ctx.createRadialGradient(x + 70, y + 110, 0, x + 70, y + 110, glowRadius);
-  gradient.addColorStop(0, "rgba(255, 204, 51, 0.2)");
-  gradient.addColorStop(0.5, "rgba(255, 204, 51, 0.08)");
-  gradient.addColorStop(1, "rgba(255, 204, 51, 0)");
+  const ground = y + CAMP.ground;
+  const fire = campfireFrame(0);
+  const fireCx = x + CAMP.fireX + (fire[0].length * CAMP_SCALE) / 2;
+
+  // Warm light on the ground around the fire.
+  const glowRadius = 110;
+  const gradient = ctx.createRadialGradient(fireCx, ground - 16, 0, fireCx, ground - 16, glowRadius);
+  gradient.addColorStop(0, "rgba(255, 154, 60, 0.22)");
+  gradient.addColorStop(0.5, "rgba(255, 154, 60, 0.08)");
+  gradient.addColorStop(1, "rgba(255, 154, 60, 0)");
   ctx.fillStyle = gradient;
-  ctx.fillRect(x - glowRadius, y + 110 - glowRadius, glowRadius * 2, glowRadius * 2);
-  
-  // Draw vault dweller sitting (scaled 3x for ~72px tall)
-  const dweller = vaultDwellerSitting();
-  drawSprite(ctx, dweller, x + 10, y + 40, 3);
-  
-  // Draw dog lying down to the RIGHT of the fire (after fire ends at x+156)
-  const dog = dogLying();
-  drawSprite(ctx, dog, x + 160, y + 90, 3);
-  
+  ctx.fillRect(fireCx - glowRadius, ground - 16 - glowRadius, glowRadius * 2, glowRadius * 2);
+
+  for (const item of [
+    campSprite(vaultDwellerSitting(), x + CAMP.dwellerX, ground),
+    campSprite(dogLying(), x + CAMP.dogX, ground),
+  ]) {
+    drawSprite(ctx, item.sprite, item.x, item.y, CAMP_SCALE);
+  }
 }
 
 function drawCampfireFlames(ctx, width, height, animTime, reducedMotion) {
   const { x, y } = campfireOrigin(width, height);
-  // Draw animated campfire (24x28 at 4x = 96x112px)
-  const firePhase = reducedMotion ? 0 : Math.floor(animTime / 150) % 4;
-  const fire = campfireFrame(firePhase);
-  drawSprite(ctx, fire, x + 60, y + 75, 4);
-  
-  // Draw rising embers from fire
-  if (!reducedMotion) {
-    for (let i = 0; i < 10; i++) {
-      const offsetTime = animTime + i * 500;
-      const lifeTime = offsetTime % 3000;
-      const intensity = 1 - (lifeTime / 3000);
-      if (intensity > 0) {
-        const emberX = x + 70 + (i % 3) * 10 + Math.sin(offsetTime / 300) * 12;
-        const emberY = y + 85 - (lifeTime / 10);
-        if (emberY > y + 10) {
-          const ember = emberParticle(intensity);
-          drawSprite(ctx, ember, emberX, emberY, 2);
-        }
-      }
-    }
+  const ground = y + CAMP.ground;
+  const phase = reducedMotion ? 0 : FLICKER[Math.floor(animTime / 130) % FLICKER.length];
+  const fire = campSprite(campfireFrame(phase), x + CAMP.fireX, ground);
+  drawSprite(ctx, fire.sprite, fire.x, fire.y, CAMP_SCALE);
+  if (reducedMotion) return;
+
+  // Embers leave the flame tips, rise ~90px while drifting, and fade.
+  const fireW = fire.sprite[0].length * CAMP_SCALE;
+  const tipY = fire.y + 6;
+  for (let i = 0; i < 7; i++) {
+    const life = 2400 + (i % 3) * 400;
+    const t = (animTime + i * 347) % life;
+    const k = t / life;
+    const lane = fire.x + fireW * (0.3 + ((i * 37) % 40) / 100);
+    const ex = lane + Math.sin((animTime + i * 900) / 420) * 6 * k + (i % 2 ? 1 : -1) * 10 * k;
+    const ey = tipY - k * 90;
+    drawSprite(ctx, emberParticle(1 - k), ex, ey, 2);
   }
 }
 
