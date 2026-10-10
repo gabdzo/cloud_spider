@@ -3,9 +3,13 @@
 export const STORAGE_KEY = "cloudspider.vaults.open";
 export const DOOR_MS = 650;
 
-export function readOpen(storage) {
+// The same open/closed set backs the VPC camps on the map (a different key):
+// there a member of the set is a COLLAPSED VPC.
+export const VPC_FOLD_KEY = "cloudspider.vpcs.closed";
+
+export function readOpen(storage, storageKey = STORAGE_KEY) {
   try {
-    const raw = storage?.getItem?.(STORAGE_KEY);
+    const raw = storage?.getItem?.(storageKey);
     if (!raw) return new Set();
     const list = JSON.parse(raw);
     return new Set(Array.isArray(list) ? list.filter((item) => typeof item === "string") : []);
@@ -14,16 +18,16 @@ export function readOpen(storage) {
   }
 }
 
-export function writeOpen(storage, open) {
+export function writeOpen(storage, open, storageKey = STORAGE_KEY) {
   try {
-    storage?.setItem?.(STORAGE_KEY, JSON.stringify([...open].sort()));
+    storage?.setItem?.(storageKey, JSON.stringify([...open].sort()));
   } catch {
     // private mode or full: the doors still work for this visit
   }
 }
 
-export function createVaultState({ storage, clock = () => Date.now() } = {}) {
-  const open = readOpen(storage);
+export function createVaultState({ storage, clock = () => Date.now(), storageKey = STORAGE_KEY } = {}) {
+  const open = readOpen(storage, storageKey);
   // key -> { open, at }: when the door last started moving.
   const moves = new Map();
 
@@ -40,7 +44,7 @@ export function createVaultState({ storage, clock = () => Date.now() } = {}) {
       if (next) open.add(key);
       else open.delete(key);
       move(key, next);
-      writeOpen(storage, open);
+      writeOpen(storage, open, storageKey);
       return next;
     },
     // Open or close every vault in keys. Returns how many doors moved.
@@ -53,7 +57,7 @@ export function createVaultState({ storage, clock = () => Date.now() } = {}) {
         move(key, isOpen);
         moved++;
       }
-      writeOpen(storage, open);
+      writeOpen(storage, open, storageKey);
       return moved;
     },
     allOpen(keys) {

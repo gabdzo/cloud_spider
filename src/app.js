@@ -21,6 +21,9 @@ const CALL = { stop: "StopInstances", start: "StartInstances" };
 const ACCOUNT_HINT = "Set AWS_PROFILE=default and AWS_REGION=eu-north-1.";
 const COST_TTL = 6 * 60 * 60 * 1000;
 const WATCH_MS = 15_000;
+// The map is re-read in the background once it is this old, so a VPC, a
+// cluster or a node made after the page opened shows up without a restart.
+export const PLACE_TTL = 60_000;
 
 function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
@@ -37,6 +40,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   let region = "";
   let regions = [];
   let place = null;
+  let placeAt = 0;
+  let placeFlight = null;
   let error = "";
   let status = "";
   let loading = true;
@@ -96,6 +101,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
 
   async function loadPlace(next) {
     const mine = ++generation;
+    placeAt = now();
     const result = await readPlace(ec2, next);
     if (mine !== generation || next !== region) return;
     if (result.error) {
@@ -105,6 +111,12 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       return;
     }
     error = "";
+    // A re-read keeps the camp shelf (merged per view from Pulumi state)
+    // so the camp does not blink out between the read and the next merge.
+    const camp = place && place.region === result.place.region ? (place.fixtures || []).filter((item) => item.camp) : [];
+    const own = new Set(result.place.fixtures.map((item) => item.id));
+    result.place.fixtures = [...result.place.fixtures, ...camp.filter((item) => !own.has(item.id))];
+    if (place?.shelfNote) result.place.shelfNote = place.shelfNote;
     place = result.place;
   }
 
@@ -139,6 +151,18 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       report(sink, { call, sentence: error?.message || "the read failed" });
     },
     view,
+    // Re-read the map when it is older than PLACE_TTL. One read at a time;
+    // the caller does not have to wait (the next two-second pull sees it).
+    freshen() {
+      if (!region || !place || placeFlight) return placeFlight;
+      if (now() - placeAt < PLACE_TTL) return null;
+      placeFlight = loadPlace(region)
+        .catch((failure) => report(sink, { call: "DescribeVpcs", sentence: failure?.message || "the re-read failed" }))
+        .finally(() => {
+          placeFlight = null;
+        });
+      return placeFlight;
+    },
     kickLinks() {
       if (!place || typeof path?.targetLines !== "function") return;
       const balancers = (place.fixtures || []).filter((item) => item.kind === "alb");

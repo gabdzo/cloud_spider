@@ -40,7 +40,7 @@ const FLICKER = [0, 1, 2, 1, 3, 0, 2, 3];
 let debrisCache = { key: null, debris: [] };
 
 function getCacheKey(width, height, placed) {
-  const settlementKey = placed.settlements.map(s => `${s.x},${s.y},${s.w},${s.h},${s.gate || ""},${s.empty ? 1 : 0}`).join(';');
+  const settlementKey = placed.settlements.map(s => `${s.x},${s.y},${s.w},${s.h},${s.gate || ""},${s.empty ? 1 : 0},${s.closed ? s.status : ""}`).join(';');
   const camp = placed.camp;
   const campKey = camp ? `${camp.x},${camp.y},${camp.w},${camp.h}` : "";
   const vaultKey = (placed.vaults?.cells || [])
@@ -192,6 +192,7 @@ function staticLayer(ctx, width, height, placed, settled) {
       continue;
     }
     drawSettlement(layer, settlement);
+    if (settlement.closed) drawClosedYard(layer, settlement);
     for (const plot of settlement.plots) drawPlot(layer, plot);
     drawBanner(layer, settlement);
   }
@@ -230,6 +231,7 @@ export function paint(ctx, scene) {
   if (placed.vaults) drawLinks(ctx, placed.vaults.edges, animTime, reducedMotion);
   drawVaultsLive(ctx, placed.vaults, { door, animTime, reducedMotion, settled });
   for (const settlement of placed.settlements) drawLinks(ctx, settlement.edges, animTime, reducedMotion);
+  for (const settlement of placed.settlements) if (settlement.closed) drawFoldLamp(ctx, settlement, animTime, reducedMotion);
   if (placed.camp) drawLinks(ctx, placed.camp.edges, animTime, reducedMotion);
   for (const fixture of allFixtures(placed)) drawFixture(ctx, fixture, ui, phase, reducedMotion);
 
@@ -252,6 +254,7 @@ export function paint(ctx, scene) {
       ctx.fillText(column.label.toUpperCase(), column.x + 4, column.y + 14);
     }
     if (settlement.gate) drawGateLabel(ctx, settlement);
+    if (settlement.closed) drawClosedLabel(ctx, settlement);
     for (const plot of settlement.plots) {
       ctx.font = FONT;
       plaque(ctx, plot.label, plot.x + 12, plot.y + 24, FONT_PX, TEXT);
@@ -652,6 +655,57 @@ function drawPlot(ctx, plot) {
     ctx.fillRect(x - 1, py, 3, 5);
     ctx.fillRect(x + w - 2, py, 3, 5);
   }
+}
+
+// ---- a collapsed VPC ----
+// The yard is boarded over: planks across, a chained bar on the gate side,
+// and a status lamp on the right wall.
+function drawClosedYard(ctx, camp) {
+  const { x, y, w, h } = camp;
+  const top = y + 20;
+  const bottom = y + h - 12;
+  for (let py = top; py < bottom; py += 7) {
+    ctx.fillStyle = (py / 7) % 2 ? WORLD.rustShade : WORLD.wall;
+    ctx.fillRect(x + 16, py, w - 32, 5);
+    ctx.fillStyle = rgba(WORLD.dark, 0.6);
+    ctx.fillRect(x + 16, py + 5, w - 32, 1);
+    // nail heads
+    ctx.fillStyle = WORLD.metalLight;
+    for (let nx = x + 24; nx < x + w - 24; nx += 48) ctx.fillRect(nx, py + 2, 2, 2);
+  }
+  // A chain across the boards.
+  ctx.fillStyle = WORLD.metalLight;
+  for (let cx = x + 18; cx < x + w - 18; cx += 6) ctx.fillRect(cx, Math.floor((top + bottom) / 2) + ((cx / 6) % 2 ? 0 : 1), 4, 2);
+  // Lamp housing on the right wall.
+  ctx.fillStyle = WORLD.wall;
+  ctx.fillRect(x + w - 40, y + Math.floor(h / 2) - 9, 20, 18);
+  ctx.fillStyle = WORLD.metalLight;
+  ctx.fillRect(x + w - 40, y + Math.floor(h / 2) - 9, 20, 2);
+}
+
+const LAMP = { ok: STATUS.ok, broken: STATUS.broken, hang: STATUS.hang };
+
+function drawFoldLamp(ctx, camp, animTime, reducedMotion) {
+  const colour = LAMP[camp.status] || STATUS.unknown;
+  const cx = camp.x + camp.w - 30;
+  const cy = camp.y + Math.floor(camp.h / 2);
+  // Trouble blinks; a calm camp glows steady.
+  const lit = camp.status === "broken" && !reducedMotion ? Math.floor((animTime || 0) / 400) % 2 === 0 : true;
+  if (lit) glow(ctx, cx, cy, 18, colour, camp.status === "ok" ? 0.35 : 0.6);
+  ctx.fillStyle = lit ? colour : rgba(colour, 0.35);
+  ctx.fillRect(cx - 5, cy - 5, 10, 10);
+  ctx.fillStyle = rgba(PIP.hot, lit ? 0.8 : 0.2);
+  ctx.fillRect(cx - 3, cy - 3, 3, 3);
+}
+
+function drawClosedLabel(ctx, camp) {
+  ctx.font = SMALL;
+  const text = `${camp.caption}  ·  closed`;
+  const tx = camp.x + 24;
+  const ty = camp.y + camp.h - 18;
+  labelBacking(ctx, text, tx, ty, FONT_PX - 2);
+  ctx.fillStyle = camp.status === "broken" ? STATUS.broken : PIP.mid;
+  ctx.fillText(text, tx, ty);
 }
 
 // Cloth banner hung from the wall, carrying the VPC name.

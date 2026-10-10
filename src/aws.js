@@ -9,7 +9,7 @@ import {
   StopInstancesCommand,
   StartInstancesCommand,
 } from "@aws-sdk/client-ec2";
-import { EKSClient, ListClustersCommand, DescribeClusterCommand } from "@aws-sdk/client-eks";
+import { EKSClient, ListClustersCommand, DescribeClusterCommand, ListNodegroupsCommand, DescribeNodegroupCommand } from "@aws-sdk/client-eks";
 import { RDSClient, DescribeDBInstancesCommand } from "@aws-sdk/client-rds";
 import {
   ElasticLoadBalancingV2Client,
@@ -316,30 +316,39 @@ export async function describeDiagram(region, clientFactory = diagramClients) {
   } catch (error) {
     errors.push(`DescribeLoadBalancers: ${publicError(error).error}`);
   }
+  // EKS: every cluster in the region becomes a control-plane fixture inside
+  // its own VPC, with its node groups (scaling, subnets) so the map can
+  // draw the group even before a node is up. One refused cluster no longer
+  // hides the rest.
+  const eks = clients.eks;
+  let names = [];
   try {
-    const eks = clients.eks;
     let nextToken;
-    const names = [];
     do {
       const out = await eks.send(new ListClustersCommand({ nextToken }));
       names.push(...(out.clusters || []));
       nextToken = out.nextToken;
     } while (nextToken);
-    for (const name of names) {
-      const described = await eks.send(new DescribeClusterCommand({ name }));
-      const cluster = described.cluster;
-      const status = cluster?.status === "ACTIVE" ? "ok" : cluster?.status === "FAILED" ? "broken" : "unknown";
-      fixtures.push({
-        id: cluster?.arn || name,
-        vpcId: cluster?.resourcesVpcConfig?.vpcId || "",
-        kind: "eks",
-        name,
-        status,
-        tags: cluster?.tags || {},
-      });
-    }
   } catch (error) {
+    names = [];
     errors.push(`ListClusters: ${publicError(error).error}`);
+  }
+  for (const name of names) {
+    let cluster;
+    try {
+      cluster = (await eks.send(new DescribeClusterCommand({ name }))).cluster;
+    } catch (error) {
+      errors.push(`DescribeCluster ${name}: ${publicError(error).error}`);
+      continue;
+    }
+    const fixture = clusterFixture(name, cluster);
+    try {
+      fixture.nodegroups = await readNodegroups(eks, name);
+    } catch (error) {
+      fixture.nodegroupNote = publicError(error).error;
+      errors.push(`ListNodegroups ${name}: ${fixture.nodegroupNote}`);
+    }
+    fixtures.push(fixture);
   }
   if (clients.rds) {
     try {
@@ -356,6 +365,51 @@ export async function describeDiagram(region, clientFactory = diagramClients) {
   const value = errors.length ? { gateways, fixtures, error: errors.join("  ") } : { gateways, fixtures };
   diagramCache = { at: now, region, value };
   return value;
+}
+
+export function clusterFixture(name, cluster) {
+  const status = cluster?.status === "ACTIVE" ? "ok" : cluster?.status === "FAILED" ? "broken" : "unknown";
+  const vpc = cluster?.resourcesVpcConfig || {};
+  return {
+    id: cluster?.arn || name,
+    vpcId: vpc.vpcId || "",
+    subnetIds: vpc.subnetIds || [],
+    kind: "eks",
+    name,
+    status,
+    phase: cluster?.status || "",
+    version: cluster?.version || "",
+    tags: cluster?.tags || {},
+    nodegroups: [],
+  };
+}
+
+async function readNodegroups(eks, clusterName) {
+  const names = [];
+  let nextToken;
+  do {
+    const out = await eks.send(new ListNodegroupsCommand({ clusterName, nextToken }));
+    names.push(...(out.nodegroups || []));
+    nextToken = out.nextToken;
+  } while (nextToken);
+  const groups = [];
+  for (const nodegroupName of names) {
+    try {
+      const group = (await eks.send(new DescribeNodegroupCommand({ clusterName, nodegroupName }))).nodegroup || {};
+      groups.push({
+        name: nodegroupName,
+        status: group.status || "",
+        desired: group.scalingConfig?.desiredSize ?? null,
+        min: group.scalingConfig?.minSize ?? null,
+        max: group.scalingConfig?.maxSize ?? null,
+        types: group.instanceTypes || [],
+        subnetIds: group.subnets || [],
+      });
+    } catch (error) {
+      groups.push({ name: nodegroupName, status: "", note: publicError(error).error, subnetIds: [] });
+    }
+  }
+  return groups;
 }
 
 // Vaults can claim load balancers by tag. Tags are a second call, 20 ARNs at
