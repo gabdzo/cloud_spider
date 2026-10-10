@@ -26,6 +26,8 @@ import { FRAME_MS } from "./theme.js";
 import { createVaultState } from "./vault-state.js";
 import { vaultAt } from "./vault-layout.js";
 import { plateText } from "./vault-schema.js";
+import { snapshot } from "./agent-text.js";
+import { createTerminal } from "./terminal.js";
 
 const ui = createUi();
 const canvas = document.querySelector("#place");
@@ -65,6 +67,10 @@ const upgradeButton = document.querySelector("#upgrade");
 const pipEl = document.querySelector("#pip");
 const vaultPanels = document.querySelector("#vault-panels");
 const vaultAll = document.querySelector("#vault-all");
+const askTab = document.querySelector("#ask");
+const askThis = document.querySelector("#ask-this");
+const termEl = document.querySelector("#term");
+let termReady = false;
 
 let place = null;
 let region = "";
@@ -139,6 +145,8 @@ function renderChrome() {
   acct.textContent = sample ? "SAMPLE" : "LIVE";
   const stats = mode === "path" ? pathStats(pathData?.diagram) : mode === "cluster" ? pathStats(clusterData?.diagram) : mapStats(place);
   renderStats(statsEl, stats);
+  renderAskThis();
+  if (termReady) terminal.refresh();
   if (mode === "path" || mode === "cluster") {
     const notes = mode === "path" ? pathData?.notes || [] : [];
     const clusterNote = mode === "cluster" ? clusterData?.note || "" : "";
@@ -465,6 +473,11 @@ function vaultPanel(cell) {
     a.rel = "noopener noreferrer";
     nav.append(a);
   }
+  const ask = vel("button", "cmd vp-ask", "ASK");
+  ask.type = "button";
+  ask.title = "ask the terminal about this vault (fills the prompt, does not send)";
+  ask.addEventListener("click", () => terminal.prefill(vaultQuestion(vault)));
+  nav.append(ask);
   if (!vault.damaged && vault.checks?.length) {
     const test = vel("button", "cmd vp-test", "TEST");
     test.type = "button";
@@ -1114,6 +1127,91 @@ regionSelect.addEventListener("change", async () => {
 
 pathButton.addEventListener("click", () => {
   if (mode !== "path") enterPath();
+});
+
+// ---- TERMINAL: ask the local agent. Only a button press asks. ----
+
+function agentContext() {
+  return snapshot({
+    place,
+    vaults: vaultsData.vaults,
+    radio: [...spider, ...(ui.trail || [])].slice(0, 15),
+    region: sample ? "sample" : region,
+    sample,
+    view: mode,
+    selection: mode === "map" ? ui.selection : null,
+    path: mode === "path" && pathData ? { headline: pathData.headline, host: hostInput.value.trim(), findings: pathData.findings } : null,
+  });
+}
+
+function vaultQuestion(vault) {
+  const name = `${plateText(vault.number)} ${vault.title || vault.name}`;
+  if (vault.damaged) return `Vault file ${vault.file} is damaged. What is wrong with it and how do I fix it?`;
+  const light = vault.status === "fail" ? "red" : vault.status === "slow" ? "amber" : vault.status === "ok" ? "green" : vault.status || "unknown";
+  return `Why is vault ${name} ${light}? Walk through its checks and what it owns.`;
+}
+
+function askThisQuestion() {
+  if (mode === "map" && ui.selection) {
+    const item = ui.selection;
+    return `Tell me about ${item.type || "this"} ${item.name || item.id} (${item.id}): what is it, what state is it in, and is anything wrong with it?`;
+  }
+  if (mode === "path" && pathData?.headline) return `Explain this path: "${pathData.headline}". Which edge is broken and what would fix it?`;
+  return "";
+}
+
+function renderAskThis() {
+  const question = askThisQuestion();
+  askThis.hidden = !question;
+  if (question) askThis.title = question;
+  askThis.lastChild.textContent = mode === "path" ? "ASK ABOUT THIS PATH" : "ASK ABOUT THIS";
+}
+
+// A proposed action goes through the page's own flow: stop/start becomes the
+// usual Y/N line, up opens the Stacks card. Nothing runs from here.
+async function agentAction(action) {
+  if (action.verb === "up") {
+    if (!pipOpen) await toggleUpgrade();
+    if (pipModules.some((item) => item.id === action.module)) {
+      openCard = action.module;
+      drawPipForm();
+      refreshUpgrade(true);
+      setStatus(ui, `Stacks: check the ${action.module} card, then press run`);
+    } else setStatus(ui, `there is no ${action.module} stack`);
+    renderChrome();
+    return;
+  }
+  if (mode !== "map") goOverview();
+  const raw = place?.instances.find((item) => item.id === action.id);
+  if (!raw) {
+    setStatus(ui, `${action.id} is not on the map`);
+    renderChrome();
+    return;
+  }
+  clickBuilding(ui, raw, region);
+  if (ui.confirmation && ui.confirmation.verb !== action.verb) {
+    ui.confirmation = null;
+    setStatus(ui, `${action.id} is ${raw.state}; there is nothing to ${action.verb}`);
+  }
+  renderChrome();
+  draw();
+}
+
+const terminal = createTerminal({
+  root: termEl,
+  toggleButton: askTab,
+  iconURL,
+  getContext: agentContext,
+  isSample: () => sample,
+  onAction: agentAction,
+  reducedMotion: () => reducedMotion,
+});
+
+termReady = true;
+askTab.addEventListener("click", () => terminal.toggle());
+askThis.addEventListener("click", () => {
+  const question = askThisQuestion();
+  if (question) terminal.prefill(question);
 });
 
 // ---- Stacks: Pulumi upgrade cards in a Pip-Boy panel over the map ----

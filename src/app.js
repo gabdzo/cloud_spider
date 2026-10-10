@@ -22,7 +22,7 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
-export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, agent, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -223,6 +223,16 @@ export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, 
         : watchLine({ cluster, history });
       watchCache = { module: watchKey, at, line };
       return { ...job, watch: line };
+    },
+    // The TERMINAL: only an explicit same-origin POST starts the agent.
+    agentAsk(requestOrigin, body = {}, send = () => {}) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { status: 403, error: "the agent did not run" };
+      if (!agent) return { status: 503, error: "the agent is not set up" };
+      return agent.ask({ question: body.question, context: body.context, sample: body.sample === true, send });
+    },
+    agentCancel(requestOrigin) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { status: 403, error: "nothing was cancelled" };
+      return agent ? agent.cancel() : { cancelled: false };
     },
     async upgradeRun(requestOrigin, body = {}) {
       if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the upgrade did not happen" };

@@ -117,3 +117,27 @@ If an earlier try at a second cluster changed upgrades/eks/Pulumi.upgrade.yaml, 
     cd upgrades/eks && pulumi config set --stack upgrade cloudspider-upgrade:clusterName cloudspider-up
 
 Running git checkout upgrades/eks/Pulumi.upgrade.yaml does the same. Then run pulumi preview --stack upgrade --diff. It should show nothing to replace.
+
+TERMINAL (ASK): your local Cursor agent:
+
+The ASK tab opens a RobCo-style terminal that sends one question about what is on screen to the Cursor CLI on your own machine. It runs only when you press ASK, press Enter in its prompt, or click a quick-question chip. Nothing asks on page load, on refresh or on a timer. The ASK buttons on a vault panel, and ASK ABOUT THIS for a selected building or a path, only fill the prompt.
+
+Setup, once:
+
+    curl https://cursor.com/install -fsS | bash
+    agent login
+
+Cloud Spider runs `agent` from PATH (it also looks in ~/.local/bin). To use another command, start it with CLOUDSPIDER_AGENT_CMD, for example CLOUDSPIDER_AGENT_CMD=cursor-agent npm start. Extra words after the command are passed first. CLOUDSPIDER_AGENT_MODEL=<model> adds --model. If the CLI is missing or not logged in, the terminal says so and shows the fix.
+
+Each question runs:
+
+    agent --print --output-format stream-json --stream-partial-output --mode ask --trust --workspace <repo> "<instructions + snapshot + question>"
+
+with the repo as its working directory (flags from cursor.com/docs/cli/reference/parameters and .../output-format). The snapshot is a compact JSON of the map: VPCs, instances, fixtures, the camp, vault lights and checks, the last 15 radio rows, the region, the mode, the selection and the path diagnosis. It is capped at 16,000 characters.
+
+Safety:
+- --mode ask is the CLI's read-only Q&A mode. Cloud Spider never passes --force or --yolo, and the instructions tell the agent not to edit files, run commands or call AWS.
+- The agent never acts. It can propose actions in a fenced cloudspider block (stop <id>, start <id>, up <stack>). Each one becomes a button that leads into Cloud Spider's usual flow: the Y/N line for an expendable instance, or the Stacks card where you press run. Any other command shows in a block with COPY, for you to run yourself.
+- One question at a time. CANCEL, a closed tab or a 3-minute timeout kills the CLI's process group.
+- POST /api/agent and /api/agent/cancel refuse other origins, like the stop/start and Stacks endpoints.
+- In SAMPLE mode the answer is canned and no CLI runs.

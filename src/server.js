@@ -39,6 +39,8 @@ export const FILES = new Set([
   "vault-schema.js",
   "vault-layout.js",
   "vault-draw.js",
+  "agent-text.js",
+  "terminal.js",
 ]);
 
 const page = `<!doctype html>
@@ -504,6 +506,64 @@ const page = `<!doctype html>
   #pip-watch.fail { color: var(--status-broken); }
   #pip pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pip-mid); font: inherit; font-size: 12px; }
   #pip pre:empty { display: none; }
+  /* ---- TERMINAL: a RobCo CRT over the right side of the map ---- */
+  #term {
+    position: absolute; top: 10px; right: 12px; bottom: 10px; z-index: 5;
+    width: min(560px, calc(100% - 24px)); display: flex; flex-direction: column; min-height: 0;
+    color: var(--pip-bright); font-size: 13px; text-shadow: 0 0 5px var(--glow-soft);
+    background: radial-gradient(ellipse at 50% 40%, var(--pip-glass), var(--pip-ink) 85%);
+    border: 3px solid var(--pip-mid); box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.85), 0 0 18px var(--glow-soft);
+  }
+  #term[hidden] { display: none; }
+  #term::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0 1px, transparent 1px 3px);
+  }
+  .term-head {
+    display: flex; align-items: center; gap: 8px; padding: 4px 8px; flex: none;
+    color: var(--pip-ink); font-weight: bold; letter-spacing: 0.1em; text-shadow: none;
+    background: linear-gradient(180deg, var(--pip-hot), var(--pip-bright) 20%, var(--pip-mid));
+  }
+  .term-head img { filter: brightness(0); }
+  .term-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .term-light { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--pip-dark); box-shadow: inset 0 0 0 1px var(--pip-ink); }
+  .term-light[data-state="running"] { background: var(--status-hang); box-shadow: 0 0 8px var(--status-hang); animation: vault-blink 0.8s steps(2) infinite; }
+  .term-light[data-state="error"] { background: var(--status-broken); box-shadow: 0 0 8px var(--status-broken); }
+  .term-state { flex: none; font-size: 11px; }
+  .term-close { flex: none; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-ink); font: inherit; font-size: 11px; padding: 1px 6px; cursor: pointer; }
+  .term-close:hover, .term-close:focus-visible { outline: none; color: var(--pip-hot); box-shadow: 0 0 0 1px var(--pip-hot); }
+  .term-note { margin: 0; padding: 4px 10px; flex: none; color: var(--pip-dim); font-size: 11px; letter-spacing: 0.08em; border-bottom: 1px dashed var(--pip-dark); }
+  .term-log { flex: 1; min-height: 0; overflow: auto; padding: 8px 10px; scrollbar-width: thin; scrollbar-color: var(--pip-dim) var(--pip-ink); }
+  .term-log p { margin: 0 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .term-hello p { color: var(--pip-mid); }
+  .term-entry { margin-bottom: 12px; }
+  .term-q { color: var(--pip-hot); }
+  .term-text { color: var(--pip-bright); }
+  .term-tool { color: var(--pip-dim); font-size: 11px; }
+  .term-cursor { display: inline-block; width: 0.6em; height: 1.05em; vertical-align: text-bottom; background: var(--pip-bright); box-shadow: 0 0 6px var(--glow-bright); animation: vault-blink 1s steps(2) infinite; }
+  .term-block { margin: 4px 0 8px; border: 1px solid var(--pip-dim); background: rgba(0, 0, 0, 0.35); }
+  .term-block.actions { border-color: var(--pip-mid); }
+  .term-block-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 2px 2px 8px; color: var(--pip-dim); font-size: 11px; letter-spacing: 0.1em; border-bottom: 1px dashed var(--pip-dark); }
+  .term-block pre { margin: 0; padding: 6px 8px; overflow-x: auto; white-space: pre; color: var(--pip-hot); font: inherit; font-size: 12px; }
+  .term-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 8px; border-top: 1px dashed var(--pip-dark); }
+  #term .cmd { min-height: 26px; padding: 0 8px; font-size: 11px; letter-spacing: 0.1em; }
+  .term-act { border-color: var(--status-hang); color: var(--status-hang); }
+  .term-act:hover { background: var(--status-hang); color: var(--pip-ink); }
+  .term-error { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; padding: 6px 8px; border: 1px solid var(--status-broken); color: var(--status-broken); }
+  .term-error.cancelled { border-color: var(--pip-dim); color: var(--pip-dim); }
+  .term-error-text::before { content: "! "; font-weight: bold; }
+  .term-fix { color: var(--pip-bright); overflow-wrap: anywhere; }
+  .term-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 10px; flex: none; border-top: 1px dashed var(--pip-dark); }
+  .chip { min-height: 24px; padding: 0 8px; font: inherit; font-size: 11px; color: var(--pip-mid); background: transparent; border: 1px solid var(--pip-dark); border-radius: 12px; cursor: pointer; }
+  .chip:hover:not(:disabled), .chip:focus-visible { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); outline: none; }
+  .chip:disabled, #term .cmd:disabled { opacity: 0.4; cursor: default; }
+  .term-form { display: flex; align-items: center; gap: 6px; padding: 6px 10px 8px; flex: none; }
+  .term-prompt { color: var(--pip-hot); font-weight: bold; }
+  .term-input { flex: 1; min-width: 0; min-height: 30px; caret-color: var(--pip-hot); }
+  #ask-this { flex: none; min-height: 26px; padding: 0 8px; font-size: 11px; letter-spacing: 0.08em; display: inline-flex; align-items: center; gap: 6px; }
+  #ask-this[hidden] { display: none; }
+  @media (prefers-reduced-motion: reduce) { .term-cursor, .term-light[data-state="running"] { animation: none; } }
+  @media (max-width: 900px) { #term { top: 6px; right: 6px; bottom: 6px; width: calc(100% - 12px); } }
   #status.issue { color: var(--status-broken); text-shadow: 0 0 6px rgba(255, 90, 54, 0.4); }
   /* Phosphor scrollbars: the path is wider than a narrow window, so the bar must read as part of the screen. */
   #map, #radio { scrollbar-width: thin; scrollbar-color: var(--pip-dim) var(--pip-ink); }
@@ -645,6 +705,7 @@ const page = `<!doctype html>
     <button id="cluster" class="tab" type="button" data-icon="cluster" aria-pressed="false">Cluster</button>
     <button id="tab-radio" class="tab toggle" type="button" data-icon="radio" aria-pressed="true">Radio</button>
     <button id="upgrade" class="tab toggle" type="button" data-icon="stack" aria-pressed="false">Stacks</button>
+    <button id="ask" class="tab toggle" type="button" data-icon="terminal" aria-pressed="false" title="ask your local agent (runs only when you press ASK)">Ask</button>
   </nav>
   <button id="sample" class="switch" type="button" aria-pressed="false"><span class="lever"></span>SAMPLE<span class="led"></span></button>
   <div class="gauges" aria-label="map readouts">
@@ -671,6 +732,7 @@ const page = `<!doctype html>
       <button id="yes" class="cmd" type="button" data-icon="stop" hidden>put it down</button>
       <button id="no" class="cmd" type="button" hidden>leave it</button>
     </span>
+    <button id="ask-this" class="cmd" type="button" data-icon="terminal" hidden>ASK ABOUT THIS</button>
   </div>
   <p id="error" hidden></p>
   <div class="body">
@@ -685,6 +747,7 @@ const page = `<!doctype html>
         <div id="vault-panels"></div>
       </div>
       <form id="pip" hidden></form>
+      <section id="term" hidden></section>
     </div>
     <aside id="radio-panel" aria-label="radio">
       <div class="ptitle"><img class="px" data-icon="radio" alt="">RADIO<span id="station-count"></span></div>
@@ -830,6 +893,39 @@ async function route(app, req, res) {
   if (req.method === "POST" && url.pathname === "/api/upgrade") {
     const body = await readJson(req);
     send(res, 200, await app.upgradeRun(req.headers.origin, body));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/agent") {
+    const body = await readJson(req);
+    let open = false;
+    const write = (event) => {
+      if (open && !res.writableEnded) res.write(`${JSON.stringify(event)}\n`);
+    };
+    const run = app.agentAsk(req.headers.origin, body, write);
+    if (!run || run.error) {
+      send(res, run?.status || 400, { error: run?.error || "the agent did not run" });
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": "application/x-ndjson; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+    });
+    res.flushHeaders();
+    open = true;
+    // A closed tab or a dropped fetch stops the agent too.
+    res.on("close", () => {
+      if (!res.writableEnded) app.agentCancel(req.headers.origin);
+    });
+    await run.done;
+    if (!res.writableEnded) res.end();
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/agent/cancel") {
+    const result = app.agentCancel(req.headers.origin);
+    send(res, result.status || 200, result);
     return;
   }
 
