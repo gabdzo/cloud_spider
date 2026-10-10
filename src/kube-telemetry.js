@@ -223,6 +223,10 @@ export function createTelemetry({ kube, clock = Date.now } = {}) {
 
   return {
     record,
+    // One pod's sampled hour (empty until the TELEMETRY screen has run).
+    podHistory(key) {
+      return { cpu: (series.get(`pod:${key}:cpu`) || []).map((p) => p.v), mem: (series.get(`pod:${key}:mem`) || []).map((p) => p.v), sampleMs: SAMPLE_MS };
+    },
     async get() {
       const t = clock();
       if (last && t - lastAt < SAMPLE_MS) return view(last, lastAt);

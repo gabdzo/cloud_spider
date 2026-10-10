@@ -12,6 +12,7 @@ import { costFailure } from "./cost.js";
 import { diagramFromClusters } from "./cluster.js";
 import { diagramFromKube } from "./kube-diagram.js";
 import { createTelemetry } from "./kube-telemetry.js";
+import { inspectPod } from "./kube-inspect.js";
 import { campFixtures, watchLine } from "./upgrade-rules.js";
 import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
@@ -451,9 +452,17 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       return tele.get().catch((failure) => ({ error: failure?.message || "the cluster did not answer" }));
     },
     // One pod's last log lines and events (Cluster view, on click).
-    async clusterPod({ ns, name, container } = {}) {
+    async clusterPod({ ns, name, container, previous = false, tail = 80 } = {}) {
       if (!kube) return { error: "the kube context is not set up" };
-      return kube.podDetail(String(ns || ""), String(name || ""), String(container || "")).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
+      return kube.podDetail(String(ns || ""), String(name || ""), String(container || ""), { previous: !!previous, tail: Number(tail) || 80 }).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
+    },
+    // Deep-inspect (read-only, redacted): kube-inspect.js.
+    async clusterPodInspect({ ns, name } = {}) {
+      if (!kube?.podInspect) return { error: "the kube context is not set up" };
+      const raw = await kube.podInspect(String(ns || ""), String(name || "")).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
+      if (raw.error) return { error: raw.error };
+      const history = tele?.podHistory ? tele.podHistory(`${ns}/${name}`) : null;
+      return { ...inspectPod(raw.pod, { events: raw.events, chain: raw.chain, usage: raw.usage, history, now: now() }), eventNote: raw.eventNote || "" };
     },
     async pathView(query = {}) {
       const at = region;

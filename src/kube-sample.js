@@ -55,8 +55,22 @@ export function sampleKubeSnapshot() {
   };
 }
 
-export function samplePodDetail(name) {
+export function samplePodDetail(name, { previous = false } = {}) {
   const now = Date.now();
+  if (previous && /^api/.test(name)) {
+    return {
+      lines: [
+        '{"level":"info","ts":"2026-10-10T22:58:02Z","msg":"Starting podinfo","version":"6.7.1"}',
+        '{"level":"warn","ts":"2026-10-10T23:01:40Z","msg":"cache grew to 88Mi"}',
+        "fatal error: runtime: out of memory",
+        "goroutine 1 [running]: runtime.throw({0x9a3f1c, 0x16})",
+      ],
+      logNote: "",
+      events: [],
+      eventNote: "",
+    };
+  }
+  if (previous) return { lines: [], logNote: "no previous container: it has not restarted", events: [], eventNote: "" };
   if (/^loadgen/.test(name)) {
     return {
       lines: [
@@ -114,4 +128,53 @@ export function sampleOtelMetrics(t = Date.now()) {
     ...pod("kube-system", "eks-pod-identity-agent-l1k2j", 0.001, 9),
     ...pod("kube-system", "metrics-server-7f9c6d-m3n4p", 0.005 + 0.003 * wave(280000), 26),
   ].join("\n") + "\n";
+}
+
+// One pod as GET /api/v1/namespaces/<ns>/pods/<name> returns it, dressed
+// with what the deep-inspect panel shows (IPs, QoS, probes, env, mounts).
+export function samplePodObject(name) {
+  const snap = sampleKubeSnapshot();
+  const base = snap.pods.find((p) => p.metadata.name === name) || snap.pods[1];
+  const pod = JSON.parse(JSON.stringify(base));
+  const app = pod.metadata.name.split("-")[0];
+  const podinfo = app === "web" || app === "api";
+  const created = new Date(Date.now() - 3 * 3600_000).toISOString();
+  pod.metadata = { ...pod.metadata, uid: "6f1c0b8e-sample", creationTimestamp: created, annotations: { "kubectl.kubernetes.io/last-applied-configuration": '{"spec":{"containers":[{"env":[{"name":"DB_PASSWORD","value":"hunter2"}]}]}}' }, managedFields: [{ manager: "pulumi-kubernetes" }] };
+  const c = pod.spec.containers[0];
+  pod.spec.containers[0] = {
+    ...c,
+    name: app,
+    image: podinfo ? "ghcr.io/stefanprodan/podinfo:6.7.1" : app === "loadgen" ? "busybox:1.36" : "public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0",
+    ports: podinfo ? [{ containerPort: 9898, name: "http", protocol: "TCP" }] : [],
+    resources: { requests: c.resources?.requests || {}, limits: { memory: podinfo ? "96Mi" : "32Mi" } },
+    ...(podinfo ? { readinessProbe: { httpGet: { path: "/readyz", port: 9898 }, periodSeconds: 10 }, livenessProbe: { httpGet: { path: "/healthz", port: 9898 }, initialDelaySeconds: 5, periodSeconds: 15, failureThreshold: 3 } } : {}),
+    env: [
+      { name: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value: "otel-collector:4317" },
+      { name: "POD_NAME", valueFrom: { fieldRef: { fieldPath: "metadata.name" } } },
+      { name: "DB_PASSWORD", valueFrom: { secretKeyRef: { name: "shop-db", key: "password" } } },
+    ],
+    volumeMounts: [{ name: "kube-api-access-x2l9q", mountPath: "/var/run/secrets/kubernetes.io/serviceaccount", readOnly: true }],
+  };
+  pod.spec.serviceAccountName = "default";
+  pod.spec.volumes = [{ name: "kube-api-access-x2l9q", projected: { sources: [{ serviceAccountToken: { path: "token" } }] } }];
+  pod.status = {
+    ...pod.status,
+    podIP: "10.43.1.84",
+    podIPs: [{ ip: "10.43.1.84" }],
+    hostIP: "10.43.1.27",
+    qosClass: "Burstable",
+    startTime: created,
+    conditions: [{ type: "Initialized", status: "True" }, { type: "Ready", status: pod.status.containerStatuses?.every((x) => x.ready) ? "True" : "False", reason: pod.status.containerStatuses?.every((x) => x.ready) ? "" : "ContainersNotReady" }, { type: "PodScheduled", status: "True" }],
+    containerStatuses: (pod.status.containerStatuses || []).map((x) => ({ ...x, name: app, image: pod.spec.containers[0].image, imageID: "ghcr.io/stefanprodan/podinfo@sha256:9a3f1c2e8b7d6a5f4e3d2c1b0a9f8e7d6c5b4a3f", ...(x.lastState ? { lastState: { terminated: { ...x.lastState.terminated, finishedAt: new Date(Date.now() - 41 * 60000).toISOString() } } } : {}) })),
+  };
+  return pod;
+}
+
+export function samplePodInspect(name) {
+  const pod = samplePodObject(name);
+  const detail = samplePodDetail(pod.metadata.name);
+  const owner = pod.metadata.ownerReferences?.[0];
+  const chain = owner?.kind === "ReplicaSet" ? [`Deployment/${owner.name.replace(/-[a-z0-9]{5,10}$/, "")}`, `ReplicaSet/${owner.name}`] : owner ? [`${owner.kind}/${owner.name}`] : [];
+  const m = sampleKubeSnapshot().podMetrics.find((x) => x.metadata.name === pod.metadata.name);
+  return { pod, events: detail.events, eventNote: "", chain, usage: m ? { containers: [{ name: pod.spec.containers[0].name, usage: m.containers[0].usage }] } : null };
 }
