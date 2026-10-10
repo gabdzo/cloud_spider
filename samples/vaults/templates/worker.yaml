@@ -1,0 +1,18 @@
+# Sample template: a queue worker (Lambda + SQS).
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: queue-worker
+  number: 197
+  title: Queue worker
+  description: A Lambda function that drains an SQS queue, with a dead-letter queue and a log group.
+  owner: platform-team
+  tags: [worker, lambda, sqs]
+spec:
+  type: worker
+  resources:
+    tags:
+      project: queue-worker
+  stack:
+    dir: upgrades/queue-worker
+    name: queue-worker

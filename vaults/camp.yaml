@@ -22,6 +22,9 @@ spec:
       - cloudspider-camp-table
       - cloudspider-camp-secret
       - cloudspider-camp-550536272523
+  stack:
+    dir: upgrades/camp
+    name: camp
   links:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/camp
     docs: https://github.com/gabdzo/cloud_spider#readme

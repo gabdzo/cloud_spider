@@ -15,6 +15,9 @@ spec:
   resources:
     tags:
       project: signal
+  stack:
+    dir: upgrades/signal
+    name: signal
   links:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/signal
     docs: https://github.com/gabdzo/cloud_spider#readme

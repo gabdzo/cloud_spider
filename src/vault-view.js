@@ -21,6 +21,7 @@ export function createVaultView({ store, checker }) {
       errors: entry.errors,
       warnings: entry.warnings || [],
       selector: entry.resources,
+      stack: entry.stack || null,
       owned,
       checks,
       status: entry.damaged ? "fail" : vaultStatus(checks, entry.checks.length),
@@ -35,7 +36,8 @@ export function createVaultView({ store, checker }) {
         const checks = entry.damaged ? [] : checker.peek(entry.checks);
         return shape(entry, owned.get(entry.key) || [], checks);
       });
-      return { dir: loaded.dir, note: loaded.note, vaults };
+      const templates = typeof store.templates === "function" ? await store.templates() : [];
+      return { dir: loaded.dir, note: loaded.note, vaults, templates };
     },
     // TEST: run this vault's checks now and wait for them.
     async test(key, place) {

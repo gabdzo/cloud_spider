@@ -16,20 +16,24 @@ test("every file in vaults/ is a valid vault and follows the conventions", async
   const result = await lintFolder(vaultsDir);
   assert.deepEqual(result.problems, [], result.problems.map((item) => item.text).join("\n"));
   assert.ok(result.ok);
-  assert.ok(result.files.includes("example.yaml"));
+  assert.ok(result.files.includes("templates/example.yaml"));
   assert.ok(result.vaults >= 10);
 });
 
-test("example.yaml is a template: checked, never drawn", async () => {
-  const loaded = await createVaultStore({ dir: vaultsDir }).load();
+test("vaults/templates/ holds templates: checked and listed, never drawn", async () => {
+  const store = createVaultStore({ dir: vaultsDir });
+  const loaded = await store.load();
   const files = loaded.vaults.map((vault) => vault.file);
-  assert.ok(!files.includes("example.yaml"));
+  assert.ok(!files.some((file) => /example/.test(file)));
+  const templates = await store.templates();
+  assert.ok(templates.some((item) => item.file === "templates/example.yaml"));
+  assert.ok(templates.every((item) => !item.damaged));
   assert.ok(files.includes("eks.yaml"));
   assert.ok(loaded.vaults.every((vault) => !vault.damaged));
   // The template uses every field the format has.
-  const doc = parse(readFileSync(`${vaultsDir}/example.yaml`, "utf8"));
+  const doc = parse(readFileSync(`${vaultsDir}/templates/example.yaml`, "utf8"));
   assert.deepEqual(Object.keys(doc.metadata).sort(), ["description", "name", "number", "owner", "tags", "title"]);
-  assert.deepEqual(Object.keys(doc.spec).sort(), ["checks", "links", "resources", "type"]);
+  assert.deepEqual(Object.keys(doc.spec).sort(), ["checks", "links", "resources", "stack", "type"]);
   assert.deepEqual(Object.keys(doc.spec.links).sort(), ["dashboard", "docs", "repo", "view"]);
   assert.deepEqual(Object.keys(doc.spec.checks.http[0]).sort(), ["contains", "expect", "name", "timeout", "url"]);
 });
@@ -127,4 +131,34 @@ test("upgrades/eks: a second cluster names its roles and node group after itself
   assert.equal(byName("Cluster", "up").name, "cloudspider-two");
   for (const item of second.filter((r) => r.inputs.tags)) assert.equal(item.inputs.tags.cluster, "cloudspider-two", item.name);
   await assert.rejects(mocked({ ...program, stack: "eks-other" }, { "cloudspider-upgrade:clusterName": "cloudspider-two" }), /belongs in stack eks-cloudspider-two/);
+});
+
+test("living vaults name their Pulumi stack, and the stack folder exists", async () => {
+  const loaded = await createVaultStore({ dir: vaultsDir }).load();
+  const byName = Object.fromEntries(loaded.vaults.map((vault) => [vault.name, vault]));
+  assert.deepEqual(byName.camp.stack, { dir: "upgrades/camp", name: "camp" });
+  assert.deepEqual(byName.cloudspider.stack, { dir: "infra", name: "test" });
+  assert.deepEqual(byName.eks.stack, { dir: "upgrades/eks", name: "*" });
+  for (const vault of loaded.vaults.filter((item) => item.stack)) {
+    assert.ok(existsSync(`${root}${vault.stack.dir}/Pulumi.yaml`), `${vault.file}: ${vault.stack.dir}/Pulumi.yaml`);
+  }
+});
+
+test("vaults:new copies a template with the name, a free number and the project tag, never overwriting", async () => {
+  const { mkdtempSync, mkdirSync, cpSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(`${tmpdir()}/vaults-new-`);
+  mkdirSync(`${dir}/templates`);
+  cpSync(`${vaultsDir}/templates/example.yaml`, `${dir}/templates/example.yaml`);
+  cpSync(`${vaultsDir}/camp.yaml`, `${dir}/camp.yaml`);
+  const env = { ...process.env, CLOUDSPIDER_VAULTS_DIR: dir };
+  await run(process.execPath, ["scripts/vaults-new.mjs", "example", "shop-api"], { cwd: root, env });
+  const text = readFileSync(`${dir}/shop-api.yaml`, "utf8");
+  assert.match(text, /# Template:/, "comments stay");
+  const [entry] = parseVaultText(text, "shop-api.yaml");
+  assert.equal(entry.damaged, false, entry.errors.join("; "));
+  assert.equal(entry.name, "shop-api");
+  assert.equal(entry.resources.tags.project, "shop-api");
+  assert.equal(entry.number, 100);
+  await assert.rejects(run(process.execPath, ["scripts/vaults-new.mjs", "example", "shop-api"], { cwd: root, env }), (error) => /already exists/.test(error.stdout));
 });

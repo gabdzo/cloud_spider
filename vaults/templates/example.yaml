@@ -1,6 +1,9 @@
-# Template: copy to vaults/<name>.yaml and fill it in. This file itself is not
-# drawn on the map (example.yaml and *.example.yaml are templates), but
-# `npm run vaults:check` still validates it.
+# Template: everything in vaults/templates/ is a template. It is never drawn
+# on the map, it is listed under TEMPLATES, and `npm run vaults:check` still
+# validates it. Make a living vault from it with:
+#   npm run vaults:new -- example <name>
+# which writes vaults/<name>.yaml with the name, a free number and the
+# project tag filled in.
 #
 # One vault per project. The map shows it as a door in the hillside; click it
 # to see the project's resources, these links and its check results.
@@ -25,6 +28,9 @@ spec:
       - i-0123456789abcdef0         #   an EC2 instance id
       - arn:aws:s3:::example-site-bucket   # an ARN (an ARN ending in a known id matches too)
       - example-site-alb            #   a name (load balancer, cluster, function, table...)
+  stack:                            # optional: the Pulumi stack this vault is (LIVE badge)
+    dir: upgrades/example           #   the folder with Pulumi.yaml, relative to the repo
+    name: example                   #   the stack name; a trailing * matches several (eks-*)
   links:                            # all optional, http(s) only
     view: https://example.com/      # the live thing (VIEW button)
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/example   # REPO

@@ -1,0 +1,24 @@
+# Template: a web service on EC2 behind a load balancer, one Pulumi stack.
+# Make a living vault from it with:  npm run vaults:new -- service <name>
+# Then tag every resource project=<name> (aws:defaultTags in the stack does it)
+# and point spec.stack at the stack's folder and name.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: web-service
+  number: 198
+  title: Web service
+  description: A web service on EC2 instances behind an application load balancer, deployed from one Pulumi stack.
+  owner: gabriel
+  tags: [service, ec2, alb]
+spec:
+  type: service
+  resources:
+    tags:
+      project: web-service
+  stack:
+    dir: upgrades/web-service
+    name: web-service
+  links:
+    repo: https://github.com/gabdzo/cloud_spider
+    dashboard: "https://eu-north-1.console.aws.amazon.com/ec2/home?region=eu-north-1#LoadBalancers:"

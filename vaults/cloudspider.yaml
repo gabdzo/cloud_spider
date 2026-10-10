@@ -18,6 +18,9 @@ spec:
   resources:
     tags:
       project: cloudspider
+  stack:
+    dir: infra
+    name: test
   links:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/infra
     docs: https://github.com/gabdzo/cloud_spider#readme

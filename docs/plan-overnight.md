@@ -148,7 +148,7 @@ Cost: control plane $0.10/h plus a t4g.small node at about $0.017/h, so about $2
 - `cd upgrades/demo && npm ci && pulumi up --stack demo`
 - `aws eks update-kubeconfig …` as above.
 
-### Design only (item 2): infra monitoring proposal (build later)
+### Item 2: infra monitoring (now built as PR 24, after PR 23; Gabriel's scope change at 22:35)
 Prices are approximate eu-north-1 list prices; check the pricing pages before enabling.
 
 | source | what it gives | cost | recommend |

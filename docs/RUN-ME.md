@@ -18,3 +18,13 @@ cd ../..
 ```sh
 npm ci && AWS_PROFILE=default AWS_REGION=eu-north-1 npm start    # http://127.0.0.1:9241
 ```
+
+## 3. New vaults from templates (PR 20, free, no AWS)
+
+Templates are in vaults/templates/ and show under TEMPLATES on the map. To make a living vault:
+
+```sh
+npm run vaults:new -- service shop-api      # writes vaults/shop-api.yaml (name, free number, project tag)
+$EDITOR vaults/shop-api.yaml                # set spec.stack {dir, name} to the stack that deploys it
+npm run vaults:check
+```

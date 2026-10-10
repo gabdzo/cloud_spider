@@ -17,6 +17,9 @@ spec:
       project: barrel
     ids:
       - cloudspider-barrel-550536272523
+  stack:
+    dir: upgrades/barrel
+    name: barrel
   links:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/barrel
     docs: https://github.com/gabdzo/cloud_spider#readme

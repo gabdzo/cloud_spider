@@ -166,6 +166,12 @@ export function drawVaultLabels(ctx, area, settled = new Set()) {
   for (const cell of area.cells) if (!settled.has(cell.key)) drawCellLabel(ctx, cell);
 }
 
+// A vault bound to a Pulumi stack is a living vault.
+export function liveText(vault) {
+  if (!vault?.stack) return "";
+  return `LIVE · ${vault.stack.name === "*" ? vault.stack.dir.split("/").pop() : vault.stack.name}`.toUpperCase();
+}
+
 function drawCellLabel(ctx, cell) {
   const { x, y, w } = cell.nameAt;
   const vault = cell.vault;
@@ -175,9 +181,9 @@ function drawCellLabel(ctx, cell) {
   labelBacking(ctx, name, nx, y - 4, 14);
   ctx.fillStyle = vault.damaged ? STATUS.broken : PIP.bright;
   ctx.fillText(name, nx, y - 4);
-  if (vault.damaged || cell.open) {
+  if (vault.damaged || cell.open || vault.stack) {
     ctx.font = SMALL;
-    const sub = vault.damaged ? `DAMAGED  ${vault.file}` : [vault.type, vault.owner].filter(Boolean).join("  ·  ").toUpperCase();
+    const sub = vault.damaged ? `DAMAGED  ${vault.file}` : cell.open ? [vault.type, vault.owner, liveText(vault)].filter(Boolean).join("  ·  ").toUpperCase() : liveText(vault);
     const line = clipText(ctx, sub, w);
     const sx = cell.open ? x : Math.round(cell.x + (cell.w - ctx.measureText(line).width) / 2);
     ctx.fillStyle = vault.damaged ? rgba(STATUS.broken, 0.85) : PIP.dim;

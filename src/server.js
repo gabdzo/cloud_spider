@@ -425,6 +425,26 @@ const page = `<!doctype html>
   }
   /* ---- vaults: open/close-all switch and the panels beside open doors ---- */
   #vault-all { position: absolute; z-index: 2; min-height: 26px; padding: 0 10px; font-size: 11px; letter-spacing: 0.12em; }
+  #vault-templates-btn { position: absolute; z-index: 2; min-height: 26px; padding: 0 10px; font-size: 11px; letter-spacing: 0.12em; }
+  #vault-templates {
+    position: absolute; z-index: 3; width: min(420px, calc(100vw - 32px)); max-height: 360px; overflow: auto;
+    font-size: 12px; line-height: 1.45; color: var(--pip-mid);
+    background: var(--pip-screen); border: 2px solid var(--pip-dim);
+    box-shadow: 0 0 0 1px var(--pip-ink), 0 8px 20px var(--pip-ink);
+  }
+  .vt-title { display: flex; justify-content: space-between; gap: 8px; padding: 4px 10px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.14em; font-size: 11px; }
+  .vt-where { opacity: 0.75; letter-spacing: 0.04em; }
+  .vt-list { list-style: none; margin: 0; padding: 4px 10px 8px; }
+  .vt-list li { padding: 6px 0; border-bottom: 1px dashed var(--pip-dark); }
+  .vt-list li:last-child { border-bottom: 0; }
+  .vt-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .vt-name { color: var(--pip-bright); text-shadow: 0 0 5px var(--glow-soft); }
+  .vt-type { color: var(--pip-dim); font-size: 11px; letter-spacing: 0.12em; }
+  .vt-desc { margin: 2px 0 4px; overflow-wrap: anywhere; }
+  .vt-list li.damaged .vt-name, .vt-list li.damaged .vt-desc { color: var(--status-broken); }
+  .vt-cmd { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--pip-hot); font-size: 11px; user-select: all; }
+  .vt-copy { flex: none; min-height: 24px; padding: 0 8px; font-size: 11px; }
+  .vt-empty { color: var(--pip-dim); }
   #vault-panels { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 2; }
   .vault-panel {
     position: absolute; display: flex; flex-direction: column; min-width: 0;
@@ -747,6 +767,8 @@ const page = `<!doctype html>
           <option value="fine">fine</option>
         </select>
         <button id="vault-all" class="cmd" type="button" aria-pressed="false" hidden>OPEN ALL</button>
+        <button id="vault-templates-btn" class="cmd" type="button" aria-expanded="false" aria-controls="vault-templates" hidden>TEMPLATES</button>
+        <section id="vault-templates" aria-label="vault templates" hidden></section>
         <div id="vault-panels"></div>
       </div>
       <form id="pip" hidden></form>

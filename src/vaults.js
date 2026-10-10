@@ -12,8 +12,11 @@ export function vaultsDir(env = process.env, cwd = process.cwd()) {
 }
 
 const FILE = /\.ya?ml$/i;
-// Templates are validated by `npm run vaults:check` but never drawn.
+// Templates live in vaults/templates/ (never drawn; listed as TEMPLATES and
+// copied with `npm run vaults:new`). The old name rule (example.yaml,
+// *.example.yaml) still marks a file in vaults/ as a template.
 export const TEMPLATE = /^(example|.+\.example)\.ya?ml$/i;
+export const TEMPLATES_DIR = "templates";
 const MAX_BYTES = 256 * 1024;
 
 export function parseVaultText(textBody, file) {
@@ -67,6 +70,7 @@ function damaged(file, doc, errors, name = "", number = null) {
     resources: { tags: {}, ids: [] },
     links: {},
     checks: [],
+    stack: null,
   };
 }
 
@@ -102,7 +106,7 @@ export function byNumber(entries) {
     .map((item) => item.entry);
 }
 
-export function createVaultStore({ dir, fs = { readdir, readFile, stat } } = {}) {
+export function createVaultStore({ dir, fs = { readdir, readFile, stat }, templates = false } = {}) {
   let signature = null;
   let cached = { vaults: [], note: "", dir };
   let flight = null;
@@ -110,9 +114,9 @@ export function createVaultStore({ dir, fs = { readdir, readFile, stat } } = {})
   async function scan() {
     let names;
     try {
-      names = (await fs.readdir(dir)).filter((name) => FILE.test(name) && !TEMPLATE.test(name) && !name.startsWith(".")).sort();
+      names = (await fs.readdir(dir)).filter((name) => FILE.test(name) && (templates || !TEMPLATE.test(name)) && !name.startsWith(".")).sort();
     } catch (error) {
-      const note = error?.code === "ENOENT" ? `no vaults folder at ${dir}` : `the vaults folder did not open: ${error?.code || error?.message}`;
+      const note = templates && error?.code === "ENOENT" ? "" : error?.code === "ENOENT" ? `no vaults folder at ${dir}` : `the vaults folder did not open: ${error?.code || error?.message}`;
       return { signature: `missing:${note}`, files: [], note };
     }
     const files = [];
@@ -151,8 +155,34 @@ export function createVaultStore({ dir, fs = { readdir, readFile, stat } } = {})
     return cached;
   }
 
+  const templateStore = templates ? null : createVaultStore({ dir: join(dir, TEMPLATES_DIR), fs, templates: true });
   return {
     dir,
+    // vaults/templates/*.yaml, plus any old-style example.yaml in vaults/.
+    async templates() {
+      if (!templateStore) return [];
+      const inFolder = (await templateStore.load()).vaults
+        .map((entry) => ({ ...entry, file: `${TEMPLATES_DIR}/${entry.file}` }))
+        .sort((a, b) => a.file.localeCompare(b.file));
+      let legacy = [];
+      try {
+        for (const name of (await fs.readdir(dir)).filter((item) => TEMPLATE.test(item)).sort()) {
+          legacy.push(...parseVaultText(await fs.readFile(join(dir, name), "utf8"), name));
+        }
+      } catch {
+        legacy = [];
+      }
+      return [...inFolder, ...legacy].map((entry) => ({
+        file: entry.file,
+        name: entry.name,
+        title: entry.title,
+        description: entry.description,
+        type: entry.type,
+        damaged: entry.damaged,
+        errors: entry.errors,
+        stack: entry.stack || null,
+      }));
+    },
     // Concurrent callers share one read.
     async load() {
       if (!flight) flight = read().finally(() => { flight = null; });

@@ -5,7 +5,8 @@
   "scripts": {
     "start": "node src/main.js",
     "test": "node --test test/*.test.js",
-    "vaults:check": "node scripts/vaults-check.mjs"
+    "vaults:check": "node scripts/vaults-check.mjs",
+    "vaults:new": "node scripts/vaults-new.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-cloudtrail": "^3.901.0",

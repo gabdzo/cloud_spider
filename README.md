@@ -18,7 +18,8 @@ Cluster is a separate tab. It draws EKS in this region, or an OpenShift-shaped s
 
 Vaults are your projects on the map, written as YAML files like a Backstage catalog-info.yaml.
 Cloud Spider reads every *.yaml in ./vaults (set CLOUDSPIDER_VAULTS_DIR to use another folder) and picks up changes on the next refresh.
-vaults/example.yaml is the template with every field explained; it and any *.example.yaml are never drawn. The doors are ordered by number.
+Templates live in vaults/templates/ (vaults/templates/example.yaml explains every field). They are never drawn; the TEMPLATES button by the VAULTS sign lists them, and COPY gives the command that makes a living vault from one. An old-style example.yaml or *.example.yaml in vaults/ still counts as a template. The doors are ordered by number.
+A living vault can name its Pulumi stack with spec.stack: {dir: upgrades/camp, name: camp} (a trailing * matches several stacks, e.g. every cluster). The door then reads LIVE · <stack>, and the panel shows STACK.
 In short:
 
     apiVersion: cloudspider/v1
@@ -52,7 +53,7 @@ Sample shows three vaults: a landing page that passes, an API whose health check
 
 To add a vault:
 
-1. Copy vaults/example.yaml to vaults/<name>.yaml. Pick an unused number.
+1. Run npm run vaults:new -- <template> <name> (for example npm run vaults:new -- service shop-api). It writes vaults/<name>.yaml with the name, a free number and project=<name> filled in, and never overwrites a file.
 2. Tag the project's resources project=<name>. In Pulumi, put it on the stack, not on each resource (below).
 3. Run npm run vaults:check. It validates every file in vaults/ (templates too) and fails on a reused number, or on a project tag that is not the vault's name.
 4. Refresh the page.

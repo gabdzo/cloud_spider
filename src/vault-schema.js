@@ -9,6 +9,11 @@ export const VAULT_TYPES = ["static-site", "service", "api", "cluster", "worker"
 export const LINK_KEYS = ["view", "repo", "docs", "dashboard"];
 export const CHECK_TIMEOUT = { default: 5000, min: 100, max: 30000 };
 const NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+// spec.stack binds a living vault to a Pulumi stack in this repo: the folder
+// that holds Pulumi.yaml, and the stack name (a trailing * matches several,
+// e.g. every cluster stack).
+const STACK_DIR = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/;
+const STACK_NAME = /^[A-Za-z0-9_.-]+\*?$|^\*$/;
 const DESCRIPTION_MAX = 280;
 
 function isObject(value) {
@@ -71,9 +76,21 @@ export function validateVault(doc) {
 
   const spec = isObject(doc.spec) ? doc.spec : null;
   if (!spec) errors.push("spec: is required");
-  const out = { resources: { tags: {}, ids: [] }, links: {}, checks: [] };
+  const out = { resources: { tags: {}, ids: [] }, links: {}, checks: [], stack: null };
   if (spec) {
-    unknownKeys(spec, ["type", "resources", "links", "checks"], "spec.", warnings);
+    unknownKeys(spec, ["type", "resources", "links", "checks", "stack"], "spec.", warnings);
+    if (spec.stack !== undefined) {
+      const stack = spec.stack;
+      if (!isObject(stack)) errors.push("spec.stack: must be a mapping with dir and name");
+      else {
+        unknownKeys(stack, ["dir", "name"], "spec.stack.", warnings);
+        const dir = text(stack.dir);
+        const stackName = text(stack.name);
+        if (!dir || !STACK_DIR.test(dir) || dir.split("/").includes("..")) errors.push("spec.stack.dir: must be a folder in this repo, like upgrades/camp");
+        if (!stackName || !STACK_NAME.test(stackName)) errors.push("spec.stack.name: must be a stack name, like camp (a trailing * matches several)");
+        if (!errors.some((error) => error.startsWith("spec.stack."))) out.stack = { dir, name: stackName };
+      }
+    }
     if (!text(spec.type)) errors.push(`spec.type: is required (${VAULT_TYPES.join(", ")})`);
     else if (!VAULT_TYPES.includes(spec.type)) errors.push(`spec.type: must be one of ${VAULT_TYPES.join(", ")}`);
 
@@ -167,6 +184,7 @@ export function validateVault(doc) {
       resources: out.resources,
       links: out.links,
       checks: out.checks,
+      stack: out.stack,
     },
     errors: [],
     warnings,

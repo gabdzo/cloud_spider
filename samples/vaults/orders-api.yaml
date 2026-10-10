@@ -11,6 +11,9 @@ spec:
   type: api
   resources:
     ids: [camp-function, camp-table]
+  stack:
+    dir: upgrades/camp
+    name: camp
   links:
     view: https://orders-api.sample.cloudspider.test/
     repo: https://github.com/gabdzo/cloud_spider

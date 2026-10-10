@@ -324,6 +324,52 @@ test("the vault view: sample vaults with owned ids, statuses and the damaged fil
   assert.deepEqual(await view.test("nope", samplePlace()), { error: "no such vault" });
 });
 
+test("the vault view lists templates and the stack a living vault is bound to", async () => {
+  const view = createVaultView({
+    store: createVaultStore({ dir: new URL("../samples/vaults/", import.meta.url).pathname }),
+    checker: createCheckRunner({ fetch: sampleFetch }),
+  });
+  const body = await view.view(samplePlace());
+  assert.deepEqual(body.templates.map((t) => t.file), ["templates/service.yaml", "templates/worker.yaml"]);
+  assert.ok(body.templates.every((t) => !t.damaged && t.description));
+  assert.deepEqual(body.vaults.find((v) => v.key === "orders-api").stack, { dir: "upgrades/camp", name: "camp" });
+  assert.equal(body.vaults.find((v) => v.key === "landing").stack, null);
+});
+
+test("spec.stack: a repo folder and a stack name (a trailing * matches several)", () => {
+  const withStack = (stack) => {
+    const doc = good();
+    doc.spec.stack = stack;
+    return validateVault(doc);
+  };
+  assert.deepEqual(withStack({ dir: "upgrades/eks", name: "eks-*" }).vault.stack, { dir: "upgrades/eks", name: "eks-*" });
+  assert.deepEqual(withStack({ dir: "infra", name: "test" }).errors, []);
+  assert.match(withStack({ dir: "../etc", name: "x" }).errors.join(), /spec\.stack\.dir/);
+  assert.match(withStack({ dir: "/abs", name: "x" }).errors.join(), /spec\.stack\.dir/);
+  assert.match(withStack({ dir: "infra", name: "a b" }).errors.join(), /spec\.stack\.name/);
+  assert.match(withStack("infra").errors.join(), /spec\.stack: must be a mapping/);
+  assert.match(withStack({ dir: "infra", name: "t", extra: 1 }).warnings.join(), /spec\.stack\.extra/);
+  assert.equal(validateVault(good()).vault.stack, null);
+});
+
+test("templates: vaults/templates/ and old-style example.yaml, never drawn", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "vault-templates-"));
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(join(dir, "templates"));
+  const file = (name) => `apiVersion: cloudspider/v1\nkind: Vault\nmetadata: {name: ${name}, number: 5, description: D, owner: me}\nspec: {type: api}\n`;
+  await writeFile(join(dir, "live.yaml"), file("live"));
+  await writeFile(join(dir, "old.example.yaml"), file("old"));
+  await writeFile(join(dir, "templates", "api.yaml"), file("api"));
+  const store = createVaultStore({ dir });
+  assert.deepEqual((await store.load()).vaults.map((v) => v.name), ["live"]);
+  assert.deepEqual((await store.templates()).map((t) => t.file), ["templates/api.yaml", "old.example.yaml"]);
+  const empty = await mkdtemp(join(tmpdir(), "vault-templates-"));
+  assert.deepEqual(await createVaultStore({ dir: empty }).templates(), []);
+  assert.equal((await createVaultStore({ dir: empty }).load()).note, "");
+  await rm(dir, { recursive: true });
+  await rm(empty, { recursive: true });
+});
+
 // ---- collapse state ----
 
 function memoryStorage(initial = {}) {
