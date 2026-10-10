@@ -3,20 +3,22 @@
 const NODE = "ip-10-43-1-27.eu-north-1.compute.internal";
 const meta = (ns, name, extra = {}) => ({ metadata: { namespace: ns, name, ...extra } });
 const running = (restarts = 0) => ({ phase: "Running", containerStatuses: [{ name: "c", ready: true, restartCount: restarts, state: { running: {} } }] });
+const REQUESTS = { web: { cpu: "10m", memory: "32Mi" }, api: { cpu: "10m", memory: "32Mi" }, loadgen: { cpu: "5m", memory: "8Mi" }, otel: { cpu: "20m", memory: "64Mi" }, coredns: { cpu: "100m", memory: "70Mi" }, metrics: { cpu: "100m", memory: "200Mi" } };
+const oomed = () => ({ phase: "Running", containerStatuses: [{ name: "c", ready: true, restartCount: 2, state: { running: {} }, lastState: { terminated: { reason: "OOMKilled", exitCode: 137 } } }] });
 const rs = (name) => ({ ownerReferences: [{ kind: "ReplicaSet", name }] });
 const ds = (name) => ({ ownerReferences: [{ kind: "DaemonSet", name }] });
 const daemon = (ns, name) => ({ ...meta(ns, name), spec: { template: { metadata: { labels: { "k8s-app": name } } } }, status: { desiredNumberScheduled: 1, numberReady: 1 } });
 
 export function sampleKubeSnapshot() {
-  const pod = (ns, name, owner, status, labels = {}) => ({ ...meta(ns, name, { ...owner, labels }), spec: { nodeName: NODE, containers: [{ name: name.split("-")[0] }] }, status });
+  const pod = (ns, name, owner, status, labels = {}) => ({ ...meta(ns, name, { ...owner, labels }), spec: { nodeName: NODE, containers: [{ name: name.split("-")[0], resources: { requests: REQUESTS[name.split("-")[0]] || { cpu: "25m", memory: "40Mi" } } }] }, status });
   return {
     clusterName: "cloudspider-up",
     notes: [],
     namespaces: ["default", "kube-system", "kube-public", "kube-node-lease", "demo"].map((name) => meta(undefined, name)),
-    nodes: [{ metadata: { name: NODE, labels: { "node.kubernetes.io/instance-type": "t4g.small" } }, spec: { providerID: "aws:///eu-north-1a/i-0node" }, status: { allocatable: { cpu: "1930m", memory: "1531Mi" }, conditions: [{ type: "Ready", status: "True" }] } }],
+    nodes: [{ metadata: { name: NODE, labels: { "node.kubernetes.io/instance-type": "t4g.small" } }, spec: { providerID: "aws:///eu-north-1a/i-0node" }, status: { allocatable: { cpu: "1930m", memory: "1531Mi" }, conditions: [{ type: "MemoryPressure", status: "False" }, { type: "DiskPressure", status: "False" }, { type: "PIDPressure", status: "False" }, { type: "Ready", status: "True" }] } }],
     pods: [
       pod("demo", "web-7c9f6d8b5-x2lqp", rs("web-7c9f6d8b5"), running(), { app: "web" }),
-      pod("demo", "api-5d8c7b9f4-k8zts", rs("api-5d8c7b9f4"), running(2), { app: "api" }),
+      pod("demo", "api-5d8c7b9f4-k8zts", rs("api-5d8c7b9f4"), oomed(), { app: "api" }),
       pod("demo", "loadgen-6b7d9c5f8-q4mnv", rs("loadgen-6b7d9c5f8"), { phase: "Running", containerStatuses: [{ name: "loadgen", ready: false, restartCount: 7, state: { waiting: { reason: "CrashLoopBackOff" } } }] }, { app: "loadgen" }),
       pod("demo", "otel-collector-9xk2d", { ownerReferences: [{ kind: "DaemonSet", name: "otel-collector" }] }, running(), { app: "otel-collector" }),
       pod("kube-system", "coredns-6d9c8b7f5-a1", rs("coredns-6d9c8b7f5"), running()),
@@ -81,4 +83,35 @@ export function samplePodDetail(name) {
     events: [{ time: now - 30 * 60000, type: "Normal", reason: "Started", message: "Started container", count: 1 }],
     eventNote: "",
   };
+}
+
+// What the OTel gateway's /metrics would say for the demo cluster at time t
+// (a slow wave, so the screen's charts move). For tests and the fake server.
+export function sampleOtelMetrics(t = Date.now()) {
+  const wave = (period, phase = 0) => (Math.sin(t / period + phase) + 1) / 2;
+  const n = `k8s_node_name="${NODE}"`;
+  const pod = (ns, name, cores, mib) => [
+    `k8s_pod_cpu_usage{k8s_namespace_name="${ns}",k8s_pod_name="${name}",${n}} ${cores.toFixed(4)}`,
+    `k8s_pod_memory_working_set_bytes{k8s_namespace_name="${ns}",k8s_pod_name="${name}",${n}} ${Math.round(mib * 1048576)}`,
+  ];
+  return [
+    "# HELP k8s_node_cpu_usage Total CPU usage (sum of all cores per second) averaged over the sample window",
+    "# TYPE k8s_node_cpu_usage gauge",
+    `k8s_node_cpu_usage{${n}} ${(0.18 + 0.22 * wave(240000)).toFixed(4)}`,
+    `k8s_node_memory_working_set_bytes{${n}} ${Math.round((1120 + 140 * wave(420000, 1)) * 1048576)}`,
+    `k8s_node_filesystem_usage_bytes{${n}} ${Math.round((11.4 + 0.3 * wave(900000)) * 1073741824)}`,
+    `k8s_node_filesystem_capacity_bytes{${n}} ${20 * 1073741824}`,
+    `k8s_node_network_io_bytes_total{direction="receive",${n}} ${Math.round(t / 50) % 1e9}`,
+    `system_cpu_load_average_1m{${n}} ${(0.4 + 0.7 * wave(180000, 2)).toFixed(2)}`,
+    ...pod("demo", "web-7c9f6d8b5-x2lqp", 0.004 + 0.006 * wave(200000), 18 + 4 * wave(500000)),
+    ...pod("demo", "api-5d8c7b9f4-k8zts", 0.011 + 0.03 * wave(150000, 1), 22 + 60 * wave(600000, 2)),
+    ...pod("demo", "loadgen-6b7d9c5f8-q4mnv", 0.001, 3),
+    ...pod("demo", "otel-collector-9xk2d", 0.009 + 0.012 * wave(220000, 3), 71 + 18 * wave(700000)),
+    ...pod("kube-system", "coredns-6d9c8b7f5-a1", 0.003 + 0.002 * wave(300000), 14),
+    ...pod("kube-system", "coredns-6d9c8b7f5-b2", 0.003 + 0.002 * wave(310000, 1), 15),
+    ...pod("kube-system", "aws-node-z9q8w", 0.006 + 0.004 * wave(260000), 48),
+    ...pod("kube-system", "kube-proxy-p0o9i", 0.002, 19),
+    ...pod("kube-system", "eks-pod-identity-agent-l1k2j", 0.001, 9),
+    ...pod("kube-system", "metrics-server-7f9c6d-m3n4p", 0.005 + 0.003 * wave(280000), 26),
+  ].join("\n") + "\n";
 }

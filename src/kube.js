@@ -14,6 +14,7 @@ import { delimiter, join } from "node:path";
 import { parse } from "yaml";
 
 export const DEFAULT_CONTEXT = "cloudspider-viewer";
+export const DEFAULT_OTEL_METRICS = "demo/otel-metrics";
 const DNS = /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/;
 const TIMEOUT_MS = 8000;
 
@@ -58,6 +59,9 @@ export const PATHS = {
   ingresses: () => "/apis/networking.k8s.io/v1/ingresses",
   podMetrics: () => "/apis/metrics.k8s.io/v1beta1/pods",
   nodeMetrics: () => "/apis/metrics.k8s.io/v1beta1/nodes",
+  // The OTel gateway's Prometheus text, through the API server's service
+  // proxy. The viewer role may get services/proxy on this one Service only.
+  otelMetrics: (ns, name) => `/api/v1/namespaces/${checkName(ns)}/services/${checkName(name)}/proxy/metrics`,
   podLog: (ns, name, container, tail = 80) =>
     `/api/v1/namespaces/${checkName(ns)}/pods/${checkName(name)}/log?tailLines=${Math.min(500, Math.max(1, Number(tail) || 80))}${container ? `&container=${checkName(container)}` : ""}`,
   podEvents: (ns, name) =>
@@ -200,6 +204,19 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
         if (name === "podMetrics" && (results[i].missing || results[i].error)) out.notes.push("no metrics-server (pod CPU/memory hidden)");
       });
       return out;
+    },
+    // The collector's metrics (kube-telemetry.js). Missing or forbidden is
+    // normal before `pulumi up` on upgrades/demo: telemetry falls back.
+    otelService: env.CLOUDSPIDER_OTEL_METRICS || DEFAULT_OTEL_METRICS,
+    async otelMetrics() {
+      const [ns, name] = String(env.CLOUDSPIDER_OTEL_METRICS || DEFAULT_OTEL_METRICS).split("/");
+      let path;
+      try {
+        path = PATHS.otelMetrics(ns, name);
+      } catch (error) {
+        return { error: error.message };
+      }
+      return getPath(path, { text: true });
     },
     async podDetail(ns, name, container = "") {
       let logPath;

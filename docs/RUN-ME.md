@@ -284,3 +284,38 @@ The LEARN key on the console opens the holotape shelf. It has two tracks:
 Each tape shows the task, the setup commands (COPY), hints one at a time and the check. Cloud Spider runs a check only when a scan of the script and every helper it calls finds no write, exec or install. All 15 Kubernetes checks qualify, and so do 14 of the 18 OpenShift ones. The OpenShift lab03, lab06, lab15 and mock02 checks exec into pods or rotate a secret, so their RUN CHECK stays off; copy the command instead. Progress is kept in `.learn/progress.json` (gitignored); with SAMPLE on it is kept in the browser instead, and nothing runs. FORGET PROGRESS clears a lab.
 
 Clean up a Kubernetes lab with its CLEAN command (`kubectl delete namespace k8s-labNN…`). For OpenShift, use `labs/ex280/common/cleanup-all.sh`.
+
+## 14. Cluster telemetry: Cluster → TELEMETRY (no AWS cost beyond the cluster)
+
+The Cluster view has two screens now, **TOPOLOGY** and **TELEMETRY**. TELEMETRY shows the following for each node:
+- CPU, MEM and DISK gauges
+- READY, MEM PRESSURE, DISK PRESSURE and PID PRESSURE lamps
+- allocatable vs requested vs used bars
+- 1-hour charts
+- the EC2 CloudWatch series the map already reads
+
+It also lists the top pods by CPU and memory, with restarts and OOMKilled.
+
+**Where the numbers come from (best first)**
+1. **The OTel collector you already run** (upgrades/demo). Its DaemonSet now also runs:
+   - `kubeletstats`: node, pod and container CPU, memory, filesystem and network
+   - `hostmetrics`: node disk, filesystem, load and network
+   
+   It sends them over OTLP to a one-replica `otel-gateway`, which serves Prometheus text on the `otel-metrics` Service (port 8889, inside the cluster only). Cloud Spider reads it through the API server's service proxy (`/api/v1/namespaces/demo/services/otel-metrics/proxy/metrics`) with the viewer role. A Role grants the viewer `get` on `services/proxy` for **that one Service only**, and nothing else changes.
+2. **metrics-server** is the fallback when the gateway isn't there yet: CPU and memory only, so the disk gauge shows "needs OTel". The screen says which source it used.
+
+Node conditions and requests come from the kube API in both cases.
+
+**History** lives in Cloud Spider's memory: one sample every 30 s, kept for 1 hour, and only while the TELEMETRY screen is open (nothing is read in the background). It starts empty after every restart.
+
+**To turn it on:**
+```bash
+cd upgrades/demo && npm ci && pulumi preview --diff -s demo && pulumi up -s demo
+# then in Cloud Spider: Cluster → TELEMETRY. The lamp says OTEL COLLECTOR.
+kubectl -n demo get pods -l app=otel-gateway       # 1/1 Running
+```
+`CLOUDSPIDER_OTEL_METRICS=<ns>/<service>` points the app at another gateway (default `demo/otel-metrics`).
+
+**Cost:** $0 in AWS. No CloudWatch custom metrics, no new load balancer, no new log group. The gateway uses about 10m CPU and 48–128 Mi of memory on the node you already pay for, and the collector's extra receivers add a few millicores. The only AWS calls are the EC2 CloudWatch reads the map already makes.
+
+**EC2 memory and disk in CloudWatch** are *not* published by EC2 itself. They need the CloudWatch agent, which bills as custom metrics: about $0.30 per metric per month, so a node with memory plus 2 disk metrics costs about $0.90/month. node-exporter scraped into CloudWatch would cost the same. Because the OTel path above already shows memory and disk for free, this isn't set up. If you ever add the CloudWatch agent, reading its `CWAgent` namespace next to the EC2 series is a small follow-up.

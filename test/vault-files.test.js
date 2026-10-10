@@ -189,5 +189,14 @@ test("upgrades/demo: logs to a 1-day group, Pod Identity for the collector, read
   assert.equal(one("ClusterRoleBinding", "cloudspider-viewer").subjects[0].name, "cloudspider-viewers");
   assert.ok(!resources.some((r) => /Service$/.test(r.type) && r.inputs.spec?.type === "LoadBalancer"), "no load balancer (cost)");
   const config = one("ConfigMap", "otel-collector").data["config.yaml"];
-  for (const word of ["filelog", "awscloudwatchlogs", "awsxray", "/var/log/pods/demo_"]) assert.ok(config.includes(word), word);
+  for (const word of ["filelog", "awscloudwatchlogs", "awsxray", "/var/log/pods/demo_", "kubeletstats", "hostmetrics", "otlp/gateway"]) assert.ok(config.includes(word), word);
+  assert.ok(!/awsemf|cloudwatch_metrics|prometheusremotewrite/.test(config), "no CloudWatch custom metrics (cost)");
+  // Telemetry: the gateway serves Prometheus text on the one-port otel-metrics
+  // Service, and the viewer may only GET that Service's proxy.
+  const gateway = one("ConfigMap", "otel-gateway").data["config.yaml"];
+  assert.match(gateway, /prometheus:\n\s+endpoint: 0\.0\.0\.0:8889/);
+  assert.deepEqual(one("Service", "otel-metrics").spec.ports.map((p) => p.port), [8889]);
+  assert.deepEqual(one("Role", "viewer-otel-metrics").rules, [{ apiGroups: [""], resources: ["services/proxy"], resourceNames: ["otel-metrics"], verbs: ["get"] }]);
+  assert.equal(one("RoleBinding", "viewer-otel-metrics").subjects[0].name, "cloudspider-viewers");
+  assert.ok(one("ClusterRole", "otel-kubeletstats").rules.every((rule) => rule.verbs.every((verb) => ["get", "list", "watch"].includes(verb))));
 });

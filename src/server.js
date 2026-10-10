@@ -9,6 +9,7 @@ import { cssVars } from "./theme.js";
 import { sampleCost } from "./cost.js";
 import { sampleCluster } from "./cluster.js";
 import { samplePodDetail } from "./kube-sample.js";
+import { sampleTelemetry } from "./kube-telemetry.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const FILES = new Set([
@@ -31,6 +32,9 @@ export const FILES = new Set([
   "kube-diagram.js",
   "kube-layout.js",
   "kube-draw.js",
+  "kube-telemetry.js",
+  "tele-draw.js",
+  "tele-view.js",
   "metrics.js",
   "upgrade-rules.js",
   "stack-costs.js",
@@ -922,6 +926,50 @@ const page = `<!doctype html>
   .vt-cmd { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--pip-hot); font-size: 11px; user-select: all; }
   .vt-copy { flex: none; min-height: 24px; padding: 0 8px; font-size: 11px; }
   .vt-empty { color: var(--pip-dim); }
+  /* ---- cluster screens: tabs + telemetry ---- */
+  #kube-tabs { position: absolute; z-index: 4; left: 14px; top: 10px; display: flex; gap: 6px; }
+  #kube-tabs button { font: inherit; font-size: 11px; letter-spacing: 0.14em; padding: 5px 12px; color: var(--pip-dim); background: var(--pip-ink); border: 1px solid var(--pip-dark); cursor: pointer; }
+  #kube-tabs button:hover { color: var(--pip-bright); border-color: var(--pip-dim); }
+  #kube-tabs button[aria-pressed="true"] { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); box-shadow: 0 0 10px var(--glow-soft); }
+  #kube-tele { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 50px 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; }
+  .kt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 6px 10px; border: 1px solid var(--pip-dark); background: var(--pip-ink); }
+  .kt-why { color: var(--pip-mid); flex: 1; min-width: 200px; }
+  .kt-hist { color: var(--pip-dim); letter-spacing: 0.1em; }
+  .kt-note { margin: 6px 0; color: var(--pip-dim); }
+  .kt-note.err { color: var(--status-broken); }
+  .kt-lamp { display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0.12em; font-size: 10px; color: var(--pip-dim); }
+  .kt-lamp i { width: 10px; height: 10px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim); }
+  .kt-lamp.on i { background: var(--lamp-on); box-shadow: 0 0 6px var(--btn-glow), inset 0 0 0 1px var(--lamp-on-core); }
+  .kt-lamp.on b { color: var(--pip-bright); }
+  .kt-lamp.idle i { background: var(--lamp-off); }
+  .kt-lamp.warn i { background: var(--status-hang); box-shadow: 0 0 6px var(--status-hang); }
+  .kt-lamp.warn b { color: var(--status-hang); }
+  .kt-lamp.alarm i { background: var(--status-broken); box-shadow: 0 0 8px var(--status-broken); animation: kt-blink 1s steps(2) infinite; }
+  .kt-lamp.alarm b { color: var(--status-broken); }
+  @keyframes kt-blink { 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { .kt-lamp.alarm i { animation: none; } }
+  .kt-node { margin: 12px 0; padding: 10px 12px; border: 1px solid var(--pip-dim); background: var(--pip-ink); box-shadow: inset 0 0 24px var(--glow-soft); }
+  .kt-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .kt-chip { font-size: 10px; padding: 0 5px; border: 1px solid; }
+  .kt-name { color: var(--pip-hot); font-size: 14px; }
+  .kt-facts { color: var(--pip-dim); }
+  .kt-lamps { display: flex; flex-wrap: wrap; gap: 16px; margin: 8px 0; padding: 6px 8px; border: 1px dashed var(--pip-dark); }
+  .kt-gauges { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+  .kt-side { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
+  .kt-small { margin: 2px 0; color: var(--pip-dim); letter-spacing: 0.08em; font-size: 10px; }
+  .kt-charts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+  .kt-chart { border: 1px solid var(--pip-dark); }
+  .kt-cw { margin-top: 8px; max-width: 560px; }
+  .kt-pods { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  .kt-top { padding: 4px 10px 8px; border: 1px solid var(--pip-dim); background: var(--pip-ink); }
+  .kt-top.vp-metrics li { grid-template-columns: minmax(0, 1.5fr) minmax(50px, 1fr) 46px minmax(0, max-content); }
+  .kt-pod { display: flex; flex-direction: column; min-width: 0; }
+  .kt-pod b { color: var(--pip-bright); font-weight: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kt-pod small { color: var(--pip-dim); font-size: 9px; }
+  .kt-flags { display: flex; gap: 4px; }
+  .kt-flags em { font-style: normal; font-size: 9px; padding: 0 4px; border: 1px solid var(--pip-dim); color: var(--pip-mid); }
+  .kt-flags em.bad { color: var(--status-broken); border-color: var(--status-broken); }
+  /* ---- end cluster screens ---- */
   #kube-panel { position: absolute; z-index: 3; right: 12px; top: 12px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 24px); }
   .kp-title { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.12em; font-size: 11px; }
   .kp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1495,6 +1543,8 @@ const page = `<!doctype html>
         <nav id="vault-strip" aria-label="vaults" hidden></nav>
       </div>
       <section id="vault-page" aria-label="vaults page" hidden></section>
+      <nav id="kube-tabs" aria-label="cluster screens" hidden></nav>
+      <section id="kube-tele" aria-label="cluster telemetry" hidden></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
       <form id="pip" hidden></form>
       <section id="term" hidden></section>
@@ -1709,6 +1759,16 @@ async function route(app, req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/cluster-sample") {
     send(res, 200, sampleCluster());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cluster/telemetry") {
+    if (url.searchParams.get("sample") === "1") {
+      send(res, 200, await sampleTelemetry());
+      return;
+    }
+    await app.boot();
+    send(res, 200, await app.clusterTelemetry());
     return;
   }
 
