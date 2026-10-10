@@ -540,6 +540,9 @@ const page = `<!doctype html>
   .term-q { color: var(--pip-hot); }
   .term-text { color: var(--pip-bright); }
   .term-tool { color: var(--pip-dim); font-size: 11px; }
+  .term-thinking { margin: 2px 0 6px; }
+  .term-think-line { color: var(--pip-mid); letter-spacing: 0.12em; font-size: 12px; }
+  .term-think-text { color: var(--pip-dim); font-size: 11px; font-style: italic; opacity: 0.8; max-height: 4.5em; overflow: hidden; }
   .term-cursor { display: inline-block; width: 0.6em; height: 1.05em; vertical-align: text-bottom; background: var(--pip-bright); box-shadow: 0 0 6px var(--glow-bright); animation: vault-blink 1s steps(2) infinite; }
   .term-block { margin: 4px 0 8px; border: 1px solid var(--pip-dim); background: rgba(0, 0, 0, 0.35); }
   .term-block.actions { border-color: var(--pip-mid); }

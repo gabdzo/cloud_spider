@@ -139,14 +139,46 @@ export function createTerminal({ root, toggleButton, iconURL, getContext, isSamp
     return box;
   }
 
+  // Until the first word arrives (often ~8 s) the panel says it is working:
+  // a spinner, the seconds so far, and the agent's own thinking, dimmed.
+  const SPIN = ["|", "/", "-", "\\"];
+  function thinkingLine() {
+    const seconds = Math.floor((Date.now() - (current?.started || Date.now())) / 1000);
+    const spin = reducedMotion() ? "*" : SPIN[Math.floor(Date.now() / 250) % SPIN.length];
+    return `${spin} THINKING… ${seconds}s`;
+  }
+
+  function thinkingEl(entry) {
+    const box = el("div", "term-thinking");
+    box.append(el("p", "term-think-line", thinkingLine()));
+    if (entry.thinking) box.append(el("p", "term-think-text", entry.thinking.slice(-280)));
+    return box;
+  }
+
+  let thinkTimer = null;
+  function startThinking() {
+    clearInterval(thinkTimer);
+    thinkTimer = setInterval(() => {
+      if (!running || shown || pending) return stopThinking();
+      const line = log.querySelector(".term-entry:last-child .term-think-line");
+      if (line) line.textContent = thinkingLine();
+    }, 250);
+  }
+
+  function stopThinking() {
+    clearInterval(thinkTimer);
+    thinkTimer = null;
+  }
+
   function answerEl(entry, text, live) {
     const box = el("div", "term-answer");
     for (const part of parseAnswer(text)) {
       if (part.kind === "text") box.append(el("p", "term-text", part.text));
       else box.append(blockEl(part));
     }
+    if (live && !text) box.append(thinkingEl(entry));
     for (const tool of entry.tools || []) box.append(el("p", "term-tool", `· ${tool}`));
-    if (live) box.append(el("span", "term-cursor"));
+    if (live && text) box.append(el("span", "term-cursor"));
     if (entry.error) {
       const error = el("div", `term-error ${entry.error.kind || ""}`);
       error.append(el("span", "term-error-text", entry.error.text));
@@ -211,6 +243,7 @@ export function createTerminal({ root, toggleButton, iconURL, getContext, isSamp
 
   function finish(error) {
     running = false;
+    stopThinking();
     if (current) {
       shown += pending;
       pending = "";
@@ -230,9 +263,12 @@ export function createTerminal({ root, toggleButton, iconURL, getContext, isSamp
     if (event.type === "text") {
       pending += event.text;
       startTicking();
-    } else if (event.type === "tool") {
+    } else if (event.type === "tool" || event.type === "status") {
       current.tools = [...(current.tools || []), event.text].slice(-6);
       paintCurrent();
+    } else if (event.type === "thinking") {
+      current.thinking = `${current.thinking || ""}${event.text}`.slice(-2000);
+      if (!shown && !pending) paintCurrent();
     } else if (event.type === "error") {
       current.pendingError = event;
     }
@@ -242,7 +278,7 @@ export function createTerminal({ root, toggleButton, iconURL, getContext, isSamp
   async function ask(question) {
     const text = String(question || "").trim();
     if (!text || running) return;
-    current = { q: text, a: "", tools: [] };
+    current = { q: text, a: "", tools: [], started: Date.now() };
     entries.push(current);
     if (entries.length > HISTORY_MAX) entries = entries.slice(-HISTORY_MAX);
     shown = "";
@@ -252,6 +288,7 @@ export function createTerminal({ root, toggleButton, iconURL, getContext, isSamp
     setLight("running");
     paintStatic();
     paintLog();
+    startThinking();
     onChange();
     let response;
     try {

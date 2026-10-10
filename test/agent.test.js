@@ -76,7 +76,10 @@ test("the command is the local Cursor CLI, headless, read-only, in the repo", ()
 
 test("stream-json lines become text, tool and fallback events; duplicates are skipped", () => {
   const seen = { text: false };
-  assert.deepEqual(streamEvent(JSON.stringify({ type: "system", subtype: "init" }), seen), null);
+  assert.deepEqual(streamEvent(JSON.stringify({ type: "system", subtype: "init", model: "Auto" }), seen), { type: "status", text: "agent started · Auto" });
+  assert.deepEqual(streamEvent(JSON.stringify({ type: "thinking", subtype: "delta", text: "Looking at vaults" }), seen), { type: "thinking", text: "Looking at vaults" });
+  assert.equal(streamEvent(JSON.stringify({ type: "thinking", subtype: "completed" }), seen), null);
+  assert.equal(seen.text, false, "thinking is not answer text");
   assert.deepEqual(streamEvent(JSON.stringify({ type: "assistant", timestamp_ms: 1, message: { content: [{ type: "text", text: "Hel" }] } }), seen), { type: "text", text: "Hel" });
   assert.equal(streamEvent(JSON.stringify({ type: "assistant", timestamp_ms: 2, model_call_id: "m", message: { content: [{ type: "text", text: "Hel" }] } }), seen), null);
   assert.equal(streamEvent(JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "Hello" }] } }), seen), null);
@@ -293,4 +296,12 @@ test("the page asks only from a button: one fetch site, called from click and su
   assert.ok(submit.includes("ask(input.value)"));
   const prefill = source.slice(source.indexOf("prefill(text) {"), source.indexOf("refresh() {"));
   assert.ok(!/fetch|ask\(/.test(prefill), "prefill never sends");
+});
+
+test("the terminal shows THINKING with seconds until the first word, and tool lines dimmed", async () => {
+  const source = await readFile(new URL("../src/terminal.js", import.meta.url), "utf8");
+  assert.match(source, /THINKING… \$\{seconds\}s/);
+  assert.match(source, /if \(live && !text\) box\.append\(thinkingEl\(entry\)\)/);
+  assert.match(source, /event\.type === "thinking"/);
+  assert.match(source, /reducedMotion\(\) \? "\*"/, "no spinner animation under reduced motion");
 });

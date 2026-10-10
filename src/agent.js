@@ -84,6 +84,15 @@ export function streamEvent(line, seen = { text: false }) {
     seen.text = true;
     return { type: "text", text };
   }
+  // Thinking deltas, if this CLI version sends them in print mode (the docs
+  // say it may not); shown dimmed until the answer starts.
+  if (event?.type === "thinking") {
+    const text = typeof event.text === "string" ? event.text : (event.message?.content || []).map((part) => part?.text || part?.thinking || "").join("");
+    return text ? { type: "thinking", text } : null;
+  }
+  if (event?.type === "system" && event.subtype === "init") {
+    return { type: "status", text: `agent started${event.model ? ` · ${event.model}` : ""}` };
+  }
   if (event?.type === "tool_call" && event.subtype === "started") {
     const call = event.tool_call || {};
     const kind = Object.keys(call)[0] || "tool";
