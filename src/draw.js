@@ -13,7 +13,7 @@ const PIXEL = 4;
 const FONT = `bold ${FONT_PX}px Menlo, Monaco, "Courier New", monospace`;
 const SMALL = `bold ${FONT_PX - 2}px Menlo, Monaco, "Courier New", monospace`;
 const TEXT = "#5fcf95";
-const MUTED = "#6dff6d";
+const MUTED = "#4a9a6a";
 
 export function paint(ctx, scene) {
   const { placed, ui, region, phase, width, height } = scene;

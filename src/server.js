@@ -82,7 +82,15 @@ const page = `<!doctype html>
     width: 6px;
     height: 6px;
     background: #00d9ff;
-    box-shadow: calc(100% - 6px) 0 0 #00d9ff;
+  }
+  header::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 6px;
+    background: #00d9ff;
   }
   h1 {
     margin: 0;
@@ -100,7 +108,7 @@ const page = `<!doctype html>
     font-size: 13px;
   }
   select, button, input {
-    min-height: 36px;
+    min-height: 44px;
     background: #0a0e1a;
     color: #5fcf95;
     border: 2px solid #4db8ff;
@@ -110,7 +118,7 @@ const page = `<!doctype html>
     box-shadow: inset 0 0 0 1px #1a1f2e, 2px 2px 0 rgba(0, 0, 0, 0.4);
     position: relative;
   }
-  select::before, button::before, input::before {
+  button::before {
     content: "";
     position: absolute;
     top: -2px;
