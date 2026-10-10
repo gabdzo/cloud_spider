@@ -65,4 +65,13 @@ test("the hardware buttons carry no raw colours and keep their ARIA states", asy
   assert.match(block, /\.tab\[aria-pressed="true"\]/);
   assert.match(block, /\.tab:focus-visible/);
   assert.match(block, /prefers-reduced-motion/);
+  // RADIO / STACKS / ASK are panel keys on the console, not view tabs.
+  const nav = source.slice(source.indexOf('<nav class="tabs"'), source.indexOf("</nav>"));
+  for (const id of ["tab-map", "path", "cluster"]) assert.match(nav, new RegExp(`id="${id}" class="tab"`));
+  for (const id of ["tab-radio", "upgrade", "ask"]) {
+    assert.doesNotMatch(nav, new RegExp(`id="${id}"`), `${id} is not a view tab`);
+    assert.match(source, new RegExp(`<button id="${id}" class="key" type="button" aria-pressed="(true|false)"`));
+  }
+  assert.match(block, /\.key\[aria-pressed="true"\] \.cap/);
+  assert.match(block, /\.key:focus-visible/);
 });
