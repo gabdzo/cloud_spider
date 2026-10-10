@@ -20,7 +20,7 @@ const check = (name, ok, detail = "") => {
 };
 
 async function socketUrl() {
-  for (let i = 0; i < 40; i += 1) {
+  for (let i = 0; i < 240; i += 1) {
     try {
       const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json());
       const found = list.find((item) => item.type === "page" && item.webSocketDebuggerUrl);
@@ -28,6 +28,7 @@ async function socketUrl() {
     } catch {}
     await sleep(250);
   }
+  child.kill();
   throw new Error("chrome did not open a page");
 }
 
@@ -107,6 +108,29 @@ try {
   check("Path reads the live region", read, `${await status()} ${await js(`document.querySelector("#error").textContent`)}`);
   check("Path shows the load balancer menu and host box", await js(`!document.querySelector("#lb").hidden && !document.querySelector("#host").hidden`));
   check("the Path button reads Map", (await js(`document.querySelector("#path").textContent`)) === "Map");
+
+  const liveHost = process.env.CLOUDSPIDER_LIVE_HOST;
+  const liveHeadline = process.env.CLOUDSPIDER_LIVE_HEADLINE;
+  if (liveHost && liveHeadline) {
+    await js(`(() => {
+      const box = document.querySelector("#host");
+      box.value = ${JSON.stringify(liveHost)};
+      box.dispatchEvent(new Event("change"));
+    })()`);
+    check(
+      `the live host ${liveHost} gives its headline`,
+      await waitFor(`() => document.querySelector("#status").textContent.includes(${JSON.stringify(liveHeadline)})`, 40000),
+      await status(),
+    );
+    const live = await send("Page.captureScreenshot", { format: "png" });
+    await writeFile("/tmp/cloudspider-live.png", Buffer.from(live.data, "base64"));
+    console.log("screenshot /tmp/cloudspider-live.png");
+    await js(`(() => {
+      const box = document.querySelector("#host");
+      box.value = "";
+      box.dispatchEvent(new Event("change"));
+    })()`);
+  }
 
   await js(`document.querySelector("#sample").click()`);
   check("Sample in Path says it is a sample", await waitFor(`() => document.querySelector("#status").textContent.startsWith("sample, not the account.")`), await status());

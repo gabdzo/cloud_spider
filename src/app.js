@@ -33,8 +33,6 @@ export function createApp({ ec2, trail, logs, path, logGroup, pageOrigin, clock,
   let generation = 0;
   let radioAt = 0;
   let booted = null;
-  let pathGeneration = 0;
-
   const radio = createRadio({
     lookup: (next) => trail.lookupEvents(next),
   });
@@ -162,9 +160,8 @@ export function createApp({ ec2, trail, logs, path, logGroup, pageOrigin, clock,
       });
       if (!path) return failed("path reads are not set up");
       if (!at) return failed(error || "the region is not read yet");
-      const mine = ++pathGeneration;
       const result = await readPath(path, at);
-      if (mine !== pathGeneration || at !== region) return { region, stale: true };
+      if (at !== region) return { region, stale: true };
       if (result.error) {
         const sentence = accountRead(result.error);
         report(sink, { call: result.call, sentence });
