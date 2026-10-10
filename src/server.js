@@ -33,6 +33,12 @@ const FILES = new Set([
   "sprites/mascot.js",
   "sprites/buildings.js",
   "sprites/landmarks.js",
+  "sprites/vault.js",
+  "vault-state.js",
+  "vault-match.js",
+  "vault-schema.js",
+  "vault-layout.js",
+  "vault-draw.js",
 ]);
 
 const page = `<!doctype html>
@@ -279,7 +285,7 @@ const page = `<!doctype html>
   .power { width: 8px; height: 8px; border-radius: 50%; background: var(--pip-bright); box-shadow: 0 0 8px var(--pip-bright); }
 
   /* ---- controls on the screen ---- */
-  select, button.cmd, input {
+  select, button.cmd, a.cmd, input {
     min-height: 32px;
     padding: 0 10px;
     border: 2px solid var(--pip-dim);
@@ -293,10 +299,12 @@ const page = `<!doctype html>
   input { min-width: 0; flex: 1 1 220px; max-width: 420px; }
   input::placeholder { color: var(--pip-dim); }
   button { cursor: pointer; }
-  button.cmd { display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0.08em; text-transform: uppercase; }
-  button.cmd::before { content: "["; color: var(--pip-dim); }
-  button.cmd::after { content: "]"; color: var(--pip-dim); }
-  button.cmd:hover { background: var(--pip-bright); color: var(--pip-ink); border-color: var(--pip-bright); }
+  button.cmd, a.cmd { display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0.08em; text-transform: uppercase; }
+  button.cmd::before, a.cmd::before { content: "["; color: var(--pip-dim); }
+  button.cmd::after, a.cmd::after { content: "]"; color: var(--pip-dim); }
+  button.cmd:hover, a.cmd:hover { background: var(--pip-bright); color: var(--pip-ink); border-color: var(--pip-bright); }
+  a.cmd:focus-visible { outline: 2px solid var(--pip-hot); outline-offset: 2px; }
+  button.cmd:disabled { opacity: 0.6; cursor: wait; }
   button.cmd:hover img { filter: brightness(0); }
   #yes { border-color: var(--status-hang); color: var(--status-hang); }
   #yes:hover { background: var(--status-hang); color: var(--pip-ink); }
@@ -413,6 +421,60 @@ const page = `<!doctype html>
     border: 1px solid var(--pip-mid); border-top: 3px solid var(--pip-bright);
     box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7), 0 0 12px rgba(20, 255, 106, 0.15);
   }
+  /* ---- vaults: open/close-all switch and the panels beside open doors ---- */
+  #vault-all { position: absolute; z-index: 2; min-height: 26px; padding: 0 10px; font-size: 11px; letter-spacing: 0.12em; }
+  #vault-panels { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 2; }
+  .vault-panel {
+    position: absolute; display: flex; flex-direction: column; min-width: 0;
+    font-size: 12px; line-height: 1.45; color: var(--pip-mid);
+    background: rgba(2, 10, 5, 0.94); border: 2px solid var(--pip-dim);
+    box-shadow: 0 0 0 1px #000, 0 8px 20px rgba(0, 0, 0, 0.55), inset 0 0 18px rgba(20, 255, 106, 0.05);
+  }
+  .vault-panel::before, .vault-panel::after {
+    content: ""; position: absolute; width: 12px; height: 12px; pointer-events: none;
+    border: 3px solid var(--pip-bright);
+  }
+  .vault-panel::before { left: -5px; top: -5px; border-right: 0; border-bottom: 0; }
+  .vault-panel::after { right: -5px; bottom: -5px; border-left: 0; border-top: 0; }
+  .vp-title {
+    display: flex; align-items: center; gap: 8px; margin: 4px; padding: 3px 4px 3px 8px; min-height: 26px;
+    color: var(--pip-ink); font-size: 13px; font-weight: bold; letter-spacing: 0.08em;
+    background: linear-gradient(180deg, var(--pip-hot), var(--pip-bright) 15%, var(--pip-mid));
+  }
+  .vp-title img { filter: brightness(0.15); }
+  .vp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vp-close {
+    flex: none; min-height: 20px; padding: 0 8px; font: inherit; font-size: 10px; letter-spacing: 0.12em; cursor: pointer;
+    color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-ink);
+  }
+  .vp-close:hover, .vp-close:focus-visible { outline: none; color: var(--pip-hot); box-shadow: 0 0 0 1px var(--pip-hot); }
+  .vault-panel.damaged { border-color: var(--status-broken); }
+  .vault-panel.damaged .vp-title { color: var(--pip-ink); background: var(--status-broken); }
+  .vault-panel.damaged::before, .vault-panel.damaged::after { border-color: var(--status-broken); }
+  .vp-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 12px 8px; }
+  .vp-desc { margin: 4px 0 10px; color: var(--pip-bright); text-shadow: 0 0 5px var(--glow-soft); overflow-wrap: anywhere; }
+  .vp-facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0 0 10px; }
+  .vp-facts dt { color: var(--pip-dim); letter-spacing: 0.12em; font-size: 11px; }
+  .vp-facts dd { margin: 0; color: var(--pip-bright); overflow-wrap: anywhere; }
+  .vp-checks h4 { margin: 0 0 4px; color: var(--pip-dim); font-size: 11px; letter-spacing: 0.14em; border-top: 1px dashed var(--pip-dark); padding-top: 8px; }
+  .vp-checks ul, .vp-errors { list-style: none; margin: 0; padding: 0; }
+  .vp-checks li { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; border-bottom: 1px solid rgba(20, 255, 106, 0.08); }
+  .vp-checks .dot { flex: none; width: 10px; height: 10px; margin-top: 3px; border-radius: 50%; background: var(--pip-dim); box-shadow: inset 0 0 0 1px #000; }
+  .vp-checks li.ok .dot { background: var(--status-ok); box-shadow: 0 0 6px var(--status-ok), inset 0 0 0 1px #000; }
+  .vp-checks li.fail .dot { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken), inset 0 0 0 1px #000; }
+  .vp-checks li.slow .dot { background: var(--status-hang); box-shadow: 0 0 6px var(--status-hang), inset 0 0 0 1px #000; }
+  .vp-checks li.pending .dot { animation: vault-blink 1.2s steps(2) infinite; }
+  .check-body { display: flex; flex-wrap: wrap; gap: 0 10px; min-width: 0; }
+  .check-body .url { color: var(--pip-bright); overflow-wrap: anywhere; }
+  .check-body .res { color: var(--pip-dim); }
+  .check-body .err { flex-basis: 100%; color: var(--status-broken); overflow-wrap: anywhere; }
+  .vp-checks li.slow .err { color: var(--status-hang); }
+  .vp-errors li { position: relative; padding: 4px 0 4px 16px; color: var(--status-broken); overflow-wrap: anywhere; border-bottom: 1px solid rgba(255, 90, 60, 0.15); }
+  .vp-errors li::before { content: "!"; position: absolute; left: 2px; top: 4px; font-weight: bold; }
+  .vp-links { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 10px; border-top: 1px dashed var(--pip-dark); }
+  .vp-links .cmd { min-height: 28px; padding: 0 10px; font-size: 11px; letter-spacing: 0.12em; text-decoration: none; display: inline-flex; align-items: center; }
+  @keyframes vault-blink { 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .vp-checks li.pending .dot { animation: none; } }
   #wall-grain { position: absolute; z-index: 2; min-height: 26px; padding: 0 6px; font-size: 11px; }
   #pip {
     position: absolute; top: 10px; left: 12px; z-index: 4; margin: 0;
@@ -619,6 +681,8 @@ const page = `<!doctype html>
           <option value="coarse">coarse</option>
           <option value="fine">fine</option>
         </select>
+        <button id="vault-all" class="cmd" type="button" aria-pressed="false" hidden>OPEN ALL</button>
+        <div id="vault-panels"></div>
       </div>
       <form id="pip" hidden></form>
     </div>
@@ -722,6 +786,19 @@ async function route(app, req, res) {
         host: url.searchParams.get("host") || "",
       }),
     );
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/vaults") {
+    // No boot here: vaults come from files, so they show even before (or
+    // without) an AWS read; ownership fills in once the place is known.
+    send(res, 200, await app.vaultsView({ sample: url.searchParams.get("sample") === "1" }));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/vaults/test") {
+    const body = await readJson(req);
+    send(res, 200, await app.vaultsTest(req.headers.origin, body?.key, { sample: Boolean(body?.sample) }));
     return;
   }
 

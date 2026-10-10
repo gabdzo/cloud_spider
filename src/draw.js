@@ -9,6 +9,7 @@ import {
   settlementPost, settlementWallH, settlementWallV, settlementGate
 } from "./pixel-art.js";
 import { FONT_PX, SMOKE_PX } from "./layout.js";
+import { drawVaultLabels, drawVaultsLive, drawVaultsStatic, vaultCards } from "./vault-draw.js";
 import { isExpendable } from "./verbs.js";
 import { PIP, STATE_COLOR, STATUS, WORLD, font, rgba } from "./theme.js";
 import {
@@ -40,7 +41,10 @@ function getCacheKey(width, height, placed) {
   const settlementKey = placed.settlements.map(s => `${s.x},${s.y},${s.w},${s.h},${s.gate || ""},${s.empty ? 1 : 0}`).join(';');
   const camp = placed.camp;
   const campKey = camp ? `${camp.x},${camp.y},${camp.w},${camp.h}` : "";
-  return `${width}x${height}:${settlementKey}:${campKey}`;
+  const vaultKey = (placed.vaults?.cells || [])
+    .map((c) => `${c.key}@${c.x},${c.y},${c.w},${c.h},${c.open ? 1 : 0},${c.vault.number},${c.vault.damaged ? 1 : 0}`)
+    .join(";");
+  return `${width}x${height}:${settlementKey}:${campKey}:${vaultKey}`;
 }
 
 // Deterministic debris placement (seeded by simple hash)
@@ -84,8 +88,8 @@ function generateDebris(width, height, placed) {
       return false;
     }
     
-    // Check settlements and the account-wide camp
-    for (const settlement of [...(placed.settlements || []), ...(placed.camp ? [placed.camp] : [])]) {
+    // Check settlements, the account-wide camp and the vault row
+    for (const settlement of [...(placed.settlements || []), ...(placed.camp ? [placed.camp] : []), ...(placed.vaults ? [placed.vaults] : [])]) {
       if (x + w > settlement.x && x < settlement.x + settlement.w &&
           y + h > settlement.y && y < settlement.y + settlement.h) {
         return false;
@@ -173,6 +177,7 @@ function staticLayer(ctx, width, height, placed) {
   }
   for (const item of debrisCache.debris) drawDebris(layer, item);
   drawCampfireStill(layer, width, height);
+  drawVaultsStatic(layer, placed.vaults);
   if (placed.camp) {
     drawSettlement(layer, { ...placed.camp, gate: "" });
     drawBanner(layer, placed.camp);
@@ -192,7 +197,7 @@ function staticLayer(ctx, width, height, placed) {
 }
 
 export function paint(ctx, scene) {
-  const { placed, ui, region, animTime, width, height, reducedMotion } = scene;
+  const { placed, ui, region, animTime, width, height, reducedMotion, vaultDoor } = scene;
   ctx.imageSmoothingEnabled = false;
   ctx.textBaseline = "alphabetic";
   ctx.clearRect(0, 0, width, height);
@@ -216,13 +221,16 @@ export function paint(ctx, scene) {
   // Links and fixtures (load balancers, clusters, the camp's bucket, table,
   // secret and function) sit over the ground, under every label.
   const phase = Math.floor((animTime || 0) / 180) % 4;
+  if (placed.vaults) drawLinks(ctx, placed.vaults.edges, animTime, reducedMotion);
+  drawVaultsLive(ctx, placed.vaults, { door: vaultDoor || ((key, open) => (open ? 1 : 0)), animTime, reducedMotion });
   for (const settlement of placed.settlements) drawLinks(ctx, settlement.edges, animTime, reducedMotion);
   if (placed.camp) drawLinks(ctx, placed.camp.edges, animTime, reducedMotion);
   for (const fixture of allFixtures(placed)) drawFixture(ctx, fixture, ui, phase, reducedMotion);
 
   // Text last, so smoke, wanderers and sprites never cover a label.
   ctx.font = FONT;
-  if (!placed.settlements.length && !placed.camp && !placed.orphans?.items?.length && !placed.orphans?.fixtures?.length) {
+  drawVaultLabels(ctx, placed.vaults);
+  if (!placed.settlements.length && !placed.camp && !placed.vaults && !placed.orphans?.items?.length && !placed.orphans?.fixtures?.length) {
     ctx.fillStyle = TEXT;
     ctx.fillText(region ? `${region} has no VPCs` : "", 24, 40);
   }
@@ -359,11 +367,12 @@ function drawFixtureLabel(ctx, fixture) {
   ctx.fillStyle = TEXT;
   ctx.fillText(clipTo(ctx, fixture.label || fixture.name || fixture.id, room, SMALL), x + 50, y + Math.round(h / 2) - 2);
   ctx.fillStyle = PIP.dim;
-  ctx.fillText(String(fixture.kind || "").toUpperCase(), x + 50, y + Math.round(h / 2) + 14);
+  ctx.fillText(clipTo(ctx, fixture.caption || String(fixture.kind || "").toUpperCase(), w - 56, SMALL), x + 50, y + Math.round(h / 2) + 14);
 }
 
 function allFixtures(placed) {
   return [
+    ...vaultCards(placed.vaults),
     ...(placed.camp?.nodes || []),
     ...(placed.settlements || []).flatMap((settlement) => settlement.fixtures || []),
     ...(placed.orphans?.fixtures || []),

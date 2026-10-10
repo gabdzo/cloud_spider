@@ -5,10 +5,25 @@ import { createPathAws } from "./aws-path.js";
 import { createCost } from "./cost.js";
 import { createUpgrade, pulumiWarning } from "./upgrade.js";
 import { listen, listenExit } from "./server.js";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createVaultStore, vaultsDir } from "./vaults.js";
+import { createCheckRunner } from "./vault-checks.js";
+import { createVaultView } from "./vault-view.js";
+import { sampleFetch, samplePlace } from "./sample.js";
 
 const port = Number(process.env.PORT || 9241);
 const pageOrigin = `http://127.0.0.1:${port}`;
 const aws = createAws();
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const vaults = {
+  live: createVaultView({ store: createVaultStore({ dir: vaultsDir() }), checker: createCheckRunner() }),
+  sample: createVaultView({
+    store: createVaultStore({ dir: join(root, "samples", "vaults") }),
+    checker: createCheckRunner({ fetch: sampleFetch }),
+  }),
+  samplePlace,
+};
 const app = createApp({
   ec2: aws.ec2,
   trail: aws.trail,
@@ -17,6 +32,7 @@ const app = createApp({
   cost: createCost(),
   upgrade: createUpgrade(),
   eks: aws.eks,
+  vaults,
   logGroup: process.env.CLOUDSPIDER_LOG_GROUP || "",
   pageOrigin,
   clock: () => Date.now(),

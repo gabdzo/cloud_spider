@@ -1,0 +1,12 @@
+# Sample vault with mistakes, to show the damaged state.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: Reactor Core
+  number: 1013
+  description: Half-written vault file.
+spec:
+  type: nuclear
+  checks:
+    http:
+      - url: not-a-url

@@ -1,0 +1,30 @@
+# An example vault. Copy this file, change it, and the map picks it up on the
+# next refresh. Point CLOUDSPIDER_VAULTS_DIR at another folder to keep vault
+# files elsewhere (for example next to each project's catalog-info.yaml).
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: example-site            # lowercase, digits, dashes; unique
+  number: 101                   # 0-999, shown as "VAULT 101" on the door
+  title: Example site           # optional display name
+  description: A short sentence about what this project is.
+  owner: your-team
+  tags: [example]
+spec:
+  type: static-site             # static-site | service | api | cluster | worker | data | other
+  resources:                    # what belongs to this vault (any match counts)
+    tags:                       # every tag listed must match
+      project: example-site
+    # ids:                      # instance ids, ARNs, or names
+    #   - i-0123456789abcdef0
+  links:
+    view: https://example.com/
+    repo: https://github.com/your-org/example-site
+    docs: https://github.com/your-org/example-site#readme
+    # dashboard: https://console.aws.amazon.com/cloudwatch/
+  checks:
+    http:
+      - url: https://example.com/
+        expect: 200             # status to expect (default 200)
+        contains: Example Domain   # optional text the page must contain
+        timeout: 5000           # ms (default 5000); over half of it is "slow"

@@ -1,3 +1,4 @@
+import { placeVaults, vaultEdges } from "./vault-layout.js";
 export const FONT_PX = 14;
 const CHAR_W = 8.5;
 const LINE = 20;
@@ -251,14 +252,39 @@ function gateKind(place, vpcId) {
   return "";
 }
 
-export function layout(place, { rowLimit = ROW_LIMIT } = {}) {
-  const vpcs = [...place.vpcs].sort(byId);
-  const subnets = [...place.subnets].sort(byId);
-  const instances = [...place.instances].sort(byId);
+function findPlaced(settlements, id) {
+  for (const settlement of settlements) {
+    for (const plot of settlement.plots) {
+      const hit = plot.buildings.find((item) => item.id === id);
+      if (hit) return hit;
+    }
+    const hit = settlement.outsiders.find((item) => item.id === id) || settlement.fixtures.find((item) => item.id === id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false } = {}) {
+  const vpcs = [...(place.vpcs || [])].sort(byId);
+  const subnets = [...(place.subnets || [])].sort(byId);
+  const allInstances = [...(place.instances || [])].sort(byId);
   const settlements = [];
   const columns = columnsFor(rowLimit);
   // The tally and the bill live in the header now; the map starts at the top.
   let cursorY = PAD;
+
+  // Vaults first: a hillside row of project doors. What a vault owns outside
+  // any VPC (camp pieces, loose fixtures, no-VPC machines) moves into it;
+  // VPC-bound pieces stay put and the open vault links to them.
+  const owned = new Set((vaults || []).flatMap((vault) => vault.owned || []));
+  const resources = new Map();
+  for (const item of allInstances) resources.set(item.id, { ...item, kind: "ec2" });
+  for (const item of place.fixtures || []) resources.set(item.id, item);
+  const vaultArea = placeVaults(vaults, { top: cursorY, left: PAD, rowLimit, isOpen, resources });
+  if (vaultArea) cursorY = vaultArea.bottom + GAP * 2;
+  const movesIn = (item) => owned.has(item.id) && !item.vpcId;
+  const instances = allInstances.filter((item) => !movesIn(item));
+  const fixtures = (place.fixtures || []).filter((item) => !movesIn(item));
 
   for (const vpc of vpcs) {
     const label = vpc.name ? joinLabel(vpc.name, vpc.cidr) : joinLabel(vpc.id, vpc.cidr);
@@ -327,7 +353,7 @@ export function layout(place, { rowLimit = ROW_LIMIT } = {}) {
       }
     }
 
-    const ownedFixtures = (place.fixtures || []).filter((item) => item.vpcId === vpc.id);
+    const ownedFixtures = fixtures.filter((item) => item.vpcId === vpc.id);
     let fixtureItems = [];
     if (ownedFixtures.length) {
       const fixtureTop = plots.length ? rowBottom + GAP : plotsTop;
@@ -368,8 +394,8 @@ export function layout(place, { rowLimit = ROW_LIMIT } = {}) {
   }
 
   const orphanItems = instances.filter((item) => !item.vpcId);
-  const looseFixtures = (place.fixtures || []).filter((item) => !item.vpcId && !campMember(item));
-  const camp = placeCamp((place.fixtures || []).filter(campMember), cursorY, rowLimit);
+  const looseFixtures = fixtures.filter((item) => !item.vpcId && !campMember(item));
+  const camp = placeCamp(fixtures.filter(campMember), cursorY, rowLimit);
   if (camp) cursorY = camp.y + camp.h + GAP * 2;
   const packedOrphans = pack(orphanItems, PAD + INSET, cursorY + LINE + INSET, columns);
   const fixtureTop = orphanItems.length ? packedOrphans.bottom + GAP : cursorY + LINE + INSET;
@@ -381,8 +407,11 @@ export function layout(place, { rowLimit = ROW_LIMIT } = {}) {
     looseFixtures.length ? packedShelf.bottom + PAD : 0,
   );
 
+  if (vaultArea) vaultArea.edges = vaultEdges(vaultArea, (id) => findPlaced(settlements, id));
+
   return {
     settlements,
+    vaults: vaultArea,
     camp,
     orphans: {
       label: "no VPC",
@@ -394,6 +423,7 @@ export function layout(place, { rowLimit = ROW_LIMIT } = {}) {
     contentWidth: Math.max(
       ...settlements.map((item) => item.x + item.w + PAD),
       camp ? camp.x + camp.w + PAD : 0,
+      vaultArea ? vaultArea.x + vaultArea.w + PAD : 0,
       ...packedOrphans.items.map((item) => item.x + item.w + PAD),
       ...packedShelf.items.map((item) => item.x + item.w + PAD),
       PAD * 2,

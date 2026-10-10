@@ -1,0 +1,28 @@
+# Sample vault: a static landing page whose check passes.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: landing
+  number: 101
+  title: Landing page
+  description: The public landing page. Static files in the camp bucket, served through the sample gate.
+  owner: gabriel
+  tags: [web, public]
+spec:
+  type: static-site
+  resources:
+    tags:
+      project: landing
+    ids:
+      - camp-bucket
+      - alb-sample
+  links:
+    view: https://landing.sample.cloudspider.test/
+    repo: https://github.com/gabdzo/cloud_spider
+    docs: https://github.com/gabdzo/cloud_spider#vaults
+  checks:
+    http:
+      - url: https://landing.sample.cloudspider.test/
+        expect: 200
+        contains: Welcome
+        timeout: 3000

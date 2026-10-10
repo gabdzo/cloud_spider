@@ -2,22 +2,29 @@
 // mutated in place by the Sample flips, so identity alone is not enough:
 // anything that mutates it must go through flipSampleState (or call
 // invalidate) so the next frame lays out the new state.
+// extra = { key, options }: anything else the layout depends on (the vault
+// list and which doors are open). A different extra.key lays out again.
 export function createLayoutCache(layoutFn) {
   let key = null;
   let limit = undefined;
+  let extraKey = undefined;
   let placed = null;
   return {
-    get(place, rowLimit) {
-      if (key !== place || limit !== rowLimit) {
-        placed = rowLimit == null ? layoutFn(place) : layoutFn(place, { rowLimit });
+    get(place, rowLimit, extra = null) {
+      const nextExtra = extra ? extra.key : undefined;
+      if (key !== place || limit !== rowLimit || extraKey !== nextExtra) {
+        const options = { ...(rowLimit == null ? {} : { rowLimit }), ...(extra?.options || {}) };
+        placed = Object.keys(options).length ? layoutFn(place, options) : layoutFn(place);
         key = place;
         limit = rowLimit;
+        extraKey = nextExtra;
       }
       return placed;
     },
     invalidate() {
       key = null;
       limit = undefined;
+      extraKey = undefined;
       placed = null;
     },
   };

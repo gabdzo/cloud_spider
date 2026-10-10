@@ -1,0 +1,25 @@
+# Sample vault: an API whose health check fails.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: orders-api
+  number: 111
+  title: Orders API
+  description: Takes orders from the landing page. A Lambda function with a DynamoDB table behind it.
+  owner: platform-team
+spec:
+  type: api
+  resources:
+    ids: [camp-function, camp-table]
+  links:
+    view: https://orders-api.sample.cloudspider.test/
+    repo: https://github.com/gabdzo/cloud_spider
+    dashboard: https://console.aws.amazon.com/cloudwatch/
+  checks:
+    http:
+      - url: https://orders-api.sample.cloudspider.test/healthz
+        expect: 200
+        timeout: 2000
+      - url: https://orders-api.sample.cloudspider.test/version
+        expect: 200
+        timeout: 2000
