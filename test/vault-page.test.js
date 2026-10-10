@@ -1,11 +1,11 @@
-// Vaults have their own page; the map keeps a strip of plates and badges.
+// Vaults are their own view (the fourth header tab); the map keeps badges.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFile } from "node:fs/promises";
 import { layout } from "../src/layout.js";
 import { samplePlace } from "../src/sample.js";
 import {
-  BADGE, STRIP, badgeAt, ownedRows, parseVaultHash, placeVaultStrip, stackState, vaultBadges, vaultHash, vaultSummary, vaultTally,
+  BADGE, badgeAt, ownedRows, parseVaultHash, stackState, vaultBadges, vaultHash, vaultSummary, vaultTally,
 } from "../src/vault-page.js";
 
 const vaults = () => [
@@ -53,32 +53,14 @@ test("the page header counts vaults, LIVE ones and the ones that need a look", (
   );
 });
 
-for (const width of [760, 1280, 1920]) {
-  test(`the vault strip fits the map at ${width}px and its chips never overlap`, () => {
-    const rowLimit = Math.min(1100, width - 40);
-    const many = Array.from({ length: 9 }, (_, i) => ({ key: `v${i}`, number: 100 + i, title: `Vault ${i}` }));
-    const strip = placeVaultStrip(many, { top: 24, left: 24, rowLimit });
-    assert.ok(strip.x + strip.w <= rowLimit, `${strip.x + strip.w} > ${rowLimit}`);
-    const boxes = [strip.button, ...strip.chips];
-    for (const box of boxes) assert.ok(box.x >= strip.x && box.x + box.w <= strip.x + strip.w && box.y >= strip.y && box.y + box.h <= strip.bottom);
-    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
-      const a = boxes[i];
-      const b = boxes[j];
-      assert.ok(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y, `chip ${i} overlaps ${j}`);
-    }
-    if (width === 760) assert.ok(strip.h > STRIP.h, "a narrow map wraps the strip");
-  });
-}
-
-test("the map has no vault doors any more: a slim strip above the region, which moves up", () => {
+test("the map has no vault doors and no vault strip: the region starts at the top", () => {
   const doors = layout(samplePlace(), { rowLimit: 1100, vaults: vaults() });
   const page = layout(samplePlace(), { rowLimit: 1100, vaults: vaults(), vaultMode: "page" });
+  const none = layout(samplePlace(), { rowLimit: 1100 });
   assert.equal(page.vaults, null);
-  assert.ok(page.vaultStrip);
-  assert.deepEqual(page.vaultStrip.chips.map((chip) => chip.key), ["landing", "orders-api", "eks", "reactor.yaml#0"]);
-  assert.ok(page.vaultStrip.bottom < page.region.y);
-  assert.ok(page.region.y < doors.region.y - 100, `region at ${page.region.y}, with doors at ${doors.region.y}`);
-  assert.equal(layout(samplePlace(), { rowLimit: 1100, vaults: [], vaultMode: "page" }).vaultStrip, null);
+  assert.equal(page.vaultStrip, undefined);
+  assert.equal(page.region.y, none.region.y, "vaults take no room on the map");
+  assert.ok(page.region.y < doors.region.y - 100);
   // Camp pieces a vault owns stay in the camp (doors mode pulled them out).
   assert.ok(page.camp.nodes.some((node) => node.id === "camp-bucket"));
 });
@@ -129,12 +111,34 @@ test("the vault page lists what a vault owns and where it lives; VPCs and missin
   assert.deepEqual(gone[0], { id: "i-gone", kind: "?", name: "i-gone", where: "not on the map right now", onMap: false });
 });
 
-test("the page shell has the strip and the page, and serves vault-page.js", async () => {
+test("VAULTS is the fourth view tab (a push-button with a lamp and a vault-door icon); no strip on the map", async () => {
   const server = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
-  assert.match(server, /<nav id="vault-strip" aria-label="vaults" hidden><\/nav>/);
+  const tabs = server.match(/<nav class="tabs" aria-label="views">([\s\S]*?)<\/nav>/)[1];
+  assert.deepEqual([...tabs.matchAll(/<button id="([^"]+)" class="tab"/g)].map((m) => m[1]), ["tab-map", "path", "cluster", "tab-vaults"]);
+  assert.match(tabs, /id="tab-vaults" class="tab" type="button" data-icon="vaults" aria-pressed="false"/);
+  assert.doesNotMatch(server, /vault-strip/);
   assert.match(server, /<section id="vault-page" aria-label="vaults page" hidden><\/section>/);
   assert.match(server, /"vault-page\.js",/);
   const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
   assert.match(browser, /vaultMode: "page"/);
   assert.match(browser, /window\.addEventListener\("hashchange", routeVaults\)/);
+  assert.match(browser, /tabVaults\.setAttribute\("aria-pressed", String\(vaultPageOpen\(\)\)\)/);
+  assert.match(browser, /tabMap\.setAttribute\("aria-pressed", String\(mode === "map" && !vaultRoute\)\)/);
+  // Path and Cluster drop the route; MAP and the porthole close the view.
+  assert.match(browser, /function enterPath\(\) \{\n  dropVaultRoute\(\);/);
+  assert.match(browser, /function enterCluster\(\) \{\n  dropVaultRoute\(\);/);
+  assert.match(browser, /function goOverview\(\) \{\n  if \(vaultRoute\) closeVaultPage\(\);/);
+});
+
+test("the vault-door tab icon is a 16x16 cog door: symmetric teeth, lit top-left, a hub in the middle", async () => {
+  const { icon, ICON_NAMES } = await import("../src/sprites/icons.js");
+  assert.ok(ICON_NAMES.includes("vaults"));
+  const grid = icon("vaults");
+  assert.equal(grid.length, 16);
+  assert.ok(grid.every((row) => row.length === 16));
+  const filled = (x, y) => grid[y][x] !== 0;
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) assert.equal(filled(x, y), filled(15 - x, y), `teeth mirror at ${x},${y}`);
+  assert.ok(filled(7, 0) && filled(0, 7) && !filled(4, 1), "teeth at the rim, gaps between them");
+  const hot = grid[8][8];
+  assert.notEqual(hot, grid[7][7], "the hub has a highlight");
 });

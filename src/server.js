@@ -809,35 +809,16 @@ const page = `<!doctype html>
     border: 1px solid var(--pip-mid); border-top: 3px solid var(--pip-bright);
     box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7), 0 0 12px rgba(20, 255, 106, 0.15);
   }
-  /* ---- the map's vault strip: VAULTS button and one enamel plate chip per vault ---- */
-  #vault-strip { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 2; }
-  #vault-strip[hidden] { display: none; }
-  .vs-open { position: absolute; padding: 0 6px; font-size: 11px; letter-spacing: 0.1em; white-space: nowrap; }
-  .vs-chip {
-    position: absolute; display: flex; align-items: center; gap: 6px; padding: 0 8px 0 5px; min-width: 0;
-    font: inherit; font-size: 11px; letter-spacing: 0.06em; cursor: pointer; text-align: left;
-    color: var(--pip-bright); background: rgba(2, 10, 5, 0.9);
-    border: 1px solid var(--pip-dark); box-shadow: inset 0 0 0 1px var(--pip-ink);
-  }
-  .vs-chip:hover, .vs-chip:focus-visible { border-color: var(--pip-bright); outline: none; box-shadow: 0 0 8px var(--glow-soft); }
-  .vs-plate {
-    flex: none; padding: 1px 5px; font-size: 11px; letter-spacing: 0.08em; color: var(--pip-ink);
-    background: linear-gradient(180deg, var(--world-amber), var(--case-brass) 80%);
-    border: 1px solid var(--case-brass-lo); box-shadow: 0 1px 0 var(--pip-ink);
-  }
-  .vs-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .vs-lamp, .vpg-lamp {
+  .vpg-lamp {
     flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--pip-dim); opacity: 0.6;
     box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam);
   }
-  .ok > .vs-lamp, .ok .vpg-lamp { background: var(--status-ok); opacity: 1; box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam), 0 0 8px var(--status-ok); }
-  .slow > .vs-lamp, .slow .vpg-lamp { background: var(--status-hang); opacity: 1; box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam), 0 0 8px var(--status-hang); }
-  .fail > .vs-lamp, .damaged > .vs-lamp, .fail .vpg-lamp, .damaged .vpg-lamp { background: var(--status-broken); opacity: 1; box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam), 0 0 8px var(--status-broken); }
-  .pending > .vs-lamp, .pending .vpg-lamp { animation: vs-blink 1.2s steps(2) infinite; }
-  .vs-chip.trouble, .vs-chip.fail, .vs-chip.damaged { border-color: var(--status-broken); }
-  .vs-chip.damaged .vs-plate { background: var(--status-broken); }
-  @keyframes vs-blink { 50% { opacity: 0.25; } }
-  @media (prefers-reduced-motion: reduce) { .pending > .vs-lamp, .pending .vpg-lamp { animation: none; } }
+  .ok .vpg-lamp { background: var(--status-ok); opacity: 1; box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam), 0 0 8px var(--status-ok); }
+  .slow .vpg-lamp { background: var(--status-hang); opacity: 1; box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam), 0 0 8px var(--status-hang); }
+  .fail .vpg-lamp, .damaged .vpg-lamp { background: var(--status-broken); opacity: 1; box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam), 0 0 8px var(--status-broken); }
+  .pending .vpg-lamp { animation: vpg-blink 1.2s steps(2) infinite; }
+  @keyframes vpg-blink { 50% { opacity: 0.25; } }
+  @media (prefers-reduced-motion: reduce) { .pending .vpg-lamp { animation: none; } }
 
   /* ---- the VAULTS page: covers the map ---- */
   #vault-page {
@@ -1514,6 +1495,7 @@ const page = `<!doctype html>
     <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true">Map</button>
     <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false">Path</button>
     <button id="cluster" class="tab" type="button" data-icon="cluster" aria-pressed="false">Cluster</button>
+    <button id="tab-vaults" class="tab" type="button" data-icon="vaults" aria-pressed="false" title="vaults: every project, its checks and what it owns">Vaults</button>
   </nav>
   <div class="console">
     <div class="keys" role="group" aria-label="panels">
@@ -1579,7 +1561,6 @@ const page = `<!doctype html>
         <button id="vault-templates-btn" class="cmd" type="button" aria-expanded="false" aria-controls="vault-templates" hidden>TEMPLATES</button>
         <section id="vault-templates" aria-label="vault templates" hidden></section>
         <div id="vault-panels"></div>
-        <nav id="vault-strip" aria-label="vaults" hidden></nav>
       </div>
       <section id="vault-page" aria-label="vaults page" hidden></section>
       <nav id="kube-tabs" aria-label="cluster screens" hidden></nav>
