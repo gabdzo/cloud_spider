@@ -341,7 +341,7 @@ canvas.addEventListener("click", async (event) => {
   if (sample || !isInstanceId(raw.id)) return;
   const logs = await fetch(`/api/logs?id=${encodeURIComponent(raw.id)}`).then((response) => response.json());
   if (ui.selection?.id !== raw.id) return;
-  setLogs(ui, logs.lines || [], logs.note || "");
+  setLogs(ui, logs.entries || logs.lines || [], logs.note || "");
   draw();
 });
 
