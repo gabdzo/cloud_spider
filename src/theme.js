@@ -70,6 +70,14 @@ export const WORLD = {
   cloth: "#8f3a1c",
   clothEdge: "#5c1f12",
   clothDark: "#4a180e",
+  // Architecture map: public yards catch the sun, private ones sit in shade;
+  // the region is fenced with chain link.
+  soilSunTop: "#4a3a1e",
+  soilSunBottom: "#2c2112",
+  soilShadeTop: "#1f2418",
+  soilShadeBottom: "#12150d",
+  fence: "#7d8070",
+  territory: "#0a1a0e",
 };
 
 // Skyline silhouettes on the toxic horizon (sprite palette overrides).

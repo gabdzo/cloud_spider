@@ -19,15 +19,61 @@ export function samplePlace() {
     name: id,
     tags: [{ key: "cloudspider", value: "expendable" }],
   });
+  // A second VPC with an EKS cluster, shaped like cloudspider-up: public
+  // and private subnets in two zones, a NAT, two nodes, a database, a
+  // worker function in the VPC and an S3 gateway endpoint; peered with the
+  // first VPC. CloudFront in front of the landing page.
+  const eks = { id: "sample-eks-vpc", cidr: "10.43.0.0/16", name: "sample-eks" };
+  const eksSubnet = (id, zone, cidr, isPublic) => ({ id, vpcId: eks.id, cidr, name: id.replace("sample-", ""), zone, public: isPublic });
+  const node = (id, subnetId) => ({
+    id,
+    state: "running",
+    type: "t3.medium",
+    vpcId: eks.id,
+    subnetId,
+    name: "",
+    tags: [{ key: "eks:cluster-name", value: "sample-cluster" }, { key: "eks:nodegroup-name", value: "sample-nodes" }, { key: "project", value: "eks" }],
+  });
   return {
     region: "sample",
-    vpcs: [vpc],
-    subnets: [subnet],
-    gateways: [{ vpcId: vpc.id, kind: "igw", id: "igw-sample" }],
+    vpcs: [vpc, eks],
+    subnets: [
+      subnet,
+      eksSubnet("sample-public-a", "sample-a", "10.43.0.0/19", true),
+      eksSubnet("sample-public-b", "sample-b", "10.43.32.0/19", true),
+      eksSubnet("sample-private-a", "sample-a", "10.43.64.0/19", false),
+      eksSubnet("sample-private-b", "sample-b", "10.43.96.0/19", false),
+    ],
+    gateways: [
+      { vpcId: vpc.id, kind: "igw", id: "igw-sample" },
+      { vpcId: eks.id, kind: "igw", id: "igw-sample-eks" },
+      { vpcId: eks.id, kind: "nat", id: "nat-sample", subnetId: "sample-public-a", state: "available", name: "sample-nat" },
+    ],
+    routes: [
+      { id: "rtb-sample", vpcId: vpc.id, main: true, subnetIds: [], target: "igw-sample", peers: ["pcx-sample"] },
+      { id: "rtb-sample-public", vpcId: eks.id, main: false, subnetIds: ["sample-public-a", "sample-public-b"], target: "igw-sample-eks", peers: [] },
+      { id: "rtb-sample-private", vpcId: eks.id, main: true, subnetIds: ["sample-private-a", "sample-private-b"], target: "nat-sample", peers: ["pcx-sample"] },
+    ],
+    peerings: [{ id: "pcx-sample", a: vpc.id, b: eks.id, status: "active", name: "sample-peering" }],
     fixtures: [
+      {
+        id: "eks-sample",
+        vpcId: eks.id,
+        kind: "eks",
+        name: "sample-cluster",
+        status: "ok",
+        version: "1.32",
+        phase: "ACTIVE",
+        tags: { project: "eks" },
+        nodegroups: [{ name: "sample-nodes", status: "ACTIVE", desired: 2, min: 1, max: 3, subnetIds: ["sample-private-a", "sample-private-b"] }],
+      },
+      { id: "rds-sample", vpcId: eks.id, subnetId: "sample-private-b", kind: "rds", name: "sample-orders-db", engine: "postgres 16.4", size: "db.t4g.micro", status: "ok", tags: { project: "orders" } },
+      { id: "fn-sample-worker", vpcId: eks.id, subnetIds: ["sample-private-a", "sample-private-b"], kind: "function", name: "sample-orders-worker", runtime: "nodejs20.x", status: "ok", tags: { project: "orders" } },
+      { id: "vpce-sample-s3", vpcId: eks.id, kind: "endpoint", endpointType: "Gateway", service: "s3", name: "s3 endpoint", status: "ok" },
+      { id: "cdn-sample", vpcId: "", kind: "cdn", global: true, name: "sample-landing-cdn", status: "ok", tags: { project: "landing" } },
       { id: "alb-sample", vpcId: vpc.id, kind: "alb", name: "sample-gate", status: "ok" },
       { id: "alb-sample-old", vpcId: vpc.id, kind: "alb", name: "sample-old-gate", status: "ok" },
-      { id: "camp-bucket", vpcId: "", kind: "bucket", name: "cloudspider-camp", status: "ok" },
+      { id: "camp-bucket", vpcId: "", kind: "bucket", name: "cloudspider-camp", status: "ok", tags: { project: "camp" } },
       {
         id: "camp-function",
         vpcId: "",
@@ -62,6 +108,8 @@ export function samplePlace() {
         name: "",
         tags: [],
       },
+      node("sample-node-a", "sample-private-a"),
+      node("sample-node-b", "sample-private-b"),
     ],
   };
 }

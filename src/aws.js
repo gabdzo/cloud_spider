@@ -16,6 +16,9 @@ import {
   DescribeLoadBalancersCommand,
   DescribeTagsCommand as DescribeElbTagsCommand,
 } from "@aws-sdk/client-elastic-load-balancing-v2";
+import { LambdaClient } from "@aws-sdk/client-lambda";
+import { ResourceGroupsTaggingAPIClient } from "@aws-sdk/client-resource-groups-tagging-api";
+import { readArchitecture } from "./aws-arch.js";
 import { CloudTrailClient, LookupEventsCommand } from "@aws-sdk/client-cloudtrail";
 import {
   CloudWatchLogsClient,
@@ -238,8 +241,12 @@ function diagramClients(region) {
     nat: clientFor(region),
     elb: new ElasticLoadBalancingV2Client({ region }),
     eks: new EKSClient({ region }),
+    ec2: clientFor(region),
     rds: new RDSClient({ region }),
-  }
+    lambda: new LambdaClient({ region }),
+    tagging: new ResourceGroupsTaggingAPIClient({ region }),
+    taggingGlobal: new ResourceGroupsTaggingAPIClient({ region: "us-east-1" }),
+  };
 }
 
 // An RDS instance on the map: a database piece in its VPC, with its tags so a
@@ -289,7 +296,16 @@ export async function describeDiagram(region, clientFactory = diagramClients) {
     do {
       const out = await clients.nat.send(new DescribeNatGatewaysCommand({ NextToken: token }));
       for (const nat of out.NatGateways || []) {
-        if (nat.VpcId && nat.State !== "deleted") gateways.push({ vpcId: nat.VpcId, kind: "nat", id: nat.NatGatewayId });
+        if (nat.VpcId && nat.State !== "deleted") {
+          gateways.push({
+            vpcId: nat.VpcId,
+            kind: "nat",
+            id: nat.NatGatewayId,
+            subnetId: nat.SubnetId || "",
+            state: nat.State || "",
+            name: tagName(nat.Tags) || "",
+          });
+        }
       }
       token = out.NextToken;
     } while (token);
@@ -350,19 +366,11 @@ export async function describeDiagram(region, clientFactory = diagramClients) {
     }
     fixtures.push(fixture);
   }
-  if (clients.rds) {
-    try {
-      let marker;
-      do {
-        const out = await clients.rds.send(new DescribeDBInstancesCommand({ Marker: marker }));
-        for (const db of out.DBInstances || []) fixtures.push(rdsFixture(db));
-        marker = out.Marker;
-      } while (marker);
-    } catch (error) {
-      errors.push(`DescribeDBInstances: ${publicError(error).error}`);
-    }
-  }
-  const value = errors.length ? { gateways, fixtures, error: errors.join("  ") } : { gateways, fixtures };
+  const arch = await readArchitecture(clients);
+  errors.push(...arch.errors);
+  fixtures.push(...arch.fixtures);
+  const extra = { routes: arch.routes, peerings: arch.peerings };
+  const value = errors.length ? { gateways, fixtures, ...extra, error: errors.join("  ") } : { gateways, fixtures, ...extra };
   diagramCache = { at: now, region, value };
   return value;
 }

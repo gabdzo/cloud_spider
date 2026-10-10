@@ -19,6 +19,7 @@ export const FILES = new Set([
   "layout-cache.js",
   "ui.js",
   "layout.js",
+  "arch-layout.js",
   "radio.js",
   "verbs.js",
   "ids.js",
@@ -1044,6 +1045,11 @@ const page = `<!doctype html>
     .lx-top .ptitle { padding: 4px 8px; }
   }
   /* ---- end learn ---- */
+  #map-view { position: absolute; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 3px 6px; background: var(--pip-ink); border: 1px solid var(--pip-dark); box-shadow: 0 0 0 1px var(--pip-ink), 0 4px 10px var(--pip-ink); }
+  #map-view button.cmd { min-height: 24px; padding: 0 8px; font-size: 11px; letter-spacing: 0.12em; }
+  #map-view button.cmd[aria-pressed="true"] { background: var(--pip-bright); color: var(--pip-ink); border-color: var(--pip-bright); text-shadow: none; }
+  #map-view button.cmd[aria-pressed="true"]::before, #map-view button.cmd[aria-pressed="true"]::after { color: var(--pip-ink); }
+  #map-view select { min-height: 24px; padding: 0 4px; font-size: 11px; max-width: 120px; }
   #pip {
     position: absolute; top: 10px; left: 12px; z-index: 4; margin: 0;
     width: min(400px, calc(100% - 24px)); max-height: calc(100% - 20px); overflow: auto;
@@ -1379,6 +1385,11 @@ const page = `<!doctype html>
           <option value="fine">fine</option>
         </select>
         <div id="vpc-folds"></div>
+        <div id="map-view" role="group" aria-label="map view" hidden>
+          <button id="view-arch" class="cmd" type="button" aria-pressed="true" title="VPCs, zones and subnets, like an AWS diagram">ARCH</button>
+          <button id="view-tag" class="cmd" type="button" aria-pressed="false" title="one walled camp per tag value">BY TAG</button>
+          <select id="view-tag-key" aria-label="tag key to group by"></select>
+        </div>
         <button id="vault-all" class="cmd" type="button" aria-pressed="false" hidden>OPEN ALL</button>
         <button id="vault-templates-btn" class="cmd" type="button" aria-expanded="false" aria-controls="vault-templates" hidden>TEMPLATES</button>
         <section id="vault-templates" aria-label="vault templates" hidden></section>

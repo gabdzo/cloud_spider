@@ -58,7 +58,7 @@ test("a taken port says the page is already open and any other listen error exit
   assert.match(other.line, /^listen: bad/);
 });
 
-test("sample is three local shacks and does not describe the account", async () => {
+test("sample is local shacks (three in the camp VPC, two EKS nodes) and does not describe the account", async () => {
   let reads = 0;
   const box = app();
   const original = box.app.boot.bind(box.app);
@@ -72,7 +72,7 @@ test("sample is three local shacks and does not describe the account", async () 
     const response = await fetch(`http://127.0.0.1:${address.port}/api/sample`);
     const body = await response.json();
     const ids = body.place.instances.map((item) => item.id);
-    assert.deepEqual(ids, ["sample-running", "sample-stopped", "sample-untagged"]);
+    assert.deepEqual(ids, ["sample-running", "sample-stopped", "sample-untagged", "sample-node-a", "sample-node-b"]);
     assert.equal(ids.every((item) => isInstanceId(item)), false);
     assert.match(body.trail[0].text, /^put a machine down  sample-stopped/);
     assert.ok(body.trail.some((row) => row.status === "fail"), "the sample shows what a failure looks like");
