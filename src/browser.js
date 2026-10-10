@@ -390,6 +390,7 @@ function flipSample(action) {
   found.state = action.verb === "stop" ? "stopped" : "running";
   if (ui.selection?.id === found.id) ui.selection = { ...ui.selection, state: found.state };
   setStatus(ui, "sample, not the account");
+  layoutCache.place = null; // Invalidate cache since place was mutated
 }
 
 async function act(action) {

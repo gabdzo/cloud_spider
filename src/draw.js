@@ -185,6 +185,9 @@ export function paint(ctx, scene) {
     if (hasRunning) {
       drawWanderers(ctx, settlement, animTime, reducedMotion);
     }
+
+    // Draw settlement label last (on top of smoke and buildings)
+    drawSettlementLabel(ctx, settlement);
   }
 
   if (placed.orphans?.items?.length) {
@@ -331,8 +334,10 @@ function drawSettlement(ctx, settlement) {
   for (let y = settlement.y + postW; y < settlement.y + settlement.h - postW; y += wallVSprite.length * wallScale) {
     drawSprite(ctx, wallVSprite, settlement.x + settlement.w - wallVSprite[0].length * wallScale, y, wallScale);
   }
+}
 
-  // Draw settlement label (now on top of walls, so it's readable)
+function drawSettlementLabel(ctx, settlement) {
+  // Draw settlement label (on top of smoke, so it's readable)
   ctx.font = FONT;
   ctx.fillStyle = TEXT;
   const labelY = settlement.y + 24;
@@ -354,8 +359,8 @@ function drawWanderers(ctx, settlement, animTime, reducedMotion) {
   const count = 2 + Math.floor(rng.next() * 2); // 2 or 3 wanderers
   
   for (let i = 0; i < count; i++) {
-    // Define walkway: horizontal path along bottom of settlement, above the wall
-    const walkwayY = settlement.y + settlement.h - 50; // 50px from bottom
+    // Define walkway: horizontal path near bottom of settlement, below building labels
+    const walkwayY = settlement.y + settlement.h - 30; // 30px from bottom, below labels
     const walkwayLeft = settlement.x + 40; // Inside left wall
     const walkwayRight = settlement.x + settlement.w - 40; // Inside right wall
     const walkwayLength = walkwayRight - walkwayLeft;
@@ -395,16 +400,13 @@ function drawBuilding(ctx, building, animTime, ui, reducedMotion) {
     }
   }
 
-  // Draw chimney smoke for running buildings (clipped to not overlap labels)
+  // Draw chimney smoke for running buildings
   if (building.state === "running" && !reducedMotion) {
     const smokePhase = Math.floor(animTime / 300) % 2;
     const smoke = smokePuff(smokePhase);
     const chimneyX = originX + 11 * PIXEL - 12;
     const chimneyY = originY - 32;
-    // Only draw smoke if it won't overlap settlement label area (building.y >= 50)
-    if (building.y >= 50) {
-      drawSprite(ctx, smoke, chimneyX, chimneyY, 3);
-    }
+    drawSprite(ctx, smoke, chimneyX, chimneyY, 3);
   }
 
   // Draw warning sign for expendable instances

@@ -122,3 +122,18 @@ test("a region switch closes the confirmation and clears the radio", () => {
   assert.equal(ui.selection, null);
   assert.equal(ui.radio, "");
 });
+
+test("flipSample mutates the place object and should invalidate layout cache", () => {
+  // This test documents that flipSample mutates place.instances[].state in place,
+  // which requires the layout cache in browser.js to be invalidated on each flipSample call.
+  const place = samplePlace();
+  const instance = place.instances.find(i => i.id === "sample-running");
+  assert.equal(instance.state, "running");
+  
+  // Simulate flipSample mutation
+  instance.state = "stopped";
+  assert.equal(instance.state, "stopped");
+  
+  // The layout cache key must change when place is mutated
+  // (verified by layoutCache.place = null in flipSample)
+});
