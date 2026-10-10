@@ -54,6 +54,27 @@ test("a path read that returns after a region switch is dropped", async () => {
   assert.equal(result.region, "us-east-1");
 });
 
+test("two tabs reading the path at once both get an answer", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const app = makeApp({
+    async loadBalancers() {
+      await gate;
+      return { items: [] };
+    },
+  });
+  await app.boot();
+  const first = app.pathView({});
+  const second = app.pathView({ host: "api.example.com" });
+  release();
+  for (const result of await Promise.all([first, second])) {
+    assert.equal(result.stale, undefined);
+    assert.match(result.headline, /has no load balancers$/);
+  }
+});
+
 test("a failed path read names the call and the profile hint", async () => {
   const app = makeApp({
     async loadBalancers() {

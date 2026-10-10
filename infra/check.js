@@ -2,6 +2,9 @@ import { execFileSync } from "node:child_process";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAws } from "../src/aws.js";
+import { createPathAws } from "../src/aws-path.js";
+import { readPath } from "../src/path-read.js";
+import { pathResult } from "../src/path-view.js";
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const outputs = JSON.parse(
@@ -69,6 +72,18 @@ const missing = await aws.logs.filter({
   limit: 20,
 });
 check("untagged instance has no log stream", missing.missing === true);
+
+if (outputs.loadBalancerName) {
+  const read = await readPath(createPathAws(), region);
+  check(`the path reads the region (${read.call})`, !read.error);
+  if (!read.error) {
+    const api = pathResult(read.graph, { region, host: "api.cloudspider.test" });
+    check(`${outputs.loadBalancerName} is in the load balancer menu`, api.loadBalancers.some((lb) => lb.name === outputs.loadBalancerName));
+    check(`api.cloudspider.test names the refused 8080: ${api.headline}`, /does not allow tcp 8080 from/.test(api.headline));
+    const web = pathResult(read.graph, { region, host: "web.cloudspider.test" });
+    check(`web.cloudspider.test names the empty group: ${web.headline}`, /cloudspider-web-ip has no registered targets/.test(web.headline));
+  }
+}
 
 if (failures.length) {
   console.error(failures.map((line) => `FAIL ${line}`).join("\n"));
