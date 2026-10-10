@@ -22,9 +22,9 @@ test("a pasted URL follows its rule only", () => {
   );
 });
 
-test("a host no load balancer answers for is said, and the first load balancer is drawn", () => {
+test("a host no rule names is said, and the first load balancer is drawn", () => {
   const view = pathResult(samplePathGraph(), { region: "sample", host: "nothing.example.com" });
-  assert.equal(view.hostNote, "no load balancer in sample answers for nothing.example.com. Route 53 is not read.");
+  assert.equal(view.hostNote, "no rule in sample names nothing.example.com. If nothing.example.com points at a load balancer, its default rule answers. Route 53 is not read.");
   assert.equal(view.selected, "sample-lb-api");
 });
 

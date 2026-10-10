@@ -13,9 +13,10 @@ export function pathResult(graph, { lb = "", host = "", region = "" } = {}) {
   const match = matches.find((item) => item.lbArn === lb) || matches[0];
   const selected = match?.lbArn || (loadBalancers.some((item) => item.arn === lb) ? lb : loadBalancers[0].arn);
   const result = diagnose(graph, selected, { ruleArn: match?.ruleArn || null });
+  const named = hostOf(text) || text;
   const hostNote =
     text && !matches.length
-      ? `no load balancer in ${region} answers for ${hostOf(text) || text}. Route 53 is not read.`
+      ? `no rule in ${region} names ${named}. If ${named} points at a load balancer, its default rule answers. Route 53 is not read.`
       : "";
   return {
     ...empty,

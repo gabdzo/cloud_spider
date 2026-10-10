@@ -75,12 +75,13 @@ function fakeAws(over = {}) {
     async routeTables() {
       return { items: [] };
     },
-    async interfacesByIp() {
+    async interfaces() {
       return {
         items: [
           {
             id: "eni-1",
             ip: "10.0.1.5",
+            prefix: "",
             subnetId: "subnet-a",
             groupIds: ["sg-node"],
             instanceId: "i-0node0001",
@@ -132,11 +133,11 @@ test("a region with no load balancers reads nothing else", async () => {
   assert.deepEqual(calls.map((call) => call[0]), ["loadBalancers"]);
 });
 
-test("ip targets read their interfaces and every node is read once", async () => {
+test("ip targets match the VPC interfaces and every node is read once", async () => {
   const { aws, calls } = fakeAws();
   const result = await readPath(aws, "eu-north-1");
   assert.equal(result.error, null);
-  assert.deepEqual(calls.find((call) => call[0] === "interfacesByIp"), ["interfacesByIp", ["10.0.1.5"]]);
+  assert.deepEqual(calls.find((call) => call[0] === "interfaces"), ["interfaces", "vpc-1"]);
   assert.deepEqual(calls.find((call) => call[0] === "instancesById"), [
     "instancesById",
     ["i-0abc1234", "i-0node0001"],

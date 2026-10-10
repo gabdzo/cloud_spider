@@ -103,6 +103,45 @@ test("a rule reads hosts, paths, and every forwarded target group once", () => {
   assert.deepEqual(rule.actions[0].targetGroupArns, ["tg-a", "tg-b"]);
 });
 
+test("a weight 0 target group gets no traffic, and a prefix-delegated interface keeps its prefix", () => {
+  const rule = ruleFrom(
+    {
+      RuleArn: "r2",
+      Priority: "4",
+      Conditions: [{ Field: "http-header", HttpHeaderConfig: { HttpHeaderName: "x-canary", Values: ["1"] } }],
+      Actions: [
+        {
+          Type: "forward",
+          ForwardConfig: {
+            TargetGroups: [
+              { TargetGroupArn: "tg-live", Weight: 1 },
+              { TargetGroupArn: "tg-idle", Weight: 0 },
+            ],
+          },
+        },
+      ],
+    },
+    "l1",
+  );
+  assert.deepEqual(rule.actions[0].targetGroupArns, ["tg-live"]);
+  assert.equal(rule.others, 1);
+  const entries = interfacesFrom({
+    NetworkInterfaceId: "eni-2",
+    PrivateIpAddress: "10.0.12.10",
+    PrivateIpAddresses: [{ PrivateIpAddress: "10.0.12.10" }],
+    Ipv4Prefixes: [{ Ipv4Prefix: "10.0.12.16/28" }],
+    Groups: [{ GroupId: "sg-node" }],
+    Attachment: { InstanceId: "i-0node0002" },
+  });
+  assert.deepEqual(
+    entries.map((entry) => [entry.ip, entry.prefix]),
+    [
+      ["10.0.12.10", ""],
+      ["", "10.0.12.16/28"],
+    ],
+  );
+});
+
 test("a target group and its health keep the check settings and the reason", () => {
   const tg = targetGroupFrom({
     TargetGroupArn: "tg-a",
@@ -144,8 +183,24 @@ test("security groups, route tables, interfaces, and nodes become plain objects"
     ],
     IpPermissionsEgress: [{ IpProtocol: "-1", IpRanges: [{ CidrIp: "0.0.0.0/0" }] }],
   });
-  assert.deepEqual(group.ingress[0], { protocol: "tcp", from: 8080, to: 8080, cidrs: [], groupIds: ["sg-alb"] });
-  assert.deepEqual(group.egress[0], { protocol: "-1", from: -1, to: -1, cidrs: ["0.0.0.0/0"], groupIds: [] });
+  assert.deepEqual(group.ingress[0], {
+    protocol: "tcp",
+    from: 8080,
+    to: 8080,
+    cidrs: [],
+    groupIds: ["sg-alb"],
+    prefixListIds: [],
+    ipv6: [],
+  });
+  assert.deepEqual(group.egress[0], {
+    protocol: "-1",
+    from: -1,
+    to: -1,
+    cidrs: ["0.0.0.0/0"],
+    groupIds: [],
+    prefixListIds: [],
+    ipv6: [],
+  });
 
   const table = routeTableFrom({
     RouteTableId: "rtb-1",

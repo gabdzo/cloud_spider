@@ -1,3 +1,5 @@
+import { interfaceFor } from "./path-diagnose.js";
+
 export async function readPath(aws, region) {
   const fail = (call, error) => ({ error, call, graph: null });
   const lbs = await aws.loadBalancers(region);
@@ -52,22 +54,20 @@ export async function readPath(aws, region) {
     if (securityGroups.error) return fail("DescribeSecurityGroups", securityGroups.error);
     const routeTables = await aws.routeTables(region, vpcId);
     if (routeTables.error) return fail("DescribeRouteTables", routeTables.error);
+    const interfaces = await aws.interfaces(region, vpcId);
+    if (interfaces.error) return fail("DescribeNetworkInterfaces", interfaces.error);
     graph.subnets.push(...subnets.items);
     graph.securityGroups.push(...securityGroups.items);
     graph.routeTables.push(...routeTables.items);
+    graph.interfaces.push(...interfaces.items);
   }
 
   const targetsOf = (type) =>
     graph.targetGroups
       .filter((tg) => tg.targetType === type)
       .flatMap((tg) => (graph.health[tg.arn] || []).map((item) => item.id));
-  const ips = unique(targetsOf("ip"));
-  if (ips.length) {
-    const out = await aws.interfacesByIp(region, ips);
-    if (out.error) return fail("DescribeNetworkInterfaces", out.error);
-    graph.interfaces = out.items;
-  }
-  const nodeIds = unique([...targetsOf("instance"), ...graph.interfaces.map((item) => item.instanceId)]);
+  const podNodes = unique(targetsOf("ip")).map((ip) => interfaceFor(graph.interfaces, ip)?.instanceId);
+  const nodeIds = unique([...targetsOf("instance"), ...podNodes]);
   if (nodeIds.length) {
     const out = await aws.instancesById(region, nodeIds);
     if (out.error) return fail("DescribeInstances", out.error);

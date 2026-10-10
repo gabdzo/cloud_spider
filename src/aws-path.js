@@ -124,24 +124,13 @@ export function createPathAws() {
         (out) => ({ items: (out.RouteTables || []).map(routeTableFrom), next: out.NextToken }),
       );
     },
-    async interfacesByIp(region, ips) {
+    interfaces(region, vpcId) {
       const client = ec2(region);
-      const wanted = new Set(ips);
-      const items = [];
-      for (const part of chunks(ips, 100)) {
-        const out = await collect(
-          (command) => client.send(command),
-          (NextToken) =>
-            new DescribeNetworkInterfacesCommand({
-              Filters: [{ Name: "addresses.private-ip-address", Values: part }],
-              NextToken,
-            }),
-          (page) => ({ items: (page.NetworkInterfaces || []).flatMap(interfacesFrom), next: page.NextToken }),
-        );
-        if (out.error) return out;
-        items.push(...out.items.filter((item) => wanted.has(item.ip)));
-      }
-      return { items };
+      return collect(
+        (command) => client.send(command),
+        (NextToken) => new DescribeNetworkInterfacesCommand({ Filters: inVpc(vpcId), NextToken }),
+        (page) => ({ items: (page.NetworkInterfaces || []).flatMap(interfacesFrom), next: page.NextToken }),
+      );
     },
     async instancesById(region, ids) {
       const client = ec2(region);
@@ -149,7 +138,8 @@ export function createPathAws() {
       for (const part of chunks(ids, 100)) {
         const out = await collect(
           (command) => client.send(command),
-          (NextToken) => new DescribeInstancesCommand({ InstanceIds: part, NextToken }),
+          (NextToken) =>
+            new DescribeInstancesCommand({ Filters: [{ Name: "instance-id", Values: part }], NextToken }),
           (page) => ({
             items: (page.Reservations || []).flatMap((reservation) => (reservation.Instances || []).map(nodeFrom)),
             next: page.NextToken,
@@ -297,10 +287,12 @@ export function listenerFrom(raw) {
 }
 
 export function actionFrom(raw) {
-  const arns = [
-    raw.TargetGroupArn,
-    ...(raw.ForwardConfig?.TargetGroups || []).map((item) => item.TargetGroupArn),
-  ].filter(Boolean);
+  const weighted = raw.ForwardConfig?.TargetGroups;
+  const arns = (
+    weighted?.length
+      ? weighted.filter((item) => item.Weight !== 0).map((item) => item.TargetGroupArn)
+      : [raw.TargetGroupArn]
+  ).filter(Boolean);
   return {
     type: raw.Type || "",
     targetGroupArns: [...new Set(arns)],
@@ -322,6 +314,9 @@ export function ruleFrom(raw, listenerArn) {
     isDefault: Boolean(raw.IsDefault),
     hosts: values("host-header", "HostHeaderConfig"),
     paths: values("path-pattern", "PathPatternConfig"),
+    others: (raw.Conditions || []).filter(
+      (condition) => condition.Field !== "host-header" && condition.Field !== "path-pattern",
+    ).length,
     actions: (raw.Actions || []).map(actionFrom),
   };
 }
@@ -360,6 +355,8 @@ function permissionFrom(raw) {
     to: raw.ToPort ?? -1,
     cidrs: (raw.IpRanges || []).map((range) => range.CidrIp).filter(Boolean),
     groupIds: (raw.UserIdGroupPairs || []).map((pair) => pair.GroupId).filter(Boolean),
+    prefixListIds: (raw.PrefixListIds || []).map((item) => item.PrefixListId).filter(Boolean),
+    ipv6: (raw.Ipv6Ranges || []).map((range) => range.CidrIpv6).filter(Boolean),
   };
 }
 
@@ -398,14 +395,18 @@ export function routeTableFrom(raw) {
 export function interfacesFrom(raw) {
   const listed = (raw.PrivateIpAddresses || []).map((entry) => entry.PrivateIpAddress).filter(Boolean);
   const ips = listed.length ? listed : [raw.PrivateIpAddress].filter(Boolean);
-  return ips.map((ip) => ({
+  const prefixes = (raw.Ipv4Prefixes || []).map((entry) => entry.Ipv4Prefix).filter(Boolean);
+  const base = {
     id: raw.NetworkInterfaceId,
-    ip,
     subnetId: raw.SubnetId || "",
     groupIds: (raw.Groups || []).map((group) => group.GroupId).filter(Boolean),
     instanceId: raw.Attachment?.InstanceId || "",
     description: raw.Description || "",
-  }));
+  };
+  return [
+    ...ips.map((ip) => ({ ...base, ip, prefix: "" })),
+    ...prefixes.map((prefix) => ({ ...base, ip: "", prefix })),
+  ];
 }
 
 export function nodeFrom(raw) {

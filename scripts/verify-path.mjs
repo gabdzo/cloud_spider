@@ -57,6 +57,15 @@ async function js(expression) {
   if (out.exceptionDetails) throw new Error(out.exceptionDetails.text || "page error");
   return out.result.value;
 }
+async function loaded() {
+  for (let i = 0; i < 80; i += 1) {
+    try {
+      if ((await js(`document.readyState`)) === "complete") return;
+    } catch {}
+    await sleep(250);
+  }
+  throw new Error("the page did not load");
+}
 const waitFor = (test, ms = 20000) =>
   js(`new Promise((resolve) => {
     const start = Date.now();
@@ -71,6 +80,7 @@ const status = () => js(`document.querySelector("#status").textContent`);
 
 try {
   await send("Page.enable");
+  await loaded();
   await waitFor(`() => {
     const region = document.querySelector("#region");
     const error = document.querySelector("#error");

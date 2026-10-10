@@ -77,29 +77,65 @@ export function hostOf(text) {
   }
 }
 
+export function requestOf(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  const hasScheme = raw.includes("://");
+  try {
+    const url = new URL(hasScheme ? raw : `http://${raw}`);
+    if (!url.hostname) return null;
+    const port = url.port ? Number(url.port) : hasScheme ? (url.protocol === "https:" ? 443 : 80) : null;
+    return { host: url.hostname.toLowerCase(), path: url.pathname || "/", port };
+  } catch {
+    return null;
+  }
+}
+
 export function matchHost(graph, text) {
-  const host = hostOf(text);
-  if (!host) return [];
-  const bare = host.replace(/^dualstack\./, "");
+  const request = requestOf(text);
+  if (!request) return [];
+  const bare = request.host.replace(/^dualstack\./, "");
   const out = [];
   for (const lb of graph.loadBalancers) {
-    if (lb.dns === bare) out.push({ lbArn: lb.arn, ruleArn: null });
-  }
-  for (const rule of graph.rules) {
-    if (!rule.hosts.some((pattern) => hostMatches(pattern, host))) continue;
-    const listener = graph.listeners.find((item) => item.arn === rule.listenerArn);
-    if (listener) out.push({ lbArn: listener.lbArn, ruleArn: rule.arn });
+    const listeners = graph.listeners.filter((item) => item.lbArn === lb.arn);
+    const named = graph.rules.some(
+      (rule) =>
+        listeners.some((listener) => listener.arn === rule.listenerArn) &&
+        rule.hosts.some((pattern) => wildcard(pattern, request.host, true)),
+    );
+    if (lb.dns !== bare && !named) continue;
+    const open = listeners
+      .filter((listener) => request.port === null || listener.port === request.port)
+      .sort((a, b) => Number(b.protocol === "HTTPS") - Number(a.protocol === "HTTPS") || a.port - b.port);
+    for (const listener of open) {
+      const rule = rulesFor(graph, listener).find((item) => ruleServes(item, request));
+      if (rule) out.push({ lbArn: lb.arn, ruleArn: rule.arn });
+    }
   }
   return out;
 }
 
-function hostMatches(pattern, host) {
+function ruleServes(rule, request) {
+  if (rule.others) return false;
+  const hostOk = !rule.hosts.length || rule.hosts.some((pattern) => wildcard(pattern, request.host, true));
+  const pathOk = !rule.paths.length || rule.paths.some((pattern) => wildcard(pattern, request.path, false));
+  return hostOk && pathOk;
+}
+
+function wildcard(pattern, value, ignoreCase) {
   const source = String(pattern)
-    .toLowerCase()
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*/g, ".*")
     .replace(/\?/g, ".");
-  return new RegExp(`^${source}$`).test(host);
+  return new RegExp(`^${source}$`, ignoreCase ? "i" : "").test(value);
+}
+
+export function interfaceFor(interfaces, ip) {
+  return (
+    interfaces.find((entry) => entry.ip === ip) ||
+    interfaces.find((entry) => entry.prefix && cidrContains(entry.prefix, ip)) ||
+    null
+  );
 }
 
 export function healthVerdict(health, tg) {
@@ -156,15 +192,18 @@ export function reachable(graph, lb, groupIds, port, targetIp = "") {
   const lbCidrs = lb.subnetIds
     .map((id) => graph.subnets.find((subnet) => subnet.id === id)?.cidr)
     .filter(Boolean);
-  const inbound = targetGroups.some((group) =>
-    group.ingress.some(
-      (rule) =>
-        covers(rule, port) &&
-        (rule.groupIds.some((id) => lb.securityGroupIds.includes(id)) ||
-          (lbCidrs.length > 0 && lbCidrs.every((cidr) => rule.cidrs.some((outer) => cidrContains(outer, cidr))))),
-    ),
-  );
-  if (!inbound) {
+  const allowing = targetGroups.flatMap((group) => group.ingress).filter((rule) => covers(rule, port));
+  const fromGroup = allowing.some((rule) => rule.groupIds.some((id) => lb.securityGroupIds.includes(id)));
+  const fromCidrs =
+    lbCidrs.length > 0 &&
+    lbCidrs.every((cidr) => allowing.some((rule) => rule.cidrs.some((outer) => cidrContains(outer, cidr))));
+  if (!fromGroup && !fromCidrs) {
+    if (allowing.some(unreadSource)) {
+      return {
+        status: "unknown",
+        sentence: `${groupIds.join(", ")} allows tcp ${port} through prefix lists or IPv6 ranges, which are not read here.`,
+      };
+    }
     return {
       status: "broken",
       sentence: `${groupIds.join(", ")} does not allow tcp ${port} from ${lb.securityGroupIds.join(", ")}. The load balancer cannot reach this target.`,
@@ -173,14 +212,18 @@ export function reachable(graph, lb, groupIds, port, targetIp = "") {
   const lbGroups = lb.securityGroupIds
     .map((id) => graph.securityGroups.find((group) => group.id === id))
     .filter(Boolean);
-  const outbound = lbGroups.some((group) =>
-    group.egress.some(
-      (rule) =>
-        covers(rule, port) &&
-        (rule.groupIds.some((id) => groupIds.includes(id)) ||
-          rule.cidrs.some((outer) => (targetIp ? cidrContains(outer, targetIp) : outer === "0.0.0.0/0"))),
-    ),
+  const leaving = lbGroups.flatMap((group) => group.egress).filter((rule) => covers(rule, port));
+  const outbound = leaving.some(
+    (rule) =>
+      rule.groupIds.some((id) => groupIds.includes(id)) ||
+      rule.cidrs.some((outer) => (targetIp ? cidrContains(outer, targetIp) : outer === "0.0.0.0/0")),
   );
+  if (!outbound && leaving.some(unreadSource)) {
+    return {
+      status: "unknown",
+      sentence: `${lb.securityGroupIds.join(", ")} allows tcp ${port} out through prefix lists or IPv6 ranges, which are not read here.`,
+    };
+  }
   if (!outbound) {
     return {
       status: "broken",
@@ -188,6 +231,10 @@ export function reachable(graph, lb, groupIds, port, targetIp = "") {
     };
   }
   return { status: "ok", sentence: "" };
+}
+
+function unreadSource(rule) {
+  return (rule.prefixListIds || []).length > 0 || (rule.ipv6 || []).length > 0;
 }
 
 function covers(rule, port) {
@@ -344,9 +391,14 @@ function targetGroupNode(graph, tg) {
       (service
         ? ` The AWS Load Balancer Controller registers the pods of ${service}. Check that its selector matches running pods and that they are Ready.`
         : "");
-  } else if (health.every((item) => item.state !== "healthy")) {
+  } else if (health.every((item) => item.state === "unhealthy")) {
     node.status = "broken";
+    node.symptom = true;
     node.sentence = `every target in ${tg.name} is unhealthy. The load balancer sends requests to all of them anyway, so callers see errors or hangs.`;
+  } else if (!health.some((item) => item.state === "healthy")) {
+    node.status = "broken";
+    node.symptom = true;
+    node.sentence = `no target in ${tg.name} is healthy right now. The load balancer answers 503 until one is.`;
   }
   return node;
 }
@@ -358,7 +410,7 @@ function addTargets(graph, lb, tg, add, link) {
   const tgTags = graph.tags[tg.arn] || [];
   for (const item of health) {
     const id = `${tg.arn}|${item.id}:${item.port}`;
-    const iface = tg.targetType === "ip" ? graph.interfaces.find((entry) => entry.ip === item.id) : null;
+    const iface = tg.targetType === "ip" ? interfaceFor(graph.interfaces, item.id) : null;
     const instanceId = tg.targetType === "instance" ? item.id : iface?.instanceId || "";
     const instance = graph.nodes.find((entry) => entry.id === instanceId) || null;
     const groupIds = iface ? iface.groupIds : instance?.groupIds || [];
@@ -373,7 +425,14 @@ function addTargets(graph, lb, tg, add, link) {
       link(tg.arn, id, reach.status, reach.sentence);
     }
 
-    if (!instance) continue;
+    if (!instance) {
+      const podCluster = clusterNameFor(null, tgTags);
+      if (podCluster) {
+        add(clusterNode(graph, podCluster));
+        link(id, `cluster:${podCluster}`);
+      }
+      continue;
+    }
     const who = instance.name || instance.id;
     const fresh = add({
       id: instance.id,
@@ -401,9 +460,10 @@ function reachTarget(graph, lb, tg, groupIds, trafficPort, targetIp) {
 function clusterNameFor(instance, tgTags) {
   const fromGroup = tgTags.find((tag) => tag.key === "elbv2.k8s.aws/cluster")?.value;
   if (fromGroup) return fromGroup;
-  const fromNode = instance.tags.find((tag) => tag.key === "eks:cluster-name")?.value;
+  const tags = instance?.tags || [];
+  const fromNode = tags.find((tag) => tag.key === "eks:cluster-name")?.value;
   if (fromNode) return fromNode;
-  const legacy = instance.tags.find((tag) => tag.key.startsWith("kubernetes.io/cluster/"));
+  const legacy = tags.find((tag) => tag.key.startsWith("kubernetes.io/cluster/"));
   return legacy ? legacy.key.slice("kubernetes.io/cluster/".length) : "";
 }
 

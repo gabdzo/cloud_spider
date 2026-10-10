@@ -209,6 +209,10 @@ function syncLoadBalancers(list, selected) {
   if (selected && lbSelect.value !== selected) lbSelect.value = selected;
 }
 
+function pathQuery() {
+  return new URLSearchParams({ lb: lbSelect.value || "", host: hostInput.value.trim() }).toString();
+}
+
 async function pullPath() {
   if (pathPulling) {
     pathAgain = true;
@@ -216,11 +220,15 @@ async function pullPath() {
   }
   pathPulling = true;
   const wasSample = sample;
+  const asked = pathQuery();
   try {
-    const query = new URLSearchParams({ lb: lbSelect.value || "", host: hostInput.value.trim() });
-    const response = await fetch(`${wasSample ? "/api/path-sample" : "/api/path"}?${query}`);
+    const response = await fetch(`${wasSample ? "/api/path-sample" : "/api/path"}?${asked}`);
     const body = await response.json();
     if (body.stale || mode !== "path" || wasSample !== sample) return;
+    if (pathQuery() !== asked) {
+      pathAgain = true;
+      return;
+    }
     pathData = body;
     syncLoadBalancers(body.loadBalancers || [], body.selected || "");
     if (pathSelected && !body.diagram?.nodes?.some((node) => node.id === pathSelected)) pathSelected = null;

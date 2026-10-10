@@ -155,12 +155,87 @@ test("health reasons read as plain sentences", () => {
 test("a host matches by load balancer DNS, by exact rule host, and by wildcard", () => {
   const graph = samplePathGraph();
   assert.deepEqual(matchHost(graph, "dualstack.api-alb-sample.eu-north-1.elb.amazonaws.com"), [
-    { lbArn: LB, ruleArn: null },
+    { lbArn: LB, ruleArn: "sample-rule-443-default" },
+    { lbArn: LB, ruleArn: "sample-rule-80-default" },
   ]);
   graph.rules.find((rule) => rule.arn === "sample-rule-443-web").hosts = ["*.shop.test"];
-  assert.deepEqual(matchHost(graph, "a.b.shop.test"), [{ lbArn: LB, ruleArn: "sample-rule-443-web" }]);
+  assert.deepEqual(matchHost(graph, "a.b.shop.test")[0], { lbArn: LB, ruleArn: "sample-rule-443-web" });
   assert.deepEqual(matchHost(graph, ""), []);
   assert.deepEqual(matchHost(graph, "http://"), []);
+});
+
+test("a URL walks its listener by port and priority down to the default rule", () => {
+  const graph = samplePathGraph();
+  assert.deepEqual(matchHost(graph, "http://api.sample.test/orders"), [
+    { lbArn: LB, ruleArn: "sample-rule-80-default" },
+  ]);
+  const api = graph.rules.find((rule) => rule.arn === "sample-rule-443-api");
+  api.paths = ["/v1/*"];
+  assert.deepEqual(matchHost(graph, "https://api.sample.test/v2/orders"), [
+    { lbArn: LB, ruleArn: "sample-rule-443-default" },
+  ]);
+  assert.deepEqual(matchHost(graph, "https://api.sample.test/v1/orders"), [
+    { lbArn: LB, ruleArn: "sample-rule-443-api" },
+  ]);
+  api.others = 1;
+  assert.deepEqual(matchHost(graph, "https://api.sample.test/v1/orders"), [
+    { lbArn: LB, ruleArn: "sample-rule-443-default" },
+  ]);
+});
+
+test("a pod IP inside a delegated prefix still finds its node and cluster", () => {
+  const graph = samplePathGraph();
+  graph.interfaces[1] = { ...graph.interfaces[1], ip: "", prefix: "10.0.12.16/28" };
+  const result = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" });
+  assert.equal(result.findings[0].sentence, BLOCKED);
+  assert.equal(result.edges.some((edge) => edge.from === SLOW && edge.to === "sample-node-b"), true);
+});
+
+test("a lone timing-out target is the headline, not the fail-open target group", () => {
+  const graph = samplePathGraph();
+  graph.health["sample-tg-api"] = [graph.health["sample-tg-api"][1]];
+  graph.interfaces[1] = { ...graph.interfaces[1], groupIds: ["sample-sg-node-a"] };
+  const result = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" });
+  assert.match(headline(result), /^10\.0\.12\.31:8080 does not answer HTTP \/healthz in time/);
+  const group = result.nodes.find((node) => node.id === "sample-tg-api");
+  assert.equal(group.status, "broken");
+  assert.equal(group.symptom, true);
+});
+
+test("targets that are only starting are not called fail-open", () => {
+  const graph = samplePathGraph();
+  graph.health["sample-tg-api"] = graph.health["sample-tg-api"].map((item) => ({
+    ...item,
+    state: "initial",
+    reason: "Elb.InitialHealthChecking",
+    description: "",
+  }));
+  const group = diagnose(graph, LB).nodes.find((node) => node.id === "sample-tg-api");
+  assert.equal(group.sentence, "no target in k8s-shop-api is healthy right now. The load balancer answers 503 until one is.");
+});
+
+test("security group CIDRs are combined across rules, and prefix lists are unknown", () => {
+  const graph = samplePathGraph();
+  const nodesB = graph.securityGroups.find((group) => group.id === "sample-sg-node-b");
+  nodesB.ingress = [
+    { protocol: "tcp", from: 8080, to: 8080, cidrs: ["10.0.1.0/24"], groupIds: [], prefixListIds: [], ipv6: [] },
+    { protocol: "tcp", from: 8080, to: 8080, cidrs: ["10.0.2.0/24"], groupIds: [], prefixListIds: [], ipv6: [] },
+  ];
+  let edge = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" }).edges.find((item) => item.to === SLOW);
+  assert.equal(edge.status, "ok");
+  nodesB.ingress = [
+    { protocol: "tcp", from: 8080, to: 8080, cidrs: [], groupIds: [], prefixListIds: ["pl-1"], ipv6: [] },
+  ];
+  edge = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" }).edges.find((item) => item.to === SLOW);
+  assert.equal(edge.status, "unknown");
+  assert.match(edge.sentence, /prefix lists or IPv6 ranges, which are not read here/);
+});
+
+test("a pod with no EC2 node still joins its cluster", () => {
+  const graph = samplePathGraph();
+  graph.interfaces[1] = { ...graph.interfaces[1], instanceId: "" };
+  const result = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" });
+  assert.equal(result.edges.some((edge) => edge.from === SLOW && edge.to === "cluster:shop"), true);
 });
 
 test("sample ids are not instance ids", () => {
