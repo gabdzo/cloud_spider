@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { layoutPath, nodeAt } from "../src/path-layout.js";
-import { paintPath, STATUS_COLOR } from "../src/path-draw.js";
+import { paintPath, sentenceRect, STATUS_COLOR } from "../src/path-draw.js";
 import { pathResult } from "../src/path-view.js";
 import { samplePathGraph } from "../src/path-sample.js";
 
@@ -82,4 +82,13 @@ test("a broken thread is drawn in the broken color and a healthy one in the ok c
   paintPath(ctx, { placed, selectedId: placed.nodes[0].id, phase: 0, width: placed.contentWidth, height: placed.contentHeight, empty: "" });
   assert.ok(strokes.includes(STATUS_COLOR.broken));
   assert.ok(strokes.includes(STATUS_COLOR.ok));
+});
+
+test("the diagnosis panel stays on the canvas, even beside the last column", () => {
+  const node = { x: 900, y: 80, w: 140, h: 64, sentence: "k8s-shop-web has no registered targets. The load balancer answers 503." };
+  for (const width of [1124, 760, 400]) {
+    const rect = sentenceRect(node, width, 600);
+    assert.ok(rect.x >= 8 && rect.x + rect.w <= width - 8, `inside at ${width}`);
+    assert.ok(rect.y >= 8 && rect.y + rect.h <= 600 - 8);
+  }
 });

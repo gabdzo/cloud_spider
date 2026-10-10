@@ -29,3 +29,16 @@ export function samplePlace() {
     ],
   };
 }
+
+// Sample radio chatter, newest first, in the same "Name resource" shape as
+// radioWindow, so the radio panel has stations without CloudTrail.
+export function sampleRadio() {
+  return [
+    "StopInstances sample-stopped",
+    "RunInstances sample-running",
+    "AuthorizeSecurityGroupIngress sg-0sample0001",
+    "CreateTags sample-running",
+    "TerminateInstances i-0wasteland01",
+    "ModifyInstanceAttribute sample-untagged",
+  ].join("\n");
+}

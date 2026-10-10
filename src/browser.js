@@ -14,7 +14,11 @@ import {
   switchRegion,
 } from "./ui.js";
 import { layoutPath, nodeAt } from "./path-layout.js";
-import { paintPath } from "./path-draw.js";
+import { paintPath, sentenceRect } from "./path-draw.js";
+import {
+  clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
+} from "./chrome.js";
+import { FRAME_MS } from "./theme.js";
 
 const ui = createUi();
 const canvas = document.querySelector("#place");
@@ -31,6 +35,16 @@ const map = document.querySelector("#map");
 const pathButton = document.querySelector("#path");
 const lbSelect = document.querySelector("#lb");
 const hostInput = document.querySelector("#host");
+const tabMap = document.querySelector("#tab-map");
+const tabRadio = document.querySelector("#tab-radio");
+const radioPanel = document.querySelector("#radio-panel");
+const scope = document.querySelector("#scope");
+const needle = document.querySelector("#needle");
+const stationCount = document.querySelector("#station-count");
+const acct = document.querySelector("#acct");
+const clockEl = document.querySelector("#clock");
+const statsEl = document.querySelector("#stats");
+const mascotCanvas = document.querySelector("#mascot");
 
 let place = null;
 let region = "";
@@ -44,13 +58,26 @@ let pathPulling = false;
 let pathAgain = false;
 let reducedMotion = !window.matchMedia("(prefers-reduced-motion: reduce)").matches ? false : true;
 let tabVisible = !document.hidden;
+let sampleRadio = "";
+let stations = [];
+let station = 0;
+let winking = -1;
 
 // Cache for layout to avoid recomputing every frame
 const layoutCache = createLayoutCache(layout);
 
 function renderChrome() {
   statusEl.textContent = ui.status;
-  radioEl.textContent = ui.radio || "";
+  if (station >= stationCountOf(ui.radio)) station = 0;
+  stations = renderRadio(radioEl, ui.radio || "", station);
+  stationCount.textContent = stations.length ? `${stations.length} STATIONS` : "NO SIGNAL";
+  needle.style.left = `${needleAt(station, stations.length)}%`;
+  sampleButton.setAttribute("aria-pressed", String(sample));
+  tabMap.setAttribute("aria-pressed", String(mode === "map"));
+  pathButton.setAttribute("aria-pressed", String(mode === "path"));
+  tabRadio.setAttribute("aria-pressed", String(!radioPanel.hidden));
+  acct.textContent = sample ? "SAMPLE" : "LIVE";
+  renderStats(statsEl, mode === "path" ? pathStats(pathData?.diagram) : mapStats(place));
   if (mode === "path") {
     confirmEl.textContent = (pathData?.notes || []).join("  ");
     no.hidden = true;
@@ -60,7 +87,12 @@ function renderChrome() {
   confirmEl.textContent = ui.confirmation?.line || "";
   no.hidden = !ui.confirmation;
   yes.hidden = !ui.confirmation?.allowsY;
-  yes.textContent = ui.confirmation?.verb === "start" ? "bring it back" : "put it down";
+  yes.lastChild.textContent = ui.confirmation?.verb === "start" ? "bring it back" : "put it down";
+  setIcon(yes, ui.confirmation?.verb === "start" ? "start" : "stop");
+}
+
+function stationCountOf(text) {
+  return String(text || "").split("\n").filter(Boolean).length;
 }
 
 function sizeCanvas(contentWidth, contentHeight) {
@@ -80,13 +112,21 @@ function sizeCanvas(contentWidth, contentHeight) {
 function placedPath() {
   return pathData?.diagram
     ? layoutPath(pathData.diagram, map.clientWidth || 0)
-    : { nodes: [], edges: [], contentWidth: 960, contentHeight: 640 };
+    : { nodes: [], edges: [], contentWidth: 0, contentHeight: 0 };
 }
 
 function placedMap() {
   const width = map.clientWidth || 0;
   const rowLimit = width ? Math.min(ROW_LIMIT, width) : ROW_LIMIT;
   return layoutCache.get(place, rowLimit);
+}
+
+// On a narrow window the diagnosis can land past the edge of the scrolled
+// map; scroll just enough to show it, keeping its left edge in view.
+function revealPanel(rect) {
+  const left = scrollToShow(map.scrollLeft, map.clientWidth, rect.x, rect.w);
+  const top = scrollToShow(map.scrollTop, map.clientHeight, rect.y, rect.h);
+  if (left !== map.scrollLeft || top !== map.scrollTop) map.scrollTo({ left, top, behavior: reducedMotion ? "auto" : "smooth" });
 }
 
 function drawPath() {
@@ -115,8 +155,8 @@ function draw() {
     : {
         settlements: [],
         orphans: { items: [], label: "no VPC" },
-        contentWidth: 960,
-        contentHeight: 640,
+        contentWidth: 0,
+        contentHeight: 0,
       };
 
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
@@ -156,7 +196,7 @@ async function pull() {
   pulling = true;
   try {
     const view = await fetch("/api/view").then((response) => response.json());
-    setRadio(ui, view.radio || "");
+    setRadio(ui, sample ? sampleRadio : view.radio || "");
     if (mode === "path") {
       if (!sample) syncRegions(view.regions || [], view.region);
       renderChrome();
@@ -270,14 +310,27 @@ function dropSample() {
   sample = false;
   ui.sample = false;
   regionSelect.disabled = false;
+  // Forget the sample camp and stations at once; the live ones arrive with
+  // the next pull, and until then the screen must not pass sample off as LIVE.
+  place = null;
+  setRadio(ui, "");
+}
+
+// The radio panel remembers whether it is open per view; the path needs the
+// width more, so it starts closed there unless the window is wide.
+const radioOpen = { map: true, path: window.innerWidth >= 1700 };
+
+function showRadioFor(next) {
+  radioOpen[mode] = !radioPanel.hidden;
+  radioPanel.hidden = !radioOpen[next];
 }
 
 function enterPath() {
   dropSample();
+  showRadioFor("path");
   mode = "path";
   pathData = null;
   pathSelected = null;
-  pathButton.textContent = "Map";
   lbSelect.hidden = false;
   hostInput.hidden = false;
   clickGround(ui);
@@ -289,10 +342,10 @@ function enterPath() {
 
 function leavePath() {
   dropSample();
+  showRadioFor("map");
   mode = "map";
   pathData = null;
   pathSelected = null;
-  pathButton.textContent = "Path";
   lbSelect.hidden = true;
   hostInput.hidden = true;
   setStatus(ui, "");
@@ -304,6 +357,11 @@ async function toggleSample() {
   if (mode === "path") {
     sample = !sample;
     ui.sample = sample;
+    if (sample && !sampleRadio) {
+      const body = await fetch("/api/sample").then((response) => response.json()).catch(() => ({}));
+      sampleRadio = body.radio || "";
+    }
+    setRadio(ui, sample ? sampleRadio : "");
     regionSelect.disabled = sample;
     pathData = null;
     pathSelected = null;
@@ -323,6 +381,8 @@ async function toggleSample() {
     if (!response.ok) throw new Error("the page failed");
     const body = await response.json();
     if (!body?.place) throw new Error("the page failed");
+    sampleRadio = body.radio || "";
+    setRadio(ui, sampleRadio);
     showSample(body.place);
   } catch {
     errorEl.hidden = false;
@@ -335,6 +395,7 @@ canvas.addEventListener("click", async (event) => {
     const hit = nodeAt(placedPath(), event.offsetX, event.offsetY);
     pathSelected = hit?.id || null;
     draw();
+    if (hit?.sentence) revealPanel(sentenceRect(hit, canvas.clientWidth, canvas.clientHeight));
     return;
   }
   if (!place) {
@@ -436,8 +497,25 @@ regionSelect.addEventListener("change", async () => {
 });
 
 pathButton.addEventListener("click", () => {
+  if (mode !== "path") enterPath();
+});
+
+tabMap.addEventListener("click", () => {
   if (mode === "path") leavePath();
-  else enterPath();
+});
+
+tabRadio.addEventListener("click", () => {
+  radioPanel.hidden = !radioPanel.hidden;
+  renderChrome();
+  draw();
+  if (!radioPanel.hidden) drawScope(scope, reducedMotion ? 0 : animTime, stations.length);
+});
+
+radioEl.addEventListener("click", (event) => {
+  const li = event.target.closest("li[data-index]");
+  if (!li) return;
+  station = Number(li.dataset.index);
+  renderChrome();
 });
 
 lbSelect.addEventListener("change", () => {
@@ -465,16 +543,38 @@ document.addEventListener("visibilitychange", () => {
 
 // Animation loop: a plain 10fps timer. requestAnimationFrame would wake the
 // page 60 times a second just to skip 5 of every 6 frames.
-const FRAME_MS = 100;
-
 function animate() {
   animTime += FRAME_MS;
-  if (tabVisible && !reducedMotion && canvas.width) draw();
+  if (!tabVisible) return;
+  if (animTime % 1000 === 0) clockEl.textContent = clockText(new Date());
+  if (reducedMotion) return;
+  if (canvas.width) draw();
+  if (!radioPanel.hidden) drawScope(scope, animTime, stations.length);
+  // The mascot winks for a moment every eight seconds.
+  const wink = animTime % 8000 < 300 ? 1 : 0;
+  if (wink !== winking) {
+    winking = wink;
+    drawMascot(mascotCanvas, wink);
+  }
 }
+
+paintIcons();
+document.querySelector("link[rel=icon]").href = iconURL("map", 2);
+drawMascot(mascotCanvas, 0);
+clockEl.textContent = clockText(new Date());
+if (window.matchMedia("(max-width: 900px)").matches) {
+  radioOpen.map = false;
+  radioPanel.hidden = true;
+}
+renderChrome();
+drawScope(scope, 0, 0);
 
 setInterval(animate, FRAME_MS);
 
-window.addEventListener("resize", () => draw());
+window.addEventListener("resize", () => {
+  draw();
+  if (!radioPanel.hidden) drawScope(scope, reducedMotion ? 0 : animTime, stations.length);
+});
 
 setInterval(() => {
   pull();
