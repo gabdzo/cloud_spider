@@ -132,7 +132,9 @@ export function shapeResources(service, pages) {
   kept.sort((a, b) => b.value - a.value || a.id.localeCompare(b.id));
   return kept.map((row) => ({
     service,
+    id: row.id,
     resource: shortResource(row.id),
+    value: Math.round(row.value * 100) / 100,
     amount: formatAmount(row.value, row.unit),
   }));
 }
@@ -208,7 +210,11 @@ export function createCost({ client, now = () => new Date() } = {}) {
           blocks.push({ service, error: costFailure(error, "GetCostAndUsageWithResources").error });
         }
       }
-      return { ...bill, lines: [...bill.lines, ...resourceLines(blocks)] };
+      // Raw resource ids ride beside the short labels so the morning can
+      // meet a bill row to an object on the map.
+      const resources = blocks.flatMap((block) => block.rows || []);
+      const resourceErrors = Object.fromEntries(blocks.filter((block) => block.error).map((block) => [block.service, block.error]));
+      return { ...bill, lines: [...bill.lines, ...resourceLines(blocks)], resources, resourceErrors };
     },
   };
 }

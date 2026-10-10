@@ -1,4 +1,4 @@
-import { ROW_LIMIT, accountLine, layout, newestFail } from "./layout.js";
+import { ROW_LIMIT, accountLine, blastLine, layout, newestFail } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, paint } from "./draw.js";
 import { isInstanceId } from "./ids.js";
@@ -9,6 +9,7 @@ import {
   createUi,
   pressN,
   pressY,
+  setFacts,
   setLogs,
   setRadio,
   setStatus,
@@ -30,8 +31,22 @@ import { plateText } from "./vault-schema.js";
 import { snapshot } from "./agent-text.js";
 import { createTerminal } from "./terminal.js";
 import { metricAlerts, paintPlace } from "./metrics.js";
+import { sunrise } from "./sprites/landmarks.js";
+import { drawSprite } from "./draw-kit.js";
 
 const ui = createUi();
+// The morning report (SRE overview): three sentences from the server's
+// reads (or the sample's), shown over the map.
+const morningEl = document.querySelector("#morning");
+const morningWhen = document.querySelector("#morning-when");
+const morningFold = document.querySelector("#morning-fold");
+const morningLines = {
+  hurting: document.querySelector("#m-hurting"),
+  changed: document.querySelector("#m-changed"),
+  idle: document.querySelector("#m-idle"),
+};
+let liveMorning = null;
+let sampleMorningData = null;
 const canvas = document.querySelector("#place");
 const ctx = canvas.getContext("2d");
 const regionSelect = document.querySelector("#region");
@@ -135,6 +150,7 @@ const layoutCache = createLayoutCache(layout);
 
 function renderChrome() {
   renderTally();
+  renderMorning();
   const names = troubleNames().filter((name) => !(ui.status || "").includes(name));
   statusEl.textContent = names.length ? `${ui.status ? `${ui.status}  ` : ""}${names.join(", ")} is in trouble` : ui.status;
   const words = `${statusEl.textContent} ${!errorEl.hidden ? errorEl.textContent : ""}`;
@@ -212,6 +228,94 @@ function renderTally() {
   tallyEl.hidden = !line && !current;
 }
 
+// ---- the morning report ----
+const MORNING_RANK = { fail: 0, warn: 1, unknown: 2, ok: 3 };
+const MORNING_FOLD_KEY = "cloudspider.morning.folded";
+let morningFolded = (() => {
+  try {
+    return window.localStorage.getItem(MORNING_FOLD_KEY) === "1";
+  } catch {
+    return false;
+  }
+})();
+let morningShown = "";
+
+function currentMorning() {
+  return sample ? sampleMorningData : liveMorning;
+}
+
+function hhmm24(time) {
+  const date = new Date(time);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function renderMorning() {
+  const report = mode === "map" ? currentMorning() : null;
+  ui.marks = currentMorning()?.marks || null;
+  morningEl.hidden = !report;
+  if (!report) return;
+  const key = JSON.stringify([report.hurting, report.changed, report.idle, morningFolded]);
+  if (key === morningShown) return;
+  morningShown = key;
+  const order = ["hurting", "changed", "idle"];
+  const lead = order.slice().sort((a, b) => (MORNING_RANK[report[a]?.status] ?? 3) - (MORNING_RANK[report[b]?.status] ?? 3))[0];
+  for (const name of order) {
+    const line = report[name] || { status: "unknown", text: "not checked." };
+    const li = morningLines[name];
+    li.className = `m-line ${line.status || "unknown"}${name === lead ? " lead" : ""}`;
+    const text = li.querySelector(".m-text");
+    text.replaceChildren();
+    if (line.time) {
+      const when = document.createElement("time");
+      when.dateTime = new Date(line.time).toISOString();
+      when.textContent = hhmm24(line.time);
+      text.append(when);
+    }
+    text.append(line.text || "");
+    li.title = `${line.time ? `${hhmm24(line.time)} ` : ""}${line.text || ""}`;
+  }
+  morningWhen.textContent = sample ? "SAMPLE" : hhmm24(Date.now());
+  morningEl.classList.toggle("folded", morningFolded);
+  morningFold.setAttribute("aria-expanded", String(!morningFolded));
+  morningFold.innerHTML = morningFolded ? "&#9660;" : "&#9650;";
+  morningFold.title = morningFolded ? "open the morning report" : "fold the morning report";
+}
+
+morningFold.addEventListener("click", () => {
+  morningFolded = !morningFolded;
+  try {
+    window.localStorage.setItem(MORNING_FOLD_KEY, morningFolded ? "1" : "0");
+  } catch {
+    // Folding still works for this page.
+  }
+  renderMorning();
+});
+
+(function paintSunrise() {
+  const badge = document.querySelector("#sunrise");
+  const sprite = sunrise();
+  badge.width = sprite[0].length * 2;
+  badge.height = sprite.length * 2;
+  const g = badge.getContext("2d");
+  g.imageSmoothingEnabled = false;
+  drawSprite(g, sprite, 0, 0, 2);
+})();
+
+// The plate's morning facts: the object's last change, what else it
+// touches, and why it is idle when it is.
+function plateFacts(id) {
+  const report = currentMorning();
+  const mark = report?.marks?.[id];
+  const facts = [];
+  if (mark?.idle) facts.push({ label: mark.fire ? "IDLE·BILLED" : "IDLE", text: mark.idle, tone: mark.fire ? "warn" : "" });
+  if (!report) facts.push({ label: "LAST CHANGE", text: "not checked", tone: "unknown" });
+  else if (mark?.lastChange) facts.push({ label: "LAST CHANGE", text: `${hhmm24(mark.lastChange.time)}  ${mark.lastChange.text}`, tone: mark.lastChange.status === "fail" ? "fail" : "" });
+  else if (/not checked/.test(report.changed?.text || "")) facts.push({ label: "LAST CHANGE", text: "not checked", tone: "unknown" });
+  else facts.push({ label: "LAST CHANGE", text: "none in the radio's CloudTrail window", tone: "unknown" });
+  if (place) facts.push({ label: "BLAST", text: blastLine(place, id).replace(/^touches: /, "") });
+  return facts;
+}
+
 function hasTrouble() {
   if (mode === "path") return (pathData?.findings || []).some((item) => item.status && item.status !== "ok");
   if (mode === "cluster") return (clusterData?.diagram?.nodes || []).some((node) => node.status === "broken");
@@ -281,7 +385,8 @@ function queueSpend() {
 // The camp's coarse/fine switch sits on the camp wall and scrolls with it.
 function placeGrain(placed) {
   const camp = mode === "map" ? placed?.camp : null;
-  wallGrain.hidden = !camp;
+  // An open plate is drawn on the canvas; the select would sit on top of it.
+  wallGrain.hidden = !camp || Boolean(ui.selection);
   if (!camp) return;
   wallGrain.value = campGrain;
   wallGrain.style.left = `${Math.max(8, camp.x + camp.w - 110)}px`;
@@ -885,6 +990,7 @@ async function pull() {
     const view = await fetch(`/api/view?${query}`).then((response) => response.json());
     setRadio(ui, view.radio || "");
     setTrail(ui, sample ? sampleTrail : view.trail || []);
+    if (!sample) liveMorning = view.morning || null;
     if (mode === "path" || mode === "cluster") {
       if (!sample) syncRegions(view.regions || [], view.region);
       renderChrome();
@@ -1136,6 +1242,7 @@ async function loadSampleTrail() {
   if (sampleTrail.length) return;
   const body = await fetch("/api/sample").then((response) => response.json()).catch(() => ({}));
   sampleTrail = body.trail || [];
+  sampleMorningData = body.morning || null;
 }
 
 async function toggleSample() {
@@ -1176,6 +1283,7 @@ async function toggleSample() {
     const body = await response.json();
     if (!body?.place) throw new Error("the page failed");
     sampleTrail = body.trail || [];
+    sampleMorningData = body.morning || null;
     setTrail(ui, sampleTrail);
     showSample(body.place);
     queueSpend();
@@ -1355,14 +1463,17 @@ canvas.addEventListener("click", async (event) => {
   const hit = buildingAt(placed, event.offsetX, event.offsetY);
   if (!hit) {
     const fixture = fixtureAt(placed, event.offsetX, event.offsetY);
-    if (fixture) clickFixture(ui, fixture, fixtureNote(fixture));
-    else clickGround(ui);
+    if (fixture) {
+      clickFixture(ui, fixture, fixtureNote(fixture));
+      setFacts(ui, plateFacts(fixture.id));
+    } else clickGround(ui);
     renderChrome();
     draw();
     return;
   }
   const raw = place?.instances.find((item) => item.id === hit.id) || hit;
-  clickBuilding(ui, raw, region);
+  clickBuilding(ui, raw, region, place ? blastLine(place, raw.id) : "");
+  setFacts(ui, plateFacts(raw.id));
   renderChrome();
   draw();
   if (sample || !isInstanceId(raw.id)) return;
@@ -1587,7 +1698,8 @@ async function agentAction(action) {
     renderChrome();
     return;
   }
-  clickBuilding(ui, raw, region);
+  clickBuilding(ui, raw, region, blastLine(place, raw.id));
+  setFacts(ui, plateFacts(raw.id));
   if (ui.confirmation && ui.confirmation.verb !== action.verb) {
     ui.confirmation = null;
     setStatus(ui, `${action.id} is ${raw.state}; there is nothing to ${action.verb}`);

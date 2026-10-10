@@ -135,3 +135,28 @@ test("a region switch drops a late line from the old region", async () => {
   assert.equal(radio.line().includes("i-0old0001"), false);
   assert.match(radio.line(), /brought a machine back/);
 });
+
+test("the radio keeps the raw changes (unfolded, newest first) for the morning, and says whether it read", async () => {
+  const radio = createRadio({
+    async lookup() {
+      return {
+        events: [
+          { name: "StopInstances", resources: ["i-0aaa"], time: 2 },
+          { name: "StopInstances", resources: ["i-0bbb"], time: 3 },
+          { name: "DescribeInstances", resources: ["i-0aaa"], time: 4 },
+        ],
+      };
+    },
+  });
+  assert.deepEqual(radio.trailState(), { read: false, error: "" });
+  await radio.refresh("eu-north-1");
+  assert.deepEqual(radio.changes().map((event) => event.resources[0]), ["i-0bbb", "i-0aaa"]);
+  assert.deepEqual(radio.trailState(), { read: true, error: "" });
+  assert.match(radio.line(), /put a machine down  ×2/, "the radio line still folds");
+  const denied = createRadio({ async lookup() { return { error: "AccessDenied" }; } });
+  await denied.refresh("eu-north-1");
+  assert.deepEqual(denied.trailState(), { read: true, error: "AccessDenied" });
+  assert.deepEqual(denied.changes(), []);
+  denied.clear();
+  assert.deepEqual(denied.trailState(), { read: false, error: "" });
+});

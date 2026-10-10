@@ -12,6 +12,7 @@ import {
   setLogs,
   setRadio,
   switchRegion,
+  setFacts,
 } from "../src/ui.js";
 
 const region = "us-east-1";
@@ -133,4 +134,20 @@ test("a region switch closes the confirmation and clears the radio", () => {
   assert.equal(ui.confirmation, null);
   assert.equal(ui.selection, null);
   assert.equal(ui.radio, "");
+});
+
+test("the stop question says the blast radius before Y, and the plate keeps its facts until the next click", () => {
+  const ui = createUi();
+  clickBuilding(ui, building("running"), region, "touches: only healthy target behind cloudspider-api; stopping it takes the API down");
+  assert.match(ui.confirmation.line, /takes the API down\. \[Y\] put it down/);
+  setFacts(ui, [{ label: "BLAST", text: "touches nothing else on the map" }]);
+  assert.equal(ui.facts.length, 1);
+  clickFixture(ui, { id: "fn", name: "cloudspider-camp-page", kind: "function" });
+  assert.deepEqual(ui.facts, []);
+  setFacts(ui, [{ label: "LAST CHANGE", text: "x" }]);
+  clickGround(ui);
+  assert.deepEqual(ui.facts, []);
+  // No blast given: the question is unchanged.
+  clickBuilding(ui, building("running"), region);
+  assert.match(ui.confirmation.line, /this instance\. \[Y\] put it down/);
 });

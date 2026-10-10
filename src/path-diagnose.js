@@ -187,11 +187,52 @@ export function linesFromTargets(balancers, groups, health, interfaces) {
         const key = `${lb.id}|${instanceId}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        edges.push({ from: lb.id, to: instanceId });
+        // The target state rides on the line, so the morning can say what
+        // is hurting without another read.
+        const edge = { from: lb.id, to: instanceId };
+        if (item.state) edge.state = item.state;
+        if (item.reason) edge.reason = item.reason;
+        edges.push(edge);
       }
     }
   }
   return edges;
+}
+
+const COUNT_AS = {
+  healthy: "healthy",
+  initial: "starting",
+  unhealthy: "unhealthy",
+  unavailable: "unhealthy",
+  "unhealthy.draining": "unhealthy",
+  unused: "unused",
+  draining: "unused",
+};
+
+// Every target behind each balancer by state, including the ones no line
+// can be drawn to (an IP with no interface), so "no target" is never a
+// guess from the lines alone.
+export function targetCounts(balancers, groups, health) {
+  const out = {};
+  for (const lb of balancers || []) {
+    const counts = { total: 0, healthy: 0, starting: 0, unhealthy: 0, unused: 0 };
+    const mine = (groups || []).filter(
+      (group) => (group.lbArns || []).includes(lb.id) || (group.lbArns || []).includes(lb.arn),
+    );
+    const seen = new Set();
+    for (const group of mine) {
+      for (const item of health?.[group.arn] || []) {
+        const key = `${item.id}:${item.port ?? ""}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        counts.total += 1;
+        const bucket = COUNT_AS[item.state];
+        if (bucket) counts[bucket] += 1;
+      }
+    }
+    out[lb.id] = counts;
+  }
+  return out;
 }
 
 export function healthVerdict(health, tg) {

@@ -344,3 +344,196 @@ test("roofs sit far enough below the subnet caption for chimney smoke", () => {
     for (const item of plot.buildings) assert.ok(item.y - captionBottom >= SMOKE_PX);
   }
 });
+
+// ---- SRE overview: the three morning sentences ----
+import { blastLine, idleCandidates, morningReport, nextIdleStreak, systemsOf, targetState } from "../src/layout.js";
+
+const API_ARN = "arn:aws:elasticloadbalancing:eu-north-1:1:loadbalancer/app/cloudspider-api/abc";
+const EKS_ARN = "arn:aws:eks:eu-north-1:1:cluster/cloudspider-up";
+
+function morningPlace(extra = {}) {
+  return {
+    vpcs: [{ id: "vpc-1", cidr: "10.42.0.0/16" }],
+    subnets: [],
+    instances: [
+      { id: "i-run", name: "cloudspider-running", state: "running", vpcId: "vpc-1" },
+      { id: "i-stop", name: "cloudspider-stopped", state: "stopped", vpcId: "vpc-1" },
+      { id: "i-node", name: "", state: "running", vpcId: "vpc-1", tags: [{ key: "eks:cluster-name", value: "cloudspider-up" }] },
+    ],
+    fixtures: [
+      { id: API_ARN, kind: "alb", name: "cloudspider-api", vpcId: "vpc-1" },
+      { id: EKS_ARN, kind: "eks", name: "cloudspider-up", vpcId: "vpc-1" },
+      { id: "fn", kind: "function", name: "cloudspider-camp-page", uses: ["tbl", "sec"], camp: true },
+      { id: "tbl", kind: "table", name: "cloudspider-camp-table", camp: true },
+      { id: "sec", kind: "secret", name: "cloudspider-camp-secret", camp: true },
+    ],
+    linksRead: true,
+    links: [
+      { from: API_ARN, to: "i-run", state: "healthy" },
+      { from: API_ARN, to: "i-stop", state: "unused", reason: "Target.InvalidState" },
+    ],
+    targetCounts: { [API_ARN]: { total: 2, healthy: 1, starting: 0, unhealthy: 0, unused: 1 } },
+    ...extra,
+  };
+}
+
+const READ_TRAIL = { read: true, error: "" };
+
+test("health states fold into healthy, starting, unhealthy and unused", () => {
+  assert.equal(targetState("healthy"), "healthy");
+  assert.equal(targetState("initial"), "starting");
+  assert.equal(targetState("unhealthy"), "unhealthy");
+  assert.equal(targetState("unavailable"), "unhealthy");
+  assert.equal(targetState("unhealthy.draining"), "unhealthy");
+  assert.equal(targetState("unused"), "unused");
+  assert.equal(targetState("draining"), "unused");
+  assert.equal(targetState(undefined), "unknown");
+});
+
+test("systems are read off the wires: API per balancer, camp is the function and what it uses, cluster per EKS", () => {
+  const systems = systemsOf(morningPlace());
+  assert.deepEqual(
+    systems.map((system) => [system.name, [...system.members].sort()]),
+    [
+      ["API cloudspider-api", [API_ARN, "i-run", "i-stop"].sort()],
+      ["camp", ["fn", "sec", "tbl"]],
+      ["cluster cloudspider-up", [EKS_ARN, "i-node"].sort()],
+    ],
+  );
+});
+
+test("hurting says not checked until the target state is read, and quotes the read error", () => {
+  const unread = morningReport({ place: morningPlace({ linksRead: false, links: [], targetCounts: {} }), trail: READ_TRAIL });
+  assert.equal(unread.hurting.status, "unknown");
+  assert.match(unread.hurting.text, /not checked/);
+  const failed = morningReport({ place: morningPlace({ linksRead: true, linkNote: "DescribeTargetHealth: AccessDenied", links: [], targetCounts: {} }), trail: READ_TRAIL });
+  assert.equal(failed.hurting.status, "unknown");
+  assert.match(failed.hurting.text, /not checked.*AccessDenied/);
+});
+
+test("hurting names the unhealthy target by its machine name and the system it serves", () => {
+  const place = morningPlace({
+    links: [
+      { from: API_ARN, to: "i-run", state: "unhealthy", reason: "Target.ResponseCodeMismatch" },
+      { from: API_ARN, to: "i-stop", state: "unused", reason: "Target.InvalidState" },
+    ],
+    targetCounts: { [API_ARN]: { total: 2, healthy: 0, starting: 0, unhealthy: 1, unused: 1 } },
+  });
+  const report = morningReport({ place, trail: READ_TRAIL });
+  assert.equal(report.hurting.status, "fail");
+  assert.match(report.hurting.text, /API cloudspider-api/);
+  assert.match(report.hurting.text, /cloudspider-running/);
+  assert.match(report.hurting.text, /Target\.ResponseCodeMismatch/);
+  assert.match(report.hurting.text, /no healthy target/);
+});
+
+test("nothing hurting counts the healthy targets, and a broken fixture still hurts", () => {
+  const calm = morningReport({ place: morningPlace(), trail: READ_TRAIL });
+  assert.equal(calm.hurting.status, "ok");
+  assert.match(calm.hurting.text, /1 of 2 targets behind cloudspider-api healthy/);
+  const place = morningPlace();
+  place.fixtures = place.fixtures.map((item) => (item.id === "fn" ? { ...item, status: "broken" } : item));
+  const camp = morningReport({ place, trail: READ_TRAIL });
+  assert.equal(camp.hurting.status, "fail");
+  assert.match(camp.hurting.text, /camp: cloudspider-camp-page is in trouble/);
+});
+
+test("changed is the newest raw CloudTrail change, with the real name and its system", () => {
+  const events = [
+    { name: "StopInstances", time: 2_000, resources: ["i-stop"] },
+    { name: "StartInstances", time: 5_000, resources: ["i-run"] },
+    { name: "DescribeInstances", time: 9_000, resources: ["i-run"] },
+  ];
+  const report = morningReport({ place: morningPlace(), events, trail: READ_TRAIL });
+  assert.equal(report.changed.time, 5_000);
+  assert.match(report.changed.text, /Brought a machine back cloudspider-running/);
+  assert.match(report.changed.text, /API cloudspider-api/);
+  const failedCall = morningReport({ place: morningPlace(), events: [{ name: "CreateFunction20150331", time: 7_000, resources: [], names: ["cloudspider-camp-page"], error: "InvalidParameterValueException" }], trail: READ_TRAIL });
+  assert.equal(failedCall.changed.status, "fail");
+  assert.match(failedCall.changed.text, /cloudspider-camp-page.*failed: InvalidParameterValueException/);
+});
+
+test("changed says not checked when CloudTrail was not read, and quiet when it was read empty", () => {
+  assert.match(morningReport({ place: morningPlace(), events: [], trail: { read: false } }).changed.text, /not checked/);
+  assert.match(morningReport({ place: morningPlace(), events: [], trail: { read: true, error: "AccessDenied" } }).changed.text, /not checked.*AccessDenied/);
+  assert.match(morningReport({ place: morningPlace(), events: [], trail: READ_TRAIL }).changed.text, /No change/);
+});
+
+test("the biography on each object is its own newest change, matched by id, name or ARN tail", () => {
+  const events = [
+    { name: "StartInstances", time: 5_000, resources: ["i-run"] },
+    { name: "ModifyListener", time: 6_000, resources: [`${API_ARN.replace(":loadbalancer/", ":listener/")}/l1`], names: ["cloudspider-api"] },
+    { name: "UpdateFunctionCode20150331v2", time: 4_000, resources: ["arn:aws:lambda:eu-north-1:1:function:cloudspider-camp-page"] },
+  ];
+  const { marks } = morningReport({ place: morningPlace(), events, trail: READ_TRAIL });
+  assert.match(marks["i-run"].lastChange.text, /brought a machine back/);
+  assert.equal(marks[API_ARN].lastChange.time, 6_000);
+  assert.equal(marks.fn.lastChange.time, 4_000);
+  assert.equal(marks["i-stop"].lastChange, null);
+});
+
+test("an idle balancer and a cluster with no running node are idle candidates; a serving one is not", () => {
+  const place = morningPlace({
+    links: [{ from: API_ARN, to: "i-stop", state: "unused", reason: "Target.InvalidState" }],
+    targetCounts: { [API_ARN]: { total: 1, healthy: 0, starting: 0, unhealthy: 0, unused: 1 } },
+  });
+  place.instances = place.instances.map((item) => (item.id === "i-node" ? { ...item, state: "stopped" } : item));
+  assert.deepEqual(idleCandidates(place).map((item) => item.id).sort(), [API_ARN, EKS_ARN].sort());
+  assert.deepEqual(idleCandidates(morningPlace()), []);
+  // An unhealthy target is hurting, not idle.
+  const hurt = morningPlace({ targetCounts: { [API_ARN]: { total: 1, healthy: 0, starting: 0, unhealthy: 1, unused: 0 } } });
+  assert.equal(idleCandidates(hurt).some((item) => item.id === API_ARN), false);
+  // Not read yet: never idle.
+  assert.equal(idleCandidates(morningPlace({ linksRead: false, targetCounts: {} })).some((item) => item.id === API_ARN), false);
+});
+
+test("the idle guard needs two target-state reads in a row before the fire", () => {
+  const ids = [API_ARN];
+  let streak = nextIdleStreak({}, ids, 1);
+  assert.deepEqual(streak, { [API_ARN]: { count: 1, read: 1 } });
+  assert.deepEqual(nextIdleStreak(streak, ids, 1), streak, "the same read does not count twice");
+  streak = nextIdleStreak(streak, ids, 2);
+  assert.equal(streak[API_ARN].count, 2);
+  assert.deepEqual(nextIdleStreak(streak, [], 3), {}, "a read where it serves again clears it");
+});
+
+test("idle but billed burns only when the bill names the object; an unread bill says not checked", () => {
+  const place = morningPlace({
+    links: [],
+    targetCounts: { [API_ARN]: { total: 0, healthy: 0, starting: 0, unhealthy: 0, unused: 0 } },
+  });
+  const twice = { [API_ARN]: { count: 2, read: 2 } };
+  const unbilled = morningReport({ place, trail: READ_TRAIL, idleStreak: twice });
+  assert.equal(unbilled.idle.status, "unknown");
+  assert.match(unbilled.idle.text, /cloudspider-api has no target.*bill not checked/);
+  assert.equal(unbilled.marks[API_ARN].fire, false);
+
+  const bill = { resources: [{ service: "Amazon Elastic Load Balancing", id: API_ARN, resource: "cloudspider-api", value: 0.42, amount: "$0.42" }], resourceErrors: {} };
+  const billed = morningReport({ place, trail: READ_TRAIL, idleStreak: twice, bill });
+  assert.equal(billed.idle.status, "warn");
+  assert.match(billed.idle.text, /cloudspider-api.*\$0\.42 in 14 days/);
+  assert.equal(billed.marks[API_ARN].fire, true);
+  assert.match(billed.marks[API_ARN].idle, /\$0\.42 billed/);
+
+  const once = morningReport({ place, trail: READ_TRAIL, idleStreak: { [API_ARN]: { count: 1, read: 1 } }, bill });
+  assert.equal(once.marks[API_ARN].fire, false);
+  assert.match(once.idle.text, /second read/);
+
+  const nothing = morningReport({ place: morningPlace(), trail: READ_TRAIL, bill: { resources: [], resourceErrors: {} } });
+  assert.equal(nothing.idle.status, "ok");
+  assert.match(nothing.idle.text, /Nothing idle/);
+
+  const denied = morningReport({ place, trail: READ_TRAIL, idleStreak: twice, bill: { resources: [], resourceErrors: { "Amazon Elastic Load Balancing": "resource-level data is off" } } });
+  assert.match(denied.idle.text, /bill not checked/);
+});
+
+test("blast radius names what else the object touches", () => {
+  const place = morningPlace();
+  assert.match(blastLine(place, "i-run"), /only healthy target behind cloudspider-api/);
+  assert.match(blastLine(place, "i-stop"), /target of cloudspider-api/);
+  assert.match(blastLine(place, API_ARN), /cloudspider-running, cloudspider-stopped/);
+  assert.match(blastLine(place, "fn"), /uses cloudspider-camp-table, cloudspider-camp-secret/);
+  assert.match(blastLine(place, "tbl"), /cloudspider-camp-page uses it/);
+  assert.match(blastLine(place, "i-node"), /node of cluster cloudspider-up/);
+  assert.equal(blastLine({ instances: [{ id: "i-lone" }], fixtures: [] }, "i-lone"), "touches nothing else on the map");
+});

@@ -118,3 +118,31 @@ export function vaultDoor() {
 
 // Beacon pixel (column, row) on the radio mast.
 export const BEACON = [7, 0];
+
+// The morning report's badge: the sun coming up behind the ruins, over a
+// phosphor horizon. Warm toxic palette for the sun, Pip-Boy ramp below.
+const SUN_KEY = { G: 5, Y: 3, F: 15, X: 7, D: 4, B: 22, M: 23, K: 24 };
+const SUNRISE = [
+  ".............X.X..X.............",
+  "..........X..X.X..X..X..........",
+  "..........X..F.F..F..X..........",
+  ".......X...F........F...X.......",
+  "........X.....FYFY.....X........",
+  "......X..F..YFYFYFYF..F..X......",
+  ".......XF..YFYYYYYYYF..FX.......",
+  "..........YFYYYYYYYYYF......DD..",
+  "....X.DDDYFYYYGGGGYYYYF..X.XYD..",
+  "..DD..DYDFYYYGGGGGGYYYDDD...DD..",
+  "DDYD..DDDDYYYGGGGGGYYYDYD.DDDY..",
+  "DDDDDDDDYDYYGGGGGGGGYDDDD.DDDDDD",
+  "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+  "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+  "MKKKKKKMKKKKKKMKKKKKKMKKKKKKMKKK",
+  "KKKMKKKKKKMKKKKKKMKKKKKKMKKKKKKM",
+  "KKKKKKMKKKKKKMKKKKKKMKKKKKKMKKKK",
+  "KKMKKKKKKMKKKKKKMKKKKKKMKKKKKKMK",
+];
+
+export function sunrise() {
+  return art(SUNRISE, SUN_KEY);
+}
