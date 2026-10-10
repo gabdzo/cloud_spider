@@ -22,7 +22,7 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
-export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -238,6 +238,27 @@ export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, logGroup
         action: body.action,
         clusters,
       });
+    },
+    // Vaults: projects from YAML files. sample=true reads the sample folder
+    // against the sample place, with canned check answers.
+    async vaultsView({ sample = false } = {}) {
+      const viewer = sample ? vaults?.sample : vaults?.live;
+      if (!viewer) return { dir: "", note: "vaults are not set up", vaults: [] };
+      try {
+        return await viewer.view(sample ? vaults.samplePlace?.() : place);
+      } catch (failure) {
+        return { dir: "", note: `the vaults did not load: ${failure?.message || "error"}`, vaults: [] };
+      }
+    },
+    async vaultsTest(requestOrigin, key, { sample = false } = {}) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the test did not run" };
+      const viewer = sample ? vaults?.sample : vaults?.live;
+      if (!viewer) return { error: "vaults are not set up" };
+      try {
+        return await viewer.test(String(key || ""), sample ? vaults.samplePlace?.() : place);
+      } catch (failure) {
+        return { error: failure?.message || "the test did not run" };
+      }
     },
     async costView() {
       const at = clock();

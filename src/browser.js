@@ -23,6 +23,9 @@ import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
 } from "./chrome.js";
 import { FRAME_MS } from "./theme.js";
+import { createVaultState } from "./vault-state.js";
+import { vaultAt } from "./vault-layout.js";
+import { plateText } from "./vault-schema.js";
 
 const ui = createUi();
 const canvas = document.querySelector("#place");
@@ -60,6 +63,8 @@ const tallyIssue = document.querySelector("#tally-issue");
 const wallGrain = document.querySelector("#wall-grain");
 const upgradeButton = document.querySelector("#upgrade");
 const pipEl = document.querySelector("#pip");
+const vaultPanels = document.querySelector("#vault-panels");
+const vaultAll = document.querySelector("#vault-all");
 
 let place = null;
 let region = "";
@@ -92,6 +97,27 @@ let clusterPulling = false;
 let clusterAgain = false;
 let station = 0;
 let winking = -1;
+
+// Vaults: projects from YAML files, drawn as doors in a hillside.
+let vaultsData = { vaults: [], note: "" };
+let vaultsFor = null; // sample flag the vaults were read for
+let vaultsAt = 0;
+let vaultsLoading = false;
+let vaultsTicket = 0;
+let vaultsShown = "";
+let doorFrame = 0;
+const vaultLights = new Map();
+const vaultState = createVaultState({
+  storage: (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })(),
+  clock: () => performance.now(),
+});
+const EMPTY_PLACE = { region: "", vpcs: [], subnets: [], instances: [], fixtures: [] };
 
 // Cache for layout to avoid recomputing every frame
 const layoutCache = createLayoutCache(layout);
@@ -269,10 +295,251 @@ function placedPath() {
     : { nodes: [], edges: [], contentWidth: 0, contentHeight: 0 };
 }
 
+function vaultKeys() {
+  return vaultsData.vaults.map((vault) => vault.key);
+}
+
 function placedMap() {
   const width = map.clientWidth || 0;
   const rowLimit = width ? Math.min(ROW_LIMIT, width) : ROW_LIMIT;
-  return layoutCache.get(place, rowLimit);
+  const vaults = vaultsData.vaults;
+  const extra = {
+    key: `${vaultsShown}|${vaultState.key(vaultKeys())}`,
+    options: { vaults, isOpen: (key) => vaultState.isOpen(key) },
+  };
+  const placed = layoutCache.get(place || EMPTY_PLACE, rowLimit, extra);
+  // A reload with the same vaults keeps the layout but brings new check
+  // results: point the cells at the fresh records.
+  if (placed.vaults && placed.vaults.boundTo !== vaultsData) {
+    const byKey = new Map(vaults.map((vault) => [vault.key, vault]));
+    for (const cell of placed.vaults.cells) cell.vault = byKey.get(cell.key) || cell.vault;
+    placed.vaults.boundTo = vaultsData;
+  }
+  return placed;
+}
+
+// ---- vaults ----
+
+function vaultSignature(vaults) {
+  return vaults.map((vault) => `${vault.key}:${vault.number}:${vault.damaged ? 1 : 0}:${vault.title}:${(vault.owned || []).join(",")}`).join("|");
+}
+
+async function loadVaults() {
+  const ticket = ++vaultsTicket;
+  const wasSample = sample;
+  vaultsLoading = true;
+  try {
+    const body = await fetch(`/api/vaults${wasSample ? "?sample=1" : ""}`).then((response) => response.json());
+    if (ticket !== vaultsTicket || wasSample !== sample) return;
+    vaultsData = { vaults: Array.isArray(body?.vaults) ? body.vaults : [], note: body?.note || "" };
+    vaultsFor = wasSample;
+    vaultsAt = Date.now();
+    vaultsShown = vaultSignature(vaultsData.vaults);
+    noteVaults();
+  } catch {
+    if (ticket !== vaultsTicket) return;
+    vaultsFor = wasSample;
+    vaultsAt = Date.now();
+  } finally {
+    if (ticket === vaultsTicket) vaultsLoading = false;
+  }
+  renderChrome();
+  draw();
+}
+
+// The radio hears about a vault when its light turns red, once per turn.
+function noteVaults() {
+  for (const vault of vaultsData.vaults) {
+    const light = vault.damaged ? "damaged" : vault.status;
+    const before = vaultLights.get(vault.key);
+    vaultLights.set(vault.key, light);
+    if (light === before) continue;
+    if (light === "damaged") noteSpider(`${vault.file} is a damaged vault`, "fail");
+    else if (light === "fail" && before) noteSpider(`${vault.title || vault.name} failed its check`, "fail");
+    else if (light === "ok" && before === "fail") noteSpider(`${vault.title || vault.name} passes again`);
+  }
+}
+
+function wantVaults() {
+  if (vaultsLoading) return;
+  const pending = vaultsData.vaults.some((vault) => vault.status === "pending");
+  const age = Date.now() - vaultsAt;
+  if (vaultsFor !== sample || age > 15_000 || (pending && age > 2500)) loadVaults();
+}
+
+// Doors roll on animation frames, only while one is moving.
+function rollDoors() {
+  if (doorFrame) return;
+  const step = () => {
+    doorFrame = 0;
+    if (mode !== "map") return;
+    draw();
+    if (vaultState.moving(reducedMotion)) doorFrame = requestAnimationFrame(step);
+  };
+  doorFrame = requestAnimationFrame(step);
+}
+
+function toggleVault(key) {
+  const open = vaultState.toggle(key);
+  draw();
+  rollDoors();
+  if (open) {
+    const cell = placedMap().vaults?.cells.find((item) => item.key === key);
+    if (cell) revealPanel({ x: cell.x, y: cell.y, w: Math.min(cell.w, map.clientWidth), h: Math.min(cell.h, map.clientHeight) });
+  }
+}
+
+function vel(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function checkLine(check) {
+  const li = vel("li", check.status || "pending");
+  li.append(vel("i", "dot"));
+  const body = vel("span", "check-body");
+  body.append(vel("span", "url", check.name || check.url));
+  const result = check.status === "pending"
+    ? "checking…"
+    : [check.code ? String(check.code) : "", check.ms ? `${check.ms} ms` : ""].filter(Boolean).join(" · ");
+  body.append(vel("span", "res", result || "no answer"));
+  if (check.error) body.append(vel("span", "err", check.error));
+  li.append(body);
+  li.title = check.url;
+  return li;
+}
+
+function vaultPanel(cell) {
+  const vault = cell.vault;
+  const section = vel("section", `vault-panel${vault.damaged ? " damaged" : ""}`);
+  section.dataset.key = vault.key;
+  section.setAttribute("aria-label", `${plateText(vault.number)} ${vault.title || vault.name}`);
+  const head = vel("div", "vp-title");
+  const img = vel("img", "px");
+  img.src = iconURL("vault", 1);
+  img.alt = "";
+  head.append(img, vel("span", "vp-name", vault.damaged ? `DAMAGED VAULT · ${vault.file}` : `${plateText(vault.number)} · ${vault.title || vault.name}`));
+  const close = vel("button", "vp-close", "CLOSE");
+  close.type = "button";
+  close.title = "close the vault door";
+  close.addEventListener("click", () => toggleVault(vault.key));
+  head.append(close);
+  section.append(head);
+  const body = vel("div", "vp-body");
+  if (vault.damaged) {
+    body.append(vel("p", "vp-desc", "This vault file did not pass the cloudspider/v1 check. Fix the file and the door repairs itself on the next refresh."));
+    const list = vel("ul", "vp-errors");
+    for (const error of vault.errors || []) list.append(vel("li", "", error));
+    body.append(list);
+  } else {
+    body.append(vel("p", "vp-desc", vault.description));
+    const facts = vel("dl", "vp-facts");
+    for (const [label, value] of [
+      ["OWNER", vault.owner],
+      ["TYPE", vault.type],
+      ["TAGS", (vault.tags || []).join(", ")],
+      ["OWNS", `${(vault.owned || []).length} resource${(vault.owned || []).length === 1 ? "" : "s"}`],
+      ["FILE", vault.file],
+    ]) {
+      if (!value) continue;
+      facts.append(vel("dt", "", label), vel("dd", "", value));
+    }
+    body.append(facts);
+    const checks = vel("div", "vp-checks");
+    checks.append(vel("h4", "", vault.checks?.length ? "CHECKS" : "NO CHECKS"));
+    const list = vel("ul");
+    for (const check of vault.checks || []) list.append(checkLine(check));
+    checks.append(list);
+    body.append(checks);
+  }
+  section.append(body);
+  const nav = vel("nav", "vp-links");
+  for (const [key, label] of [["view", "VIEW"], ["repo", "REPO"], ["docs", "DOCS"], ["dashboard", "DASHBOARD"]]) {
+    const href = vault.links?.[key];
+    if (!href) continue;
+    const a = vel("a", "cmd", label);
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    nav.append(a);
+  }
+  if (!vault.damaged && vault.checks?.length) {
+    const test = vel("button", "cmd vp-test", "TEST");
+    test.type = "button";
+    test.addEventListener("click", () => testVault(vault.key, test));
+    nav.append(test);
+  }
+  if (nav.children.length) section.append(nav);
+  return section;
+}
+
+async function testVault(key, button) {
+  button.disabled = true;
+  button.textContent = "TESTING…";
+  const wasSample = sample;
+  try {
+    const body = await fetch("/api/vaults/test", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key, sample: wasSample }),
+    }).then((response) => response.json());
+    if (wasSample !== sample) return;
+    if (body?.vault) {
+      vaultsData = { ...vaultsData, vaults: vaultsData.vaults.map((item) => (item.key === key ? body.vault : item)) };
+      noteSpider(`tested ${body.vault.title || body.vault.name}: ${body.vault.status}`, body.vault.status === "fail" ? "fail" : "ok");
+      noteVaults();
+    } else if (body?.error) noteSpider(body.error, "fail");
+  } catch {
+    noteSpider("the vault test did not run", "fail");
+  }
+  panelsShown = "";
+  renderChrome();
+  draw();
+}
+
+let panelsShown = "";
+
+// HTML panels for open vaults (and the open/close-all switch) sit over the
+// canvas at layout positions and scroll with the map.
+let chromeFor = { placed: null, data: null };
+function placeVaultChrome(placed) {
+  const area = mode === "map" ? placed?.vaults : null;
+  vaultAll.hidden = !area;
+  if (!area) {
+    if (panelsShown) vaultPanels.replaceChildren();
+    panelsShown = "";
+    chromeFor = { placed: null, data: null };
+    return;
+  }
+  // Same layout, same data: nothing to do (this runs every frame).
+  if (placed === chromeFor.placed && vaultsData === chromeFor.data && vaultAll.style.top) return;
+  chromeFor = { placed, data: vaultsData };
+  const keys = vaultKeys();
+  const allOpen = vaultState.allOpen(keys);
+  vaultAll.textContent = allOpen ? "CLOSE ALL" : "OPEN ALL";
+  vaultAll.setAttribute("aria-pressed", String(allOpen));
+  vaultAll.style.left = `${area.x + 104}px`;
+  vaultAll.style.top = `${area.y + 4}px`;
+  const open = area.cells.filter((cell) => cell.open && cell.panel);
+  const shown = open
+    .map((cell) => `${cell.key}@${cell.panel.x},${cell.panel.y},${cell.panel.w},${cell.panel.h}:${JSON.stringify([cell.vault.checks, cell.vault.status, cell.vault.description, cell.vault.links, cell.vault.errors, (cell.vault.owned || []).length])}`)
+    .join("|");
+  if (shown === panelsShown) return;
+  panelsShown = shown;
+  vaultPanels.replaceChildren(
+    ...open.map((cell) => {
+      const panel = vaultPanel(cell);
+      Object.assign(panel.style, {
+        left: `${cell.panel.x}px`,
+        top: `${cell.panel.y}px`,
+        width: `${cell.panel.w}px`,
+        height: `${cell.panel.h}px`,
+      });
+      return panel;
+    }),
+  );
 }
 
 // On a narrow window the diagnosis can land past the edge of the scrolled
@@ -321,13 +588,15 @@ function draw() {
   if (mode === "path" || mode === "cluster") {
     wallGrain.hidden = true;
     tallyEl.hidden = true;
+    placeVaultChrome(null);
     if (mode === "path") drawPath();
     else drawCluster();
     return;
   }
   
+  wantVaults();
   // Layout is cached per place; flipSampleState invalidates it on mutation.
-  const placed = place
+  const placed = place || vaultsData.vaults.length
     ? placedMap()
     : {
         settlements: [],
@@ -337,8 +606,18 @@ function draw() {
       };
 
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
-  paint(ctx, { placed, ui, region, animTime, width, height, reducedMotion });
+  paint(ctx, {
+    placed,
+    ui,
+    region,
+    animTime,
+    width,
+    height,
+    reducedMotion,
+    vaultDoor: (key) => vaultState.door(key, reducedMotion),
+  });
   placeGrain(placed);
+  placeVaultChrome(placed);
 }
 
 function syncSelection() {
@@ -701,7 +980,14 @@ canvas.addEventListener("click", async (event) => {
     if (hit?.sentence) revealPanel(sentenceRect(hit, canvas.clientWidth, canvas.clientHeight));
     return;
   }
-  if (!place) {
+  if (vaultsData.vaults.length) {
+    const door = vaultAt(placedMap().vaults, event.offsetX, event.offsetY);
+    if (door) {
+      toggleVault(door.key);
+      return;
+    }
+  }
+  if (!place && !vaultsData.vaults.length) {
     clickGround(ui);
     renderChrome();
     draw();
@@ -717,7 +1003,7 @@ canvas.addEventListener("click", async (event) => {
     draw();
     return;
   }
-  const raw = place.instances.find((item) => item.id === hit.id) || hit;
+  const raw = place?.instances.find((item) => item.id === hit.id) || hit;
   clickBuilding(ui, raw, region);
   renderChrome();
   draw();
@@ -726,6 +1012,24 @@ canvas.addEventListener("click", async (event) => {
   if (ui.selection?.id !== raw.id) return;
   setLogs(ui, logs.entries || logs.lines || [], logs.note || "");
   draw();
+});
+
+// A pointer over a door says it can be opened.
+canvas.addEventListener("mousemove", (event) => {
+  if (mode !== "map" || !vaultsData.vaults.length) {
+    if (canvas.style.cursor) canvas.style.cursor = "";
+    return;
+  }
+  const door = vaultAt(placedMap().vaults, event.offsetX, event.offsetY);
+  const cursor = door ? "pointer" : "";
+  if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
+});
+
+vaultAll.addEventListener("click", () => {
+  const keys = vaultKeys();
+  vaultState.setAll(keys, !vaultState.allOpen(keys));
+  draw();
+  rollDoors();
 });
 
 yes.addEventListener("click", () => act(pressY(ui)));

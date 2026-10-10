@@ -170,3 +170,57 @@ test("every module the page imports is served", async () => {
     server.close();
   }
 });
+
+test("vaults: /api/vaults answers without booting AWS and TEST checks the origin", async () => {
+  const { createVaultStore } = await import("../src/vaults.js");
+  const { createCheckRunner } = await import("../src/vault-checks.js");
+  const { createVaultView } = await import("../src/vault-view.js");
+  const { sampleFetch, samplePlace } = await import("../src/sample.js");
+  let boots = 0;
+  const sampleView = createVaultView({
+    store: createVaultStore({ dir: new URL("../samples/vaults/", import.meta.url).pathname }),
+    checker: createCheckRunner({ fetch: sampleFetch }),
+  });
+  const vaultApp = createApp({
+    ec2: { async describeRegions() { boots += 1; return { regions: [] }; }, async defaultRegion() { boots += 1; return ""; } },
+    trail: { async lookupEvents() { return { event: null }; } },
+    logs: { async filter() { return { events: [] }; } },
+    vaults: { live: null, sample: sampleView, samplePlace },
+    logGroup: "",
+    pageOrigin: "http://127.0.0.1:8787",
+    clock: () => 0,
+  });
+  const server = await listen(vaultApp, 0);
+  try {
+    const { port } = server.address();
+    const live = await (await fetch(`http://127.0.0.1:${port}/api/vaults`)).json();
+    assert.deepEqual(live.vaults, []);
+    assert.equal(live.note, "vaults are not set up");
+    const sample = await (await fetch(`http://127.0.0.1:${port}/api/vaults?sample=1`)).json();
+    assert.deepEqual(sample.vaults.map((v) => [v.key, v.damaged]), [["landing", false], ["orders-api", false], ["reactor.yaml#0", true]]);
+    const post = (origin) => fetch(`http://127.0.0.1:${port}/api/vaults/test`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body: JSON.stringify({ key: "orders-api", sample: true }),
+    }).then((r) => r.json());
+    assert.deepEqual(await post("http://evil.example"), { error: "the test did not run" });
+    const tested = await post("http://127.0.0.1:8787");
+    assert.equal(tested.vault.status, "fail");
+    assert.equal(tested.vault.checks[0].error, "expected 200, got 503");
+    assert.equal(boots, 0, "vaults never boot the AWS side");
+  } finally {
+    server.close();
+  }
+});
+
+test("every served browser module is valid JavaScript", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { FILES } = await import("../src/server.js");
+  for (const name of ["vault-draw.js", "vault-layout.js", "vault-state.js", "vault-match.js", "vault-schema.js", "sprites/vault.js"]) {
+    assert.ok(FILES.has(name), `${name} is served`);
+  }
+  for (const name of [...FILES].filter((n) => n.endsWith(".js"))) {
+    const result = spawnSync(process.execPath, ["--check", new URL(`../src/${name}`, import.meta.url).pathname], { encoding: "utf8" });
+    assert.equal(result.status, 0, `${name}: ${result.stderr}`);
+  }
+});

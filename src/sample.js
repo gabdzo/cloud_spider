@@ -38,7 +38,7 @@ export function samplePlace() {
     ],
     links: [{ from: "alb-sample", to: "sample-running" }],
     instances: [
-      tagged("sample-running", "running"),
+      { ...tagged("sample-running", "running"), tags: [{ key: "cloudspider", value: "expendable" }, { key: "project", value: "landing" }] },
       tagged("sample-stopped", "stopped"),
       {
         id: "sample-untagged",
@@ -65,4 +65,30 @@ export function sampleTrail(now = Date.now()) {
     { time: ago(65), status: "fail", text: "tore a machine down  i-0wasteland01", issue: "AccessDenied", count: 1 },
     { time: ago(90), status: "ok", text: "changed a node group  sample-ng", issue: "", count: 1 },
   ];
+}
+
+// Sample vault checks answer from here, never from the network: the landing
+// page is up, the orders API is down.
+const SAMPLE_SITES = {
+  "https://landing.sample.cloudspider.test/": { status: 200, body: "<h1>Welcome to the landing page</h1>", ms: 140 },
+  "https://orders-api.sample.cloudspider.test/healthz": { status: 503, body: "upstream connect error", ms: 90 },
+  "https://orders-api.sample.cloudspider.test/version": { status: 200, body: "v1.4.2", ms: 1300 },
+};
+
+export async function sampleFetch(url, { signal } = {}) {
+  const site = SAMPLE_SITES[url];
+  if (!site) throw new Error("getaddrinfo ENOTFOUND (sample)");
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, site.ms);
+    signal?.addEventListener?.("abort", () => {
+      clearTimeout(timer);
+      reject(new Error("aborted"));
+    });
+  });
+  return {
+    status: site.status,
+    async text() {
+      return site.body;
+    },
+  };
 }

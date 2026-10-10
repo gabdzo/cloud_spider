@@ -109,6 +109,9 @@ export function campFixtures(resources, grain) {
       name,
       status: "ok",
       uses: resource.dependencies || [],
+      // For vaults: match by ARN or tags.
+      arn: typeof resource.outputs?.arn === "string" ? resource.outputs.arn : "",
+      tags: resource.outputs?.tags && typeof resource.outputs.tags === "object" ? resource.outputs.tags : {},
     })
   }
   const ids = new Set(fixtures.map((item) => item.id))
