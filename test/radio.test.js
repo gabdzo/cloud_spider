@@ -42,6 +42,16 @@ test("reads stay off the radio, even when they name an instance", () => {
   );
 });
 
+test("GetFederationToken is a write and stays on the radio", () => {
+  assert.equal(
+    radioWindow([
+      { name: "GetSessionToken", resources: [], time: 9 },
+      { name: "GetFederationToken", resources: [], time: 8 },
+    ]),
+    "GetFederationToken",
+  );
+});
+
 test("a refresh keeps the previous line until the next list arrives", async () => {
   let release;
   const pending = new Promise((resolve) => {

@@ -1,5 +1,5 @@
 const WINDOW = 15;
-const READ_ONLY = /^(Describe|List|Get|Lookup|Head)/;
+const READ_ONLY = /^(Describe|List|Get(?!FederationToken$)|Lookup|Head)/;
 
 export function radioLine(event) {
   if (!event) return "the radio is quiet";
