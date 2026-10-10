@@ -21,6 +21,7 @@ import {
   GetLogEventsCommand,
   FilterLogEventsCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
+import { CloudWatchClient, GetMetricDataCommand } from "@aws-sdk/client-cloudwatch";
 
 export function createAws() {
   return {
@@ -38,7 +39,33 @@ export function createAws() {
     trail: { lookupEvents },
     logs: { filter: readLogStream, search: searchLogGroup },
     eks: { listClusters: listUpgradeClusters, describeCluster: describeUpgradeCluster },
+    metrics: { read: readMetricData },
   };
+}
+
+// One batched GetMetricData call (paged by NextToken). Read-only:
+// cloudwatch:GetMetricData. Results carry Id, Timestamps and Values.
+export async function readMetricData(region, queries, { start, end }, client = new CloudWatchClient({ region })) {
+  try {
+    const merged = new Map();
+    let token;
+    let pagesLeft = 10;
+    do {
+      const out = await client.send(
+        new GetMetricDataCommand({ MetricDataQueries: queries, StartTime: new Date(start), EndTime: new Date(end), NextToken: token, ScanBy: "TimestampDescending" }),
+      );
+      for (const result of out.MetricDataResults || []) {
+        const have = merged.get(result.Id) || { Id: result.Id, Timestamps: [], Values: [] };
+        have.Timestamps.push(...(result.Timestamps || []));
+        have.Values.push(...(result.Values || []));
+        merged.set(result.Id, have);
+      }
+      token = out.NextToken;
+    } while (token && --pagesLeft > 0);
+    return { results: [...merged.values()] };
+  } catch (error) {
+    return publicError(error);
+  }
 }
 
 async function defaultRegion() {

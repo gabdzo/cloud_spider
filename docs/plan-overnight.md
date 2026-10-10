@@ -148,7 +148,10 @@ Cost: control plane $0.10/h plus a t4g.small node at about $0.017/h, so about $2
 - `cd upgrades/demo && npm ci && pulumi up --stack demo`
 - `aws eks update-kubeconfig …` as above.
 
-### Item 2: infra monitoring (now built as PR 24, after PR 23; Gabriel's scope change at 22:35)
+### Item 2: infra monitoring: IMPLEMENTED in PR 24 (Gabriel's scope change at 22:35)
+
+**Status: implemented** (PR 24, after PR 23). Setup and costs are in docs/RUN-ME.md §10. The table below is the design it followed. DynamoDB metrics, the per-door gauge needle and sparklines on the door plates are not built: the sparklines live in the open vault's METRICS block and the node panel.
+
 Prices are approximate eu-north-1 list prices; check the pricing pages before enabling.
 
 | source | what it gives | cost | recommend |
@@ -162,12 +165,11 @@ Prices are approximate eu-north-1 list prices; check the pricing pages before en
 | VPC flow logs | accepted/rejected flows | ~$0.50/GB to CloudWatch, ~$0.25/GB to S3 | no (low value here; on demand only) |
 | X-Ray (from the demo collector) | traces web→api | first 100k traces/month free | yes, demo only |
 
-Pip-Boy display:
-- a 12-point sparkline under each door plate and building plate (phosphor ramp, red segment where errors > 0);
-- a small gauge needle per vault: requests vs errors in the last hour;
-- the TROUBLE block lists the rows.
-
-One `GetMetricData` call (up to 500 metrics) per 5 min, cached server-side, paused when the tab is hidden.
+What PR 24 built (Pip-Boy display):
+- **Map:** metric headlines as captions (`CPU 86%`, `5XX 13/h · 791 REQ`, `9 ERR · 92 INV/h`). `!` marks a warning. A piece burns when it is broken (CPU ≥ 90%, a failed status check, or ≥ 25% errors). Each new alert gets one spider line.
+- **Vault panels:** a METRICS · 3H block with a phosphor sparkline per metric, amber when hot. TROUBLE (CloudTrail failures) and ERROR LINES (CloudWatch Logs) come from PR 22.
+- **Cluster:** `CPU n% MEM n%` on node cards from metrics-server. A node panel shows load meters plus the node's EC2 CloudWatch sparklines. Pod logs and events come from PR 23.
+- **Polling:** one `GetMetricData` call (up to 500 metrics) per 5 minutes, cached server-side and asked for only while the tab is visible (`/api/metrics`).
 
 ### Item 3: his agent's steps (not ours)
 SRE overview from 458703e:

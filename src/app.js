@@ -13,6 +13,7 @@ import { diagramFromClusters } from "./cluster.js";
 import { diagramFromKube } from "./kube-diagram.js";
 import { campFixtures, watchLine } from "./upgrade-rules.js";
 import { createLinkCache } from "./aws-path.js";
+import { createMetricsCache, sampleMetrics } from "./metrics.js";
 
 const CALL = { stop: "StopInstances", start: "StartInstances" };
 const ACCOUNT_HINT = "Set AWS_PROFILE=default and AWS_REGION=eu-north-1.";
@@ -23,7 +24,7 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
-export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, agent, kube, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, eks, vaults, agent, kube, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -51,6 +52,11 @@ export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, 
   const now = typeof clock === "function" ? clock : Date.now;
   const linkCache = createLinkCache({
     read: (name, balancers) => path.targetLines(name, balancers),
+    clock: now,
+  });
+
+  const metricsCache = createMetricsCache({
+    read: (name, queries, range) => (typeof metrics?.read === "function" ? metrics.read(name, queries, range) : { error: "metrics are not set up" }),
     clock: now,
   });
 
@@ -281,6 +287,16 @@ export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, 
         return await viewer.test(String(key || ""), sample ? vaults.samplePlace?.() : place);
       } catch (failure) {
         return { error: failure?.message || "the test did not run" };
+      }
+    },
+    // Monitoring: CloudWatch metrics for what the map shows, cached 5 min.
+    async metricsView({ sample = false, samplePlace } = {}) {
+      if (sample) return sampleMetrics(samplePlace || vaults?.samplePlace?.(), { now: now() });
+      if (!place) return { region, targets: {}, note: "the map has not loaded yet" };
+      try {
+        return await metricsCache.get(region, place);
+      } catch (failure) {
+        return { region, targets: {}, error: failure?.message || "the metrics did not load" };
       }
     },
     async costView() {
