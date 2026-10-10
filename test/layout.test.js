@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { layout, textWidth } from "../src/layout.js";
+import { layout, textWidth, WALKWAY_PX, SMOKE_PX } from "../src/layout.js";
+import { samplePlace } from "../src/sample.js";
 
 function building(id, extra = {}) {
   return { id, type: "t4g.nano", state: "running", ...extra };
@@ -145,4 +146,23 @@ test("a crowded subnet is taller than one screen", () => {
     instances,
   });
   assert.ok(place.contentHeight > 600);
+});
+
+test("each camp keeps a walkway strip between its plots and its bottom wall", () => {
+  const placed = layout(samplePlace());
+  for (const settlement of placed.settlements) {
+    const contentBottom = Math.max(
+      ...settlement.plots.map((plot) => plot.y + plot.h),
+      ...settlement.outsiders.map((item) => item.y + item.h),
+    );
+    assert.ok(settlement.y + settlement.h - contentBottom >= WALKWAY_PX);
+  }
+});
+
+test("roofs sit far enough below the subnet caption for chimney smoke", () => {
+  const placed = layout(samplePlace());
+  for (const plot of placed.settlements.flatMap((s) => s.plots)) {
+    const captionBottom = plot.y + 48; // two text lines + padding
+    for (const item of plot.buildings) assert.ok(item.y - captionBottom >= SMOKE_PX);
+  }
 });

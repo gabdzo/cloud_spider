@@ -8,6 +8,12 @@ const GAP = 16;
 const PAD = 24;
 const INSET = 12;
 const ROW_LIMIT = 1100;
+// Strip along the bottom of each camp, between the plots and the wall, where
+// the wanderers walk (32px figures + 18px wall + a little air).
+export const WALKWAY_PX = 40;
+// Air between a plot's caption and its roofs, so chimney smoke rises into
+// empty space instead of over the subnet label.
+export const SMOKE_PX = 18;
 
 export function textWidth(text) {
   return Math.ceil(String(text ?? "").length * CHAR_W);
@@ -59,7 +65,7 @@ export function layout(place) {
 
     for (const subnet of subnets.filter((item) => item.vpcId === vpc.id)) {
       const buildings = instances.filter((item) => item.subnetId === subnet.id);
-      const headerH = LINE * 2 + 8;
+      const headerH = LINE * 2 + 8 + SMOKE_PX;
       const sizing = pack(buildings, 0, 0);
       const w = Math.max(
         textWidth(subnet.id) + 2 * INSET,
@@ -105,7 +111,7 @@ export function layout(place) {
       x: left,
       y: cursorY,
       w: right - left + INSET,
-      h: bottom - cursorY + INSET,
+      h: bottom - cursorY + INSET + WALKWAY_PX,
       plots,
       outsiders: labeled,
     };

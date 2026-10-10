@@ -12,6 +12,7 @@ const FILES = new Set([
   "draw.js",
   "sprites.js",
   "pixel-art.js",
+  "layout-cache.js",
   "ui.js",
   "layout.js",
   "verbs.js",

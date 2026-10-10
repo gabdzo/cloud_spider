@@ -5,7 +5,7 @@ import {
   ruinedCar, warningSign, skylineSegment, smokePuff,
   settlementPost, settlementWallH, settlementWallV, settlementGate
 } from "./pixel-art.js";
-import { FONT_PX } from "./layout.js";
+import { FONT_PX, SMOKE_PX } from "./layout.js";
 
 const COLORS = {
   1: "#3a2a14",
@@ -21,6 +21,7 @@ const COLORS = {
   12: "#ffcc33",
 };
 const PIXEL = 4;
+const WANDERER_SCALE = 2;
 const FONT = `bold ${FONT_PX}px Menlo, Monaco, Consolas, monospace`;
 const SMALL = `bold ${FONT_PX - 2}px Menlo, Monaco, Consolas, monospace`;
 const TEXT = "#f2e3b8";
@@ -126,84 +127,112 @@ function generateDebris(width, height, placed) {
   return debris;
 }
 
+let layerCache = { key: null, canvas: null };
+
+function layerKey(width, height, dpr, placed) {
+  const plots = placed.settlements
+    .map((s) => s.plots.map((p) => `${p.x},${p.y},${p.w},${p.h}`).join(","))
+    .join(";");
+  return `${dpr}|${getCacheKey(width, height, placed)}|${plots}`;
+}
+
+function newLayer(w, h) {
+  if (typeof OffscreenCanvas !== "undefined") return new OffscreenCanvas(w, h);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  return canvas;
+}
+
+function staticLayer(ctx, width, height, placed) {
+  const dpr = ctx.getTransform ? ctx.getTransform().a || 1 : 1;
+  const key = layerKey(width, height, dpr, placed);
+  if (layerCache.key === key) return layerCache.canvas;
+
+  const canvas = newLayer(Math.round(width * dpr), Math.round(height * dpr));
+  const layer = canvas.getContext("2d");
+  layer.setTransform(dpr, 0, 0, dpr, 0, 0);
+  layer.imageSmoothingEnabled = false;
+
+  drawWastelandBackground(layer, width, height);
+  // Debris positions are cached with the layout too (same key).
+  if (debrisCache.key !== key) {
+    debrisCache.debris = generateDebris(width, height, placed);
+    debrisCache.key = key;
+  }
+  for (const item of debrisCache.debris) drawDebris(layer, item);
+  drawCampfireStill(layer, width, height);
+  for (const settlement of placed.settlements) {
+    drawSettlement(layer, settlement);
+    for (const plot of settlement.plots) {
+      layer.fillStyle = "rgba(16, 13, 8, 0.7)";
+      layer.fillRect(plot.x, plot.y, plot.w, plot.h);
+      layer.strokeStyle = "#4a3519";
+      layer.lineWidth = 2;
+      layer.strokeRect(plot.x + 1, plot.y + 1, plot.w - 2, plot.h - 2);
+    }
+  }
+
+  layerCache = { key, canvas };
+  return canvas;
+}
+
 export function paint(ctx, scene) {
   const { placed, ui, region, animTime, width, height, reducedMotion } = scene;
   ctx.imageSmoothingEnabled = false;
   ctx.textBaseline = "alphabetic";
   ctx.clearRect(0, 0, width, height);
 
-  // Draw layered wasteland background FIRST (behind everything, never overlaps labels)
-  drawWastelandBackground(ctx, width, height, animTime, reducedMotion);
+  // Everything that doesn't move (skyline, ground, debris, camp walls, plot
+  // boxes, the campfire's glow and sitters) is rendered once per layout into
+  // an offscreen layer and blitted each frame.
+  ctx.drawImage(staticLayer(ctx, width, height, placed), 0, 0, width, height);
 
-  // Generate and draw deterministic debris (cached)
-  const cacheKey = getCacheKey(width, height, placed);
-  if (debrisCache.key !== cacheKey) {
-    debrisCache.debris = generateDebris(width, height, placed);
-    debrisCache.key = cacheKey;
+  // Moving parts: fire and embers, buildings, smoke, wanderers.
+  drawCampfireFlames(ctx, width, height, animTime, reducedMotion);
+  const buildings = allBuildings(placed);
+  for (const building of buildings) drawBuilding(ctx, building, animTime, ui, reducedMotion);
+  for (const building of buildings) drawSmoke(ctx, building, animTime, reducedMotion);
+  for (const settlement of placed.settlements) {
+    const own = [...settlement.plots.flatMap((p) => p.buildings), ...settlement.outsiders];
+    if (own.some((b) => b.state === "running")) drawWanderers(ctx, settlement, animTime, reducedMotion);
   }
-  for (const item of debrisCache.debris) {
-    drawDebris(ctx, item);
-  }
 
-  // Draw campfire scene (always visible in bottom-right)
-  drawCampfireScene(ctx, width, height, animTime, reducedMotion);
-
-  // Now draw settlements and labels on top of everything
+  // Text last, so smoke, wanderers and sprites never cover a label.
   ctx.font = FONT;
   if (!placed.settlements.length && !placed.orphans?.items?.length) {
     ctx.fillStyle = TEXT;
     ctx.fillText(region ? `${region} has no VPCs` : "", 24, 40);
   }
-
   for (const settlement of placed.settlements) {
-    drawSettlement(ctx, settlement);
-
     for (const plot of settlement.plots) {
-      ctx.fillStyle = "rgba(16, 13, 8, 0.7)";
-      ctx.fillRect(plot.x, plot.y, plot.w, plot.h);
-      ctx.strokeStyle = "#4a3519";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(plot.x + 1, plot.y + 1, plot.w - 2, plot.h - 2);
       ctx.font = FONT;
+      labelBacking(ctx, plot.label, plot.x + 12, plot.y + 24, FONT_PX);
       ctx.fillStyle = TEXT;
       ctx.fillText(plot.label, plot.x + 12, plot.y + 24);
       ctx.font = SMALL;
-      ctx.fillStyle = MUTED;
-      if (plot.caption) ctx.fillText(plot.caption, plot.x + 12, plot.y + 42);
-      if (!plot.buildings.length) ctx.fillText("empty", plot.x + 12, plot.y + 68);
-      for (const building of plot.buildings) {
-        drawBuilding(ctx, building, animTime, ui, reducedMotion);
+      if (plot.caption) {
+        labelBacking(ctx, plot.caption, plot.x + 12, plot.y + 42, FONT_PX - 2);
+        ctx.fillStyle = MUTED;
+        ctx.fillText(plot.caption, plot.x + 12, plot.y + 42);
       }
+      ctx.fillStyle = MUTED;
+      if (!plot.buildings.length) ctx.fillText("empty", plot.x + 12, plot.y + 68 + SMOKE_PX);
     }
-    for (const building of settlement.outsiders) {
-      drawBuilding(ctx, building, animTime, ui, reducedMotion);
-    }
-
-    // Draw wandering characters in running settlements
-    const runningBuildings = [...settlement.plots.flatMap(p => p.buildings), ...settlement.outsiders];
-    const hasRunning = runningBuildings.some(b => b.state === "running");
-    if (hasRunning) {
-      drawWanderers(ctx, settlement, animTime, reducedMotion);
-    }
-
-    // Draw settlement label last (on top of smoke and buildings)
     drawSettlementLabel(ctx, settlement);
   }
-
   if (placed.orphans?.items?.length) {
     ctx.font = FONT;
     ctx.fillStyle = TEXT;
     ctx.fillText(placed.orphans.label, 36, placed.orphans.y + 22);
-    for (const building of placed.orphans.items) {
-      drawBuilding(ctx, building, animTime, ui, reducedMotion);
-    }
   }
+  for (const building of buildings) drawBuildingLabel(ctx, building);
 
   const selected = ui.selection ? buildingAt(placed, null, null, ui.selection.id) : null;
   if (selected) drawPlate(ctx, selected, ui, width, height);
 }
 
-function drawWastelandBackground(ctx, width, height, animTime, reducedMotion) {
+function drawWastelandBackground(ctx, width, height) {
   // Draw ruined skyline across the top
   const skylineY = 20;
   let x = 0;
@@ -241,9 +270,15 @@ function drawDebris(ctx, item) {
   drawSprite(ctx, sprite, item.x, item.y, scale);
 }
 
-function drawCampfireScene(ctx, width, height, animTime, reducedMotion) {
-  const x = width - CAMPFIRE_AREA.w - CAMPFIRE_AREA.margin;
-  const y = height - CAMPFIRE_AREA.h - CAMPFIRE_AREA.margin;
+function campfireOrigin(width, height) {
+  return {
+    x: width - CAMPFIRE_AREA.w - CAMPFIRE_AREA.margin,
+    y: height - CAMPFIRE_AREA.h - CAMPFIRE_AREA.margin,
+  };
+}
+
+function drawCampfireStill(ctx, width, height) {
+  const { x, y } = campfireOrigin(width, height);
   
   // Draw subtle glow on ground
   const glowRadius = 70;
@@ -258,14 +293,18 @@ function drawCampfireScene(ctx, width, height, animTime, reducedMotion) {
   const dweller = vaultDwellerSitting();
   drawSprite(ctx, dweller, x + 10, y + 40, 3);
   
+  // Draw dog lying down to the RIGHT of the fire (after fire ends at x+156)
+  const dog = dogLying();
+  drawSprite(ctx, dog, x + 160, y + 90, 3);
+  
+}
+
+function drawCampfireFlames(ctx, width, height, animTime, reducedMotion) {
+  const { x, y } = campfireOrigin(width, height);
   // Draw animated campfire (24x28 at 4x = 96x112px)
   const firePhase = reducedMotion ? 0 : Math.floor(animTime / 150) % 4;
   const fire = campfireFrame(firePhase);
   drawSprite(ctx, fire, x + 60, y + 75, 4);
-  
-  // Draw dog lying down to the RIGHT of the fire (after fire ends at x+156)
-  const dog = dogLying();
-  drawSprite(ctx, dog, x + 160, y + 90, 3);
   
   // Draw rising embers from fire
   if (!reducedMotion) {
@@ -336,6 +375,14 @@ function drawSettlement(ctx, settlement) {
   }
 }
 
+// Dark plate behind a label so smoke or sprites drawn under it can't make a
+// light glyph (like the '-' in sample-subnet) blend into the background.
+function labelBacking(ctx, text, x, baseline, px) {
+  const w = ctx.measureText(text).width;
+  ctx.fillStyle = "rgba(16, 13, 8, 0.9)";
+  ctx.fillRect(Math.floor(x - 3), Math.floor(baseline - px), Math.ceil(w + 6), px + 5);
+}
+
 function drawSettlementLabel(ctx, settlement) {
   // Draw settlement label (on top of smoke, so it's readable)
   ctx.font = FONT;
@@ -349,6 +396,35 @@ function drawSettlementLabel(ctx, settlement) {
   ctx.fillText(settlement.label, settlement.x + 12, labelY);
 }
 
+function drawSmoke(ctx, building, animTime, reducedMotion) {
+  const frame = buildingFrame(building.state, 0, true);
+  const size = frame.length * PIXEL;
+  const originX = building.x + Math.floor((building.w - size) / 2);
+  const originY = building.y;
+  // Draw chimney smoke for running buildings
+  if (building.state === "running" && !reducedMotion) {
+    const smokePhase = Math.floor(animTime / 300) % 2;
+    const smoke = smokePuff(smokePhase);
+    const chimneyX = originX + 11 * PIXEL - 12;
+    const chimneyY = originY - 18; // sits on the chimney, inside SMOKE_PX
+    drawSprite(ctx, smoke, chimneyX, chimneyY, 3);
+  }
+}
+
+function drawBuildingLabel(ctx, building) {
+  const size = buildingFrame(building.state, 0, true).length * PIXEL;
+  const originY = building.y;
+  ctx.font = SMALL;
+  ctx.textAlign = "center";
+  ctx.fillStyle = TEXT;
+  ctx.fillText(building.state || "", building.x + building.w / 2, originY + size + 14);
+  if (building.label) {
+    ctx.fillStyle = MUTED;
+    ctx.fillText(building.label, building.x + building.w / 2, originY + size + 28);
+  }
+  ctx.textAlign = "left";
+}
+
 function drawWanderers(ctx, settlement, animTime, reducedMotion) {
   if (reducedMotion) return;
   
@@ -359,8 +435,11 @@ function drawWanderers(ctx, settlement, animTime, reducedMotion) {
   const count = 2 + Math.floor(rng.next() * 2); // 2 or 3 wanderers
   
   for (let i = 0; i < count; i++) {
-    // Define walkway: horizontal path near bottom of settlement, below building labels
-    const walkwayY = settlement.y + settlement.h - 30; // 30px from bottom, below labels
+    // Walkway: the strip layout reserves between the plots and the bottom
+    // wall (WALKWAY_PX), so feet stay above the wall and heads below labels.
+    const wallH = settlementWallH().length * 3;
+    const walkerH = wandererWalkFrame(0).length * WANDERER_SCALE;
+    const walkwayY = settlement.y + settlement.h - wallH - walkerH - 2;
     const walkwayLeft = settlement.x + 40; // Inside left wall
     const walkwayRight = settlement.x + settlement.w - 40; // Inside right wall
     const walkwayLength = walkwayRight - walkwayLeft;
@@ -380,7 +459,7 @@ function drawWanderers(ctx, settlement, animTime, reducedMotion) {
     // Use animTime to select frame (not position)
     const walkFrame = Math.floor(animTime / 200) % 4;
     const wanderer = wandererWalkFrame(walkFrame);
-    drawSprite(ctx, wanderer, wx, wy, 3);
+    drawSprite(ctx, wanderer, Math.round(wx), wy, WANDERER_SCALE);
   }
 }
 
@@ -391,23 +470,7 @@ function drawBuilding(ctx, building, animTime, ui, reducedMotion) {
   const originX = building.x + Math.floor((building.w - size) / 2);
   const originY = building.y;
   
-  for (let y = 0; y < frame.length; y += 1) {
-    for (let x = 0; x < frame[y].length; x += 1) {
-      const color = COLORS[frame[y][x]];
-      if (!color) continue;
-      ctx.fillStyle = color;
-      ctx.fillRect(originX + x * PIXEL, originY + y * PIXEL, PIXEL, PIXEL);
-    }
-  }
-
-  // Draw chimney smoke for running buildings
-  if (building.state === "running" && !reducedMotion) {
-    const smokePhase = Math.floor(animTime / 300) % 2;
-    const smoke = smokePuff(smokePhase);
-    const chimneyX = originX + 11 * PIXEL - 12;
-    const chimneyY = originY - 32;
-    drawSprite(ctx, smoke, chimneyX, chimneyY, 3);
-  }
+  drawSprite(ctx, frame, originX, originY, PIXEL);
 
   // Draw warning sign for expendable instances
   if (building.tags?.cloudspider === "expendable") {
@@ -425,18 +488,26 @@ function drawBuilding(ctx, building, animTime, ui, reducedMotion) {
     ctx.fillRect(originX - 5, originY + size + 1, 4, 4);
     ctx.fillRect(originX + size + 1, originY + size + 1, 4, 4);
   }
-  ctx.font = SMALL;
-  ctx.textAlign = "center";
-  ctx.fillStyle = TEXT;
-  ctx.fillText(building.state || "", building.x + building.w / 2, originY + size + 14);
-  if (building.label) {
-    ctx.fillStyle = MUTED;
-    ctx.fillText(building.label, building.x + building.w / 2, originY + size + 28);
-  }
-  ctx.textAlign = "left";
 }
 
-function drawSprite(ctx, sprite, x, y, scale = 4) {
+// Sprites are rasterised once per (pixels, scale) into a small bitmap and
+// blitted, instead of one fillRect per pixel every frame.
+const spriteBitmaps = new Map();
+const SPRITE_CACHE_LIMIT = 400;
+
+function spriteBitmap(sprite, scale) {
+  const key = `${scale}:${sprite.map((row) => row.join(",")).join("/")}`;
+  let bitmap = spriteBitmaps.get(key);
+  if (bitmap) return bitmap;
+  const w = sprite.reduce((max, row) => Math.max(max, row.length), 0);
+  bitmap = newLayer(Math.max(1, w * scale), Math.max(1, sprite.length * scale));
+  rasterise(bitmap.getContext("2d"), sprite, 0, 0, scale);
+  if (spriteBitmaps.size >= SPRITE_CACHE_LIMIT) spriteBitmaps.clear();
+  spriteBitmaps.set(key, bitmap);
+  return bitmap;
+}
+
+function rasterise(ctx, sprite, x, y, scale) {
   for (let row = 0; row < sprite.length; row += 1) {
     for (let col = 0; col < sprite[row].length; col += 1) {
       const colorIndex = sprite[row][col];
@@ -447,6 +518,10 @@ function drawSprite(ctx, sprite, x, y, scale = 4) {
       ctx.fillRect(x + col * scale, y + row * scale, scale, scale);
     }
   }
+}
+
+function drawSprite(ctx, sprite, x, y, scale = 4) {
+  ctx.drawImage(spriteBitmap(sprite, scale), Math.round(x), Math.round(y));
 }
 
 export function buildingAt(placed, x, y, id) {
