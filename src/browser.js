@@ -307,7 +307,15 @@ function placedMap() {
     key: `${vaultsShown}|${vaultState.key(vaultKeys())}`,
     options: { vaults, isOpen: (key) => vaultState.isOpen(key) },
   };
-  return layoutCache.get(place || EMPTY_PLACE, rowLimit, extra);
+  const placed = layoutCache.get(place || EMPTY_PLACE, rowLimit, extra);
+  // A reload with the same vaults keeps the layout but brings new check
+  // results: point the cells at the fresh records.
+  if (placed.vaults && placed.vaults.boundTo !== vaultsData) {
+    const byKey = new Map(vaults.map((vault) => [vault.key, vault]));
+    for (const cell of placed.vaults.cells) cell.vault = byKey.get(cell.key) || cell.vault;
+    placed.vaults.boundTo = vaultsData;
+  }
+  return placed;
 }
 
 // ---- vaults ----
@@ -495,14 +503,19 @@ let panelsShown = "";
 
 // HTML panels for open vaults (and the open/close-all switch) sit over the
 // canvas at layout positions and scroll with the map.
+let chromeFor = { placed: null, data: null };
 function placeVaultChrome(placed) {
   const area = mode === "map" ? placed?.vaults : null;
   vaultAll.hidden = !area;
   if (!area) {
     if (panelsShown) vaultPanels.replaceChildren();
     panelsShown = "";
+    chromeFor = { placed: null, data: null };
     return;
   }
+  // Same layout, same data: nothing to do (this runs every frame).
+  if (placed === chromeFor.placed && vaultsData === chromeFor.data && vaultAll.style.top) return;
+  chromeFor = { placed, data: vaultsData };
   const keys = vaultKeys();
   const allOpen = vaultState.allOpen(keys);
   vaultAll.textContent = allOpen ? "CLOSE ALL" : "OPEN ALL";

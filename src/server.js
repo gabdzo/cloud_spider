@@ -10,7 +10,7 @@ import { sampleCost } from "./cost.js";
 import { sampleCluster } from "./cluster.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
-const FILES = new Set([
+export const FILES = new Set([
   "browser.js",
   "draw.js",
   "sprites.js",

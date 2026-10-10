@@ -31,10 +31,17 @@ function clipText(ctx, text, max) {
   return `${out}…`;
 }
 
-// Static: the open vault's bay, every hill and every plate.
-export function drawVaultsStatic(ctx, area) {
+// Static: the open vault's bay, plus every shut vault whose door is at rest
+// (hill, plate, door and name), so an idle row costs one blit per frame.
+export function drawVaultsStatic(ctx, area, settled = new Set()) {
   if (!area) return;
   for (const cell of area.cells) {
+    if (settled.has(cell.key)) {
+      drawHill(ctx, cell);
+      drawDoor(ctx, cell, 0);
+      drawCellLabel(ctx, cell);
+      continue;
+    }
     if (cell.open) {
       ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
       ctx.fillRect(cell.x + 5, cell.y + 6, cell.w, cell.h);
@@ -82,39 +89,50 @@ function drawPlate(ctx, cell) {
   ctx.fillText(text, Math.round(x + (w - tw) / 2), y + h - 6);
 }
 
+// Which shut vaults can be baked into the static layer right now.
+export function settledVaults(area, door = () => 0) {
+  const settled = new Set();
+  for (const cell of area?.cells || []) if (!cell.open && door(cell.key, false) === 0) settled.add(cell.key);
+  return settled;
+}
+
 // Dynamic: doors and lights. door(key) gives 0 (shut) .. 1 (rolled aside).
-export function drawVaultsLive(ctx, area, { door = () => 0, animTime = 0, reducedMotion = false } = {}) {
+export function drawVaultsLive(ctx, area, { door = () => 0, animTime = 0, reducedMotion = false, settled = new Set() } = {}) {
   if (!area) return;
   for (const cell of area.cells) {
-    drawHill(ctx, cell);
-    const p = door(cell.key, cell.open);
-    const { cx, cy, r, travel } = cell.door;
-    // Lamp light spills out of an open tunnel.
-    if (p > 0.05) glow(ctx, cx, cy - 6, 34, WORLD.amber, 0.22 * p);
-    const sprite = gearDoor({ cracked: Boolean(cell.vault.damaged) });
-    const bitmap = spriteBitmap(sprite, VAULT_SCALE, VAULT_PALETTE);
-    const half = (DOOR_R + 0.5) * VAULT_SCALE;
-    const dx = cx + p * travel;
-    ctx.save();
-    if (!cell.open) {
-      ctx.beginPath();
-      ctx.rect(cell.x, cell.y - 4, cell.w, cell.h);
-      ctx.clip();
+    if (!settled.has(cell.key)) {
+      drawHill(ctx, cell);
+      drawDoor(ctx, cell, door(cell.key, cell.open));
     }
-    ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
-    ctx.beginPath();
-    ctx.ellipse(dx + 3, cy + half - 2, half * 0.9, 4, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.translate(Math.round(dx), Math.round(cy));
-    // Rolling: half a turn over the rail. Twelve teeth, so at rest (0 or
-    // pi) the door looks the same as it does shut.
-    const angle = p * Math.PI;
-    if (angle) ctx.rotate(angle);
-    ctx.drawImage(bitmap, -half, -half);
-    ctx.restore();
-    void r;
     drawLight(ctx, cell, animTime, reducedMotion);
   }
+}
+
+function drawDoor(ctx, cell, p) {
+  const { cx, cy, travel } = cell.door;
+  // Lamp light spills out of an open tunnel.
+  if (p > 0.05) glow(ctx, cx, cy - 6, 34, WORLD.amber, 0.22 * p);
+  const sprite = gearDoor({ cracked: Boolean(cell.vault.damaged) });
+  const bitmap = spriteBitmap(sprite, VAULT_SCALE, VAULT_PALETTE);
+  const half = (DOOR_R + 0.5) * VAULT_SCALE;
+  const dx = cx + p * travel;
+  ctx.save();
+  if (!cell.open) {
+    ctx.beginPath();
+    ctx.rect(cell.x, cell.y - 4, cell.w, cell.h);
+    ctx.clip();
+  }
+  ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+  ctx.beginPath();
+  ctx.ellipse(dx + 3, cy + half - 2, half * 0.9, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.translate(Math.round(dx), Math.round(cy));
+  // Rolling: half a turn over the rail. Twelve teeth, so at rest (0 or
+  // pi) the door looks the same as it does shut.
+  const angle = p * Math.PI;
+  if (angle) ctx.rotate(angle);
+  ctx.drawImage(bitmap, -half, -half);
+  ctx.restore();
 }
 
 function drawLight(ctx, cell, animTime, reducedMotion) {
@@ -140,33 +158,36 @@ function drawLight(ctx, cell, animTime, reducedMotion) {
 }
 
 // Text pass: the row label, names, and the resources heading.
-export function drawVaultLabels(ctx, area) {
+// Settled vaults had their names baked into the static layer.
+export function drawVaultLabels(ctx, area, settled = new Set()) {
   if (!area) return;
   ctx.font = LABEL;
   plaque(ctx, area.label, area.x + 12, area.y + 22, 14, PIP.bright);
-  for (const cell of area.cells) {
-    const { x, y, w } = cell.nameAt;
-    const vault = cell.vault;
-    ctx.font = LABEL;
-    const name = clipText(ctx, vault.title || vault.name, w);
-    const nx = cell.open ? x : Math.round(cell.x + (cell.w - ctx.measureText(name).width) / 2);
-    labelBacking(ctx, name, nx, y - 4, 14);
-    ctx.fillStyle = vault.damaged ? STATUS.broken : PIP.bright;
-    ctx.fillText(name, nx, y - 4);
-    if (vault.damaged || cell.open) {
-      ctx.font = SMALL;
-      const sub = vault.damaged ? `DAMAGED  ${vault.file}` : [vault.type, vault.owner].filter(Boolean).join("  ·  ").toUpperCase();
-      const line = clipText(ctx, sub, w);
-      const sx = cell.open ? x : Math.round(cell.x + (cell.w - ctx.measureText(line).width) / 2);
-      ctx.fillStyle = vault.damaged ? rgba(STATUS.broken, 0.85) : PIP.dim;
-      ctx.fillText(line, sx, y + 12);
-    }
-    if (cell.open && cell.cardsAt && !vault.damaged) {
-      ctx.font = SMALL;
-      ctx.fillStyle = PIP.dim;
-      const heading = cell.cards.length ? `RESOURCES  ${cell.cards.length}` : "NO RESOURCES MATCHED";
-      ctx.fillText(heading, cell.cardsAt.x, cell.cardsAt.y + 12);
-    }
+  for (const cell of area.cells) if (!settled.has(cell.key)) drawCellLabel(ctx, cell);
+}
+
+function drawCellLabel(ctx, cell) {
+  const { x, y, w } = cell.nameAt;
+  const vault = cell.vault;
+  ctx.font = LABEL;
+  const name = clipText(ctx, vault.title || vault.name, w);
+  const nx = cell.open ? x : Math.round(cell.x + (cell.w - ctx.measureText(name).width) / 2);
+  labelBacking(ctx, name, nx, y - 4, 14);
+  ctx.fillStyle = vault.damaged ? STATUS.broken : PIP.bright;
+  ctx.fillText(name, nx, y - 4);
+  if (vault.damaged || cell.open) {
+    ctx.font = SMALL;
+    const sub = vault.damaged ? `DAMAGED  ${vault.file}` : [vault.type, vault.owner].filter(Boolean).join("  ·  ").toUpperCase();
+    const line = clipText(ctx, sub, w);
+    const sx = cell.open ? x : Math.round(cell.x + (cell.w - ctx.measureText(line).width) / 2);
+    ctx.fillStyle = vault.damaged ? rgba(STATUS.broken, 0.85) : PIP.dim;
+    ctx.fillText(line, sx, y + 12);
+  }
+  if (cell.open && cell.cardsAt && !vault.damaged) {
+    ctx.font = SMALL;
+    ctx.fillStyle = PIP.dim;
+    const heading = cell.cards.length ? `RESOURCES  ${cell.cards.length}` : "NO RESOURCES MATCHED";
+    ctx.fillText(heading, cell.cardsAt.x, cell.cardsAt.y + 12);
   }
 }
 

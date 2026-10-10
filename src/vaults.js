@@ -81,15 +81,13 @@ export function settleNames(entries) {
 }
 
 function keyed(entry, seen) {
-  {
-    if (entry.damaged) return entry;
-    const first = seen.get(entry.name);
-    if (first) {
-      return { ...entry, damaged: true, errors: [`metadata.name: ${entry.name} is already used in ${first}`], name: `${entry.name}-dup-${entry.doc + 1}-${entry.file}`.replace(/[^a-z0-9-]/gi, "-").toLowerCase() };
-    }
-    seen.set(entry.name, entry.file);
-    return entry;
+  if (entry.damaged) return entry;
+  const first = seen.get(entry.name);
+  if (first) {
+    return { ...entry, damaged: true, errors: [`metadata.name: ${entry.name} is already used in ${first}`], name: `${entry.name}-dup-${entry.doc + 1}-${entry.file}`.replace(/[^a-z0-9-]/gi, "-").toLowerCase() };
   }
+  seen.set(entry.name, entry.file);
+  return entry;
 }
 
 export function createVaultStore({ dir, fs = { readdir, readFile, stat } } = {}) {

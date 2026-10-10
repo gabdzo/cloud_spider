@@ -9,7 +9,7 @@ import {
   settlementPost, settlementWallH, settlementWallV, settlementGate
 } from "./pixel-art.js";
 import { FONT_PX, SMOKE_PX } from "./layout.js";
-import { drawVaultLabels, drawVaultsLive, drawVaultsStatic, vaultCards } from "./vault-draw.js";
+import { drawVaultLabels, drawVaultsLive, drawVaultsStatic, settledVaults, vaultCards } from "./vault-draw.js";
 import { isExpendable } from "./verbs.js";
 import { PIP, STATE_COLOR, STATUS, WORLD, font, rgba } from "./theme.js";
 import {
@@ -124,6 +124,8 @@ function generateDebris(width, height, placed) {
   // More ground, more junk: counts are tuned for ~1000x700 and scale with area.
   const density = Math.max(1, Math.min(1.8, (width * height) / 700000));
   for (const type of debrisTypes) {
+    // Real vaults are on the map: no decoy vault door in the junk.
+    if (type.sprite === 'vault' && placed.vaults?.cells?.length) continue;
     const count = type.big ? type.count : Math.round(type.count * density);
     for (let i = 0; i < count; i++) {
       let attempts = 0;
@@ -150,18 +152,18 @@ function generateDebris(width, height, placed) {
 
 let layerCache = { key: null, canvas: null };
 
-function layerKey(width, height, dpr, placed) {
+function layerKey(width, height, dpr, placed, settled) {
   const plots = placed.settlements
     .map((s) => s.plots.map((p) => `${p.x},${p.y},${p.w},${p.h}`).join(","))
     .join(";");
-  return `${dpr}|${getCacheKey(width, height, placed)}|${plots}`;
+  return `${dpr}|${getCacheKey(width, height, placed)}|${plots}|${[...settled].join(",")}`;
 }
 
 
 
-function staticLayer(ctx, width, height, placed) {
+function staticLayer(ctx, width, height, placed, settled) {
   const dpr = ctx.getTransform ? ctx.getTransform().a || 1 : 1;
-  const key = layerKey(width, height, dpr, placed);
+  const key = layerKey(width, height, dpr, placed, settled);
   if (layerCache.key === key) return layerCache.canvas;
 
   const canvas = newLayer(Math.round(width * dpr), Math.round(height * dpr));
@@ -177,7 +179,7 @@ function staticLayer(ctx, width, height, placed) {
   }
   for (const item of debrisCache.debris) drawDebris(layer, item);
   drawCampfireStill(layer, width, height);
-  drawVaultsStatic(layer, placed.vaults);
+  drawVaultsStatic(layer, placed.vaults, settled);
   if (placed.camp) {
     drawSettlement(layer, { ...placed.camp, gate: "" });
     drawBanner(layer, placed.camp);
@@ -205,7 +207,9 @@ export function paint(ctx, scene) {
   // Everything that doesn't move (skyline, ground, debris, camp walls, plot
   // boxes, the campfire's glow and sitters) is rendered once per layout into
   // an offscreen layer and blitted each frame.
-  ctx.drawImage(staticLayer(ctx, width, height, placed), 0, 0, width, height);
+  const door = vaultDoor || ((key, open) => (open ? 1 : 0));
+  const settled = settledVaults(placed.vaults, door);
+  ctx.drawImage(staticLayer(ctx, width, height, placed, settled), 0, 0, width, height);
 
   // Moving parts: fire and embers, buildings, smoke, wanderers.
   drawCampfireFlames(ctx, width, height, animTime, reducedMotion);
@@ -222,14 +226,14 @@ export function paint(ctx, scene) {
   // secret and function) sit over the ground, under every label.
   const phase = Math.floor((animTime || 0) / 180) % 4;
   if (placed.vaults) drawLinks(ctx, placed.vaults.edges, animTime, reducedMotion);
-  drawVaultsLive(ctx, placed.vaults, { door: vaultDoor || ((key, open) => (open ? 1 : 0)), animTime, reducedMotion });
+  drawVaultsLive(ctx, placed.vaults, { door, animTime, reducedMotion, settled });
   for (const settlement of placed.settlements) drawLinks(ctx, settlement.edges, animTime, reducedMotion);
   if (placed.camp) drawLinks(ctx, placed.camp.edges, animTime, reducedMotion);
   for (const fixture of allFixtures(placed)) drawFixture(ctx, fixture, ui, phase, reducedMotion);
 
   // Text last, so smoke, wanderers and sprites never cover a label.
   ctx.font = FONT;
-  drawVaultLabels(ctx, placed.vaults);
+  drawVaultLabels(ctx, placed.vaults, settled);
   if (!placed.settlements.length && !placed.camp && !placed.vaults && !placed.orphans?.items?.length && !placed.orphans?.fixtures?.length) {
     ctx.fillStyle = TEXT;
     ctx.fillText(region ? `${region} has no VPCs` : "", 24, 40);
