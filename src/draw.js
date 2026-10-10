@@ -9,7 +9,7 @@ import {
   settlementPost, settlementWallH, settlementWallV, settlementGate
 } from "./pixel-art.js";
 import { FONT_PX, SMOKE_PX } from "./layout.js";
-import { drawVaultLabels, drawVaultsLive, drawVaultsStatic, settledVaults, vaultCards } from "./vault-draw.js";
+import { drawVaultBadges, drawVaultLabels, drawVaultStrip, drawVaultsLive, drawVaultsStatic, settledVaults, vaultCards } from "./vault-draw.js";
 import { isExpendable } from "./verbs.js";
 import { PALETTE, PIP, STATE_COLOR, STATUS, WORLD, font, rgba } from "./theme.js";
 import {
@@ -49,7 +49,8 @@ function getCacheKey(width, height, placed) {
   const region = placed.region ? `${placed.region.x},${placed.region.y},${placed.region.w},${placed.region.h},${placed.region.view}` : "";
   const zones = (placed.zones || []).map((z) => `${z.x},${z.y},${z.w},${z.h}`).join(";");
   const tiers = placed.settlements.map((s) => (s.tiers || []).map((t) => `${t.y},${t.w}`).join(",")).join(";");
-  return `${width}x${height}:${settlementKey}:${campKey}:${vaultKey}:${region}:${zones}:${tiers}`;
+  const strip = placed.vaultStrip ? `${placed.vaultStrip.x},${placed.vaultStrip.y},${placed.vaultStrip.w},${placed.vaultStrip.h}` : "";
+  return `${width}x${height}:${settlementKey}:${campKey}:${vaultKey}:${region}:${zones}:${tiers}:${strip}`;
 }
 
 // Deterministic debris placement (seeded by simple hash)
@@ -94,7 +95,7 @@ function generateDebris(width, height, placed) {
     }
     
     // Check settlements, the account-wide camp and the vault row
-    for (const settlement of [...(placed.settlements || []), ...(placed.camp ? [placed.camp] : []), ...(placed.zones || []), ...(placed.vaults ? [placed.vaults] : []), ...(placed.region ? [{ x: placed.region.x, y: placed.region.y - 8, w: Math.min(placed.region.w, 620), h: 44 }] : [])]) {
+    for (const settlement of [...(placed.settlements || []), ...(placed.camp ? [placed.camp] : []), ...(placed.zones || []), ...(placed.vaults ? [placed.vaults] : []), ...(placed.vaultStrip ? [{ ...placed.vaultStrip, x: placed.vaultStrip.x - 12, w: placed.vaultStrip.w + 14 }] : []), ...(placed.region ? [{ x: placed.region.x, y: placed.region.y - 8, w: Math.min(placed.region.w, 620), h: 44 }] : [])]) {
       if (x + w > settlement.x && x < settlement.x + settlement.w &&
           y + h > settlement.y && y < settlement.y + settlement.h) {
         return false;
@@ -130,7 +131,7 @@ function generateDebris(width, height, placed) {
   const density = Math.max(1, Math.min(1.8, (width * height) / 700000));
   for (const type of debrisTypes) {
     // Real vaults are on the map: no decoy vault door in the junk.
-    if (type.sprite === 'vault' && placed.vaults?.cells?.length) continue;
+    if (type.sprite === 'vault' && (placed.vaults?.cells?.length || placed.vaultStrip)) continue;
     const count = type.big ? type.count : Math.round(type.count * density);
     for (let i = 0; i < count; i++) {
       let attempts = 0;
@@ -188,6 +189,7 @@ function staticLayer(ctx, width, height, placed, settled) {
   for (const item of debrisCache.debris) drawDebris(layer, item);
   drawCampfireStill(layer, width, height);
   drawVaultsStatic(layer, placed.vaults, settled);
+  drawVaultStrip(layer, placed.vaultStrip);
   if (placed.region) drawRegionFence(layer, placed.region);
   for (const zone of placed.zones || []) {
     drawSettlement(layer, { ...zone, gate: "" });
@@ -253,7 +255,7 @@ export function paint(ctx, scene) {
   drawVaultLabels(ctx, placed.vaults, settled);
   if (placed.region) drawRegionLabel(ctx, placed.region, width);
   for (const zone of placed.zones || []) drawSettlementLabel(ctx, zone);
-  if (!placed.settlements.length && !placed.camp && !placed.vaults && !placed.orphans?.items?.length && !placed.orphans?.fixtures?.length) {
+  if (!placed.settlements.length && !placed.camp && !placed.vaults && !placed.vaultStrip && !placed.orphans?.items?.length && !placed.orphans?.fixtures?.length) {
     ctx.fillStyle = TEXT;
     ctx.fillText(region ? `${region} has no VPCs` : "", 24, 40);
   }
@@ -292,6 +294,7 @@ export function paint(ctx, scene) {
   }
   for (const building of buildings) drawBuildingLabel(ctx, building);
   for (const fixture of allFixtures(placed)) drawFixtureLabel(ctx, fixture);
+  drawVaultBadges(ctx, placed.badges, { animTime, reducedMotion });
 
   const selected = ui.selection
     ? buildingAt(placed, null, null, ui.selection.id) || fixtureAt(placed, null, null, ui.selection.id)

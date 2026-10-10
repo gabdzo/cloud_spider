@@ -29,7 +29,9 @@ import {
 } from "./chrome.js";
 import { FRAME_MS } from "./theme.js";
 import { createVaultState, VPC_FOLD_KEY } from "./vault-state.js";
-import { vaultAt } from "./vault-layout.js";
+import { VAULT, placeVaults, vaultAt } from "./vault-layout.js";
+import { badgeAt, ownedRows, parseVaultHash, vaultHash, vaultSummary, vaultTally } from "./vault-page.js";
+import { paintVaultCard } from "./vault-draw.js";
 import { plateText } from "./vault-schema.js";
 import { snapshot } from "./agent-text.js";
 import { createTerminal } from "./terminal.js";
@@ -99,6 +101,8 @@ const MAP_TAG_KEY = "cloudspider.mapTagKey";
 const kubePanel = document.querySelector("#kube-panel");
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
+const vaultStripEl = document.querySelector("#vault-strip");
+const vaultPageEl = document.querySelector("#vault-page");
 const askTab = document.querySelector("#ask");
 const askThis = document.querySelector("#ask-this");
 const termEl = document.querySelector("#term");
@@ -468,7 +472,7 @@ function placedMap() {
   const vaults = vaultsData.vaults;
   const extra = {
     key: `${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}|${mapView}|${mapTagKey}`,
-    options: { vaults, isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey },
+    options: { vaults, vaultMode: "page", isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey },
   };
   const placed = layoutCache.get(place || EMPTY_PLACE, rowLimit, extra);
   // A reload with the same vaults keeps the layout but brings new check
@@ -477,6 +481,12 @@ function placedMap() {
     const byKey = new Map(vaults.map((vault) => [vault.key, vault]));
     for (const cell of placed.vaults.cells) cell.vault = byKey.get(cell.key) || cell.vault;
     placed.vaults.boundTo = vaultsData;
+  }
+  if ((placed.vaultStrip || placed.badges?.length) && placed.badgesBoundTo !== vaultsData) {
+    const byKey = new Map(vaults.map((vault) => [vault.key, vault]));
+    for (const chip of placed.vaultStrip?.chips || []) chip.vault = byKey.get(chip.key) || chip.vault;
+    for (const badge of placed.badges || []) badge.vault = byKey.get(badge.key) || badge.vault;
+    placed.badgesBoundTo = vaultsData;
   }
   return placed;
 }
@@ -871,53 +881,257 @@ let panelsShown = "";
 // HTML panels for open vaults (and the open/close-all switch) sit over the
 // canvas at layout positions and scroll with the map.
 let chromeFor = { placed: null, data: null };
+// The strip at the top of the map: a VAULTS button and one plate chip per
+// vault (number, lamp, name). Real buttons, so Tab and Enter reach them;
+// each opens the VAULTS page (the chip at that vault's own page).
 function placeVaultChrome(placed) {
-  const area = mode === "map" ? placed?.vaults : null;
-  vaultAll.hidden = !area;
-  vaultTemplatesButton.hidden = !area;
-  if (!area) {
-    vaultTemplates.hidden = true;
-    if (panelsShown) vaultPanels.replaceChildren();
-    panelsShown = "";
+  const strip = mode === "map" ? placed?.vaultStrip : null;
+  vaultAll.hidden = true;
+  vaultTemplatesButton.hidden = true;
+  vaultTemplates.hidden = true;
+  if (!strip) {
+    if (chromeFor.placed) vaultStripEl.replaceChildren();
+    vaultStripEl.hidden = true;
     chromeFor = { placed: null, data: null };
     return;
   }
   // Same layout, same data: nothing to do (this runs every frame).
-  if (placed === chromeFor.placed && vaultsData === chromeFor.data && vaultAll.style.top) return;
+  if (placed === chromeFor.placed && vaultsData === chromeFor.data) return;
   chromeFor = { placed, data: vaultsData };
-  const keys = vaultKeys();
-  const allOpen = vaultState.allOpen(keys);
-  vaultAll.textContent = allOpen ? "CLOSE ALL" : "OPEN ALL";
-  vaultAll.setAttribute("aria-pressed", String(allOpen));
-  vaultAll.style.left = `${area.x + 104}px`;
-  vaultAll.style.top = `${area.y + 4}px`;
+  vaultStripEl.hidden = false;
+  const tally = vaultTally(vaultsData.vaults);
+  const open = vel("button", "cmd vs-open", `VAULTS ▸ ${tally.total}`);
+  open.type = "button";
+  open.title = "open the VAULTS page";
+  open.setAttribute("aria-label", `open the vaults page: ${tally.total} vaults, ${tally.fail + tally.damaged} need a look`);
+  Object.assign(open.style, { left: `${strip.button.x}px`, top: `${strip.button.y}px`, width: `${strip.button.w}px`, height: `${strip.button.h}px` });
+  open.addEventListener("click", () => openVaultPage(null));
+  const chips = strip.chips.map((chip) => {
+    const summary = vaultSummary(chip.vault);
+    const button = vel("button", `vs-chip ${summary.light}${summary.trouble ? " trouble" : ""}`);
+    button.type = "button";
+    button.dataset.key = chip.key;
+    button.title = `${summary.title} · ${summary.lightText}`;
+    button.setAttribute("aria-label", `${summary.plate} ${summary.title}: ${summary.lightText}`);
+    button.append(vel("i", "vs-lamp"), vel("b", "vs-plate", String(chip.vault.number ?? "?").padStart(3, "0")), vel("span", "vs-name", chip.vault.damaged ? "DAMAGED" : chip.vault.title || chip.vault.name));
+    Object.assign(button.style, { left: `${chip.x}px`, top: `${chip.y}px`, width: `${chip.w}px`, height: `${chip.h}px` });
+    button.addEventListener("click", () => openVaultPage(chip.key));
+    return button;
+  });
+  const focused = document.activeElement?.closest?.("#vault-strip") ? document.activeElement.dataset.key || "open" : null;
+  vaultStripEl.replaceChildren(open, ...chips);
+  if (focused) (focused === "open" ? open : chips.find((chip) => chip.dataset.key === focused))?.focus();
+}
+
+// ---- the VAULTS page (#vaults, #vaults/<key>) ----
+// Covers the map (which stops drawing while it is up). The list: a door per
+// vault on its hill with plate and lamp, status, stack and counts; then the
+// templates. One vault: the door, the panel (description, facts, checks,
+// METRICS, TROUBLE, ERROR LINES, links) and what it owns, each with SHOW.
+let vaultRoute = parseVaultHash(location.hash);
+let vaultPageShown = "";
+let vaultPageFrom = null;
+
+function vaultPageOpen() {
+  return Boolean(vaultRoute) && mode === "map";
+}
+
+function openVaultPage(key) {
+  vaultPageFrom = document.activeElement;
+  const hash = vaultHash(key);
+  if (location.hash !== hash) location.hash = hash;
+  else routeVaults();
+}
+
+function closeVaultPage() {
+  if (!vaultRoute) return;
+  history.pushState(null, "", `${location.pathname}${location.search}`);
+  routeVaults();
+}
+
+function routeVaults() {
+  const before = vaultRoute;
+  vaultRoute = parseVaultHash(location.hash);
+  vaultPageShown = "";
+  renderVaultPage();
+  if (!vaultRoute && before) {
+    draw();
+    if (vaultPageFrom?.isConnected) vaultPageFrom.focus();
+  } else if (vaultRoute) {
+    vaultPageEl.scrollTop = 0;
+    vaultPageEl.querySelector("h2, .vpg-back")?.focus({ preventScroll: true });
+  }
+}
+
+window.addEventListener("hashchange", routeVaults);
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !vaultPageOpen()) return;
+  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+  event.preventDefault();
+  if (vaultRoute.key) openVaultPage(null);
+  else closeVaultPage();
+});
+
+// A door on its hill, drawn once into a small canvas.
+function doorCanvas(vault, scale = 1) {
+  const area = placeVaults([vault], { top: -VAULT.label, left: 0, rowLimit: VAULT.cellW });
+  const cell = area.cells[0];
+  const height = cell.plate.y + cell.plate.h + 8;
+  const dpr = Math.max(1, Math.ceil((window.devicePixelRatio || 1) * scale));
+  const node = document.createElement("canvas");
+  node.className = "vpg-door";
+  node.width = cell.w * dpr;
+  node.height = height * dpr;
+  node.style.width = `${cell.w * scale}px`;
+  node.style.height = `${height * scale}px`;
+  node.setAttribute("aria-hidden", "true");
+  const g = node.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.imageSmoothingEnabled = false;
+  paintVaultCard(g, cell);
+  return node;
+}
+
+function vaultPageSignature() {
+  const route = vaultRoute?.key ? vaultsData.vaults.find((vault) => vault.key === vaultRoute.key) : null;
+  return JSON.stringify([
+    vaultRoute,
+    vaultsFor,
+    vaultsData.vaults.map((vault) => [vault.key, vault.status, vault.damaged, (vault.checks || []).map((check) => [check.status, check.code, check.ms]), vault.stackInfo, (vault.trouble || []).length, (vault.owned || []).length]),
+    (vaultsData.templates || []).length,
+    route ? [route.description, route.links, route.trouble, vaultLogState.get(route.key), vaultMetrics(route).map((hit) => `${hit.id}:${metricsData?.at}`), (route.owned || []).map((id) => place?.instances?.find((item) => item.id === id)?.state)] : null,
+  ]);
+}
+
+function renderVaultPage() {
+  const open = vaultPageOpen();
+  vaultPageEl.hidden = !open;
+  map.toggleAttribute("inert", open);
+  if (!open) {
+    if (vaultPageShown) vaultPageEl.replaceChildren();
+    vaultPageShown = "";
+    return;
+  }
+  wantVaults();
+  const shown = vaultPageSignature();
+  if (shown === vaultPageShown) return;
+  vaultPageShown = shown;
+  const keep = vaultPageEl.scrollTop;
+  const focusKey = document.activeElement?.closest?.("#vault-page") ? document.activeElement.dataset.focus : null;
+  const vault = vaultRoute.key ? vaultsData.vaults.find((item) => item.key === vaultRoute.key) : null;
+  vaultPageEl.replaceChildren(...(vaultRoute.key ? vaultDetail(vault, vaultRoute.key) : vaultList()));
+  vaultPageEl.scrollTop = keep;
+  if (focusKey) vaultPageEl.querySelector(`[data-focus="${CSS.escape(focusKey)}"]`)?.focus({ preventScroll: true });
+}
+
+function pageHead(title, sub, back) {
+  const head = vel("header", "vpg-head");
+  const backButton = vel("button", "cmd vpg-back", back.label);
+  backButton.type = "button";
+  backButton.dataset.focus = "back";
+  backButton.addEventListener("click", back.go);
+  const h2 = vel("h2", "", title);
+  h2.tabIndex = -1;
+  head.append(backButton, h2, vel("span", "vpg-sub", sub));
+  return head;
+}
+
+function vaultList() {
+  const vaults = vaultsData.vaults;
+  const tally = vaultTally(vaults);
+  const sub = vaultsFor === null
+    ? "reading the vault files…"
+    : [`${tally.total} VAULT${tally.total === 1 ? "" : "S"}`, `${tally.live} LIVE`, tally.ok ? `${tally.ok} OK` : "", tally.fail ? `${tally.fail} FAILING` : "", tally.trouble ? `${tally.trouble} IN TROUBLE` : "", tally.damaged ? `${tally.damaged} DAMAGED` : ""].filter(Boolean).join(" · ");
+  const out = [pageHead("VAULTS", sub, { label: "◂ MAP", go: closeVaultPage })];
+  if (vaultsData.note) out.push(vel("p", "vpg-note", vaultsData.note));
+  const grid = vel("ul", "vpg-grid");
+  if (!vaults.length && vaultsFor !== null) grid.append(vel("li", "vpg-empty", "No vaults yet. A vault is a YAML file in vaults/; start from a template below."));
+  for (const vault of vaults) {
+    const summary = vaultSummary(vault);
+    const li = vel("li", `vpg-card ${summary.light}${summary.trouble ? " trouble" : ""}${vault.damaged ? " damaged" : ""}`);
+    const button = vel("button", "vpg-open");
+    button.type = "button";
+    button.dataset.focus = `card:${vault.key}`;
+    button.setAttribute("aria-label", `${summary.plate} ${summary.title}: ${summary.lightText}. Open its page.`);
+    button.addEventListener("click", () => openVaultPage(vault.key));
+    const status = vel("p", "vpg-status");
+    status.append(vel("i", "vpg-lamp"), vel("span", "", summary.lightText));
+    const facts = vel("div", "vpg-lines");
+    for (const line of summary.lines) facts.append(vel("span", "", line));
+    const stack = vel("span", `vpg-stack ${summary.stack.state}`, summary.stack.state === "live" ? "LIVE" : summary.stack.state === "down" ? "NOT UP" : summary.stack.state === "error" ? "STACK?" : "TAGS");
+    button.append(doorCanvas(vault), stack, vel("h3", "", summary.title), status, facts);
+    li.append(button);
+    grid.append(li);
+  }
+  out.push(grid);
   const templates = vaultsData.templates || [];
-  vaultTemplatesButton.textContent = `TEMPLATES (${templates.length})`;
-  vaultTemplatesButton.style.left = `${area.x + 104 + vaultAll.offsetWidth + 8}px`;
-  vaultTemplatesButton.style.top = `${area.y + 4}px`;
-  vaultTemplates.style.left = vaultTemplatesButton.style.left;
-  vaultTemplates.style.top = `${area.y + 36}px`;
-  if (!vaultTemplates.hidden) renderTemplates();
-  const open = area.cells.filter((cell) => cell.open && cell.panel);
-  const shown = open
-    .map((cell) => `${cell.key}@${cell.panel.x},${cell.panel.y},${cell.panel.w},${cell.panel.h}:${JSON.stringify([cell.vault.checks, cell.vault.status, cell.vault.description, cell.vault.links, cell.vault.errors, (cell.vault.owned || []).length, cell.vault.stackInfo, cell.vault.trouble, vaultLogState.get(cell.key), vaultMetrics(cell.vault).map((hit) => `${hit.id}:${metricsData?.at}`)])}`)
-    .join("|");
-  if (shown === panelsShown) return;
-  panelsShown = shown;
-  vaultPanels.replaceChildren(
-    ...open.map((cell) => {
-      const panel = vaultPanel(cell);
-      Object.assign(panel.style, {
-        left: `${cell.panel.x}px`,
-        top: `${cell.panel.y}px`,
-        width: `${cell.panel.w}px`,
-        height: `${cell.panel.h}px`,
-      });
-      return panel;
-    }),
-  );
-  // Error lines load when a vault opens (cached a minute on both sides).
-  for (const cell of open) if (cell.vault.logGroups?.length && !vaultLogState.has(cell.key)) loadVaultLogs(cell.key);
+  const shelf = vel("section", "vpg-templates");
+  shelf.append(vel("h4", "", `TEMPLATES · ${templates.length} · vaults/templates/ · not drawn, never live`));
+  shelf.append(templateList(templates));
+  out.push(shelf);
+  return out;
+}
+
+function vaultDetail(vault, key) {
+  const back = { label: "◂ VAULTS", go: () => openVaultPage(null) };
+  if (!vault) {
+    return [pageHead("VAULT NOT FOUND", vaultsFor === null ? "reading the vault files…" : `no vault called ${key}`, back)];
+  }
+  const summary = vaultSummary(vault);
+  const out = [pageHead(`${summary.plate} · ${summary.title}`, `${summary.lightText} · ${summary.stack.text}`, back)];
+  const body = vel("div", `vpg-detail ${summary.light}`);
+  const side = vel("div", "vpg-side");
+  side.append(doorCanvas(vault, 1.5));
+  const stack = vel("p", `vpg-stack big ${summary.stack.state}`, summary.stack.text);
+  side.append(stack);
+  const panel = vaultPanel({ vault });
+  panel.querySelector(".vp-close")?.remove();
+  body.append(side, panel);
+  out.push(body);
+  if (!vault.damaged) out.push(ownedBlock(vault));
+  if (vault.logGroups?.length && !vaultLogState.has(vault.key)) loadVaultLogs(vault.key);
+  return out;
+}
+
+function ownedBlock(vault) {
+  const rows = ownedRows(vault, place);
+  const block = vel("section", "vpg-owned");
+  block.append(vel("h4", "", rows.length ? `OWNED RESOURCES · ${rows.length}` : "OWNS NOTHING ON THE MAP RIGHT NOW"));
+  const list = vel("ul");
+  for (const row of rows) {
+    const li = vel("li", row.onMap ? "" : "off");
+    li.append(vel("b", "kind", row.kind), vel("span", "name", row.name), vel("span", "state", row.state), vel("span", "where", row.where));
+    if (row.onMap) {
+      const show = vel("button", "cmd", "SHOW");
+      show.type = "button";
+      show.dataset.focus = `show:${row.id}`;
+      show.title = `back to the map, ${row.name} selected`;
+      show.addEventListener("click", () => showOnMap(row.id));
+      li.append(show);
+    }
+    list.append(li);
+  }
+  block.append(list);
+  return block;
+}
+
+// Back to the map with the resource selected and scrolled into view.
+function showOnMap(id) {
+  vaultPageFrom = null;
+  closeVaultPage();
+  const placed = placedMap();
+  const building = buildingAt(placed, null, null, id);
+  const fixture = building ? null : fixtureAt(placed, null, null, id);
+  if (building) {
+    const raw = place?.instances.find((item) => item.id === id) || building;
+    clickBuilding(ui, raw, region, place ? blastLine(place, raw.id) : "");
+  } else if (fixture) clickFixture(ui, fixture, fixtureNote(fixture));
+  else return;
+  setFacts(ui, plateFacts(id));
+  renderChrome();
+  draw();
+  const hit = building || fixture;
+  revealPanel({ x: hit.x - 40, y: hit.y - 40, w: hit.w + 80, h: hit.h + 80 });
 }
 
 // On a narrow window the diagnosis can land past the edge of the scrolled
@@ -997,6 +1211,9 @@ function drawCluster() {
 }
 
 function draw() {
+  // The VAULTS page covers the map; the map does not draw under it.
+  renderVaultPage();
+  if (vaultPageOpen()) return;
   if (mode === "path" || mode === "cluster") {
     wallGrain.hidden = true;
     tallyEl.hidden = true;
@@ -1623,6 +1840,11 @@ canvas.addEventListener("click", async (event) => {
     return;
   }
   if (vaultsData.vaults.length) {
+    const badge = badgeAt(placedMap().badges, event.offsetX, event.offsetY);
+    if (badge) {
+      openVaultPage(badge.key);
+      return;
+    }
     const door = vaultAt(placedMap().vaults, event.offsetX, event.offsetY);
     if (door) {
       toggleVault(door.key);
@@ -1686,7 +1908,8 @@ canvas.addEventListener("mousemove", (event) => {
     if (canvas.style.cursor) canvas.style.cursor = "";
     return;
   }
-  const door = vaultAt(placedMap().vaults, event.offsetX, event.offsetY);
+  const placed = placedMap();
+  const door = vaultAt(placed.vaults, event.offsetX, event.offsetY) || badgeAt(placed.badges, event.offsetX, event.offsetY);
   const cursor = door ? "pointer" : "";
   if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
 });
@@ -1706,6 +1929,10 @@ function renderTemplates() {
   templatesShown = shown;
   const head = vel("div", "vt-title");
   head.append(vel("span", "", "VAULT TEMPLATES"), vel("span", "vt-where", "vaults/templates/"));
+  vaultTemplates.replaceChildren(head, templateList(templates));
+}
+
+function templateList(templates) {
   const list = vel("ul", "vt-list");
   if (!templates.length) list.append(vel("li", "vt-empty", "No templates. Put one in vaults/templates/."));
   for (const template of templates) {
@@ -1733,7 +1960,7 @@ function renderTemplates() {
     li.append(row);
     list.append(li);
   }
-  vaultTemplates.replaceChildren(head, list);
+  return list;
 }
 
 vaultTemplatesButton.addEventListener("click", () => {
