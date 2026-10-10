@@ -117,6 +117,13 @@ new aws.lambda.Permission("page-invoke", {
   principal: "*",
   functionUrlAuthType: "NONE",
 }, opts);
+// A function URL created after October 2025 stays 403 until the policy also
+// allows lambda:InvokeFunction. Auth type NONE is not enough on its own.
+new aws.lambda.Permission("page-invoke-fn", {
+  action: "lambda:InvokeFunction",
+  function: page.name,
+  principal: "*",
+}, opts);
 
 export const bucketName = bucket.bucket;
 export const functionName = page.name;
