@@ -349,38 +349,33 @@ function drawWanderers(ctx, settlement, animTime, reducedMotion) {
   
   const seed = hashCode(settlement.id);
   const rng = new SeededRandom(seed);
-  const count = Math.min(Math.floor((settlement.w * settlement.h) / 12000), 4);
+  
+  // Create 2-3 wanderers walking on specific walkways
+  const count = 2 + Math.floor(rng.next() * 2); // 2 or 3 wanderers
   
   for (let i = 0; i < count; i++) {
-    const pathLength = 100 + rng.next() * 150;
-    const startX = settlement.x + 30 + rng.next() * (settlement.w - 80);
-    const startY = settlement.y + 50 + rng.next() * (settlement.h - 100);
-    const speed = 0.02 + rng.next() * 0.03;
-    const direction = rng.next() > 0.5 ? 1 : -1;
+    // Define walkway: horizontal path along bottom of settlement, above the wall
+    const walkwayY = settlement.y + settlement.h - 50; // 50px from bottom
+    const walkwayLeft = settlement.x + 40; // Inside left wall
+    const walkwayRight = settlement.x + settlement.w - 40; // Inside right wall
+    const walkwayLength = walkwayRight - walkwayLeft;
     
-    // Use monotonic time for position (not cycling)
-    const totalDistance = (animTime * speed + i * 1000) % (pathLength * 2);
-    const actualProgress = totalDistance > pathLength ? (pathLength * 2 - totalDistance) / pathLength : totalDistance / pathLength;
+    if (walkwayLength < 60) continue; // Skip if walkway too narrow
     
-    const wx = startX + (actualProgress - 0.5) * pathLength * direction;
-    const wy = startY;
+    const speed = 0.02 + rng.next() * 0.02;
+    const offset = i * 500; // Stagger starting positions
     
-    // Keep on free ground (simple check - avoid plots)
-    let isFree = true;
-    for (const plot of settlement.plots) {
-      if (wx > plot.x - 20 && wx < plot.x + plot.w + 20 &&
-          wy > plot.y - 20 && wy < plot.y + plot.h + 20) {
-        isFree = false;
-        break;
-      }
-    }
+    // Use monotonic time for position (ping-pong back and forth)
+    const totalDistance = (animTime * speed + offset) % (walkwayLength * 2);
+    const actualProgress = totalDistance > walkwayLength ? (walkwayLength * 2 - totalDistance) / walkwayLength : totalDistance / walkwayLength;
     
-    if (isFree) {
-      // Use animTime to select frame (not position)
-      const walkFrame = Math.floor(animTime / 200) % 4;
-      const wanderer = wandererWalkFrame(walkFrame);
-      drawSprite(ctx, wanderer, wx, wy, 3);
-    }
+    const wx = walkwayLeft + actualProgress * walkwayLength;
+    const wy = walkwayY;
+    
+    // Use animTime to select frame (not position)
+    const walkFrame = Math.floor(animTime / 200) % 4;
+    const wanderer = wandererWalkFrame(walkFrame);
+    drawSprite(ctx, wanderer, wx, wy, 3);
   }
 }
 
@@ -400,14 +395,16 @@ function drawBuilding(ctx, building, animTime, ui, reducedMotion) {
     }
   }
 
-  // Draw chimney smoke for running buildings (larger and more visible)
+  // Draw chimney smoke for running buildings (clipped to not overlap labels)
   if (building.state === "running" && !reducedMotion) {
     const smokePhase = Math.floor(animTime / 300) % 2;
     const smoke = smokePuff(smokePhase);
     const chimneyX = originX + 11 * PIXEL - 12;
     const chimneyY = originY - 32;
-    // Draw smoke at 3x scale for better visibility
-    drawSprite(ctx, smoke, chimneyX, chimneyY, 3);
+    // Only draw smoke if it won't overlap settlement label area (building.y >= 50)
+    if (building.y >= 50) {
+      drawSprite(ctx, smoke, chimneyX, chimneyY, 3);
+    }
   }
 
   // Draw warning sign for expendable instances

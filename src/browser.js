@@ -44,6 +44,9 @@ let pathAgain = false;
 let reducedMotion = !window.matchMedia("(prefers-reduced-motion: reduce)").matches ? false : true;
 let tabVisible = !document.hidden;
 
+// Cache for layout to avoid recomputing every frame
+let layoutCache = { place: null, placed: null };
+
 function renderChrome() {
   statusEl.textContent = ui.status;
   radioEl.textContent = ui.radio || "";
@@ -98,14 +101,26 @@ function draw() {
     drawPath();
     return;
   }
-  const placed = place
-    ? layout(place)
-    : {
-        settlements: [],
-        orphans: { items: [], label: "no VPC" },
-        contentWidth: 960,
-        contentHeight: 640,
-      };
+  
+  // Use cached layout if place hasn't changed
+  let placed;
+  if (place) {
+    if (layoutCache.place === place) {
+      placed = layoutCache.placed;
+    } else {
+      placed = layout(place);
+      layoutCache.place = place;
+      layoutCache.placed = placed;
+    }
+  } else {
+    placed = {
+      settlements: [],
+      orphans: { items: [], label: "no VPC" },
+      contentWidth: 960,
+      contentHeight: 640,
+    };
+  }
+  
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
   paint(ctx, { placed, ui, region, animTime, width, height, reducedMotion });
 }
