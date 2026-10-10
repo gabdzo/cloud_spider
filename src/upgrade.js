@@ -1,9 +1,20 @@
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { blocksSecondCluster, cardName, confirmMatches, historyFact, resourceFact } from "./upgrade-rules.js";
+import { LEGACY_CLUSTER, cardName, confirmMatches, failureText, historyFact, resourceFact, stackFor, tooManyClusters } from "./upgrade-rules.js";
 
-export { blocksSecondCluster, campFixtures, cardName, confirmMatches, historyFact, pulumiMissing, pulumiWarning, resourceFact, upgradeSpiderLine, watchLine } from "./upgrade-rules.js";
+
+function childEnvFor(env) {
+  return {
+    ...env,
+    AWS_PROFILE: env.AWS_PROFILE || "default",
+    AWS_REGION: "eu-north-1",
+    PULUMI_CONFIG_PASSPHRASE: env.PULUMI_CONFIG_PASSPHRASE || "",
+  };
+}
+
+export { LEGACY_CLUSTER, failureText, stackFor, tooManyClusters } from "./upgrade-rules.js";
+export { campFixtures, cardName, confirmMatches, historyFact, pulumiMissing, pulumiWarning, resourceFact, upgradeSpiderLine, watchLine } from "./upgrade-rules.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -11,7 +22,7 @@ export const UPGRADES = [
   {
     id: "eks",
     title: "EKS",
-    note: "One small cluster in eu-north-1. The control plane is about $0.10 an hour. It is its own stack, not the test VPC.",
+    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade).",
     dir: "upgrades/eks",
     stack: "upgrade",
     project: "cloudspider-upgrade",
@@ -81,6 +92,7 @@ const CAMP_MS = 30_000;
 export function createUpgrade({ run = spawn, cwd = root, env = process.env, clock = () => Date.now() } = {}) {
   let job = null;
   let campCache = null;
+  let legacyCache = null;
 
   function status() {
     if (!job) return { running: false, lines: [] };
@@ -88,6 +100,7 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       running: job.running,
       module: job.module,
       action: job.action,
+      stack: job.stack || "",
       error: job.error || "",
       lines: job.lines.slice(-40),
     };
@@ -103,9 +116,24 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       }));
     },
     status,
-    facts(module) {
+    // The cluster the old shared stack really holds, read from its state
+    // (the `name` output), not from Pulumi.upgrade.yaml, which the old Stacks
+    // panel rewrote on every new name.
+    async legacyCluster() {
+      const spec = UPGRADES.find((item) => item.id === "eks");
+      const now = clock();
+      if (legacyCache && now - legacyCache.at < CAMP_MS) return legacyCache.name;
+      const out = await capture(run, join(cwd, spec.dir), childEnvFor(env), ["stack", "output", "name", "--stack", spec.stack]);
+      const name = out.error ? "" : out.text.trim();
+      legacyCache = { at: now, name: /^[a-z][a-z0-9-]{1,99}$/.test(name) ? name : LEGACY_CLUSTER };
+      return legacyCache.name;
+    },
+    async facts(module, values = {}) {
       const spec = UPGRADES.find((item) => item.id === module);
-      if (!spec) return Promise.resolve({ error: "no such upgrade" });
+      if (!spec) return { error: "no such upgrade" };
+      const checked = checkParams(spec, values);
+      const legacy = spec.id === "eks" ? await this.legacyCluster() : undefined;
+      const stack = stackFor(spec, checked.values || {}, legacy);
       const directory = join(cwd, spec.dir);
       const childEnv = {
         ...env,
@@ -113,7 +141,7 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
         AWS_REGION: "eu-north-1",
         PULUMI_CONFIG_PASSPHRASE: env.PULUMI_CONFIG_PASSPHRASE || "",
       };
-      return readFacts(run, directory, spec, childEnv);
+      return readFacts(run, directory, spec, childEnv, stack);
     },
     async campShelf() {
       const now = clock();
@@ -143,7 +171,7 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       campCache = { at: now, value };
       return value;
     },
-    run({ module, params, action, clusters }) {
+    run({ module, params, action, clusters, legacyName, maxClusters = Number(env.CLOUDSPIDER_MAX_CLUSTERS) || 2 }) {
       const spec = UPGRADES.find((item) => item.id === module);
       if (!spec) return { error: "no such upgrade" };
       const verb = action === "destroy" ? "destroy" : action === "up" ? "up" : "";
@@ -153,11 +181,12 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       if (verb === "destroy" && !confirmMatches(cardName(spec, checked.values), params?.confirmName)) {
         return { error: "the name does not match" };
       }
-      if (verb === "up" && blocksSecondCluster(clusters, cardName(spec, checked.values))) {
-        return { error: "a cluster is already up" };
+      if (verb === "up" && tooManyClusters(clusters, cardName(spec, checked.values), maxClusters)) {
+        return { error: `${clusters.length} clusters are already up (${clusters.join(", ")}); the limit is ${maxClusters}. Take one down or set CLOUDSPIDER_MAX_CLUSTERS.` };
       }
       if (job?.running) return { error: "an upgrade is already running" };
-      job = { running: true, module: spec.id, action: verb, lines: [], error: "" };
+      const stack = stackFor(spec, checked.values, legacyName);
+      job = { running: true, module: spec.id, action: verb, stack, lines: [], errLines: [], error: "" };
       const directory = join(cwd, spec.dir);
       const childEnv = {
         ...env,
@@ -165,29 +194,45 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
         AWS_REGION: "eu-north-1",
         PULUMI_CONFIG_PASSPHRASE: env.PULUMI_CONFIG_PASSPHRASE || "",
       };
-      apply(run, directory, spec, verb, checked.values, childEnv, job);
+      apply(run, directory, spec, stack, verb, checked.values, childEnv, job);
       return status();
     },
   };
 }
 
-function apply(run, directory, spec, verb, values, env, job) {
-  const steps = [["stack", "select", spec.stack, "--create", "--non-interactive"]];
+// One stack per thing: `stack` names the stack (and with it the state file,
+// its lock and Pulumi.<stack>.yaml). Every step names it; nothing relies on
+// the selected stack.
+export function upgradeSteps(spec, stack, verb, values) {
+  const steps = [["stack", "select", stack, "--create", "--non-interactive"]];
   if (verb !== "destroy") {
     steps.push(["install"]);
+    if (spec.id === "eks") {
+      // A new cluster stack has no committed Pulumi.<stack>.yaml: pin the
+      // region and the account like Pulumi.upgrade.yaml does.
+      steps.push(["config", "set", "--stack", stack, "--non-interactive", "aws:region", "eu-north-1"]);
+      steps.push(["config", "set", "--stack", stack, "--non-interactive", "--path", "aws:allowedAccountIds[0]", "550536272523"]);
+    }
     steps.push(
       ...Object.entries(values).map(([key, value]) => [
         "config",
         "set",
         "--stack",
-        spec.stack,
+        stack,
         "--non-interactive",
         `${spec.project}:${key}`,
         value,
       ]),
     );
   }
-  steps.push([verb, "--yes", "--non-interactive", "--stack", spec.stack]);
+  steps.push([verb, "--yes", "--non-interactive", "--stack", stack]);
+  return steps;
+}
+
+const KEEP_LINES = 400;
+
+function apply(run, directory, spec, stack, verb, values, env, job) {
+  const steps = upgradeSteps(spec, stack, verb, values);
   let index = 0;
   const next = () => {
     if (index >= steps.length) {
@@ -217,13 +262,19 @@ function apply(run, directory, spec, verb, values, env, job) {
       job.lines.push(job.error);
       return;
     }
-    const take = (chunk) => {
-      const text = String(chunk);
-      if (job.lines.join("").length > 12_000) return;
-      job.lines.push(text.trimEnd());
+    // Keep the newest lines, not the first 12k characters: an EKS up prints
+    // pages of progress and the error that matters comes last.
+    const take = (into) => (chunk) => {
+      const text = String(chunk).trimEnd();
+      if (!text) return;
+      for (const list of into) {
+        list.push(text);
+        if (list.length > KEEP_LINES) list.splice(0, list.length - KEEP_LINES);
+      }
     };
-    child.stdout.on("data", take);
-    child.stderr.on("data", take);
+    const errLines = [];
+    child.stdout.on("data", take([job.lines]));
+    child.stderr.on("data", take([job.lines, errLines]));
     child.on("error", (error) => {
       job.running = false;
       job.error = error?.message || "pulumi did not start";
@@ -232,7 +283,7 @@ function apply(run, directory, spec, verb, values, env, job) {
     child.on("close", (code) => {
       if (code !== 0) {
         job.running = false;
-        job.error = job.error || `pulumi ${args[0]} exited ${code}`;
+        job.error = job.error || failureText(args, code, job.lines, errLines, stack);
         return;
       }
       next();
@@ -276,19 +327,25 @@ function capture(run, directory, env, args) {
   });
 }
 
-async function readFacts(run, directory, spec, env) {
-  const history = await capture(run, directory, env, ["stack", "history", "--json", "--stack", spec.stack]);
-  if (history.error) return { kind: "", resources: 0, error: history.error };
+async function readFacts(run, directory, spec, env, stack = spec.stack) {
+  const history = await capture(run, directory, env, ["stack", "history", "--json", "--stack", stack]);
+  const nameKey = spec.id === "eks" ? "clusterName" : "name";
+  if (history.error) {
+    if (/no stack named|not found|does not exist/i.test(history.error)) {
+      return { kind: "", resources: 0, missing: true, stack, name: "" };
+    }
+    return { kind: "", resources: 0, error: history.error, stack };
+  }
   const listed = await capture(run, directory, env, ["stack", "ls", "--json"]);
   const fact = historyFact(history.text);
-  fact.resources = listed.error ? 0 : resourceFact(listed.text, spec.stack);
-  const nameKey = spec.id === "eks" ? "clusterName" : "name";
+  fact.stack = stack;
+  fact.resources = listed.error ? 0 : resourceFact(listed.text, stack);
   const config = await capture(run, directory, env, [
     "config",
     "get",
     `${spec.project}:${nameKey}`,
     "--stack",
-    spec.stack,
+    stack,
   ]);
   fact.name = config.error ? spec.parameters.find((item) => item.name === nameKey)?.default || "" : config.text.trim();
   return fact;

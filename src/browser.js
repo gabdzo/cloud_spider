@@ -1180,6 +1180,7 @@ function drawPipForm() {
           field = el("input", { value: parameter.default ?? "" });
         }
         field.name = parameter.name;
+        if (parameter.name === "clusterName" || parameter.name === "name") field.addEventListener("change", () => refreshUpgrade(true));
         body.append(el("label", {}, `${parameter.name} `, field));
       }
       const confirm = el("input", { name: "confirmName", placeholder: "type the name", autocomplete: "off" });
@@ -1222,6 +1223,7 @@ function paintUpgrade(body) {
   const out = pipEl.querySelector("#pip-out");
   if (!out) return;
   const lines = [];
+  if (body?.stack) lines.push(`stack ${body.stack}`);
   if (body?.error) lines.push(body.error);
   lines.push(...(body?.lines || []));
   out.textContent = lines.join("\n");
@@ -1231,6 +1233,9 @@ async function refreshUpgrade(fresh) {
   if (sample || !pipOpen || !openCard) return;
   const query = new URLSearchParams({ module: openCard });
   if (fresh) query.set("fresh", "1");
+  // Which stack to watch: the cluster (or name) typed in the card.
+  const params = pipParams();
+  for (const key of ["clusterName", "name"]) if (params[key]) query.set(key, params[key]);
   const body = await fetch(`/api/upgrade?${query}`).then((response) => response.json()).catch(() => ({ error: "the page failed" }));
   paintUpgrade(body);
 }

@@ -197,21 +197,22 @@ export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, 
     upgrades() {
       return upgrade?.list?.() || [];
     },
-    async upgradeStatus(module = "", fresh = false) {
+    async upgradeStatus(module = "", fresh = false, values = {}) {
       const job = upgrade?.status?.() || { running: false, lines: [] };
       if (!module || !upgrade?.facts) return job;
       if (sawRunning && !job.running) fresh = true;
       sawRunning = Boolean(job.running);
       const at = clock();
-      if (!fresh && watchCache && watchCache.module === module && at - watchCache.at < WATCH_MS) {
+      const watchKey = `${module}|${values.clusterName || values.name || ""}`;
+      if (!fresh && watchCache && watchCache.module === watchKey && at - watchCache.at < WATCH_MS) {
         return { ...job, watch: watchCache.line };
       }
-      const history = await upgrade.facts(module);
+      const history = await upgrade.facts(module, values);
       let cluster = null;
       if (module === "eks") {
         try {
           cluster = eks?.describeCluster
-            ? await eks.describeCluster(history.name || "cloudspider-up")
+            ? await eks.describeCluster(history.name || values.clusterName || "cloudspider-up")
             : { error: "the cluster did not answer" };
         } catch (error) {
           cluster = { error: error?.message || "the cluster did not answer" };
@@ -220,7 +221,7 @@ export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, 
       const line = history.error
         ? { status: "fail", text: history.error }
         : watchLine({ cluster, history });
-      watchCache = { module, at, line };
+      watchCache = { module: watchKey, at, line };
       return { ...job, watch: line };
     },
     async upgradeRun(requestOrigin, body = {}) {
@@ -232,11 +233,13 @@ export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, 
         if (listed.error) return { error: listed.error };
         clusters = listed.names;
       }
+      const legacyName = body.module === "eks" && upgrade.legacyCluster ? await upgrade.legacyCluster() : undefined;
       return upgrade.run({
         module: body.module,
         params: body.params || {},
         action: body.action,
         clusters,
+        legacyName,
       });
     },
     // Vaults: projects from YAML files. sample=true reads the sample folder

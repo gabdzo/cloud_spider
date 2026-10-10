@@ -111,3 +111,20 @@ for (const program of PROGRAMS) {
     }
   });
 }
+
+test("upgrades/eks: a second cluster names its roles and node group after itself; the first is unchanged", { skip: existsSync(`${root}upgrades/eks/node_modules/@pulumi/pulumi`) ? false : "run npm ci in upgrades/eks" }, async () => {
+  const program = PROGRAMS.find((item) => item.dir === "upgrades/eks");
+  const first = await mocked(program);
+  for (const item of first.filter((r) => /iam\/role:Role$|eks\/nodeGroup:NodeGroup$/.test(r.type))) {
+    assert.equal(item.inputs.name, undefined, `${item.name} keeps its auto name on the old stack`);
+    assert.equal(item.inputs.nodeGroupName, undefined);
+  }
+  const second = await mocked({ ...program, stack: "eks-cloudspider-two" }, { "cloudspider-upgrade:clusterName": "cloudspider-two" });
+  const byName = (type, name) => second.find((r) => r.type.endsWith(type) && r.name === name).inputs;
+  assert.equal(byName("Role", "cluster").name, "cloudspider-two-cluster");
+  assert.equal(byName("Role", "node").name, "cloudspider-two-node");
+  assert.equal(byName("NodeGroup", "nodes").nodeGroupName, "cloudspider-two-nodes");
+  assert.equal(byName("Cluster", "up").name, "cloudspider-two");
+  for (const item of second.filter((r) => r.inputs.tags)) assert.equal(item.inputs.tags.cluster, "cloudspider-two", item.name);
+  await assert.rejects(mocked({ ...program, stack: "eks-other" }, { "cloudspider-upgrade:clusterName": "cloudspider-two" }), /belongs in stack eks-cloudspider-two/);
+});
