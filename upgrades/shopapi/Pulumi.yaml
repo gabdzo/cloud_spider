@@ -1,0 +1,5 @@
+name: cloudspider-shopapi
+runtime: nodejs
+description: "A sample backend on EKS: PostgREST over the shopdb database, with a migration Job that creates and seeds the schema."
+backend:
+  url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"

@@ -142,3 +142,87 @@ If the answer says `GetMetricData: AccessDenied…`, add the permission to the p
 | vended EC2/ALB/Lambda metrics themselves | free | $0 |
 
 The first 1 million GetMetricData metrics a month may fall under the free tier, depending on the account. Either way it is pennies a month.
+
+## 11. More stacks and Terraform (PR stacks-expansion, pay only for what you raise)
+
+Every new card shows its cost on the card (hour / day / month, eu-north-1). Raise them from the Stacks panel (the RUN key) or by hand as below. Each stack is its own state; Take it down (or `pulumi destroy`) removes everything it made. Install a stack's packages once: `cd upgrades/<name> && npm ci`.
+
+### RDS Postgres: about $0.02/h, $0.48/day, $14.48/month
+
+```sh
+cd upgrades/rds && npm ci
+pulumi stack select rds --create
+pulumi preview --stack rds && pulumi up --stack rds          # ~6 minutes
+pulumi stack output masterSecretArn                         # the password stays in Secrets Manager
+aws secretsmanager get-secret-value --secret-id "$(pulumi stack output masterSecretArn)" --query SecretString --output text   # only if you need it
+npm run vaults:new -- rds rds                               # back at the repo root: make the vault living
+```
+
+It is private (no internet path), so nothing outside its VPC can connect; that is the point of the template. Tear down: `pulumi destroy --stack rds --yes` (no final snapshot: the data goes).
+
+### Postgres on EKS (CloudNativePG) + Shop API: about $0.0006/h on top of EKS
+
+Needs the cluster from §6 **on t4g.medium** (a t4g.small runs out of pods): set instanceType to t4g.medium on the EKS card and RUN (+$0.0172/h).
+
+```sh
+cd upgrades/pgcluster && npm ci
+pulumi stack select pgcluster --create
+pulumi config set podIdentityAgent present        # ONLY if the demo stack (§8) is up; it already installed the agent
+pulumi up --stack pgcluster                        # ~5 minutes: CSI driver, operator, shop/shopdb
+kubectl -n shop get cluster shopdb                 # STATUS "Cluster in healthy state"
+cd ../shopapi && npm ci
+pulumi stack select shopapi --create && pulumi up --stack shopapi
+kubectl -n shop logs job/$(pulumi stack output migrationJob)     # "applying /sql/001-shop.sql"
+kubectl -n shop port-forward svc/shopapi 3000:80 &
+curl -s localhost:3000/items                       # stimpak, rad-away, nuka-cola
+```
+
+Tear down in reverse: `pulumi destroy --stack shopapi --yes`, then `pulumi destroy --stack pgcluster --yes` (the StorageClass deletes the EBS volume with the claim). Check no volume is left: `aws ec2 describe-volumes --filters Name=tag:project,Values=pgcluster --query 'Volumes[].VolumeId'`.
+
+### Static site: about $0 (free tier)
+
+```sh
+cd upgrades/site && npm ci && pulumi stack select site --create && pulumi up --stack site   # CloudFront takes ~5 minutes
+curl -s "$(pulumi stack output siteUrl)" | head -3
+```
+
+Tear down: `pulumi destroy --stack site --yes` (disabling and deleting the distribution takes a few minutes).
+
+### SQS worker: about $0 (free tier)
+
+```sh
+cd upgrades/worker && npm ci && pulumi stack select worker --create && pulumi up --stack worker
+aws sqs send-message --queue-url "$(pulumi stack output queueUrl)" --message-body '{"hello":"wasteland"}'
+aws sqs send-message --queue-url "$(pulumi stack output queueUrl)" --message-body '{"fail":true}'   # lands in the DLQ after 3 tries (~3 min)
+aws logs tail /aws/lambda/cloudspider-worker --since 10m
+```
+
+Tear down: `pulumi destroy --stack worker --yes`.
+
+### Terraform RDS (tf-rds): about $0.02/h, $14.48/month, the same database made by Terraform
+
+Needs Terraform 1.10+ (`brew install terraform`). Cloud Spider only reads this stack (state and outputs); you run these:
+
+```sh
+cd terraform/stacks/rds
+terraform init                       # S3 backend: cloudspider-state-550536272523, key terraform/rds.tfstate
+terraform test                       # mock provider, no AWS calls
+terraform plan -out tfplan
+terraform apply tfplan               # ~6 minutes
+terraform output
+```
+
+After `init`, the TERRAFORM card in the Stacks panel shows the state ("6 resources in state, 6 tagged project=tf-rds") and the outputs. Make the vault living with `npm run vaults:new -- tf-rds tf-rds`. Tear down: `terraform destroy` (asks for yes).
+
+### Costs at a glance
+
+| stack | $/hour | $/day | $/month |
+| --- | ---: | ---: | ---: |
+| rds | 0.0198 | 0.48 | 14.48 |
+| pgcluster (on top of EKS; +0.0172/h for the t4g.medium node) | 0.0006 | 0.01 | 0.42 |
+| shopapi | 0 | 0 | 0 |
+| site | 0 + use | 0 + use | 0 + use |
+| worker | 0 + use | 0 + use | 0 + use |
+| tf-rds | 0.0198 | 0.48 | 14.48 |
+
+Prices and sources: docs/plan-expansion.md.

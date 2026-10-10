@@ -30,6 +30,7 @@ export const FILES = new Set([
   "kube-diagram.js",
   "metrics.js",
   "upgrade-rules.js",
+  "stack-costs.js",
   "theme.js",
   "draw-kit.js",
   "chrome.js",
@@ -930,7 +931,7 @@ const page = `<!doctype html>
   #wall-grain { position: absolute; z-index: 2; min-height: 26px; padding: 0 6px; font-size: 11px; }
   #pip {
     position: absolute; top: 10px; left: 12px; z-index: 4; margin: 0;
-    width: min(380px, calc(100% - 24px)); max-height: calc(100% - 20px); overflow: auto;
+    width: min(400px, calc(100% - 24px)); max-height: calc(100% - 20px); overflow: auto;
     padding: 0 0 8px; font-size: 13px; color: var(--pip-bright);
     background: rgba(2, 10, 5, 0.96); border: 2px solid var(--pip-mid);
     box-shadow: 0 0 18px rgba(20, 255, 106, 0.22); scrollbar-width: thin; scrollbar-color: var(--pip-dim) var(--pip-ink);
@@ -956,6 +957,56 @@ const page = `<!doctype html>
   #pip-watch.fail { color: var(--status-broken); }
   #pip pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pip-mid); font: inherit; font-size: 12px; }
   #pip pre:empty { display: none; }
+  /* Stacks cards: cost chip, engine plate, the bill readout, Terraform commands. */
+  #pip .card-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #pip .cost-chip {
+    flex: 0 0 auto; padding: 1px 6px; border-radius: 0; font-size: 11px; letter-spacing: 0.04em; text-transform: none;
+    color: var(--pip-bright); background: var(--pip-screen); border: 1px solid var(--pip-dark);
+    box-shadow: inset 0 1px 3px var(--pip-ink); text-shadow: 0 0 4px var(--glow-bright);
+  }
+  #pip .eng {
+    flex: 0 0 auto; padding: 1px 5px; font-size: 9px; letter-spacing: 0.14em; color: var(--pip-ink);
+    background: linear-gradient(var(--pip-mid), var(--pip-dim)); border: 1px solid var(--pip-dark); box-shadow: inset 0 1px 0 var(--glow-bright);
+  }
+  #pip .eng.tf { background: linear-gradient(var(--case-brass), var(--case-brass-lo)); border-color: var(--case-brass-lo); box-shadow: inset 0 1px 0 var(--world-glow); }
+  #pip .card-head:hover .cost-chip, #pip .card.open .card-head .cost-chip { color: var(--pip-bright); background: var(--pip-ink); border-color: var(--pip-ink); }
+  #pip .bill { display: flex; flex-direction: column; gap: 4px; }
+  #pip .meter {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 3px;
+    background: var(--pip-ink); border: 1px solid var(--pip-dark); box-shadow: inset 0 0 8px var(--pip-ink), 0 0 0 1px var(--pip-screen);
+  }
+  #pip .meter-cell {
+    display: flex; flex-direction: column; align-items: center; padding: 3px 2px 2px;
+    background: repeating-linear-gradient(0deg, var(--pip-screen) 0 2px, var(--pip-ink) 2px 3px); border: 1px solid var(--pip-dark);
+  }
+  #pip .meter-cell b { font-size: 15px; font-weight: normal; color: var(--pip-bright); text-shadow: 0 0 6px var(--glow-bright), 0 0 1px var(--pip-hot); letter-spacing: 0.02em; }
+  #pip .meter-cell i { font-style: normal; font-size: 9px; letter-spacing: 0.18em; color: var(--pip-dim); }
+  #pip .lines { margin: 0; padding: 0; list-style: none; font-size: 11px; }
+  #pip .lines li { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; border-bottom: 1px dotted var(--pip-dark); }
+  #pip .lines li span:last-child { color: var(--pip-bright); white-space: nowrap; }
+  #pip .lines li.usage { color: var(--pip-dim); }
+  #pip .lines li.usage span:last-child { color: var(--pip-dim); }
+  #pip .lines li span:first-child { overflow-wrap: anywhere; }
+  #pip .src { font-size: 10px; color: var(--pip-dim); letter-spacing: 0.04em; }
+  #pip .needs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 10px; letter-spacing: 0.14em; color: var(--pip-dim); }
+  #pip .need { padding: 0 5px; color: var(--world-amber); border: 1px solid var(--case-brass-lo); }
+  #pip .need::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 4px; vertical-align: 1px; background: var(--world-amber); box-shadow: 0 0 4px var(--world-amber); }
+  #pip .pdiv {
+    display: flex; align-items: center; gap: 8px; margin: 10px 8px 6px; padding: 3px 8px;
+    color: var(--case-brass); font-size: 11px; letter-spacing: 0.2em; border-top: 2px double var(--case-brass-lo); border-bottom: 1px solid var(--case-brass-lo);
+  }
+  #pip .pdiv .ro { margin-left: auto; font-size: 9px; color: var(--pip-dim); letter-spacing: 0.16em; }
+  #pip .card.tf { border-color: var(--case-brass-lo); }
+  #pip .card.tf.open .card-head, #pip .card.tf .card-head:hover { background: var(--case-brass); }
+  #pip .tf-state { color: var(--pip-bright); font-size: 12px; }
+  #pip .tf-state.off { color: var(--world-amber); }
+  #pip .tf-state.fail { color: var(--status-broken); }
+  #pip .cmds { display: flex; flex-direction: column; gap: 3px; }
+  #pip .cmdrow { display: grid; grid-template-columns: 52px 1fr auto; gap: 6px; align-items: center; padding: 2px 3px; background: var(--pip-screen); border: 1px solid var(--pip-dark); }
+  #pip .cmdrow .lbl { font-size: 9px; letter-spacing: 0.16em; color: var(--pip-dim); }
+  #pip .cmdrow.destroy .lbl { color: var(--status-broken); }
+  #pip .cmdrow code { font: inherit; font-size: 11px; color: var(--pip-bright); overflow-wrap: anywhere; }
+  #pip .cmdrow .copy { min-height: 22px; padding: 0 6px; font-size: 10px; letter-spacing: 0.12em; }
   /* ---- TERMINAL: a RobCo CRT over the right side of the map ---- */
   #term {
     position: absolute; top: 10px; right: 12px; bottom: 10px; z-index: 5;
@@ -1352,7 +1403,12 @@ async function route(app, req, res) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/upgrades") {
-    send(res, 200, { modules: app.upgrades() });
+    send(res, 200, { modules: app.upgrades(), terraform: app.terraformStacks ? app.terraformStacks() : [] });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/terraform/state") {
+    send(res, 200, await app.terraformState(url.searchParams.get("id") || "", { fresh: url.searchParams.get("fresh") === "1", sample: url.searchParams.get("sample") === "1" }));
     return;
   }
 

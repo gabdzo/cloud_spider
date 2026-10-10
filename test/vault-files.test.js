@@ -68,6 +68,10 @@ const PROGRAMS = [
   { dir: "upgrades/barrel", project: "cloudspider-barrel", stack: "barrel", vaults: ["barrel"], template: true },
   { dir: "upgrades/camp", project: "cloudspider-camp", stack: "camp", vaults: ["camp"] },
   { dir: "upgrades/demo", project: "cloudspider-demo", stack: "demo", vaults: ["demo"] },
+  { dir: "upgrades/rds", project: "cloudspider-rds", stack: "rds", vaults: ["rds"], template: true },
+  { dir: "upgrades/pgcluster", project: "cloudspider-pgcluster", stack: "pgcluster", vaults: ["pgcluster"], template: true },
+  { dir: "upgrades/site", project: "cloudspider-site", stack: "site", vaults: ["site"], template: true },
+  { dir: "upgrades/worker", project: "cloudspider-worker", stack: "worker", vaults: ["worker"], template: true },
 ];
 
 async function mocked(program, config = {}) {

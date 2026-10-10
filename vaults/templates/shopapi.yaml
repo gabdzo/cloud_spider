@@ -1,0 +1,26 @@
+# Template (the shopapi stack is not up). When it is:
+#   npm run vaults:new -- shopapi shopapi
+# upgrades/shopapi (Pulumi project cloudspider-shopapi, stack shopapi): in
+# namespace shop, a migration Job (psql) and PostgREST serving GET /items
+# from shopdb. It makes no AWS resources of its own, so the vault binds it
+# through its stack (spec.stack); the pods show in the Cluster view.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: shopapi
+  number: 165
+  title: Shop API
+  description: A sample backend on EKS, PostgREST over the shopdb database, with a migration Job that creates and seeds the schema.
+  owner: gabriel
+  tags: [upgrade, eks, api]
+spec:
+  type: api
+  resources:
+    tags:
+      project: shopapi
+  stack:
+    dir: upgrades/shopapi
+    name: shopapi
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/shopapi
+    docs: https://docs.postgrest.org/

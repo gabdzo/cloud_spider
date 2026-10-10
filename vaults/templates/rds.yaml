@@ -1,0 +1,30 @@
+# Template (the rds stack is not up). When it is, make it living with:
+#   npm run vaults:new -- rds rds
+# upgrades/rds (Pulumi project cloudspider-rds, stack rds): a private VPC
+# (two private subnets, no gateway), a security group open to the VPC on
+# 5432, a DB subnet group and RDS PostgreSQL 16 on db.t4g.micro (20 GB gp3,
+# single-AZ). The master password is RDS-managed in Secrets Manager.
+# About $0.02/h, $0.48/day, $14.48/month in eu-north-1.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: rds
+  number: 150
+  title: RDS Postgres
+  description: A small private PostgreSQL on RDS (db.t4g.micro, 20 GB, single-AZ) with its password kept by RDS in Secrets Manager.
+  owner: gabriel
+  tags: [upgrade, rds, postgres]
+spec:
+  type: data
+  resources:
+    tags:
+      project: rds
+    ids:
+      - cloudspider-rds
+  stack:
+    dir: upgrades/rds
+    name: rds
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/rds
+    docs: https://github.com/gabdzo/cloud_spider/blob/main/docs/RUN-ME.md
+    dashboard: https://eu-north-1.console.aws.amazon.com/rds/home?region=eu-north-1#database:id=cloudspider-rds

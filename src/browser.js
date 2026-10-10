@@ -21,6 +21,7 @@ import { paintDiagram, paintPath, sentenceRect } from "./path-draw.js";
 import { CLUSTER_COLUMNS } from "./cluster.js";
 import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { upgradeSpiderLine } from "./upgrade-rules.js";
+import { costLine } from "./stack-costs.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
 } from "./chrome.js";
@@ -117,6 +118,7 @@ let pipOpen = false;
 let openCard = null;
 let campGrain = "coarse";
 let pipModules = [];
+let pipTerraform = [];
 let clusterData = null;
 let clusterSelected = null;
 let clusterPulling = false;
@@ -1727,7 +1729,10 @@ askThis.addEventListener("click", () => {
 
 // ---- Stacks: Pulumi upgrade cards in a Pip-Boy panel over the map ----
 
-const CARD_ICON = { eks: "cluster", signal: "radio", barrel: "stack", camp: "bucket" };
+const CARD_ICON = {
+  eks: "cluster", signal: "radio", barrel: "stack", camp: "bucket",
+  rds: "database", pgcluster: "database", shopapi: "pod", site: "url", worker: "queue", "tf-rds": "terraform",
+};
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
@@ -1742,30 +1747,65 @@ function iconImg(name) {
   return img;
 }
 
+// The head of a card: icon, title, the hourly cost chip and the engine plate.
+function cardHead(spec) {
+  const head = el(
+    "button",
+    { type: "button", className: "card-head" },
+    iconImg(CARD_ICON[spec.id] || "stack"),
+    el("span", { className: "card-title", textContent: spec.title }),
+  );
+  if (spec.cost) head.append(el("span", { className: "cost-chip", textContent: costLine(spec.cost).split(" · ")[0], title: `about ${costLine(spec.cost)} in ${spec.cost.region}` }));
+  head.append(el("span", { className: `eng ${spec.engine === "terraform" ? "tf" : ""}`, textContent: spec.engine === "terraform" ? "TF" : "PULUMI" }));
+  head.setAttribute("aria-expanded", String(openCard === spec.id));
+  head.addEventListener("click", () => {
+    openCard = openCard === spec.id ? null : spec.id;
+    drawPipForm();
+    if (openCard) refreshUpgrade(true);
+  });
+  return head;
+}
+
+// The bill while it is up: three counters (hour, day, month) on a dark
+// readout strip, the lines that make it, the usage-billed parts and what
+// must be up first.
+function costBlock(spec) {
+  const cost = spec.cost;
+  const block = el("div", { className: "bill" });
+  if (!cost) return block;
+  const [hour, day, month] = costLine(cost).replace(/ \+ usage$/, "").split(" · ");
+  const counter = (value, unit) => el("span", { className: "meter-cell" }, el("b", { textContent: value.replace(/\/.*$/, "") }), el("i", { textContent: unit }));
+  block.append(el("div", { className: "meter", role: "group", ariaLabel: `cost in ${cost.region}` }, counter(hour, "HOUR"), counter(day, "DAY"), counter(month, "MONTH")));
+  const lines = el("ul", { className: "lines" });
+  for (const item of cost.items) lines.append(el("li", {}, el("span", { textContent: item.text }), el("span", { textContent: `$${item.month.toFixed(2)}/mo` })));
+  for (const item of cost.usage) lines.append(el("li", { className: "usage" }, el("span", { textContent: `+ ${item}` }), el("span", { textContent: "per use" })));
+  if (!cost.items.length && !cost.usage.length) lines.append(el("li", {}, el("span", { textContent: "nothing of its own: runs on what it needs" }), el("span", { textContent: "$0" })));
+  block.append(lines, el("div", { className: "src", textContent: `${cost.region} on-demand, AWS price list ${cost.asOf}` }));
+  if (spec.needs?.length) {
+    const needs = el("div", { className: "needs" }, el("span", { textContent: "NEEDS" }));
+    for (const id of spec.needs) needs.append(el("span", { className: "need", textContent: (pipModules.find((item) => item.id === id)?.title || id).toUpperCase() }));
+    block.append(needs);
+  }
+  return block;
+}
+
 function drawPipForm() {
   const title = el("div", { className: "ptitle" }, iconImg("stack"), "STACKS");
   pipEl.replaceChildren(title);
-  if (!pipModules.length) {
+  if (!pipModules.length && !pipTerraform.length) {
     pipEl.append(el("div", { className: "quiet", textContent: "no upgrade" }));
     return;
   }
   for (const spec of pipModules) {
     const card = el("section", { className: "card" });
     card.dataset.id = spec.id;
-    const head = el("button", { type: "button", className: "card-head" }, iconImg(CARD_ICON[spec.id] || "stack"), el("span", { textContent: spec.title }));
-    head.setAttribute("aria-expanded", String(openCard === spec.id));
-    head.addEventListener("click", () => {
-      openCard = openCard === spec.id ? null : spec.id;
-      drawPipForm();
-      if (openCard) refreshUpgrade(true);
-    });
-    card.append(head);
+    card.append(cardHead(spec));
     if (openCard === spec.id) {
       card.classList.add("open");
       const body = el("div", { className: "card-body" });
       const watch = el("div", { id: "pip-watch" });
       watch.hidden = true;
-      body.append(el("div", { textContent: spec.note || "" }), watch);
+      body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), watch);
       if (spec.id === "camp") {
         const grain = el("select", { id: "camp-grain" });
         for (const choice of ["coarse", "fine"]) {
@@ -1801,6 +1841,55 @@ function drawPipForm() {
       card.append(body);
     }
     pipEl.append(card);
+  }
+  if (!pipTerraform.length) return;
+  pipEl.append(el("div", { className: "pdiv", role: "separator" }, iconImg("terraform"), el("span", { textContent: "TERRAFORM" }), el("span", { className: "ro", textContent: "READ-ONLY" })));
+  for (const spec of pipTerraform) {
+    const card = el("section", { className: "card tf" });
+    card.dataset.id = spec.id;
+    card.append(cardHead(spec));
+    if (openCard === spec.id) {
+      card.classList.add("open");
+      const body = el("div", { className: "card-body" });
+      body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), el("div", { id: "tf-state", className: "tf-state", textContent: "reading state…" }), el("ul", { id: "tf-outputs", className: "lines" }));
+      const cmds = el("div", { className: "cmds", role: "list", ariaLabel: "commands to run yourself" });
+      for (const command of spec.commands || []) {
+        const copy = el("button", { type: "button", className: "cmd copy", textContent: "COPY", ariaLabel: `copy the ${command.label} command` });
+        copy.addEventListener("click", () => copyCommand(command.text, copy));
+        cmds.append(el("div", { className: `cmdrow ${command.label}`, role: "listitem" }, el("span", { className: "lbl", textContent: command.label.toUpperCase() }), el("code", { textContent: command.text }), copy));
+      }
+      body.append(cmds);
+      card.append(body);
+    }
+    pipEl.append(card);
+  }
+}
+
+async function copyCommand(text, button) {
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "COPIED";
+  } catch {
+    button.textContent = "SELECT";
+  }
+  setTimeout(() => {
+    button.textContent = "COPY";
+  }, 1500);
+}
+
+async function refreshTerraform(id, fresh) {
+  const query = new URLSearchParams({ id });
+  if (fresh) query.set("fresh", "1");
+  if (sample) query.set("sample", "1");
+  const body = await fetch(`/api/terraform/state?${query}`).then((response) => response.json()).catch(() => ({ error: "the page failed" }));
+  const line = pipEl.querySelector("#tf-state");
+  const outputs = pipEl.querySelector("#tf-outputs");
+  if (!line || openCard !== id) return;
+  line.textContent = body.error || body.text || "";
+  line.classList.toggle("fail", Boolean(body.error));
+  line.classList.toggle("off", !body.error && body.initialised === false);
+  if (outputs) {
+    outputs.replaceChildren(...Object.entries(body.outputs || {}).map(([key, value]) => el("li", {}, el("span", { textContent: key }), el("span", { textContent: value }))));
   }
 }
 
@@ -1839,7 +1928,12 @@ function paintUpgrade(body) {
 }
 
 async function refreshUpgrade(fresh) {
-  if (sample || !pipOpen || !openCard) return;
+  if (!pipOpen || !openCard) return;
+  if (pipTerraform.some((item) => item.id === openCard)) {
+    refreshTerraform(openCard, fresh);
+    return;
+  }
+  if (sample) return;
   const query = new URLSearchParams({ module: openCard });
   if (fresh) query.set("fresh", "1");
   // Which stack to watch: the cluster (or name) typed in the card.
@@ -1878,6 +1972,7 @@ async function toggleUpgrade() {
   if (!pipModules.length) {
     const body = await fetch("/api/upgrades").then((response) => response.json()).catch(() => ({}));
     pipModules = body.modules || [];
+    pipTerraform = body.terraform || [];
   }
   drawPipForm();
   refreshUpgrade(true);

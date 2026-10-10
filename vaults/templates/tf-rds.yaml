@@ -1,0 +1,25 @@
+# Template (the Terraform rds stack is not applied). terraform/stacks/rds is
+# the Terraform twin of upgrades/rds: the same private VPC and RDS
+# PostgreSQL, tagged by the provider's default_tags project=tf-rds and
+# managed-by=terraform, so this vault claims it like the Pulumi one.
+# Cloud Spider only reads it (terraform show -json); Gabriel runs plan/apply.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: tf-rds
+  number: 180
+  title: RDS (Terraform)
+  description: The Terraform proof of concept, the same small private RDS PostgreSQL as the rds stack, made with modules network and rds-postgres.
+  owner: gabriel
+  tags: [terraform, rds, postgres]
+spec:
+  type: data
+  resources:
+    tags:
+      project: tf-rds
+    ids:
+      - cloudspider-tf-rds
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/terraform/stacks/rds
+    docs: https://github.com/gabdzo/cloud_spider/blob/main/docs/RUN-ME.md
+    dashboard: https://eu-north-1.console.aws.amazon.com/rds/home?region=eu-north-1#database:id=cloudspider-tf-rds

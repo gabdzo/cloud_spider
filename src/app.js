@@ -12,6 +12,7 @@ import { costFailure } from "./cost.js";
 import { diagramFromClusters } from "./cluster.js";
 import { diagramFromKube } from "./kube-diagram.js";
 import { campFixtures, watchLine } from "./upgrade-rules.js";
+import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
 import { createMetricsCache, sampleMetrics } from "./metrics.js";
 import { idleCandidates, morningReport, nextIdleStreak } from "./layout.js";
@@ -25,7 +26,7 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
-export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, eks, vaults, agent, kube, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, eks, vaults, agent, kube, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -225,6 +226,19 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, eks,
     },
     upgrades() {
       return upgrade?.list?.() || [];
+    },
+    // Terraform stacks: listed with their commands; state is read-only.
+    terraformStacks() {
+      return terraform?.list?.() || [];
+    },
+    async terraformState(id = "", { fresh = false, sample = false } = {}) {
+      if (sample) return sampleTerraformState(id);
+      if (!terraform?.state) return { error: "terraform is not set up" };
+      try {
+        return await terraform.state(String(id), { fresh });
+      } catch (failure) {
+        return { error: failure?.message || "terraform did not answer" };
+      }
     },
     async upgradeStatus(module = "", fresh = false, values = {}) {
       const job = upgrade?.status?.() || { running: false, lines: [] };

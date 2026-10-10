@@ -1,0 +1,5 @@
+name: cloudspider-rds
+runtime: nodejs
+description: "A small private RDS PostgreSQL (db.t4g.micro, 20 GB, single-AZ) in its own VPC with no internet path; the password lives in Secrets Manager."
+backend:
+  url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"

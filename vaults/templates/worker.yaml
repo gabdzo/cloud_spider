@@ -1,0 +1,29 @@
+# Template (the worker stack is not up). When it is:
+#   npm run vaults:new -- worker worker
+# upgrades/worker (Pulumi project cloudspider-worker, stack worker): queue
+# <name>-jobs, its dead-letter queue <name>-dlq, the Lambda <name> that
+# reads it (logs kept 1 day) and its role.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: worker
+  number: 175
+  title: SQS worker
+  description: An SQS queue with a dead-letter queue and a small Node Lambda that works through it in batches.
+  owner: gabriel
+  tags: [upgrade, sqs, lambda]
+spec:
+  type: worker
+  resources:
+    tags:
+      project: worker
+    ids:
+      - cloudspider-worker
+      - cloudspider-worker-jobs
+      - cloudspider-worker-dlq
+  stack:
+    dir: upgrades/worker
+    name: worker
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/worker
+    dashboard: https://eu-north-1.console.aws.amazon.com/sqs/v3/home?region=eu-north-1#/queues
