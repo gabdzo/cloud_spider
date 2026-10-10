@@ -74,7 +74,8 @@ test("sample is three local shacks and does not describe the account", async () 
     const ids = body.place.instances.map((item) => item.id);
     assert.deepEqual(ids, ["sample-running", "sample-stopped", "sample-untagged"]);
     assert.equal(ids.every((item) => isInstanceId(item)), false);
-    assert.match(body.radio, /^StopInstances sample-stopped\n/);
+    assert.match(body.trail[0].text, /^put a machine down  sample-stopped/);
+    assert.ok(body.trail.some((row) => row.status === "fail"), "the sample shows what a failure looks like");
     assert.equal(reads, 0);
   } finally {
     server.close();

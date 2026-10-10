@@ -13,6 +13,7 @@ export async function readPlace(ec2, region) {
   if (subnets.error) return { error: subnets.error, place: null };
   const instances = await paginate((token) => ec2.describeInstances(region, token));
   if (instances.error) return { error: instances.error, place: null };
+  const diagram = typeof ec2.describeDiagram === "function" ? await ec2.describeDiagram(region) : {};
   return {
     error: null,
     place: {
@@ -20,6 +21,8 @@ export async function readPlace(ec2, region) {
       vpcs: vpcs.items,
       subnets: subnets.items,
       instances: instances.items.filter((item) => !OMITTED.has(item.state)),
+      gateways: diagram?.gateways || [],
+      fixtures: diagram?.fixtures || [],
     },
   };
 }

@@ -36,7 +36,7 @@ test("rgba and font helpers", () => {
 // Canvas code takes its colours from theme.js; a raw hex there would drift
 // from the page the way the Path view once did.
 test("canvas and sprite modules carry no raw hex colours", async () => {
-  const files = ["draw.js", "path-draw.js", "draw-kit.js", "chrome.js"];
+  const files = ["draw.js", "path-draw.js", "draw-kit.js", "chrome.js", "scene.js"];
   for (const name of await readdir(new URL("../src/sprites/", import.meta.url))) files.push(`sprites/${name}`);
   for (const name of files) {
     const source = await readFile(new URL(`../src/${name}`, import.meta.url), "utf8");

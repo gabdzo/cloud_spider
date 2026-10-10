@@ -4,9 +4,16 @@ import {
   DescribeVpcsCommand,
   DescribeSubnetsCommand,
   DescribeInstancesCommand,
+  DescribeInternetGatewaysCommand,
+  DescribeNatGatewaysCommand,
   StopInstancesCommand,
   StartInstancesCommand,
 } from "@aws-sdk/client-ec2";
+import { EKSClient, ListClustersCommand, DescribeClusterCommand } from "@aws-sdk/client-eks";
+import {
+  ElasticLoadBalancingV2Client,
+  DescribeLoadBalancersCommand,
+} from "@aws-sdk/client-elastic-load-balancing-v2";
 import { CloudTrailClient, LookupEventsCommand } from "@aws-sdk/client-cloudtrail";
 import {
   CloudWatchLogsClient,
@@ -21,12 +28,14 @@ export function createAws() {
       describeVpcs,
       describeSubnets,
       describeInstances,
+      describeDiagram,
       describeInstance,
       stopInstances,
       startInstances,
     },
     trail: { lookupEvents },
     logs: { filter: readLogStream },
+    eks: { listClusters: listUpgradeClusters, describeCluster: describeUpgradeCluster },
   };
 }
 
@@ -52,7 +61,11 @@ async function describeRegions() {
 
 async function describeVpcs(region, token) {
   return pages(region, token, (next) => new DescribeVpcsCommand({ NextToken: next }), (out) =>
-    (out.Vpcs || []).map((vpc) => ({ id: vpc.VpcId, cidr: vpc.CidrBlock })),
+    (out.Vpcs || []).map((vpc) => ({
+      id: vpc.VpcId,
+      cidr: vpc.CidrBlock,
+      name: tagName(vpc.Tags),
+    })),
   );
 }
 
@@ -62,6 +75,9 @@ async function describeSubnets(region, token) {
       id: subnet.SubnetId,
       vpcId: subnet.VpcId,
       cidr: subnet.CidrBlock,
+      name: tagName(subnet.Tags),
+      zone: subnet.AvailabilityZone || "",
+      public: Boolean(subnet.MapPublicIpOnLaunch),
     })),
   );
 }
@@ -123,6 +139,7 @@ async function lookupEvents(region) {
         name: event.EventName,
         time: event.EventTime ? new Date(event.EventTime).getTime() : 0,
         resources: (event.Resources || []).map(resourceId).filter(Boolean),
+        error: trailIssue(event),
       })),
     };
   } catch (error) {
@@ -162,6 +179,133 @@ async function pages(region, token, command, mapItems) {
   }
 }
 
+const DIAGRAM_MS = 30_000;
+let diagramCache = { at: 0, region: "", value: null };
+
+function diagramClients(region) {
+  return {
+    igw: clientFor(region),
+    nat: clientFor(region),
+    elb: new ElasticLoadBalancingV2Client({ region }),
+    eks: new EKSClient({ region }),
+  }
+}
+
+export async function describeDiagram(region, clientFactory = diagramClients) {
+  const now = Date.now();
+  if (diagramCache.value && diagramCache.region === region && now - diagramCache.at < DIAGRAM_MS) {
+    return diagramCache.value;
+  }
+  const clients = clientFactory(region);
+  const gateways = [];
+  const fixtures = [];
+  const errors = [];
+  try {
+    let token;
+    do {
+      const out = await clients.igw.send(new DescribeInternetGatewaysCommand({ NextToken: token }));
+      for (const gateway of out.InternetGateways || []) {
+        for (const attachment of gateway.Attachments || []) {
+          if (attachment.VpcId) gateways.push({ vpcId: attachment.VpcId, kind: "igw", id: gateway.InternetGatewayId });
+        }
+      }
+      token = out.NextToken;
+    } while (token);
+  } catch (error) {
+    errors.push(`DescribeInternetGateways: ${publicError(error).error}`);
+  }
+  try {
+    let token;
+    do {
+      const out = await clients.nat.send(new DescribeNatGatewaysCommand({ NextToken: token }));
+      for (const nat of out.NatGateways || []) {
+        if (nat.VpcId && nat.State !== "deleted") gateways.push({ vpcId: nat.VpcId, kind: "nat", id: nat.NatGatewayId });
+      }
+      token = out.NextToken;
+    } while (token);
+  } catch (error) {
+    errors.push(`DescribeNatGateways: ${publicError(error).error}`);
+  }
+  try {
+    const elb = clients.elb;
+    let marker;
+    do {
+      const out = await elb.send(new DescribeLoadBalancersCommand({ Marker: marker }));
+      for (const lb of out.LoadBalancers || []) {
+        fixtures.push({
+          id: lb.LoadBalancerArn,
+          vpcId: lb.VpcId,
+          kind: "alb",
+          name: lb.LoadBalancerName,
+          status: lb.State?.Code === "active" ? "ok" : "broken",
+        });
+      }
+      marker = out.NextMarker;
+    } while (marker);
+  } catch (error) {
+    errors.push(`DescribeLoadBalancers: ${publicError(error).error}`);
+  }
+  try {
+    const eks = clients.eks;
+    let nextToken;
+    const names = [];
+    do {
+      const out = await eks.send(new ListClustersCommand({ nextToken }));
+      names.push(...(out.clusters || []));
+      nextToken = out.nextToken;
+    } while (nextToken);
+    for (const name of names) {
+      const described = await eks.send(new DescribeClusterCommand({ name }));
+      const cluster = described.cluster;
+      const status = cluster?.status === "ACTIVE" ? "ok" : cluster?.status === "FAILED" ? "broken" : "unknown";
+      fixtures.push({
+        id: cluster?.arn || name,
+        vpcId: cluster?.resourcesVpcConfig?.vpcId || "",
+        kind: "eks",
+        name,
+        status,
+      });
+    }
+  } catch (error) {
+    errors.push(`ListClusters: ${publicError(error).error}`);
+  }
+  const value = errors.length ? { gateways, fixtures, error: errors.join("  ") } : { gateways, fixtures };
+  diagramCache = { at: now, region, value };
+  return value;
+}
+
+export async function listUpgradeClusters() {
+  try {
+    const eks = new EKSClient({ region: "eu-north-1" });
+    const names = [];
+    let nextToken;
+    do {
+      const out = await eks.send(new ListClustersCommand({ nextToken }));
+      names.push(...(out.clusters || []));
+      nextToken = out.nextToken;
+    } while (nextToken);
+    return { names };
+  } catch (error) {
+    return { error: publicError(error).error };
+  }
+}
+
+export async function describeUpgradeCluster(name) {
+  try {
+    const eks = new EKSClient({ region: "eu-north-1" });
+    const out = await eks.send(new DescribeClusterCommand({ name }));
+    return { found: true, status: out.cluster?.status || "UNKNOWN" };
+  } catch (error) {
+    const code = error?.name || error?.Code || "";
+    if (/NotFound/.test(code)) return { found: false, status: "" };
+    return { error: publicError(error).error };
+  }
+}
+
+function tagName(tags) {
+  return (tags || []).find((tag) => tag.Key === "Name" && tag.Value)?.Value || "";
+}
+
 function clientFor(region) {
   return new EC2Client(region ? { region } : {});
 }
@@ -178,6 +322,21 @@ function instanceFrom(raw) {
     name,
     tags,
   };
+}
+
+function trailIssue(event) {
+  if (!event?.CloudTrailEvent) return "";
+  let body;
+  try {
+    body = JSON.parse(event.CloudTrailEvent);
+  } catch {
+    return "";
+  }
+  const code = body.errorCode || "";
+  if (!code || /DryRunOperation$/.test(code)) return "";
+  const message = String(body.errorMessage || "").replace(/\s+/g, " ").trim();
+  if (!message || message.length > 90) return code;
+  return message.toLowerCase().includes(String(code).toLowerCase()) ? code : `${code}: ${message}`;
 }
 
 function resourceId(resource) {

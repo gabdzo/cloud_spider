@@ -1,0 +1,5 @@
+name: cloudspider-upgrade
+runtime: nodejs
+description: One small EKS cluster so Cloud Spider can draw it and the bill can name it. Not the test VPC.
+backend:
+  url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"

@@ -1,6 +1,9 @@
+import { spawnSync } from "node:child_process";
 import { createAws } from "./aws.js";
 import { createApp } from "./app.js";
 import { createPathAws } from "./aws-path.js";
+import { createCost } from "./cost.js";
+import { createUpgrade, pulumiWarning } from "./upgrade.js";
 import { listen, listenExit } from "./server.js";
 
 const port = Number(process.env.PORT || 9241);
@@ -11,6 +14,9 @@ const app = createApp({
   trail: aws.trail,
   logs: aws.logs,
   path: createPathAws(),
+  cost: createCost(),
+  upgrade: createUpgrade(),
+  eks: aws.eks,
   logGroup: process.env.CLOUDSPIDER_LOG_GROUP || "",
   pageOrigin,
   clock: () => Date.now(),
@@ -18,6 +24,10 @@ const app = createApp({
     process.stdout.write(line);
   },
 });
+
+const pulumi = spawnSync("pulumi", ["version"], { shell: false });
+const pulumiLine = pulumiWarning(pulumi.status);
+if (pulumiLine) process.stdout.write(pulumiLine);
 
 let server;
 try {

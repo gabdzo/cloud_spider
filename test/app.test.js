@@ -183,7 +183,7 @@ test("switching region cancels waits, names the count, and reads the new radio",
   const view = await box.app.switchRegion("eu-west-1");
   assert.equal(view.status, "2 verbs did not finish");
   assert.equal(view.region, "eu-west-1");
-  assert.match(view.radio, /RunInstances i-0new0001/);
+  assert.match(view.radio, /raised a machine  i-0new0001/);
   assert.equal(view.radio.includes("i-0old0001"), false);
   assert.equal(box.lookups.at(-1), "eu-west-1");
 });

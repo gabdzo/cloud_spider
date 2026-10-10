@@ -10,7 +10,7 @@ import {
 } from "./pixel-art.js";
 import { FONT_PX, SMOKE_PX } from "./layout.js";
 import { isExpendable } from "./verbs.js";
-import { PIP, STATE_COLOR, WORLD, font, rgba } from "./theme.js";
+import { PIP, STATE_COLOR, STATUS, WORLD, font, rgba } from "./theme.js";
 import {
   BAR_H, HORIZON, SKYLINE_DARK, SKYLINE_LIT, brackets, crtBackdrop, drawSprite, glow, ridge, road,
   labelBacking, newLayer, pipPanel, plaque,
@@ -37,8 +37,10 @@ const FLICKER = [0, 1, 2, 1, 3, 0, 2, 3];
 let debrisCache = { key: null, debris: [] };
 
 function getCacheKey(width, height, placed) {
-  const settlementKey = placed.settlements.map(s => `${s.x},${s.y},${s.w},${s.h}`).join(';');
-  return `${width}x${height}:${settlementKey}`;
+  const settlementKey = placed.settlements.map(s => `${s.x},${s.y},${s.w},${s.h},${s.gate || ""},${s.empty ? 1 : 0}`).join(';');
+  const camp = placed.camp;
+  const campKey = camp ? `${camp.x},${camp.y},${camp.w},${camp.h}` : "";
+  return `${width}x${height}:${settlementKey}:${campKey}`;
 }
 
 // Deterministic debris placement (seeded by simple hash)
@@ -82,8 +84,8 @@ function generateDebris(width, height, placed) {
       return false;
     }
     
-    // Check settlements
-    for (const settlement of placed.settlements || []) {
+    // Check settlements and the account-wide camp
+    for (const settlement of [...(placed.settlements || []), ...(placed.camp ? [placed.camp] : [])]) {
       if (x + w > settlement.x && x < settlement.x + settlement.w &&
           y + h > settlement.y && y < settlement.y + settlement.h) {
         return false;
@@ -91,7 +93,7 @@ function generateDebris(width, height, placed) {
     }
     
     // Check orphans area
-    if (placed.orphans?.items?.length && placed.orphans.y) {
+    if ((placed.orphans?.items?.length || placed.orphans?.fixtures?.length) && placed.orphans.y) {
       const orphanBottom = placed.orphans.y + 200;
       if (y + h > placed.orphans.y && y < orphanBottom) {
         return false;
@@ -171,7 +173,15 @@ function staticLayer(ctx, width, height, placed) {
   }
   for (const item of debrisCache.debris) drawDebris(layer, item);
   drawCampfireStill(layer, width, height);
+  if (placed.camp) {
+    drawSettlement(layer, { ...placed.camp, gate: "" });
+    drawBanner(layer, placed.camp);
+  }
   for (const settlement of placed.settlements) {
+    if (settlement.empty) {
+      drawStrip(layer, settlement);
+      continue;
+    }
     drawSettlement(layer, settlement);
     for (const plot of settlement.plots) drawPlot(layer, plot);
     drawBanner(layer, settlement);
@@ -203,13 +213,31 @@ export function paint(ctx, scene) {
     if (own.some((b) => b.state === "running")) drawWanderers(ctx, settlement, animTime, reducedMotion);
   }
 
+  // Links and fixtures (load balancers, clusters, the camp's bucket, table,
+  // secret and function) sit over the ground, under every label.
+  const phase = Math.floor((animTime || 0) / 180) % 4;
+  for (const settlement of placed.settlements) drawLinks(ctx, settlement.edges, animTime, reducedMotion);
+  if (placed.camp) drawLinks(ctx, placed.camp.edges, animTime, reducedMotion);
+  for (const fixture of allFixtures(placed)) drawFixture(ctx, fixture, ui, phase, reducedMotion);
+
   // Text last, so smoke, wanderers and sprites never cover a label.
   ctx.font = FONT;
-  if (!placed.settlements.length && !placed.orphans?.items?.length) {
+  if (!placed.settlements.length && !placed.camp && !placed.orphans?.items?.length && !placed.orphans?.fixtures?.length) {
     ctx.fillStyle = TEXT;
     ctx.fillText(region ? `${region} has no VPCs` : "", 24, 40);
   }
   for (const settlement of placed.settlements) {
+    if (settlement.empty) {
+      drawStripLabel(ctx, settlement);
+      continue;
+    }
+    for (const column of settlement.columns || []) {
+      ctx.font = SMALL;
+      labelBacking(ctx, column.label.toUpperCase(), column.x + 4, column.y + 14, FONT_PX - 2);
+      ctx.fillStyle = PIP.dim;
+      ctx.fillText(column.label.toUpperCase(), column.x + 4, column.y + 14);
+    }
+    if (settlement.gate) drawGateLabel(ctx, settlement);
     for (const plot of settlement.plots) {
       ctx.font = FONT;
       plaque(ctx, plot.label, plot.x + 12, plot.y + 24, FONT_PX, TEXT);
@@ -224,14 +252,138 @@ export function paint(ctx, scene) {
     }
     drawSettlementLabel(ctx, settlement);
   }
-  if (placed.orphans?.items?.length) {
+  if (placed.camp) drawSettlementLabel(ctx, placed.camp);
+  if (placed.orphans?.items?.length || placed.orphans?.fixtures?.length) {
     ctx.font = FONT;
     plaque(ctx, placed.orphans.label, 36, placed.orphans.y + 22, FONT_PX, TEXT);
   }
   for (const building of buildings) drawBuildingLabel(ctx, building);
+  for (const fixture of allFixtures(placed)) drawFixtureLabel(ctx, fixture);
 
-  const selected = ui.selection ? buildingAt(placed, null, null, ui.selection.id) : null;
-  if (selected) drawPlate(ctx, selected, ui, width, height, placed);
+  const selected = ui.selection
+    ? buildingAt(placed, null, null, ui.selection.id) || fixtureAt(placed, null, null, ui.selection.id)
+    : null;
+  if (selected) drawPlate(ctx, asPlate(selected), ui, width, height, placed);
+}
+
+// An empty VPC is a short fenced strip with its name, not a whole camp.
+function drawStrip(ctx, strip) {
+  const { x, y, w, h } = strip;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+  ctx.fillRect(x + 6, y + 6, w, h);
+  ctx.fillStyle = rgba(WORLD.dirt, 0.92);
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = WORLD.rustShade;
+  ctx.fillRect(x, y, w, 3);
+  ctx.fillRect(x, y + h - 3, w, 3);
+  ctx.fillStyle = WORLD.rust;
+  for (let px = x; px <= x + w - 3; px += 14) {
+    ctx.fillRect(px, y - 3, 3, 9);
+    ctx.fillRect(px, y + h - 6, 3, 9);
+  }
+  ctx.fillRect(x, y, 3, h);
+  ctx.fillRect(x + w - 3, y, 3, h);
+}
+
+function drawStripLabel(ctx, strip) {
+  ctx.font = FONT;
+  plaque(ctx, strip.label, strip.x + 14, strip.y + Math.round(strip.h / 2) + 5, FONT_PX, PIP.mid);
+}
+
+function drawGateLabel(ctx, settlement) {
+  ctx.font = SMALL;
+  const label = settlement.gate.toUpperCase();
+  const gateX = settlement.x + Math.floor((settlement.w - ctx.measureText(label).width) / 2);
+  labelBacking(ctx, label, gateX, settlement.y + 34, FONT_PX - 2);
+  ctx.fillStyle = WORLD.amber;
+  ctx.fillText(label, gateX, settlement.y + 34);
+}
+
+// Balancer-to-target and camp lines: glowing phosphor traces with a pulse
+// that walks along them (still under reduced motion).
+function drawLinks(ctx, edges, animTime, reducedMotion) {
+  if (!edges?.length) return;
+  const curve = (edge) => {
+    ctx.beginPath();
+    ctx.moveTo(edge.x1, edge.y1);
+    const midY = edge.y1 + (edge.y2 - edge.y1) / 2;
+    ctx.bezierCurveTo(edge.x1, midY, edge.x2, midY, edge.x2, edge.y2);
+  };
+  ctx.lineCap = "round";
+  for (const edge of edges) {
+    ctx.strokeStyle = rgba(PIP.bright, 0.18);
+    ctx.lineWidth = 7;
+    curve(edge);
+    ctx.stroke();
+    ctx.strokeStyle = PIP.mid;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.lineDashOffset = reducedMotion ? 0 : -((animTime || 0) / 40) % 14;
+    curve(edge);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = PIP.bright;
+    ctx.fillRect(edge.x1 - 3, edge.y1 - 3, 6, 6);
+    ctx.fillRect(edge.x2 - 3, edge.y2 - 3, 6, 6);
+  }
+  ctx.lineCap = "butt";
+}
+
+// A fixture is a terminal kiosk: an ink card with phosphor corners, the
+// resource's 16px icon at 2x, and its name. A broken one burns.
+function drawFixture(ctx, fixture, ui, phase) {
+  const { x, y, w, h } = fixture;
+  const broken = fixture.status === "broken";
+  const edge = broken ? STATUS.broken : PIP.mid;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+  ctx.fillRect(x + 5, y + 6, w, h);
+  ctx.fillStyle = rgba(PIP.ink, 0.9);
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = rgba(PIP.bright, 0.06);
+  for (let ry = y + 2; ry < y + h; ry += 3) ctx.fillRect(x + 1, ry, w - 2, 1);
+  ctx.strokeStyle = rgba(edge, 0.55);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  brackets(ctx, x, y, w, h, edge, 7, 2);
+  ctx.fillStyle = rgba(PIP.bright, 0.1);
+  ctx.fillRect(x + 6, y + Math.round((h - 36) / 2), 36, 36);
+  drawSprite(ctx, icon(fixture.kind), x + 8, y + Math.round((h - 32) / 2), 2);
+  if (broken) drawSprite(ctx, campfireFrame(phase), x + w - 26, y + 6, 1);
+  if (ui.selection?.id === fixture.id) brackets(ctx, x - 6, y - 6, w + 12, h + 12, PIP.hot, 12, 3);
+}
+
+function drawFixtureLabel(ctx, fixture) {
+  const { x, y, w, h } = fixture;
+  const room = w - 56 - (fixture.status === "broken" ? 22 : 0);
+  ctx.font = SMALL;
+  ctx.fillStyle = TEXT;
+  ctx.fillText(clipTo(ctx, fixture.label || fixture.name || fixture.id, room, SMALL), x + 50, y + Math.round(h / 2) - 2);
+  ctx.fillStyle = PIP.dim;
+  ctx.fillText(String(fixture.kind || "").toUpperCase(), x + 50, y + Math.round(h / 2) + 14);
+}
+
+function allFixtures(placed) {
+  return [
+    ...(placed.camp?.nodes || []),
+    ...(placed.settlements || []).flatMap((settlement) => settlement.fixtures || []),
+    ...(placed.orphans?.fixtures || []),
+  ];
+}
+
+export function fixtureAt(placed, x, y, id) {
+  const fixtures = allFixtures(placed);
+  if (id) return fixtures.find((item) => item.id === id) || null;
+  return fixtures.find((item) => x >= item.x && x < item.x + item.w && y >= item.y && y < item.y + item.h) || null;
+}
+
+// The plate reads buildings and fixtures alike.
+export function asPlate(hit) {
+  return {
+    ...hit,
+    name: hit.name || hit.label || hit.id,
+    type: hit.type || hit.kind || "",
+    state: hit.state || hit.status || "",
+  };
 }
 
 function drawWastelandBackground(ctx, width, height) {
@@ -382,14 +534,23 @@ function drawSettlement(ctx, settlement) {
   const wallVSprite = settlementWallV();
   const gateSprite = settlementGate();
   const postW = postSprite[0].length * wallScale;
-  const gateW = gateSprite[0].length * wallScale;
+  // A gate is an internet gateway or NAT. A camp with neither keeps a plain
+  // wall, and no torches.
+  const hasGate = Boolean(settlement.gate);
+  const gateW = hasGate ? gateSprite[0].length * wallScale : 0;
   const gateX = x + Math.floor((w - gateW) / 2);
 
-  for (let wx = x + postW; wx < gateX - wallScale; wx += wallHSprite[0].length * wallScale) {
-    drawSprite(ctx, wallHSprite, wx, y, wallScale);
-  }
-  for (let wx = gateX + gateW + wallScale; wx < x + w - postW; wx += wallHSprite[0].length * wallScale) {
-    drawSprite(ctx, wallHSprite, wx, y, wallScale);
+  if (!hasGate) {
+    for (let wx = x + postW; wx < x + w - postW; wx += wallHSprite[0].length * wallScale) {
+      drawSprite(ctx, wallHSprite, wx, y, wallScale);
+    }
+  } else {
+    for (let wx = x + postW; wx < gateX - wallScale; wx += wallHSprite[0].length * wallScale) {
+      drawSprite(ctx, wallHSprite, wx, y, wallScale);
+    }
+    for (let wx = gateX + gateW + wallScale; wx < x + w - postW; wx += wallHSprite[0].length * wallScale) {
+      drawSprite(ctx, wallHSprite, wx, y, wallScale);
+    }
   }
   for (let wx = x + postW; wx < x + w - postW; wx += wallHSprite[0].length * wallScale) {
     drawSprite(ctx, wallHSprite, wx, y + h - wallHSprite.length * wallScale, wallScale);
@@ -405,9 +566,9 @@ function drawSettlement(ctx, settlement) {
   ctx.fillStyle = shade;
   ctx.fillRect(x + 18, y + 18, w - 36, 22);
 
-  drawSprite(ctx, gateSprite, gateX, y, wallScale);
+  if (hasGate) drawSprite(ctx, gateSprite, gateX, y, wallScale);
   // Torches either side of the gate.
-  for (const tx of [gateX - 6, gateX + gateW + 2]) {
+  for (const tx of hasGate ? [gateX - 6, gateX + gateW + 2] : []) {
     glow(ctx, tx + 2, y + 4, 26, WORLD.flame, 0.35);
     ctx.fillStyle = WORLD.rustShade;
     ctx.fillRect(tx, y + 4, 4, 14);
@@ -636,7 +797,7 @@ function drawPlate(ctx, building, ui, width, height, placed) {
   const name = ui.selection?.name || "";
   const type = ui.selection?.type || building.type || "";
   const state = ui.selection?.state || building.state || "";
-  const camp = (placed.settlements || []).find(
+  const camp = [...(placed.settlements || []), ...(placed.camp ? [placed.camp] : [])].find(
     (s) => building.x >= s.x && building.x < s.x + s.w && building.y >= s.y && building.y < s.y + s.h,
   );
   const besideCamp = camp ? width - (camp.x + camp.w + 20) - 8 : 0;
@@ -652,10 +813,12 @@ function drawPlate(ctx, building, ui, width, height, placed) {
     time: entry.time ? clock(entry.time) : "",
     lines: wrapWords(entry.text || " ", fits(entry.time ? timeW : 0)),
   }));
-  const note = ui.logNote ? wrapWords(ui.logNote, fits(0)) : [];
+  const note = ui.logNote ? String(ui.logNote).split("\n").flatMap((part) => wrapWords(part, fits(0))) : [];
 
   const headH = 4 + BAR_H + 6 + (name ? 22 : 0) + 20 + 12;
-  const logTitleH = rows.length || note.length ? 34 : 0;
+  // A fixture's note ("uses ...") stands alone; only real log lines get the LOGS header.
+  const logTitleH = rows.length ? 34 : 0;
+  const noteGap = note.length && !rows.length ? 8 : 0;
   const maxH = Math.max(160, height - 16);
   let shown = rows;
   let hidden = 0;
@@ -664,11 +827,11 @@ function drawPlate(ctx, building, ui, width, height, placed) {
     shown = shown.slice(1);
     hidden += 1;
   }
-  const plateH = headH + logTitleH + heightOf(shown) + note.length * ROW + (hidden ? ROW : 0) + PAD;
+  const plateH = headH + logTitleH + noteGap + heightOf(shown) + note.length * ROW + (hidden ? ROW : 0) + PAD;
 
   const { x, y } = platePosition({ building, camp, plateW, plateH, width, height });
 
-  let textY = pipPanel(ctx, x, y, plateW, plateH, { title: clipTo(ctx, name || building.id, plateW - 140), icon: icon("ec2") });
+  let textY = pipPanel(ctx, x, y, plateW, plateH, { title: clipTo(ctx, name || building.id, plateW - 140), icon: icon(building.kind || "ec2") });
   // Status pill on the header bar.
   ctx.font = SMALL;
   const pill = String(state).toUpperCase();
@@ -695,7 +858,13 @@ function drawPlate(ctx, building, ui, width, height, placed) {
   }
   textY += 12;
 
-  if (!logTitleH) return;
+  if (!logTitleH) {
+    if (note.length) {
+      ctx.fillStyle = WORLD.amber;
+      note.forEach((line, index) => ctx.fillText(line, x + PAD, textY + noteGap + 6 + index * ROW));
+    }
+    return;
+  }
   ctx.fillStyle = PIP.dim;
   for (let dx = 0; dx < inner; dx += 6) ctx.fillRect(x + PAD + dx, textY, 3, 2);
   textY += 22;
@@ -737,8 +906,8 @@ function drawPlate(ctx, building, ui, width, height, placed) {
   }
 }
 
-function clipTo(ctx, text, maxW) {
-  ctx.font = font(14);
+function clipTo(ctx, text, maxW, face = font(14)) {
+  ctx.font = face;
   if (ctx.measureText(text).width <= maxW) return text;
   let cut = text.length;
   while (cut > 1 && ctx.measureText(`${text.slice(0, cut)}…`).width > maxW) cut -= 1;

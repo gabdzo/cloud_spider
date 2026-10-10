@@ -1,4 +1,5 @@
 import { FONT_PX } from "./layout.js";
+import { campfireFrame } from "./pixel-art.js";
 import { icon } from "./sprites/icons.js";
 import { PIP, STATUS, font, rgba } from "./theme.js";
 import { brackets, canMakeLayer, clip, crtBackdrop, dprOf, drawSprite, newLayer, pipPanel } from "./draw-kit.js";
@@ -26,7 +27,13 @@ function backdropLayer(ctx, width, height) {
   return canvas;
 }
 
-export function paintPath(ctx, { placed, selectedId, animTime, width, height, empty, reducedMotion }) {
+export function paintPath(ctx, scene) {
+  paintDiagram(ctx, scene);
+}
+
+// Path and Cluster share one picture: nodes, edges and a kind icon. `icon`
+// maps a node to its sprite; by default the Pip-Boy icon for its kind.
+export function paintDiagram(ctx, { placed, selectedId, animTime, width, height, empty, reducedMotion, icon: iconOf }) {
   ctx.imageSmoothingEnabled = false;
   ctx.textBaseline = "alphabetic";
   ctx.clearRect(0, 0, width, height);
@@ -38,9 +45,10 @@ export function paintPath(ctx, { placed, selectedId, animTime, width, height, em
     ctx.fillText(`> ${empty || ""}`, 24, 40);
     return;
   }
-  for (const edge of placed.edges) drawEdge(ctx, edge, animTime, reducedMotion);
+  const phase = reducedMotion ? 0 : Math.floor((animTime || 0) / 180) % 4;
+  for (const edge of placed.edges) drawEdge(ctx, edge, animTime, reducedMotion, phase);
   ctx.setLineDash([]);
-  for (const node of placed.nodes) drawNode(ctx, node, node.id === selectedId);
+  for (const node of placed.nodes) drawNode(ctx, node, node.id === selectedId, iconOf ? iconOf(node) : icon(node.kind), phase);
   const selected = placed.nodes.find((node) => node.id === selectedId);
   if (selected?.sentence) drawSentence(ctx, selected, width, height);
 }
@@ -54,7 +62,7 @@ function curve(ctx, edge) {
 
 // Traces: a wide dim road bed, then the live line on top. Hanging links
 // march (amber dashes), broken links are red and cut, unknown are dim.
-function drawEdge(ctx, edge, animTime, reducedMotion) {
+function drawEdge(ctx, edge, animTime, reducedMotion, phase) {
   const color = STATUS[edge.status] || MUTED;
   ctx.setLineDash([]);
   ctx.lineCap = "butt";
@@ -91,6 +99,8 @@ function drawEdge(ctx, edge, animTime, reducedMotion) {
       ctx.fillRect(mx + i - 1, my + i - 1, 2, 2);
       ctx.fillRect(mx + i - 1, my - i - 1, 2, 2);
     }
+    // ...and a small fire burning on the break.
+    drawSprite(ctx, campfireFrame(phase), mx - 9, my - 26, 1);
   }
   // Studs where the trace meets a panel.
   ctx.fillStyle = color;
@@ -98,7 +108,7 @@ function drawEdge(ctx, edge, animTime, reducedMotion) {
   ctx.fillRect(edge.x2 - 2, edge.y2 - 3, 4, 6);
 }
 
-function drawNode(ctx, node, selected) {
+function drawNode(ctx, node, selected, glyph, phase) {
   const color = STATUS[node.status] || MUTED;
   pipPanel(ctx, node.x, node.y, node.w, node.h, { accent: selected ? PIP.hot : color, alpha: 0.94 });
   // Status rail down the left edge.
@@ -111,7 +121,6 @@ function drawNode(ctx, node, selected) {
   }
 
   // Big icon on roomy panels, small one when the window squeezes the columns.
-  const glyph = icon(node.kind);
   const big = node.w >= 190;
   const box = big ? 36 : 20;
   ctx.fillStyle = rgba(PIP.bright, 0.08);
@@ -119,14 +128,16 @@ function drawNode(ctx, node, selected) {
   drawSprite(ctx, glyph, node.x + 14, node.y + 12, big ? 2 : 1);
 
   const left = node.x + (big ? 56 : 38);
-  const room = node.w - (big ? 64 : 46);
+  const room = node.w - (big ? 64 : 46) - (node.status === "broken" ? 22 : 0);
   ctx.font = FONT;
   ctx.fillStyle = TEXT;
   ctx.fillText(clip(node.label, Math.max(6, Math.floor(room / 8.5))), left, node.y + 26);
   ctx.font = SMALL;
   ctx.fillStyle = MUTED;
   ctx.fillText(clip(`${node.kind.toUpperCase()}  ${node.caption || ""}`, Math.max(6, Math.floor(room / 7.5))), left, node.y + 46);
-  if (node.status && node.status !== "ok") {
+  if (node.status === "broken") {
+    drawSprite(ctx, campfireFrame(phase), node.x + node.w - 26, node.y + 6, 1);
+  } else if (node.status && node.status !== "ok") {
     ctx.fillStyle = color;
     ctx.fillRect(node.x + node.w - 14, node.y + 8, 6, 6);
   }

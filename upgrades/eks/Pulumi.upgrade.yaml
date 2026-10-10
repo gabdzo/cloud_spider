@@ -1,0 +1,9 @@
+encryptionsalt: v1:mWUJwPa7PYo=:v1:0SOLaR9P+td4qmbz:vwzdAg+HRBmI4sosLzit+kCiciAveA==
+config:
+  aws:region: eu-north-1
+  aws:profile: default
+  aws:allowedAccountIds:
+    - 550536272523
+  cloudspider-upgrade:clusterName: cloudspider-up
+  cloudspider-upgrade:instanceType: t4g.small
+  cloudspider-upgrade:nodeCount: "1"

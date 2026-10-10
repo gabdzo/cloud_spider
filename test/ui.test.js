@@ -4,6 +4,7 @@ import { isInstanceId } from "../src/ids.js";
 import { samplePlace } from "../src/sample.js";
 import {
   clickBuilding,
+  clickFixture,
   clickGround,
   createUi,
   pressN,
@@ -111,6 +112,17 @@ test("sample Y changes the picture locally and does not name a dry run", () => {
   assert.match(ui.confirmation.line, /is not tagged cloudspider=expendable/);
   assert.equal(ui.confirmation.allowsY, false);
   assert.equal(pressY(ui), null);
+});
+
+test("a fixture plate does not open a stop confirmation", () => {
+  const ui = createUi();
+  clickBuilding(ui, building("running"), region);
+  clickFixture(ui, { id: "fn", name: "cloudspider-camp-page", kind: "function", status: "ok" }, "uses cloudspider-camp-secret");
+  assert.equal(ui.confirmation, null);
+  assert.equal(ui.selection.name, "cloudspider-camp-page");
+  assert.equal(ui.selection.type, "function");
+  assert.equal(ui.logNote, "uses cloudspider-camp-secret");
+  assert.equal(ui.logs.length, 0);
 });
 
 test("a region switch closes the confirmation and clears the radio", () => {

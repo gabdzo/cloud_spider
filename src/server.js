@@ -2,10 +2,12 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { samplePlace, sampleRadio } from "./sample.js";
+import { samplePlace, sampleTrail } from "./sample.js";
 import { samplePathGraph } from "./path-sample.js";
 import { pathResult } from "./path-view.js";
 import { cssVars } from "./theme.js";
+import { sampleCost } from "./cost.js";
+import { sampleCluster } from "./cluster.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const FILES = new Set([
@@ -21,6 +23,9 @@ const FILES = new Set([
   "report.js",
   "path-layout.js",
   "path-draw.js",
+  "scene.js",
+  "cluster.js",
+  "upgrade-rules.js",
   "theme.js",
   "draw-kit.js",
   "chrome.js",
@@ -115,12 +120,16 @@ const page = `<!doctype html>
   .porthole {
     width: 54px;
     height: 54px;
+    padding: 0;
+    border: 0;
+    cursor: pointer;
     border-radius: 50%;
     display: grid;
     place-items: center;
     background: radial-gradient(circle at 40% 35%, var(--pip-glass), var(--pip-ink) 75%);
     box-shadow: 0 0 0 3px var(--case-brass-lo), 0 0 0 5px #2b2210, inset 0 0 10px rgba(0, 0, 0, 0.9), 0 0 14px var(--glow-soft);
   }
+  .porthole:hover { box-shadow: 0 0 0 3px var(--case-brass-lo), 0 0 0 5px #2b2210, inset 0 0 10px rgba(0, 0, 0, 0.9), 0 0 20px var(--pip-mid); }
   #mascot { width: 52px; height: 48px; filter: drop-shadow(0 0 4px var(--glow-bright)); }
   h1 {
     margin: 0;
@@ -164,6 +173,7 @@ const page = `<!doctype html>
     font: inherit;
     font-size: 16px;
     letter-spacing: 0.14em;
+    text-transform: uppercase;
     cursor: pointer;
   }
   .tab img { opacity: 0.6; }
@@ -365,7 +375,66 @@ const page = `<!doctype html>
   #error::before { content: "!"; position: absolute; left: 18px; top: 6px; color: var(--pip-ink); background: var(--status-broken); padding: 0 5px; font-size: 11px; }
 
   .body { flex: 1; min-height: 0; display: flex; }
-  #map { flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--pip-screen); }
+  .mapwrap { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
+  #map { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--pip-screen); }
+
+  /* ---- overlays on the map: tally (top left), caps (top right), stacks ---- */
+  #tally {
+    position: absolute; top: 10px; left: 12px; z-index: 3; margin: 0;
+    max-width: min(560px, calc(100% - 330px)); min-width: 0;
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 6px 10px 6px 8px; pointer-events: none;
+    white-space: pre-line; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5;
+    color: var(--pip-bright); background: rgba(2, 10, 5, 0.86);
+    border: 1px solid var(--pip-dark); border-left: 3px solid var(--pip-mid);
+    text-shadow: 0 0 5px var(--glow-bright);
+  }
+  #tally img { margin-top: 2px; }
+  #tally.issue { border-left-color: var(--status-broken); }
+  #corner { position: absolute; top: 10px; right: 14px; z-index: 3; width: min(300px, calc(100% - 28px)); display: flex; flex-direction: column; gap: 8px; }
+  #spend {
+    display: block; width: 100%; padding: 0; text-align: left; font: inherit; font-size: 12px; cursor: pointer;
+    color: var(--pip-bright); background: rgba(2, 10, 5, 0.9);
+    border: 1px solid var(--pip-mid); box-shadow: 0 0 10px rgba(20, 255, 106, 0.15);
+  }
+  #spend:hover { border-color: var(--pip-bright); }
+  .spend-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; min-width: 0; }
+  .spend-head b { color: var(--pip-ink); background: var(--pip-bright); padding: 0 5px; letter-spacing: 0.12em; font-size: 11px; }
+  #spend-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #spend[aria-expanded="true"] #spend-label { white-space: normal; overflow-wrap: anywhere; }
+  #spend-lines { margin: 0; padding: 6px 10px 8px; border-top: 1px dashed var(--pip-dark); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pip-mid); font: inherit; max-height: 50vh; overflow: auto; }
+  #spend.issue { border-color: var(--status-broken); }
+  #spend.issue .spend-head b { background: var(--status-broken); }
+  #wall-grain { position: absolute; z-index: 2; min-height: 26px; padding: 0 6px; font-size: 11px; }
+  #pip {
+    position: absolute; top: 10px; left: 12px; z-index: 4; margin: 0;
+    width: min(380px, calc(100% - 24px)); max-height: calc(100% - 20px); overflow: auto;
+    padding: 0 0 8px; font-size: 13px; color: var(--pip-bright);
+    background: rgba(2, 10, 5, 0.96); border: 2px solid var(--pip-mid);
+    box-shadow: 0 0 18px rgba(20, 255, 106, 0.22); scrollbar-width: thin; scrollbar-color: var(--pip-dim) var(--pip-ink);
+  }
+  #pip .ptitle { margin-bottom: 8px; }
+  #pip > .quiet { padding: 6px 10px; }
+  #pip .card { margin: 0 8px 6px; border: 1px solid var(--pip-dark); }
+  #pip .card.open { border-color: var(--pip-mid); }
+  #pip .card-head {
+    display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 4px 8px;
+    color: var(--pip-mid); background: transparent; border: 0; font: inherit; letter-spacing: 0.06em; text-align: left; text-transform: uppercase;
+  }
+  #pip .card-head:hover, #pip .card.open .card-head { color: var(--pip-ink); background: var(--pip-bright); }
+  #pip .card-head:hover img, #pip .card.open .card-head img { filter: brightness(0); }
+  #pip .card-body { padding: 6px 10px 10px; display: flex; flex-direction: column; gap: 6px; color: var(--pip-mid); }
+  #pip label { display: flex; gap: 8px; align-items: center; justify-content: space-between; color: var(--pip-dim); letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; }
+  #pip label select, #pip label input { flex: 0 1 200px; }
+  #pip .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  #pip .actions input { flex: 1 1 140px; }
+  #pip .danger { border-color: var(--status-broken); color: var(--status-broken); }
+  #pip .danger:hover { background: var(--status-broken); color: var(--pip-ink); }
+  #pip-watch { margin: 0; color: var(--pip-bright); }
+  #pip-watch.fail { color: var(--status-broken); }
+  #pip pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pip-mid); font: inherit; font-size: 12px; }
+  #pip pre:empty { display: none; }
+  #status.issue { color: var(--status-broken); text-shadow: 0 0 6px rgba(255, 90, 54, 0.4); }
   /* Phosphor scrollbars: the path is wider than a narrow window, so the bar must read as part of the screen. */
   #map, #radio { scrollbar-width: thin; scrollbar-color: var(--pip-dim) var(--pip-ink); }
 
@@ -435,6 +504,11 @@ const page = `<!doctype html>
     overflow-wrap: anywhere;
   }
   #radio li:hover { color: var(--pip-bright); }
+  #radio li time { flex: 0 0 auto; color: var(--pip-dim); font-size: 11px; }
+  #radio li.fail { color: var(--status-broken); }
+  #radio li.fail time { color: var(--status-broken); opacity: 0.75; }
+  #radio-panel.issue .ptitle { background: var(--status-broken); }
+  .tab.toggle.issue::after { background: var(--status-broken) !important; box-shadow: 0 0 6px var(--status-broken) !important; }
   #radio li[aria-current="true"] { background: var(--pip-bright); color: var(--pip-ink); }
   #radio li[aria-current="true"] img { filter: brightness(0); }
   .quiet { color: var(--pip-dim); font-size: 12px; }
@@ -482,13 +556,15 @@ const page = `<!doctype html>
 <div class="device">
 <header>
   <div class="plate">
-    <div class="porthole"><canvas id="mascot" width="26" height="24" aria-hidden="true"></canvas></div>
+    <button id="home" class="porthole" type="button" aria-label="overview" title="overview"><canvas id="mascot" width="26" height="24" aria-hidden="true"></canvas></button>
     <div><h1>CLOUD SPIDER</h1><small>SPIDER-TEC SURVEY UNIT 3000</small></div>
   </div>
   <nav class="tabs" aria-label="views">
-    <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true">MAP</button>
-    <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false">PATH</button>
-    <button id="tab-radio" class="tab toggle" type="button" data-icon="radio" aria-pressed="true">RADIO</button>
+    <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true">Map</button>
+    <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false">Path</button>
+    <button id="cluster" class="tab" type="button" data-icon="cluster" aria-pressed="false">Cluster</button>
+    <button id="tab-radio" class="tab toggle" type="button" data-icon="radio" aria-pressed="true">Radio</button>
+    <button id="upgrade" class="tab toggle" type="button" data-icon="stack" aria-pressed="false">Stacks</button>
   </nav>
   <button id="sample" class="switch" type="button" aria-pressed="false"><span class="lever"></span>SAMPLE<span class="led"></span></button>
   <div class="readout">
@@ -511,7 +587,20 @@ const page = `<!doctype html>
   </div>
   <p id="error" hidden></p>
   <div class="body">
-    <div id="map"><canvas id="place"></canvas></div>
+    <div class="mapwrap">
+      <div id="map">
+        <canvas id="place"></canvas>
+        <select id="wall-grain" aria-label="camp grain" hidden>
+          <option value="coarse">coarse</option>
+          <option value="fine">fine</option>
+        </select>
+      </div>
+      <p id="tally" hidden><img class="px" data-icon="map" alt=""><span id="tally-text"></span></p>
+      <div id="corner">
+        <button id="spend" type="button" aria-expanded="false" hidden><span class="spend-head"><img class="px" data-icon="caps" alt=""><b>CAPS</b><span id="spend-label"></span></span><pre id="spend-lines" hidden></pre></button>
+      </div>
+      <form id="pip" hidden></form>
+    </div>
     <aside id="radio-panel" aria-label="radio">
       <div class="ptitle"><img class="px" data-icon="radio" alt="">RADIO<span id="station-count"></span></div>
       <div class="scope"><canvas id="scope"></canvas></div>
@@ -585,7 +674,7 @@ async function route(app, req, res) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/sample") {
-    send(res, 200, { place: samplePlace(), radio: sampleRadio() });
+    send(res, 200, { place: samplePlace(), trail: sampleTrail() });
     return;
   }
 
@@ -615,8 +704,49 @@ async function route(app, req, res) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/cost-sample") {
+    send(res, 200, sampleCost());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cost") {
+    send(res, 200, await app.costView());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/upgrades") {
+    send(res, 200, { modules: app.upgrades() });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/upgrade") {
+    send(res, 200, await app.upgradeStatus(url.searchParams.get("module") || "", url.searchParams.get("fresh") === "1"));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/upgrade") {
+    const body = await readJson(req);
+    send(res, 200, await app.upgradeRun(req.headers.origin, body));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cluster-sample") {
+    send(res, 200, sampleCluster());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cluster") {
+    await app.boot();
+    send(res, 200, await app.clusterView());
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/view") {
     await app.boot();
+    if (url.searchParams.get("sample") !== "1") {
+      await app.mergeCamp(url.searchParams.get("grain") || "coarse");
+      app.kickLinks();
+    }
     send(res, 200, app.view());
     return;
   }

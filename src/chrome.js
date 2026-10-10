@@ -82,28 +82,71 @@ export function needleAt(index, count) {
   return 8 + (84 * (index + 0.5)) / count;
 }
 
-export function renderRadio(list, text, current = 0) {
-  const { stations, note } = stationsFrom(text);
-  const shownKey = `${text}|${current}`;
-  if (list.dataset.shown === shownKey) return stations;
+// The radio panel shows log rows: { time, status: "ok" | "fail", text,
+// count, issue }. They come from CloudTrail (the trail), from the spider's
+// own reads (the bill, a region) and from a page failure, newest first.
+export function rowKind(row) {
+  if (row?.status === "fail") return "warn";
+  const text = String(row?.text || "");
+  if (/^[A-Z][a-z]+[A-Z]/.test(text)) return stationKind(text);
+  if (/^(tore|took|closed|cleared)\b/.test(text)) return "warn";
+  if (/^put\b/.test(text)) return "stop";
+  if (/^(brought|raised|drew)\b/.test(text)) return "start";
+  if (/^(opened|tagged|changed)\b/.test(text)) return "refresh";
+  if (/\bbill\b/.test(text)) return "caps";
+  if (/^read\b/.test(text)) return "map";
+  return "radio";
+}
+
+// "14:05" today, "yday 14:05" yesterday, "8 Oct 14:05" before that, "--:--"
+// for a row with no time (a page failure).
+export function timeNote(time, now = new Date()) {
+  if (!time) return "--:--";
+  const date = new Date(time);
+  const clock = clockText(date);
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  if (date >= start) return clock;
+  const yesterday = new Date(start);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date >= yesterday) return `yday ${clock}`;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${date.getDate()} ${months[date.getMonth()]} ${clock}`;
+}
+
+export function rowText(row) {
+  const count = row.count > 1 ? ` \u00d7${row.count}` : "";
+  const issue = row.issue ? `  ${row.issue}` : "";
+  return `${row.text}${count}${issue}`;
+}
+
+export function renderRadio(list, rows, current = 0, note = "") {
+  const shown = (rows || []).filter((row) => row?.text);
+  const shownKey = `${JSON.stringify(shown)}|${current}|${note}`;
+  if (list.dataset.shown === shownKey) return shown;
   list.dataset.shown = shownKey;
-  if (!stations.length) {
+  if (!shown.length) {
     const li = document.createElement("li");
     li.className = "quiet";
     li.textContent = note ? `${note}. only static on the band.` : "no signal. only static on the band.";
     list.replaceChildren(li);
-    return stations;
+    return shown;
   }
   list.replaceChildren(
-    ...stations.map((station, index) => {
+    ...shown.map((row, index) => {
       const li = document.createElement("li");
       li.dataset.index = String(index);
+      if (row.status === "fail") li.className = "fail";
       if (index === current) li.setAttribute("aria-current", "true");
-      li.append(img(station.kind), document.createTextNode(station.line));
+      const when = document.createElement("time");
+      when.textContent = timeNote(row.time);
+      const what = document.createElement("span");
+      what.textContent = rowText(row);
+      li.append(img(rowKind(row)), when, what);
       return li;
     }),
   );
-  return stations;
+  return shown;
 }
 
 // Oscilloscope: a phosphor trace whose amplitude follows radio activity. A
@@ -164,6 +207,7 @@ export function mapStats(place) {
   };
 }
 
+// Path and Cluster share one picture, and one status bar.
 export function pathStats(diagram) {
   if (!diagram?.nodes?.length) return null;
   const nodes = diagram.nodes;

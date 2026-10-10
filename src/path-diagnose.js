@@ -1,4 +1,5 @@
 import { cidrContains } from "./cidr.js";
+import { isInstanceId } from "./ids.js";
 
 const DEPTH = { lb: 0, listener: 1, rule: 2, tg: 3, target: 4, node: 5, cluster: 6 };
 const CONTROLLER_STACK = ["service.k8s.aws/stack", "ingress.k8s.aws/resource", "ingress.k8s.aws/stack"];
@@ -170,6 +171,27 @@ export function interfaceFor(interfaces, ip) {
     interfaces.find((entry) => entry.prefix && cidrContains(entry.prefix, ip)) ||
     null
   );
+}
+
+export function linesFromTargets(balancers, groups, health, interfaces) {
+  const edges = [];
+  const seen = new Set();
+  for (const lb of balancers || []) {
+    const mine = (groups || []).filter(
+      (group) => (group.lbArns || []).includes(lb.id) || (group.lbArns || []).includes(lb.arn),
+    );
+    for (const group of mine) {
+      for (const item of health?.[group.arn] || []) {
+        const instanceId = isInstanceId(item.id) ? item.id : interfaceFor(interfaces, item.id)?.instanceId || "";
+        if (!instanceId) continue;
+        const key = `${lb.id}|${instanceId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edges.push({ from: lb.id, to: instanceId });
+      }
+    }
+  }
+  return edges;
 }
 
 export function healthVerdict(health, tg) {

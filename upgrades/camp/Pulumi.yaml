@@ -1,0 +1,5 @@
+name: cloudspider-camp
+runtime: nodejs
+description: A private page, a function URL, a table, and one secret. Its own stack.
+backend:
+  url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"
