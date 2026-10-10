@@ -257,7 +257,8 @@ export function layout(place, { rowLimit = ROW_LIMIT } = {}) {
   const instances = [...place.instances].sort(byId);
   const settlements = [];
   const columns = columnsFor(rowLimit);
-  let cursorY = 80;
+  // The tally and the bill live in the header now; the map starts at the top.
+  let cursorY = PAD;
 
   for (const vpc of vpcs) {
     const label = vpc.name ? joinLabel(vpc.name, vpc.cidr) : joinLabel(vpc.id, vpc.cidr);

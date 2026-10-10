@@ -279,6 +279,13 @@ test("the overview has a home control and a spend box, and the map poll does not
     assert.match(html, />Cluster</);
     assert.doesNotMatch(html, /id="cost"/);
     assert.doesNotMatch(html, /id="bill"/);
+    // The tally and the bill are header gauges, not overlays on the map.
+    const header = html.slice(html.indexOf("<header>"), html.indexOf("</header>"));
+    assert.match(header, /id="tally"/);
+    assert.match(header, /id="spend"/);
+    assert.match(header, /id="spend-lines"/);
+    const mapwrap = html.slice(html.indexOf('class="mapwrap"'), html.indexOf('id="radio-panel"'));
+    assert.doesNotMatch(mapwrap, /id="tally"|id="spend"/);
     const source = await fetch(`${base}/browser.js`).then((response) => response.text());
     const pullStart = source.indexOf("async function pull(");
     const pullEnd = source.indexOf("\nfunction showSample");

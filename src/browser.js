@@ -56,6 +56,7 @@ const spendLabel = document.querySelector("#spend-label");
 const spendLines = document.querySelector("#spend-lines");
 const tallyEl = document.querySelector("#tally");
 const tallyText = document.querySelector("#tally-text");
+const tallyIssue = document.querySelector("#tally-issue");
 const wallGrain = document.querySelector("#wall-grain");
 const upgradeButton = document.querySelector("#upgrade");
 const pipEl = document.querySelector("#pip");
@@ -165,9 +166,11 @@ function renderTally() {
   // The page's own failure already has the red line under the status bar;
   // the tally only carries what is wrong on the map itself.
   const current = place.linkNote || place.shelfNote || newestFail((ui.trail || []).concat(spider));
-  tallyText.textContent = [line, current].filter(Boolean).join("\n");
+  tallyText.textContent = line;
+  tallyIssue.textContent = current || "";
+  tallyEl.title = [line, current].filter(Boolean).join("\n");
   tallyEl.classList.toggle("issue", Boolean(current));
-  tallyEl.hidden = !tallyText.textContent;
+  tallyEl.hidden = !line && !current;
 }
 
 function hasTrouble() {
@@ -196,7 +199,10 @@ function showSpend() {
   const onMap = mode === "map";
   spendEl.hidden = !onMap || !spend;
   pipEl.hidden = !pipOpen;
-  if (spendEl.hidden) return;
+  if (spendEl.hidden) {
+    spendLines.hidden = true;
+    return;
+  }
   const label = spend?.label || "the bill";
   spendLabel.textContent = label;
   const lines = (spend?.lines || []).filter((line) => line !== label);
@@ -970,6 +976,20 @@ home.addEventListener("click", goOverview);
 spendEl.addEventListener("click", () => {
   spendOpen = !spendOpen;
   showSpend();
+});
+
+// The bill's details drop down from the header; a click elsewhere or Escape
+// folds them back.
+document.addEventListener("click", (event) => {
+  if (!spendOpen || event.target.closest?.("#corner")) return;
+  spendOpen = false;
+  showSpend();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !spendOpen) return;
+  spendOpen = false;
+  showSpend();
+  spendEl.focus();
 });
 
 upgradeButton.addEventListener("click", () => {
