@@ -378,33 +378,41 @@ const page = `<!doctype html>
   .mapwrap { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
   #map { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--pip-screen); }
 
-  /* ---- overlays on the map: tally (top left), caps (top right), stacks ---- */
-  #tally {
-    position: absolute; top: 10px; left: 12px; z-index: 3; margin: 0;
-    max-width: min(560px, calc(100% - 330px)); min-width: 0;
-    display: flex; gap: 8px; align-items: flex-start;
-    padding: 6px 10px 6px 8px; pointer-events: none;
-    white-space: pre-line; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5;
-    color: var(--pip-bright); background: rgba(2, 10, 5, 0.86);
-    border: 1px solid var(--pip-dark); border-left: 3px solid var(--pip-mid);
-    text-shadow: 0 0 5px var(--glow-bright);
+  /* ---- header gauges: the tally and the bill as recessed LCD strips ---- */
+  .gauges { flex: 1 1 360px; min-width: 0; display: flex; align-items: center; gap: 10px; }
+  .lcd {
+    display: flex; align-items: center; gap: 8px; min-width: 0; height: 44px; margin: 0;
+    padding: 0 12px 0 9px; border: 0; border-radius: 6px;
+    font: inherit; font-size: 13px; letter-spacing: 0.04em; white-space: nowrap;
+    color: var(--pip-bright); text-shadow: 0 0 6px var(--glow-bright);
+    background: radial-gradient(ellipse at 50% 0%, var(--pip-glass), var(--pip-ink));
+    box-shadow: inset 0 0 0 2px #000, inset 0 0 10px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.12);
   }
-  #tally img { margin-top: 2px; }
-  #tally.issue { border-left-color: var(--status-broken); }
-  #corner { position: absolute; top: 10px; right: 14px; z-index: 3; width: min(300px, calc(100% - 28px)); display: flex; flex-direction: column; gap: 8px; }
-  #spend {
-    display: block; width: 100%; padding: 0; text-align: left; font: inherit; font-size: 12px; cursor: pointer;
-    color: var(--pip-bright); background: rgba(2, 10, 5, 0.9);
-    border: 1px solid var(--pip-mid); box-shadow: 0 0 10px rgba(20, 255, 106, 0.15);
+  .lcd img { flex: none; filter: drop-shadow(0 0 3px var(--glow-bright)); }
+  #tally { flex: 1 1 auto; pointer-events: none; }
+  #tally-text, #tally-issue { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #tally-text { flex: 0 1 auto; }
+  #tally-issue { flex: 1 1 0; color: var(--status-broken); text-shadow: 0 0 6px rgba(255, 90, 60, 0.45); }
+  #tally-issue:empty { display: none; }
+  #tally-issue::before { content: "! "; }
+  #tally.issue { box-shadow: inset 0 0 0 2px #000, inset 3px 0 0 var(--status-broken), inset 0 0 10px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.12); }
+  #corner { position: relative; flex: 0 1 260px; min-width: 150px; }
+  #spend { width: 100%; cursor: pointer; text-align: left; }
+  #spend b { flex: none; color: var(--pip-ink); background: var(--pip-bright); padding: 0 5px; letter-spacing: 0.12em; font-size: 11px; text-shadow: none; }
+  #spend-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #spend .caret { flex: none; width: 0; height: 0; border: 4px solid transparent; border-top-color: var(--pip-mid); margin-top: 4px; transition: transform 0.15s; }
+  #spend[aria-expanded="true"] .caret { transform: rotate(180deg); margin-top: -4px; }
+  #spend:hover, #spend:focus-visible { outline: none; box-shadow: inset 0 0 0 2px #000, inset 0 0 0 3px var(--pip-dim), inset 0 0 10px rgba(0, 0, 0, 0.9), 0 0 10px var(--glow-soft); }
+  #spend.issue b { background: var(--status-broken); }
+  #spend.issue #spend-label { color: var(--status-broken); }
+  #spend-lines {
+    position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: max(100%, 320px); max-width: calc(100vw - 24px);
+    margin: 0; padding: 8px 12px 10px; font: inherit; font-size: 12px; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow: auto;
+    color: var(--pip-mid); background: rgba(2, 10, 5, 0.96);
+    border: 1px solid var(--pip-mid); border-top: 3px solid var(--pip-bright);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7), 0 0 12px rgba(20, 255, 106, 0.15);
   }
-  #spend:hover { border-color: var(--pip-bright); }
-  .spend-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; min-width: 0; }
-  .spend-head b { color: var(--pip-ink); background: var(--pip-bright); padding: 0 5px; letter-spacing: 0.12em; font-size: 11px; }
-  #spend-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #spend[aria-expanded="true"] #spend-label { white-space: normal; overflow-wrap: anywhere; }
-  #spend-lines { margin: 0; padding: 6px 10px 8px; border-top: 1px dashed var(--pip-dark); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pip-mid); font: inherit; max-height: 50vh; overflow: auto; }
-  #spend.issue { border-color: var(--status-broken); }
-  #spend.issue .spend-head b { background: var(--status-broken); }
   #wall-grain { position: absolute; z-index: 2; min-height: 26px; padding: 0 6px; font-size: 11px; }
   #pip {
     position: absolute; top: 10px; left: 12px; z-index: 4; margin: 0;
@@ -530,6 +538,10 @@ const page = `<!doctype html>
   @media (prefers-reduced-motion: reduce) {
     .glass, #status::after { animation: none; }
   }
+  /* Wide: the readout and knobs fit on the top row; the gauges get a row. */
+  @media (min-width: 1600px) {
+    .gauges { order: 10; flex-basis: 100%; }
+  }
   @media (max-width: 1100px) {
     #radio-panel { flex-basis: 250px; }
     .knobs { display: none; }
@@ -540,6 +552,12 @@ const page = `<!doctype html>
     header { gap: 6px 10px; padding: 6px 8px; }
     .plate small { display: none; }
     .readout { margin-left: 0; }
+    /* Narrow: the bill sits beside the readout, the tally takes its own row. */
+    .gauges { display: contents; }
+    .readout { order: 8; }
+    #corner { order: 9; }
+    #corner { flex: 1 1 180px; }
+    #tally { order: 10; flex: 1 1 100%; }
     .body { flex-direction: column; }
     #radio-panel { flex: 0 0 180px; border-left: 0; border-top: 2px solid var(--pip-dark); }
     .scope, .dial { display: none; }
@@ -567,6 +585,13 @@ const page = `<!doctype html>
     <button id="upgrade" class="tab toggle" type="button" data-icon="stack" aria-pressed="false">Stacks</button>
   </nav>
   <button id="sample" class="switch" type="button" aria-pressed="false"><span class="lever"></span>SAMPLE<span class="led"></span></button>
+  <div class="gauges" aria-label="map readouts">
+    <p id="tally" class="lcd" hidden><img class="px" data-icon="map" alt=""><span id="tally-text"></span><span id="tally-issue"></span></p>
+    <div id="corner">
+      <button id="spend" class="lcd" type="button" aria-expanded="false" aria-controls="spend-lines" hidden><img class="px" data-icon="caps" alt=""><b>CAPS</b><span id="spend-label"></span><i class="caret" aria-hidden="true"></i></button>
+      <pre id="spend-lines" hidden></pre>
+    </div>
+  </div>
   <div class="readout">
     <label>REGION <select id="region"></select></label>
     <span><b>MODE</b> <output id="acct">LIVE</output></span>
@@ -594,10 +619,6 @@ const page = `<!doctype html>
           <option value="coarse">coarse</option>
           <option value="fine">fine</option>
         </select>
-      </div>
-      <p id="tally" hidden><img class="px" data-icon="map" alt=""><span id="tally-text"></span></p>
-      <div id="corner">
-        <button id="spend" type="button" aria-expanded="false" hidden><span class="spend-head"><img class="px" data-icon="caps" alt=""><b>CAPS</b><span id="spend-label"></span></span><pre id="spend-lines" hidden></pre></button>
       </div>
       <form id="pip" hidden></form>
     </div>
