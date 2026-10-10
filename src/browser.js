@@ -1,4 +1,5 @@
 import { layout } from "./layout.js";
+import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, paint } from "./draw.js";
 import { isInstanceId } from "./ids.js";
 import {
@@ -45,7 +46,7 @@ let reducedMotion = !window.matchMedia("(prefers-reduced-motion: reduce)").match
 let tabVisible = !document.hidden;
 
 // Cache for layout to avoid recomputing every frame
-let layoutCache = { place: null, placed: null };
+const layoutCache = createLayoutCache(layout);
 
 function renderChrome() {
   statusEl.textContent = ui.status;
@@ -102,25 +103,16 @@ function draw() {
     return;
   }
   
-  // Use cached layout if place hasn't changed
-  let placed;
-  if (place) {
-    if (layoutCache.place === place) {
-      placed = layoutCache.placed;
-    } else {
-      placed = layout(place);
-      layoutCache.place = place;
-      layoutCache.placed = placed;
-    }
-  } else {
-    placed = {
-      settlements: [],
-      orphans: { items: [], label: "no VPC" },
-      contentWidth: 960,
-      contentHeight: 640,
-    };
-  }
-  
+  // Layout is cached per place; flipSampleState invalidates it on mutation.
+  const placed = place
+    ? layoutCache.get(place)
+    : {
+        settlements: [],
+        orphans: { items: [], label: "no VPC" },
+        contentWidth: 960,
+        contentHeight: 640,
+      };
+
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
   paint(ctx, { placed, ui, region, animTime, width, height, reducedMotion });
 }
@@ -385,12 +377,10 @@ window.addEventListener("keydown", (event) => {
 });
 
 function flipSample(action) {
-  const found = place?.instances?.find((item) => item.id === action.id);
-  if (!found) return;
-  found.state = action.verb === "stop" ? "stopped" : "running";
-  if (ui.selection?.id === found.id) ui.selection = { ...ui.selection, state: found.state };
+  const state = flipSampleState(place, action, layoutCache);
+  if (!state) return;
+  if (ui.selection?.id === action.id) ui.selection = { ...ui.selection, state };
   setStatus(ui, "sample, not the account");
-  layoutCache.place = null; // Invalidate cache since place was mutated
 }
 
 async function act(action) {
@@ -467,28 +457,16 @@ document.addEventListener("visibilitychange", () => {
   tabVisible = !document.hidden;
 });
 
-// Animation loop using requestAnimationFrame throttled to ~10fps
-let lastAnimFrame = 0;
-const targetFps = 10;
-const frameDuration = 1000 / targetFps;
+// Animation loop: a plain 10fps timer. requestAnimationFrame would wake the
+// page 60 times a second just to skip 5 of every 6 frames.
+const FRAME_MS = 100;
 
-function animate(timestamp) {
-  requestAnimationFrame(animate);
-  
-  if (!tabVisible || reducedMotion) {
-    // Still advance time in hidden tab or reduced motion, but don't draw
-    animTime += frameDuration;
-    return;
-  }
-  
-  if (timestamp - lastAnimFrame >= frameDuration) {
-    animTime = timestamp;
-    lastAnimFrame = timestamp;
-    if (canvas.width) draw();
-  }
+function animate() {
+  animTime += FRAME_MS;
+  if (tabVisible && !reducedMotion && canvas.width) draw();
 }
 
-requestAnimationFrame(animate);
+setInterval(animate, FRAME_MS);
 
 window.addEventListener("resize", () => draw());
 

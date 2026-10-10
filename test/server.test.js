@@ -138,3 +138,25 @@ test("path sample is local and names the first break", async () => {
     server.close();
   }
 });
+
+test("every module the page imports is served", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const box = app();
+  const server = await listen(box.app, 0);
+  try {
+    const { port } = server.address();
+    const seen = new Set();
+    const queue = ["browser.js"];
+    while (queue.length) {
+      const name = queue.pop();
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const response = await fetch(`http://127.0.0.1:${port}/${name}`);
+      assert.equal(response.status, 200, `${name} is not served`);
+      const source = await readFile(new URL(`../src/${name}`, import.meta.url), "utf8");
+      for (const match of source.matchAll(/from "\.\/([\w-]+\.js)"/g)) queue.push(match[1]);
+    }
+  } finally {
+    server.close();
+  }
+});
