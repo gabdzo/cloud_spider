@@ -33,7 +33,7 @@ const hostInput = document.querySelector("#host");
 
 let place = null;
 let region = "";
-let phase = 0;
+let animTime = 0;
 let pulling = false;
 let sample = false;
 let mode = "map";
@@ -41,6 +41,11 @@ let pathData = null;
 let pathSelected = null;
 let pathPulling = false;
 let pathAgain = false;
+let reducedMotion = !window.matchMedia("(prefers-reduced-motion: reduce)").matches ? false : true;
+let tabVisible = !document.hidden;
+
+// Cache for layout to avoid recomputing every frame
+let layoutCache = { place: null, placed: null };
 
 function renderChrome() {
   statusEl.textContent = ui.status;
@@ -83,10 +88,11 @@ function drawPath() {
   paintPath(ctx, {
     placed,
     selectedId: pathSelected,
-    phase,
+    animTime,
     width,
     height,
     empty: pathData?.headline || pathData?.error || "reading the path",
+    reducedMotion,
   });
 }
 
@@ -95,16 +101,28 @@ function draw() {
     drawPath();
     return;
   }
-  const placed = place
-    ? layout(place)
-    : {
-        settlements: [],
-        orphans: { items: [], label: "no VPC" },
-        contentWidth: 960,
-        contentHeight: 640,
-      };
+  
+  // Use cached layout if place hasn't changed
+  let placed;
+  if (place) {
+    if (layoutCache.place === place) {
+      placed = layoutCache.placed;
+    } else {
+      placed = layout(place);
+      layoutCache.place = place;
+      layoutCache.placed = placed;
+    }
+  } else {
+    placed = {
+      settlements: [],
+      orphans: { items: [], label: "no VPC" },
+      contentWidth: 960,
+      contentHeight: 640,
+    };
+  }
+  
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
-  paint(ctx, { placed, ui, region, phase, width, height });
+  paint(ctx, { placed, ui, region, animTime, width, height, reducedMotion });
 }
 
 function syncSelection() {
@@ -372,6 +390,7 @@ function flipSample(action) {
   found.state = action.verb === "stop" ? "stopped" : "running";
   if (ui.selection?.id === found.id) ui.selection = { ...ui.selection, state: found.state };
   setStatus(ui, "sample, not the account");
+  layoutCache.place = null; // Invalidate cache since place was mutated
 }
 
 async function act(action) {
@@ -440,10 +459,36 @@ setInterval(() => {
   if (mode === "path") pullPath();
 }, 15_000);
 
-setInterval(() => {
-  phase = (phase + 1) % 2;
-  if (canvas.width) draw();
-}, 420);
+window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", (e) => {
+  reducedMotion = e.matches;
+});
+
+document.addEventListener("visibilitychange", () => {
+  tabVisible = !document.hidden;
+});
+
+// Animation loop using requestAnimationFrame throttled to ~10fps
+let lastAnimFrame = 0;
+const targetFps = 10;
+const frameDuration = 1000 / targetFps;
+
+function animate(timestamp) {
+  requestAnimationFrame(animate);
+  
+  if (!tabVisible || reducedMotion) {
+    // Still advance time in hidden tab or reduced motion, but don't draw
+    animTime += frameDuration;
+    return;
+  }
+  
+  if (timestamp - lastAnimFrame >= frameDuration) {
+    animTime = timestamp;
+    lastAnimFrame = timestamp;
+    if (canvas.width) draw();
+  }
+}
+
+requestAnimationFrame(animate);
 
 window.addEventListener("resize", () => draw());
 

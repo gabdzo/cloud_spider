@@ -11,6 +11,7 @@ const FILES = new Set([
   "browser.js",
   "draw.js",
   "sprites.js",
+  "pixel-art.js",
   "ui.js",
   "layout.js",
   "verbs.js",
@@ -34,9 +35,9 @@ const page = `<!doctype html>
     margin: 0;
     display: flex;
     flex-direction: column;
-    background: #0d1117;
-    color: #5fcf95;
-    font: bold 14px/1.5 Menlo, Monaco, "Courier New", monospace;
+    background: #14110d;
+    color: #f2e3b8;
+    font: bold 15px/1.4 Menlo, Monaco, Consolas, monospace;
     text-rendering: optimizeSpeed;
     image-rendering: pixelated;
     position: relative;
@@ -65,13 +66,13 @@ const page = `<!doctype html>
   header {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 16px;
+    gap: 10px 24px;
     align-items: center;
-    padding: 12px 20px;
-    background: #1a1f2e;
-    border: 3px solid #00d9ff;
-    border-width: 0 0 3px 0;
-    box-shadow: inset 0 0 0 1px #0a0e1a, 0 3px 8px rgba(0, 0, 0, 0.6);
+    padding: 12px 24px;
+    background: #1f1a14;
+    border: 4px solid #4a3519;
+    border-width: 0 0 4px 0;
+    box-shadow: inset 0 0 0 1px #14110d, 0 3px 8px rgba(0, 0, 0, 0.6);
     position: relative;
   }
   header::before {
@@ -81,7 +82,7 @@ const page = `<!doctype html>
     left: 0;
     width: 6px;
     height: 6px;
-    background: #00d9ff;
+    background: #7a5f48;
   }
   header::after {
     content: "";
@@ -90,32 +91,31 @@ const page = `<!doctype html>
     right: 0;
     width: 6px;
     height: 6px;
-    background: #00d9ff;
+    background: #7a5f48;
   }
   h1 {
     margin: 0;
-    font-size: 16px;
-    letter-spacing: 0.2em;
-    color: #ff8500;
-    text-shadow: 0 0 8px rgba(255, 133, 0, 0.6), 2px 2px 0 #000;
+    font-size: 18px;
+    letter-spacing: 0.16em;
+    color: #ffcc33;
+    text-shadow: 0 0 8px rgba(255, 204, 51, 0.6), 2px 2px 0 #000;
     font-weight: bold;
   }
   label {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
-    color: #6dff6d;
-    font-size: 13px;
+    color: #c2a978;
+    font-size: 14px;
   }
   select, button, input {
     min-height: 44px;
-    background: #0a0e1a;
-    color: #5fcf95;
-    border: 2px solid #4db8ff;
+    background: #2a2218;
+    color: #f2e3b8;
+    border: 2px solid #b08f52;
     font: inherit;
-    font-size: 13px;
-    padding: 0 12px;
-    box-shadow: inset 0 0 0 1px #1a1f2e, 2px 2px 0 rgba(0, 0, 0, 0.4);
+    padding: 0 14px;
+    box-shadow: inset 0 0 0 1px #1f1a14, 2px 2px 0 rgba(0, 0, 0, 0.4);
     position: relative;
   }
   button::before {
@@ -125,7 +125,7 @@ const page = `<!doctype html>
     left: -2px;
     width: 4px;
     height: 4px;
-    background: #4db8ff;
+    background: #b08f52;
   }
   button {
     cursor: pointer;
@@ -133,65 +133,65 @@ const page = `<!doctype html>
     font-weight: bold;
   }
   button:hover:not(:disabled) {
-    background: #152030;
-    box-shadow: inset 0 0 0 1px #1a1f2e, 2px 2px 0 rgba(0, 0, 0, 0.6), 0 0 12px rgba(77, 184, 255, 0.4);
+    background: #3a2a1a;
+    box-shadow: inset 0 0 0 1px #1f1a14, 2px 2px 0 rgba(0, 0, 0, 0.6), 0 0 12px rgba(176, 143, 82, 0.4);
   }
   button:active:not(:disabled) {
     transform: translate(1px, 1px);
-    box-shadow: inset 0 0 0 1px #1a1f2e, 1px 1px 0 rgba(0, 0, 0, 0.6);
+    box-shadow: inset 0 0 0 1px #1f1a14, 1px 1px 0 rgba(0, 0, 0, 0.6);
   }
   button:focus-visible, select:focus-visible, input:focus-visible {
-    outline: 3px solid #ff8500;
+    outline: 3px solid #ffcc33;
     outline-offset: 2px;
   }
   #yes {
-    border-color: #ff4444;
-    color: #ffaa88;
-    box-shadow: inset 0 0 0 1px #1a1f2e, 2px 2px 0 rgba(0, 0, 0, 0.4), 0 0 8px rgba(255, 68, 68, 0.3);
+    border-color: #e0603f;
+    color: #ffd9cc;
+    box-shadow: inset 0 0 0 1px #1f1a14, 2px 2px 0 rgba(0, 0, 0, 0.4), 0 0 8px rgba(224, 96, 63, 0.3);
   }
   #yes:hover:not(:disabled) {
-    box-shadow: inset 0 0 0 1px #1a1f2e, 2px 2px 0 rgba(0, 0, 0, 0.6), 0 0 16px rgba(255, 68, 68, 0.5);
+    box-shadow: inset 0 0 0 1px #1f1a14, 2px 2px 0 rgba(0, 0, 0, 0.6), 0 0 16px rgba(224, 96, 63, 0.5);
   }
-  #status { color: #ffa726; }
+  #status { color: #fff2c8; }
   #confirm {
     flex-basis: 100%;
     margin: 0;
-    min-height: 1.5em;
-    font-size: 14px;
-    color: #6dff6d;
+    min-height: 1.4em;
+    font-size: 16px;
+    color: #c2a978;
   }
   #confirm:empty, #status:empty, #radio:empty { display: none; }
   #radio {
     margin: 0;
-    padding: 8px 20px;
-    max-height: calc(6 * 1.5em + 16px);
+    padding: 8px 24px;
+    max-height: calc(6 * 1.4em + 16px);
     overflow: auto;
     white-space: pre;
-    color: #ffa726;
-    background: #0a0e1a;
-    border: 3px solid #ff8500;
-    border-width: 0 0 3px 0;
-    box-shadow: inset 0 0 0 1px #1a1f2e;
-    font-size: 12px;
+    color: #a9cf86;
+    background: #1a1510;
+    border: 4px solid #4a3519;
+    border-width: 0 0 4px 0;
+    box-shadow: inset 0 0 0 1px #14110d;
+    font-size: 13px;
   }
-  select:disabled { opacity: 0.5; filter: grayscale(0.5); }
+  select:disabled { opacity: 0.45; filter: grayscale(0.5); }
   input { min-width: 240px; }
-  input::placeholder { color: #4db8ff; opacity: 0.6; }
+  input::placeholder { color: #c2a978; opacity: 0.6; }
   [hidden] { display: none !important; }
   #error {
-    color: #ff6b6b;
+    color: #ff8a6b;
     margin: 0;
-    padding: 10px 20px;
-    background: #1a0a0a;
-    border: 3px solid #ff4444;
-    border-width: 0 0 3px 0;
-    box-shadow: inset 0 0 0 1px #000, 0 0 12px rgba(255, 68, 68, 0.3);
+    padding: 10px 24px;
+    background: #2a1510;
+    border: 4px solid #e0603f;
+    border-width: 0 0 4px 0;
+    box-shadow: inset 0 0 0 1px #14110d, 0 0 12px rgba(224, 96, 63, 0.3);
   }
   #map {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    background: radial-gradient(circle at 30% 40%, #1a1f2e 0%, #0d1117 60%);
+    background: repeating-linear-gradient(#1c1813 0 8px, #17140f 8px 16px);
     position: relative;
   }
   #map::before {
@@ -202,8 +202,8 @@ const page = `<!doctype html>
     width: 100%;
     height: 100%;
     background-image: 
-      radial-gradient(circle at 20% 80%, rgba(255, 133, 0, 0.03) 0%, transparent 25%),
-      radial-gradient(circle at 80% 20%, rgba(77, 184, 255, 0.03) 0%, transparent 25%);
+      radial-gradient(circle at 20% 80%, rgba(255, 204, 51, 0.03) 0%, transparent 25%),
+      radial-gradient(circle at 80% 20%, rgba(169, 207, 134, 0.03) 0%, transparent 25%);
     pointer-events: none;
   }
   canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
