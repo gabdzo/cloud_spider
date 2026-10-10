@@ -1,0 +1,7 @@
+name: labs-sandbox
+description: Long-lived guardrails inside the labs-sandbox account
+runtime:
+  name: python
+  options:
+    toolchain: pip
+    virtualenv: ../../../.venv

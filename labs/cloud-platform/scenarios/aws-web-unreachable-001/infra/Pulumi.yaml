@@ -1,0 +1,7 @@
+name: aws-web-unreachable-001
+description: web service lab
+runtime:
+  name: python
+  options:
+    toolchain: pip
+    virtualenv: ../../../.venv

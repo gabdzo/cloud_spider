@@ -1,0 +1,7 @@
+name: labs-management
+description: Organization guardrails for the labs OU (run with cp-mgmt)
+runtime:
+  name: python
+  options:
+    toolchain: pip
+    virtualenv: ../../../.venv

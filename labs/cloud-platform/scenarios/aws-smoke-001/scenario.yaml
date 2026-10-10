@@ -1,0 +1,9 @@
+id: aws-smoke-001
+version: 1
+provider: aws
+region: eu-north-1
+ttl_minutes: 15
+faults: [rule-removed]
+handover: [sg_id]
+baseline_timeout_s: 30
+fault_timeout_s: 30
