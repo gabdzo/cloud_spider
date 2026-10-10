@@ -66,6 +66,7 @@ async function describeVpcs(region, token) {
       id: vpc.VpcId,
       cidr: vpc.CidrBlock,
       name: tagName(vpc.Tags),
+      tags: vpc.Tags || [],
     })),
   );
 }
@@ -79,6 +80,7 @@ async function describeSubnets(region, token) {
       name: tagName(subnet.Tags),
       zone: subnet.AvailabilityZone || "",
       public: Boolean(subnet.MapPublicIpOnLaunch),
+      tags: subnet.Tags || [],
     })),
   );
 }

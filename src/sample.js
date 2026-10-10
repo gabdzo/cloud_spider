@@ -92,3 +92,13 @@ export async function sampleFetch(url, { signal } = {}) {
     },
   };
 }
+
+// Sample mode's Pulumi state: orders-api is bound to the camp stack.
+export function sampleStacks() {
+  return {
+    async read(spec) {
+      if (spec?.name !== "camp") return { stacks: [], handles: new Set(), outputs: {}, count: 0, error: "" };
+      return { stacks: [{ name: "camp", resources: [] }], handles: new Set(["camp-function", "camp-table"]), outputs: {}, count: 6, error: "" };
+    },
+  };
+}

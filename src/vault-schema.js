@@ -13,6 +13,11 @@ const NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 // that holds Pulumi.yaml, and the stack name (a trailing * matches several,
 // e.g. every cluster stack).
 const STACK_DIR = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/;
+// {output: pageUrl}: a URL the vault's stack exports, read when the page loads.
+const OUTPUT_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+export function isOutputRef(value) {
+  return isObject(value) && Object.keys(value).length === 1 && typeof value.output === "string" && OUTPUT_NAME.test(value.output);
+}
 const STACK_NAME = /^[A-Za-z0-9_.-]+\*?$|^\*$/;
 const DESCRIPTION_MAX = 280;
 
@@ -129,7 +134,10 @@ export function validateVault(doc) {
         for (const key of LINK_KEYS) {
           const value = spec.links[key];
           if (value === undefined || value === null || value === "") continue;
-          if (!isHttpUrl(value)) errors.push(`spec.links.${key}: must be an http(s) URL`);
+          if (isOutputRef(value)) {
+            if (!isObject(spec.stack)) errors.push(`spec.links.${key}: {output: ${value.output}} needs spec.stack`);
+            else out.links[key] = { output: value.output };
+          } else if (!isHttpUrl(value)) errors.push(`spec.links.${key}: must be an http(s) URL`);
           else out.links[key] = value;
         }
       }
@@ -149,7 +157,10 @@ export function validateVault(doc) {
           }
           unknownKeys(check, ["url", "expect", "contains", "timeout", "name"], `${at}.`, warnings);
           const clean = { url: check.url, expect: 200, contains: "", timeout: CHECK_TIMEOUT.default };
-          if (!isHttpUrl(check.url)) errors.push(`${at}.url: must be an http(s) URL`);
+          if (isOutputRef(check.url)) {
+            if (!isObject(spec.stack)) errors.push(`${at}.url: {output: ${check.url.output}} needs spec.stack`);
+            else clean.url = { output: check.url.output };
+          } else if (!isHttpUrl(check.url)) errors.push(`${at}.url: must be an http(s) URL`);
           if (check.expect !== undefined) {
             if (!Number.isInteger(check.expect) || check.expect < 100 || check.expect > 599) {
               errors.push(`${at}.expect: must be an HTTP status from 100 to 599`);

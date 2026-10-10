@@ -58,27 +58,23 @@ To add a vault:
 3. Run npm run vaults:check. It validates every file in vaults/ (templates too) and fails on a reused number, or on a project tag that is not the vault's name.
 4. Refresh the page.
 
-The tag convention is one tag, project=<vault name>, on every taggable resource. Each vault selects spec.resources.tags: {project: <name>}. A few also list ids (names or ARNs), so they match before the tags land.
+The tag convention is one tag, project=<vault name>, on every taggable resource. Each vault selects spec.resources.tags: {project: <name>}. One stack is one living vault: a vault with spec.stack also owns every resource in that stack's state (read with pulumi stack export, cached 60 s, no AWS call), so it finds them even before the tags land. VPCs and subnets count as resources too.
+A link or a check URL can be {output: <name>}, read from the stack's outputs (camp's VIEW and check use {output: pageUrl}). Until the stack exports it, the link is left off and the panel lists it under WAITING.
 The Pulumi stacks set the tag stack-wide, so new resources inherit it:
 
-- infra/ (stack test): aws:defaultTags in Pulumi.test.yaml puts project=cloudspider and managed-by=pulumi on everything. The parts with their own vault override project in index.js: the load balancer, its group, target groups, listener and rules (alb-test); the two expendable machines (test-machines); and /cloudspider/test (test-logs).
+- infra/ (stack test): aws:defaultTags in Pulumi.test.yaml puts project=cloudspider and managed-by=pulumi on everything. The parts carry a component tag instead of their own vault: component=alb-test (the load balancer, its group, target groups, listener and rules), component=test-machines (the two expendable machines) and component=test-logs (/cloudspider/test).
 - upgrades/eks, signal, barrel, camp: upgrades/tags.js adds project=<eks|signal|barrel|camp> and managed-by=pulumi to every AWS resource that has tags. EKS also gets cluster=<cluster name>. It is a stack transformation, not provider defaultTags, because the Stacks panel makes these stack files itself and camp uses its own provider.
 
 Vaults for this repo:
 
 | file | number | covers |
 | --- | --- | --- |
-| cloudspider.yaml | 100 | infra/: the test VPC, two subnets and the untagged nano |
-| alb-test.yaml | 101 | infra/: internal ALB cloudspider-api, its group, target groups, listener and rules (the PR #6 broken path) |
-| test-machines.yaml | 102 | infra/: cloudspider-running and cloudspider-stopped, the expendable nanos |
-| test-logs.yaml | 103 | infra/: log group /cloudspider/test |
-| eks.yaml | 110 | upgrades/eks: every EKS cluster stack, with its VPC, roles and node group |
-| signal.yaml | 120 | upgrades/signal: log group /cloudspider/cloudspider-signal |
-| barrel.yaml | 130 | upgrades/barrel: bucket cloudspider-barrel-550536272523 |
-| camp.yaml | 140 | upgrades/camp: page bucket, function, function URL, table, secret, role |
-| pulumi-state.yaml | 150 | the state bucket cloudspider-state-550536272523 (made by infra/bootstrap.sh) |
+| cloudspider.yaml | 100 | infra/ stack test: the test VPC and subnets, the internal ALB cloudspider-api (the PR #6 broken path), the expendable nanos, the untagged nano, /cloudspider/test |
+| eks.yaml | 110 | upgrades/eks, every stack: each EKS cluster with its VPC, roles and node group |
+| camp.yaml | 140 | upgrades/camp stack camp: page bucket, function, function URL, table, secret, role. VIEW and an HTTP check on the pageUrl output |
+| templates/signal.yaml, templates/barrel.yaml | 120, 130 | upgrades/signal and upgrades/barrel, templates until their stacks are up |
 
-None has an HTTP check. The ALB is internal, and the function URL and EKS endpoint change with each deploy. Add a check once a stack has a stable URL.
+The state bucket (infra/bootstrap.sh) has no vault; it is not a stack.
 
 Existing stacks get the tags on their next pulumi up. The change is tags only: preview shows ~ update on tags and nothing replaced. Use the passphrase the Stacks panel uses (empty unless you set PULUMI_CONFIG_PASSPHRASE):
 

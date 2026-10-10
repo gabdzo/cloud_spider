@@ -331,7 +331,7 @@ function placedMap() {
 // ---- vaults ----
 
 function vaultSignature(vaults) {
-  return vaults.map((vault) => `${vault.key}:${vault.number}:${vault.damaged ? 1 : 0}:${vault.title}:${vault.stack ? `${vault.stack.dir}/${vault.stack.name}` : ""}:${(vault.owned || []).join(",")}`).join("|");
+  return vaults.map((vault) => `${vault.key}:${vault.number}:${vault.damaged ? 1 : 0}:${vault.title}:${vault.stack ? `${vault.stack.dir}/${vault.stack.name}/${vault.stackInfo?.stacks?.length || 0}` : ""}:${(vault.owned || []).join(",")}`).join("|");
 }
 
 async function loadVaults() {
@@ -425,6 +425,16 @@ function checkLine(check) {
   return li;
 }
 
+function stackFact(vault) {
+  if (!vault.stack) return "";
+  const info = vault.stackInfo;
+  const which = vault.stack.name === "*" ? "every stack" : vault.stack.name;
+  if (info?.error) return `${which} in ${vault.stack.dir} · ${info.error}`;
+  if (info && !info.stacks.length) return `${which} in ${vault.stack.dir} · not up`;
+  const names = info?.stacks?.length && vault.stack.name.includes("*") ? ` (${info.stacks.join(", ")})` : "";
+  return `LIVE · ${which}${names} in ${vault.stack.dir}${info ? ` · ${info.resources} resource${info.resources === 1 ? "" : "s"}` : ""}`;
+}
+
 function vaultPanel(cell) {
   const vault = cell.vault;
   const section = vel("section", `vault-panel${vault.damaged ? " damaged" : ""}`);
@@ -454,7 +464,8 @@ function vaultPanel(cell) {
       ["OWNER", vault.owner],
       ["TYPE", vault.type],
       ["TAGS", (vault.tags || []).join(", ")],
-      ["STACK", vault.stack ? `LIVE · ${vault.stack.name === "*" ? "every stack" : vault.stack.name} in ${vault.stack.dir}` : ""],
+      ["STACK", stackFact(vault)],
+      ["WAITING", vault.stackInfo?.waiting?.length ? `${vault.stackInfo.waiting.join(", ")}: not exported yet (pulumi up in ${vault.stack.dir})` : ""],
       ["OWNS", `${(vault.owned || []).length} resource${(vault.owned || []).length === 1 ? "" : "s"}`],
       ["FILE", vault.file],
     ]) {
@@ -553,7 +564,7 @@ function placeVaultChrome(placed) {
   if (!vaultTemplates.hidden) renderTemplates();
   const open = area.cells.filter((cell) => cell.open && cell.panel);
   const shown = open
-    .map((cell) => `${cell.key}@${cell.panel.x},${cell.panel.y},${cell.panel.w},${cell.panel.h}:${JSON.stringify([cell.vault.checks, cell.vault.status, cell.vault.description, cell.vault.links, cell.vault.errors, (cell.vault.owned || []).length])}`)
+    .map((cell) => `${cell.key}@${cell.panel.x},${cell.panel.y},${cell.panel.w},${cell.panel.h}:${JSON.stringify([cell.vault.checks, cell.vault.status, cell.vault.description, cell.vault.links, cell.vault.errors, (cell.vault.owned || []).length, cell.vault.stackInfo])}`)
     .join("|");
   if (shown === panelsShown) return;
   panelsShown = shown;

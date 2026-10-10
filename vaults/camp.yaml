@@ -2,7 +2,7 @@
 # bucket with index.html, a Lambda (<name>-page) behind a public function URL
 # that returns the page only, a DynamoDB table (<name>-table) with one row, a
 # secret (<name>-secret) and the function's role. The function URL is random
-# per deploy, so there is no check; open it from the camp card on the map.
+# per deploy, so VIEW and the check read the stack's pageUrl output.
 apiVersion: cloudspider/v1
 kind: Vault
 metadata:
@@ -26,6 +26,13 @@ spec:
     dir: upgrades/camp
     name: camp
   links:
+    view: {output: pageUrl}
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/camp
     docs: https://github.com/gabdzo/cloud_spider#readme
     dashboard: https://eu-north-1.console.aws.amazon.com/lambda/home?region=eu-north-1#/functions/cloudspider-camp-page
+  checks:
+    http:
+      - url: {output: pageUrl}
+        name: camp page
+        expect: 200
+        contains: cloudspider camp

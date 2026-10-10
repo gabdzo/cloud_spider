@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { LEGACY_CLUSTER, cardName, confirmMatches, failureText, historyFact, resourceFact, stackFor, tooManyClusters } from "./upgrade-rules.js";
 
 
-function childEnvFor(env) {
+export function childEnvFor(env) {
   return {
     ...env,
     AWS_PROFILE: env.AWS_PROFILE || "default",
@@ -292,7 +292,7 @@ function apply(run, directory, spec, stack, verb, values, env, job) {
   next();
 }
 
-function capture(run, directory, env, args) {
+export function capture(run, directory, env, args) {
   return new Promise((resolve) => {
     let text = "";
     let errText = "";

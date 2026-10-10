@@ -31,10 +31,20 @@ export function placeResources(place) {
   for (const item of place?.fixtures || []) {
     out.push({ id: item.id, arn: item.arn || "", name: item.name || "", kind: item.kind || "", vpcId: item.vpcId || "", tags: tagMap(item.tags), source: "fixture" });
   }
+  // Networks belong to vaults too (the test VPC is the cloudspider stack's).
+  for (const item of place?.vpcs || []) {
+    out.push({ id: item.id, arn: item.arn || "", name: item.name || "", kind: "vpc", vpcId: item.id, tags: tagMap(item.tags), source: "vpc" });
+  }
+  for (const item of place?.subnets || []) {
+    out.push({ id: item.id, arn: item.arn || "", name: item.name || "", kind: "subnet", vpcId: item.vpcId || "", tags: tagMap(item.tags), source: "subnet" });
+  }
   return out;
 }
 
 export function matches(selector, resource) {
+  // A living vault owns everything its Pulumi stack made (spec.stack).
+  const handles = selector?.handles;
+  if (handles?.size && [resource.id, resource.arn, resource.name].some((handle) => handle && handles.has(handle))) return true;
   const ids = selector?.ids || [];
   if (ids.length) {
     const handles = [resource.id, resource.arn, resource.name].filter(Boolean);

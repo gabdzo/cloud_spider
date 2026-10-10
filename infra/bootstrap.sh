@@ -28,7 +28,7 @@ aws s3api put-public-access-block \
   --public-access-block-configuration \
   BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 
-# Vault tag (vaults/pulumi-state.yaml). tag-resources merges, it never drops
+# Tag (no vault any more; kept so the bucket is still labelled). tag-resources merges, it never drops
 # other tags.
 aws resourcegroupstaggingapi tag-resources \
   --region eu-north-1 \

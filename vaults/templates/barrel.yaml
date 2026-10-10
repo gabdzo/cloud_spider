@@ -1,3 +1,5 @@
+# Template (moved here from vaults/: the barrel stack is not up). When it is,
+# make it living with: npm run vaults:new -- barrel barrel
 # upgrades/barrel (Pulumi project cloudspider-barrel, stack barrel): one empty
 # bucket, <name>-<account id> (default cloudspider-barrel-550536272523),
 # force-destroy so Take it down always works.

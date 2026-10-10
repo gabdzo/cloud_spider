@@ -6,12 +6,12 @@ import * as aws from "@pulumi/aws";
 // at rest and starting the stopped tagged one peaks at 4.
 
 // Vault tags. The stack's aws:defaultTags (Pulumi.test.yaml) put
-// project=cloudspider on everything, which vaults/cloudspider.yaml claims;
-// these override it for the parts that are their own vault. Tags only:
-// changing them updates in place, nothing is replaced.
-const ALB_TEST = { project: "alb-test" }; // vaults/alb-test.yaml
-const TEST_MACHINES = { project: "test-machines" }; // vaults/test-machines.yaml
-const TEST_LOGS = { project: "test-logs" }; // vaults/test-logs.yaml
+// project=cloudspider on everything: one stack, one vault
+// (vaults/cloudspider.yaml). The parts carry a component tag so they can still
+// be told apart. Tags only: changing them updates in place, nothing is replaced.
+const ALB_TEST = { component: "alb-test" };
+const TEST_MACHINES = { component: "test-machines" };
+const TEST_LOGS = { component: "test-logs" };
 
 const ami = aws.ssm.getParameterOutput({
   name: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64",
