@@ -4,6 +4,7 @@ import { createApp } from "./app.js";
 import { createPathAws } from "./aws-path.js";
 import { createCost } from "./cost.js";
 import { createUpgrade, pulumiWarning } from "./upgrade.js";
+import { createAgent } from "./agent.js";
 import { listen, listenExit } from "./server.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +34,7 @@ const app = createApp({
   upgrade: createUpgrade(),
   eks: aws.eks,
   vaults,
+  agent: createAgent({ cwd: root }),
   logGroup: process.env.CLOUDSPIDER_LOG_GROUP || "",
   pageOrigin,
   clock: () => Date.now(),
