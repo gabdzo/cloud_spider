@@ -565,7 +565,7 @@ function square(grid) {
 }
 
 const ALIAS = {
-  alb: "lb", instance: "ec2", eks: "cluster", region: "map",
+  alb: "lb", service: "lb", instance: "ec2", eks: "cluster", region: "map",
   "control-plane": "cluster", workload: "pod", route: "lb", ingress: "lb", project: "namespace", generic: "ec2",
 };
 const cache = new Map();

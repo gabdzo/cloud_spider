@@ -10,6 +10,7 @@ import { readPath } from "./path-read.js";
 import { pathResult } from "./path-view.js";
 import { costFailure } from "./cost.js";
 import { diagramFromClusters } from "./cluster.js";
+import { diagramFromKube } from "./kube-diagram.js";
 import { campFixtures, watchLine } from "./upgrade-rules.js";
 import { createLinkCache } from "./aws-path.js";
 
@@ -22,7 +23,7 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
-export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, agent, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, agent, kube, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -311,6 +312,27 @@ export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, 
         return failed(sentence);
       }
       const diagram = diagramFromClusters(result?.items || []);
+      // Inside the cluster (read-only kube context): namespaces to nodes.
+      if (kube && diagram.nodes.length) {
+        const snap = await kube.snapshot().catch((failure) => ({ error: failure?.message || "the cluster did not answer" }));
+        if (!snap.error) {
+          const cluster = (result?.items || []).find((item) => item.name === snap.clusterName) || {};
+          return {
+            region: at,
+            error: "",
+            diagram: diagramFromKube(snap, { cluster }),
+            headline: "",
+            note: [`inside ${snap.clusterName} via kube context ${kube.context} (read-only)`, ...(snap.notes || [])].join(" · "),
+          };
+        }
+        return {
+          region: at,
+          error: "",
+          diagram,
+          headline: "",
+          note: snap.unset ? `EKS in this region. To see pods, add the read-only kube context ${kube.context} (docs/RUN-ME.md §7).` : `EKS in this region. Inside the cluster: ${snap.error}`,
+        };
+      }
       return {
         region: at,
         error: "",
@@ -318,6 +340,11 @@ export function createApp({ ec2, trail, logs, path, cost, upgrade, eks, vaults, 
         headline: diagram.nodes.length ? "" : "no cluster in this region",
         note: "EKS in this region. An OpenShift reader fills the same picture.",
       };
+    },
+    // One pod's last log lines and events (Cluster view, on click).
+    async clusterPod({ ns, name, container } = {}) {
+      if (!kube) return { error: "the kube context is not set up" };
+      return kube.podDetail(String(ns || ""), String(name || ""), String(container || "")).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
     },
     async pathView(query = {}) {
       const at = region;

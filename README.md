@@ -14,6 +14,8 @@ It names the first broken or hanging edge. Paste a URL or host to follow one rul
 Cost is the account bill for this month, not the region on screen. The map poll does not call it.
 
 Cluster is a separate tab. It draws EKS in this region, or an OpenShift-shaped sample. Path and Cluster share one picture: nodes, edges, and a kind icon.
+With the read-only kube context cloudspider-viewer (docs/RUN-ME.md §7; set CLOUDSPIDER_KUBE_CONTEXT to use another), Cluster goes inside the cluster: namespaces → ingresses → services → workloads → pods → nodes, with pod health, restarts and CPU/memory from metrics-server. Click a pod to see its last 80 log lines and its events. Cloud Spider only sends GET requests to a fixed list of paths (src/kube.js). The viewer role has AmazonEKSViewPolicy (no Secrets) plus get/list on nodes and metrics.
+upgrades/demo is the demo workload: podinfo web → api plus a load generator, and an ADOT collector that ships pod logs to CloudWatch Logs (/cloudspider/eks/<cluster>/demo, 1 day) and traces to X-Ray using EKS Pod Identity. See docs/RUN-ME.md §8.
 
 
 Vaults are your projects on the map, written as YAML files like a Backstage catalog-info.yaml.
