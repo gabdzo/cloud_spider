@@ -263,9 +263,6 @@ const page = `<!doctype html>
   }
   .tab[aria-pressed="true"] img { opacity: 1; filter: drop-shadow(0 0 3px var(--glow-bright)); }
   .tab[aria-pressed="true"]:hover { color: var(--btn-lit-label); filter: brightness(1.08); }
-  /* RADIO, STACKS and ASK open panels rather than views: an engraved gap
-     on the strip sets them apart from MAP / PATH / CLUSTER. */
-  .tab:not(.toggle) + .tab.toggle { margin-left: 14px; }
 
   /* SAMPLE: a worn lever toggle on a riveted, chipped plate. role=switch,
      aria-checked; the lever snaps up for ON. */
@@ -398,8 +395,132 @@ const page = `<!doctype html>
     background: radial-gradient(circle at 40% 35%, var(--lamp-on-core), var(--lamp-on) 55%, var(--pip-mid));
     box-shadow: 0 0 0 2px var(--lever-lo), 0 0 0 3px var(--lever-hi), 0 0 8px var(--lamp-on), 0 0 16px var(--btn-glow);
   }
+
+  /* The control console: RADIO / STACKS / ASK open panels, not views, so they
+     are chunky illuminated keys on their own riveted sub-panel, beside the
+     SAMPLE lever. Each key: a square glass cap with its icon and a corner
+     lamp, and a stamped label plate under it. */
+  .console {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 6px 12px 6px 12px;
+    border-radius: 7px;
+    background:
+      radial-gradient(circle at 6px 6px, var(--plate-steel) 0 1.5px, var(--plate-seam) 2.2px, transparent 2.8px),
+      radial-gradient(circle at calc(100% - 6px) 6px, var(--plate-steel) 0 1.5px, var(--plate-seam) 2.2px, transparent 2.8px),
+      radial-gradient(circle at 6px calc(100% - 6px), var(--plate-steel) 0 1.5px, var(--plate-seam) 2.2px, transparent 2.8px),
+      radial-gradient(circle at calc(100% - 6px) calc(100% - 6px), var(--plate-steel) 0 1.5px, var(--plate-seam) 2.2px, transparent 2.8px),
+      linear-gradient(180deg, var(--plate-paint-lo), var(--plate-seam));
+    box-shadow:
+      inset 0 2px 6px var(--btn-shade),
+      inset 0 0 0 1px var(--plate-seam),
+      0 1px 0 var(--btn-rim-hi);
+  }
+  .keys { display: flex; gap: 10px; }
+  .key {
+    display: grid;
+    justify-items: center;
+    gap: 5px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--btn-off-label);
+    font: inherit;
+    cursor: pointer;
+  }
+  .key .cap {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 34px;
+    border-radius: 6px;
+    background: linear-gradient(180deg, var(--btn-off-top) 0%, var(--btn-off-mid) 48%, var(--btn-off-low) 100%);
+    box-shadow:
+      0 0 0 2px var(--btn-rim),
+      0 0 0 4px var(--lever-lo),
+      0 0 0 5px var(--btn-rim-hi),
+      inset 0 1px 0 var(--btn-gloss),
+      inset 0 -4px 5px var(--btn-shade),
+      0 4px 0 1px var(--btn-skirt),
+      0 6px 7px var(--btn-shade);
+    transform: translateY(0);
+    transition: transform 0.08s ease-out, box-shadow 0.12s, background 0.12s;
+  }
+  .key .cap::before {
+    content: "";
+    position: absolute;
+    inset: 2px 3px 55% 3px;
+    border-radius: 4px 4px 10px 10px;
+    background: linear-gradient(180deg, var(--btn-gloss), transparent);
+    pointer-events: none;
+  }
+  .key .cap::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--lamp-off-hi), var(--lamp-off) 60%);
+    box-shadow: 0 0 0 1px var(--btn-rim), inset 0 1px 2px var(--btn-shade);
+  }
+  .key .cap img { width: 20px; height: 20px; image-rendering: pixelated; opacity: 0.45; filter: saturate(0.6) brightness(0.8); }
+  .key .tag {
+    min-width: 46px;
+    padding: 1px 5px 2px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, var(--plate-paint-hi), var(--plate-paint) 55%, var(--plate-paint-lo));
+    box-shadow: inset 0 0 0 1px var(--plate-seam), inset 0 1px 0 var(--btn-rim-hi), 0 1px 1px var(--btn-shade);
+    color: var(--plate-stencil-dim);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    line-height: 1.3;
+    text-align: center;
+    text-transform: uppercase;
+    text-shadow: 0 -1px 0 var(--btn-shade);
+  }
+  .key:hover .cap, .key:focus-visible .cap {
+    background:
+      linear-gradient(180deg, var(--btn-hover), transparent),
+      linear-gradient(180deg, var(--btn-off-top) 0%, var(--btn-off-mid) 48%, var(--btn-off-low) 100%);
+  }
+  .key:hover .cap img, .key:focus-visible .cap img { opacity: 0.75; }
+  .key:hover .tag, .key:focus-visible .tag { color: var(--plate-stencil); }
+  .key:focus-visible { outline: 2px dashed var(--pip-bright); outline-offset: 4px; border-radius: 4px; }
+  .key:focus:not(:focus-visible) { outline: none; }
+  .key:active .cap { transform: translateY(3px); }
+  .key[aria-pressed="true"] .cap {
+    background:
+      radial-gradient(ellipse at 50% 120%, var(--btn-glow), transparent 70%),
+      linear-gradient(180deg, var(--btn-lit-top) 0%, var(--btn-lit-mid) 50%, var(--btn-lit-low) 100%),
+      var(--pip-ink);
+    box-shadow:
+      0 0 0 2px var(--btn-rim),
+      0 0 0 4px var(--lever-lo),
+      0 0 0 5px var(--btn-rim-hi),
+      inset 0 1px 0 var(--btn-gloss-lit),
+      inset 0 -2px 6px var(--btn-shade),
+      inset 0 0 12px var(--btn-glow-far),
+      0 1px 0 1px var(--btn-skirt),
+      0 0 16px var(--btn-glow-far),
+      0 0 5px var(--btn-glow);
+    transform: translateY(3px);
+  }
+  .key[aria-pressed="true"] .cap::before { background: linear-gradient(180deg, var(--btn-gloss-lit), transparent); opacity: 0.6; }
+  .key[aria-pressed="true"] .cap::after {
+    background: radial-gradient(circle at 40% 35%, var(--lamp-on-core), var(--lamp-on) 55%, var(--pip-mid));
+    box-shadow: 0 0 0 1px var(--btn-rim), 0 0 6px var(--lamp-on), 0 0 12px var(--btn-glow);
+  }
+  .key[aria-pressed="true"] .cap img { opacity: 1; filter: drop-shadow(0 0 3px var(--glow-bright)); }
+  .key[aria-pressed="true"] .tag { color: var(--plate-stencil); }
+  @media (max-width: 520px) {
+    .console { flex-wrap: wrap; justify-content: center; }
+  }
   @media (prefers-reduced-motion: reduce) {
-    .tab, .switch .lever, .switch .led { transition: none; }
+    .tab, .key .cap, .switch .lever, .switch .led { transition: none; }
   }
   /* ---- end hardware buttons ---- */
 
@@ -970,7 +1091,7 @@ const page = `<!doctype html>
   #radio li.fail { color: var(--status-broken); }
   #radio li.fail time { color: var(--status-broken); opacity: 0.75; }
   #radio-panel.issue .ptitle { background: var(--status-broken); }
-  .tab.toggle.issue::after { background: radial-gradient(circle at 40% 35%, var(--lamp-on-core), var(--status-broken) 55%) !important; box-shadow: 0 0 0 1px var(--btn-rim), 0 0 6px var(--status-broken) !important; }
+  .key.issue .cap::after { background: radial-gradient(circle at 40% 35%, var(--lamp-on-core), var(--status-broken) 55%) !important; box-shadow: 0 0 0 1px var(--btn-rim), 0 0 6px var(--status-broken), 0 0 10px var(--status-broken) !important; }
   #radio li[aria-current="true"] { background: var(--pip-bright); color: var(--pip-ink); }
   #radio li[aria-current="true"] img { filter: brightness(0); }
   .quiet { color: var(--pip-dim); font-size: 12px; }
@@ -1036,11 +1157,15 @@ const page = `<!doctype html>
     <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true">Map</button>
     <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false">Path</button>
     <button id="cluster" class="tab" type="button" data-icon="cluster" aria-pressed="false">Cluster</button>
-    <button id="tab-radio" class="tab toggle" type="button" data-icon="radio" aria-pressed="true">Radio</button>
-    <button id="upgrade" class="tab toggle" type="button" data-icon="stack" aria-pressed="false">Stacks</button>
-    <button id="ask" class="tab toggle" type="button" data-icon="terminal" aria-pressed="false" title="ask your local agent (runs only when you press ASK)">Ask</button>
   </nav>
+  <div class="console">
+    <div class="keys" role="group" aria-label="panels">
+      <button id="tab-radio" class="key" type="button" aria-pressed="true" title="radio: the account's recent calls"><span class="cap" data-icon="radio"></span><span class="tag">Radio</span></button>
+      <button id="upgrade" class="key" type="button" aria-pressed="false" title="stacks: Pulumi upgrades"><span class="cap" data-icon="stack"></span><span class="tag">Stacks</span></button>
+      <button id="ask" class="key" type="button" aria-pressed="false" title="ask your local agent (runs only when you press ASK)"><span class="cap" data-icon="terminal"></span><span class="tag">Ask</span></button>
+    </div>
   <button id="sample" class="switch" type="button" role="switch" aria-checked="false" aria-label="Sample mode" title="Sample mode: a made-up account, nothing read from AWS"><span class="well" aria-hidden="true"><span class="nut"></span><span class="lever"></span></span><span class="marks" aria-hidden="true"><span>ON</span><span>OFF</span></span><span class="name" aria-hidden="true">SAMPLE</span><span class="led" aria-hidden="true"></span></button>
+  </div>
   <div class="gauges" aria-label="map readouts">
     <p id="tally" class="lcd" hidden><img class="px" data-icon="map" alt=""><span id="tally-text"></span><span id="tally-issue"></span></p>
     <div id="corner">
