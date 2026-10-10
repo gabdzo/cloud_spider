@@ -10,6 +10,7 @@ import {
   StartInstancesCommand,
 } from "@aws-sdk/client-ec2";
 import { EKSClient, ListClustersCommand, DescribeClusterCommand } from "@aws-sdk/client-eks";
+import { RDSClient, DescribeDBInstancesCommand } from "@aws-sdk/client-rds";
 import {
   ElasticLoadBalancingV2Client,
   DescribeLoadBalancersCommand,
@@ -237,7 +238,27 @@ function diagramClients(region) {
     nat: clientFor(region),
     elb: new ElasticLoadBalancingV2Client({ region }),
     eks: new EKSClient({ region }),
+    rds: new RDSClient({ region }),
   }
+}
+
+// An RDS instance on the map: a database piece in its VPC, with its tags so a
+// vault (project=rds, project=tf-rds) claims it.
+export function rdsFixture(db) {
+  const state = db?.DBInstanceStatus || "";
+  const status = state === "available" ? "ok" : /failed|incompatible|inaccessible|storage-full/.test(state) ? "broken" : "unknown";
+  const tags = {};
+  for (const tag of db?.TagList || []) if (tag?.Key) tags[tag.Key] = tag.Value ?? "";
+  return {
+    id: db?.DBInstanceArn || db?.DBInstanceIdentifier || "",
+    vpcId: db?.DBSubnetGroup?.VpcId || "",
+    kind: "rds",
+    name: db?.DBInstanceIdentifier || "",
+    caption: `${String(db?.Engine || "db").toUpperCase()} ${db?.DBInstanceClass || ""}`.trim(),
+    status,
+    state,
+    tags,
+  };
 }
 
 export async function describeDiagram(region, clientFactory = diagramClients) {
@@ -319,6 +340,18 @@ export async function describeDiagram(region, clientFactory = diagramClients) {
     }
   } catch (error) {
     errors.push(`ListClusters: ${publicError(error).error}`);
+  }
+  if (clients.rds) {
+    try {
+      let marker;
+      do {
+        const out = await clients.rds.send(new DescribeDBInstancesCommand({ Marker: marker }));
+        for (const db of out.DBInstances || []) fixtures.push(rdsFixture(db));
+        marker = out.Marker;
+      } while (marker);
+    } catch (error) {
+      errors.push(`DescribeDBInstances: ${publicError(error).error}`);
+    }
   }
   const value = errors.length ? { gateways, fixtures, error: errors.join("  ") } : { gateways, fixtures };
   diagramCache = { at: now, region, value };

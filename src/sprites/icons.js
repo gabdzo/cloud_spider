@@ -317,6 +317,63 @@ const GRIDS = {
     "................",
     "................",
   ],
+  // A database: a stacked cylinder with lit rims.
+  database: [
+    "................",
+    "....BBBBBBBB....",
+    "..BBHHHHHHHHBB..",
+    ".BMBBBBBBBBBBMB.",
+    ".BMMMMMMMMMMMMB.",
+    ".BDMMMMMMMMMMDB.",
+    ".BBDDMMMMMMDDBB.",
+    ".BMBBBBBBBBBBMB.",
+    ".BMMMMMMMMMHMMB.",
+    ".BDMMMMMMMMMMDB.",
+    ".BBDDMMMMMMDDBB.",
+    ".BMBBBBBBBBBBMB.",
+    ".BMMMMMMMMMHMMB.",
+    "..BBDDMMMMDDBB..",
+    "....BBBBBBBB....",
+    "................",
+  ],
+  // A queue: messages in a pipe, the next one out lit.
+  queue: [
+    "................",
+    "................",
+    "................",
+    "BBBBBBBBBBBBBBB.",
+    "..............B.",
+    ".DDDD.MMMM.HHHHB",
+    ".KDDK.KMMK.KHHKB",
+    ".DKKD.MKKM.HKKHB",
+    ".DDDD.MMMM.HHHHB",
+    "..............B.",
+    "BBBBBBBBBBBBBBB.",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+  ],
+  // Terraform: four offset blocks.
+  terraform: [
+    "................",
+    ".MMMM...........",
+    ".MMMM...........",
+    ".MMMM...........",
+    ".MMMM.HHHH......",
+    ".MMMM.HHHH......",
+    "......HHHH......",
+    "......HHHH.BBBB.",
+    "......HHHH.BBBB.",
+    "...........BBBB.",
+    "......BBBB.BBBB.",
+    "......BBBB.BBBB.",
+    "......BBBB......",
+    "......BBBB......",
+    "......BBBB......",
+    "................",
+  ],
   // Chrome
   stack: [
     "................",
@@ -604,6 +661,7 @@ function square(grid) {
 const ALIAS = {
   alb: "lb", service: "lb", instance: "ec2", eks: "cluster", region: "map",
   "control-plane": "cluster", workload: "pod", route: "lb", ingress: "lb", project: "namespace", generic: "ec2",
+  rds: "database", db: "database", postgres: "database", sqs: "queue", worker: "queue", site: "url", cdn: "url",
 };
 const cache = new Map();
 

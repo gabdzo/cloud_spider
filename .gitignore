@@ -5,3 +5,9 @@ screenshots-before/
 screenshots-after/
 # Per-cluster stack config written by the Stacks panel (pulumi config set).
 upgrades/eks/Pulumi.eks-*.yaml
+
+# Terraform working dirs, state and plans (state lives in S3).
+terraform/**/.terraform/
+*.tfstate
+*.tfstate.*
+tfplan

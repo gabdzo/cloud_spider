@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { estimate } from "./stack-costs.js";
 import { LEGACY_CLUSTER, cardName, confirmMatches, failureText, historyFact, resourceFact, stackFor, tooManyClusters } from "./upgrade-rules.js";
 
 
@@ -18,6 +19,10 @@ export { campFixtures, cardName, confirmMatches, historyFact, pulumiMissing, pul
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+// Every card: what it makes (note), the stack it runs, its parameters, what
+// must be up first (needs), and its cost lines (src/stack-costs.js) for the
+// card's estimate in eu-north-1. A stack that runs on the EKS cluster
+// counts only what it adds (the cluster is the eks card).
 export const UPGRADES = [
   {
     id: "eks",
@@ -26,6 +31,9 @@ export const UPGRADES = [
     dir: "upgrades/eks",
     stack: "upgrade",
     project: "cloudspider-upgrade",
+    vault: "eks",
+    needs: [],
+    cost: [{ price: "eks-cluster" }, { price: "ec2:t4g.small" }, { price: "ebs-gp3-gb", qty: 20 }, { price: "public-ipv4" }],
     parameters: [
       { name: "clusterName", type: "string", default: "cloudspider-up" },
       { name: "instanceType", type: "string", default: "t4g.small", choices: ["t4g.small", "t4g.medium"] },
@@ -39,6 +47,9 @@ export const UPGRADES = [
     dir: "upgrades/signal",
     stack: "signal",
     project: "cloudspider-signal",
+    vault: "signal",
+    needs: [],
+    cost: [{ usage: "logs" }],
     parameters: [{ name: "name", type: "string", default: "cloudspider-signal" }],
   },
   {
@@ -48,6 +59,9 @@ export const UPGRADES = [
     dir: "upgrades/barrel",
     stack: "barrel",
     project: "cloudspider-barrel",
+    vault: "barrel",
+    needs: [],
+    cost: [{ usage: "s3-requests" }],
     parameters: [{ name: "name", type: "string", default: "cloudspider-barrel" }],
   },
   {
@@ -57,7 +71,73 @@ export const UPGRADES = [
     dir: "upgrades/camp",
     stack: "camp",
     project: "cloudspider-camp",
+    vault: "camp",
+    needs: [],
+    cost: [{ price: "secret" }, { usage: "lambda" }, { usage: "s3-requests" }],
     parameters: [{ name: "name", type: "string", default: "cloudspider-camp" }],
+  },
+  {
+    id: "rds",
+    title: "RDS Postgres",
+    note: "PostgreSQL 16 on db.t4g.micro, 20 GB gp3, single-AZ, in its own VPC with private subnets only (no NAT, no public IP). RDS keeps the password in Secrets Manager. No backups, no final snapshot: take it down deletes the data.",
+    dir: "upgrades/rds",
+    stack: "rds",
+    project: "cloudspider-rds",
+    vault: "rds",
+    needs: [],
+    cost: [{ price: "rds:db.t4g.micro:postgres" }, { price: "rds-gp3-gb", qty: 20 }, { price: "secret" }],
+    parameters: [{ name: "name", type: "string", default: "cloudspider-rds" }],
+  },
+  {
+    id: "pgcluster",
+    title: "Postgres on EKS",
+    note: "CloudNativePG on the EKS cluster: the operator, the EBS CSI driver and one 1-instance database shop/shopdb on a 5 Gi gp3 volume. Needs the cluster; pick t4g.medium on the EKS card first (a t4g.small runs out of pods). Set podIdentityAgent to present if the demo stack is up.",
+    dir: "upgrades/pgcluster",
+    stack: "pgcluster",
+    project: "cloudspider-pgcluster",
+    vault: "pgcluster",
+    needs: ["eks"],
+    cost: [{ price: "ebs-gp3-gb", qty: 5 }],
+    parameters: [
+      { name: "clusterName", type: "string", default: "cloudspider-up" },
+      { name: "podIdentityAgent", type: "string", default: "install", choices: ["install", "present"] },
+    ],
+  },
+  {
+    id: "shopapi",
+    title: "Shop API",
+    note: "A sample backend on EKS: a migration Job seeds the shop schema, then PostgREST serves GET /items from shopdb. No load balancer: kubectl -n shop port-forward svc/shopapi 3000:80.",
+    dir: "upgrades/shopapi",
+    stack: "shopapi",
+    project: "cloudspider-shopapi",
+    vault: "shopapi",
+    needs: ["eks", "pgcluster"],
+    cost: [],
+    parameters: [{ name: "clusterName", type: "string", default: "cloudspider-up" }],
+  },
+  {
+    id: "site",
+    title: "Static site",
+    note: "A private S3 bucket with one page, served over HTTPS by CloudFront through origin access control. A new distribution takes a few minutes to deploy.",
+    dir: "upgrades/site",
+    stack: "site",
+    project: "cloudspider-site",
+    vault: "site",
+    needs: [],
+    cost: [{ usage: "cloudfront" }, { usage: "s3-requests" }],
+    parameters: [{ name: "name", type: "string", default: "cloudspider-site" }],
+  },
+  {
+    id: "worker",
+    title: "SQS worker",
+    note: "A queue, a dead-letter queue and a small Node Lambda that logs each job. A job {\"fail\": true} ends up in the dead-letter queue after 3 tries.",
+    dir: "upgrades/worker",
+    stack: "worker",
+    project: "cloudspider-worker",
+    vault: "worker",
+    needs: [],
+    cost: [{ usage: "sqs" }, { usage: "lambda" }, { usage: "logs" }],
+    parameters: [{ name: "name", type: "string", default: "cloudspider-worker" }],
   },
 ];
 
@@ -112,6 +192,10 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
         id: spec.id,
         title: spec.title,
         note: spec.note,
+        engine: "pulumi",
+        needs: spec.needs || [],
+        vault: spec.vault || "",
+        cost: estimate(spec.cost || []),
         parameters: spec.parameters,
       }));
     },

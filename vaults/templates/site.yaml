@@ -1,0 +1,34 @@
+# Template (the site stack is not up). When it is:
+#   npm run vaults:new -- site site
+# upgrades/site (Pulumi project cloudspider-site, stack site): a private
+# bucket <name>-<account id>, index.html, and a CloudFront distribution that
+# reads it through origin access control. VIEW and the check read siteUrl.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: site
+  number: 170
+  title: Static site
+  description: A static page in a private S3 bucket, served over HTTPS by CloudFront through origin access control.
+  owner: gabriel
+  tags: [upgrade, s3, cloudfront]
+spec:
+  type: static-site
+  resources:
+    tags:
+      project: site
+    ids:
+      - cloudspider-site-550536272523
+  stack:
+    dir: upgrades/site
+    name: site
+  links:
+    view: {output: siteUrl}
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/site
+    dashboard: https://us-east-1.console.aws.amazon.com/cloudfront/v4/home#/distributions
+  checks:
+    http:
+      - url: {output: siteUrl}
+        name: site page
+        expect: 200
+        contains: cloudspider site

@@ -1,0 +1,29 @@
+# Template (the pgcluster stack is not up). When it is:
+#   npm run vaults:new -- pgcluster pgcluster
+# upgrades/pgcluster (Pulumi project cloudspider-pgcluster, stack pgcluster):
+# on the EKS cluster, the EBS CSI driver and Pod Identity add-ons, the CSI
+# role, the CloudNativePG operator and one 1-instance Cluster shop/shopdb on
+# a gp3 volume. The add-ons, the role and the EBS volume carry
+# project=pgcluster (the StorageClass tags each volume); the pods are in the
+# Cluster view, namespaces cnpg-system and shop.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: pgcluster
+  number: 160
+  title: Postgres on EKS
+  description: PostgreSQL run by the CloudNativePG operator on the EKS cluster, one instance on an encrypted gp3 volume.
+  owner: gabriel
+  tags: [upgrade, eks, postgres]
+spec:
+  type: data
+  resources:
+    tags:
+      project: pgcluster
+  stack:
+    dir: upgrades/pgcluster
+    name: pgcluster
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/pgcluster
+    docs: https://cloudnative-pg.io/documentation/current/
+    dashboard: https://eu-north-1.console.aws.amazon.com/eks/home?region=eu-north-1#/clusters/cloudspider-up

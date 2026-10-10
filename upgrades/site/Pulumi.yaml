@@ -1,0 +1,5 @@
+name: cloudspider-site
+runtime: nodejs
+description: "A static site: a private S3 bucket served by CloudFront through origin access control."
+backend:
+  url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"

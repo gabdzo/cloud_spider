@@ -1,5 +1,7 @@
 export function cardName(spec, values = {}) {
   if (spec?.id === "eks") return values.clusterName || ""
+  // Cards without a name (pgcluster, shopapi) confirm with the stack name.
+  if (!spec?.parameters?.some((item) => item.name === "name")) return spec?.stack || ""
   return values.name || ""
 }
 

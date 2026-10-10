@@ -1,0 +1,5 @@
+name: cloudspider-worker
+runtime: nodejs
+description: "An SQS queue with a dead-letter queue and a small Node Lambda that works through it."
+backend:
+  url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"
