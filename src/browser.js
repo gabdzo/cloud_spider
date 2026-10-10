@@ -33,7 +33,7 @@ const hostInput = document.querySelector("#host");
 
 let place = null;
 let region = "";
-let phase = 0;
+let animTime = 0;
 let pulling = false;
 let sample = false;
 let mode = "map";
@@ -41,6 +41,8 @@ let pathData = null;
 let pathSelected = null;
 let pathPulling = false;
 let pathAgain = false;
+let reducedMotion = !window.matchMedia("(prefers-reduced-motion: reduce)").matches ? false : true;
+let tabVisible = !document.hidden;
 
 function renderChrome() {
   statusEl.textContent = ui.status;
@@ -83,10 +85,11 @@ function drawPath() {
   paintPath(ctx, {
     placed,
     selectedId: pathSelected,
-    phase,
+    animTime,
     width,
     height,
     empty: pathData?.headline || pathData?.error || "reading the path",
+    reducedMotion,
   });
 }
 
@@ -104,7 +107,7 @@ function draw() {
         contentHeight: 640,
       };
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
-  paint(ctx, { placed, ui, region, phase, width, height });
+  paint(ctx, { placed, ui, region, animTime, width, height, reducedMotion });
 }
 
 function syncSelection() {
@@ -440,23 +443,36 @@ setInterval(() => {
   if (mode === "path") pullPath();
 }, 15_000);
 
-let animationEnabled = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-let tabVisible = !document.hidden;
-
 window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", (e) => {
-  animationEnabled = !e.matches;
+  reducedMotion = e.matches;
 });
 
 document.addEventListener("visibilitychange", () => {
   tabVisible = !document.hidden;
 });
 
-setInterval(() => {
-  if (animationEnabled && tabVisible) {
-    phase = (phase + 1) % 4;
+// Animation loop using requestAnimationFrame throttled to ~10fps
+let lastAnimFrame = 0;
+const targetFps = 10;
+const frameDuration = 1000 / targetFps;
+
+function animate(timestamp) {
+  requestAnimationFrame(animate);
+  
+  if (!tabVisible || reducedMotion) {
+    // Still advance time in hidden tab or reduced motion, but don't draw
+    animTime += frameDuration;
+    return;
+  }
+  
+  if (timestamp - lastAnimFrame >= frameDuration) {
+    animTime = timestamp;
+    lastAnimFrame = timestamp;
     if (canvas.width) draw();
   }
-}, 420);
+}
+
+requestAnimationFrame(animate);
 
 window.addEventListener("resize", () => draw());
 
