@@ -59,6 +59,7 @@ To add a vault:
 4. Refresh the page.
 
 The tag convention is one tag, project=<vault name>, on every taggable resource. Each vault selects spec.resources.tags: {project: <name>}. One stack is one living vault: a vault with spec.stack also owns every resource in that stack's state (read with pulumi stack export, cached 60 s, no AWS call), so it finds them even before the tags land. VPCs and subnets count as resources too.
+An open vault shows TROUBLE: failed AWS calls (from the radio's CloudTrail read) that touched or asked for one of its resources by name, ARN or id. It also shows ERROR LINES: the last hour of error lines from its log groups (its functions' /aws/lambda/<name> and the stack's log groups), read with logs:FilterLogEvents when the vault opens and cached for a minute. A closed door reads TROUBLE ×n in red, and it counts its pieces (n ON MAP). Owned pieces stay where they are on the map.
 A link or a check URL can be {output: <name>}, read from the stack's outputs (camp's VIEW and check use {output: pageUrl}). Until the stack exports it, the link is left off and the panel lists it under WAITING.
 The Pulumi stacks set the tag stack-wide, so new resources inherit it:
 

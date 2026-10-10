@@ -95,6 +95,7 @@ export function historyFact(text) {
 }
 
 const COARSE = new Set([
+  "aws:lambda/functionUrl:FunctionUrl",
   "aws:s3/bucket:Bucket",
   "aws:lambda/function:Function",
   "aws:dynamodb/table:Table",
@@ -102,6 +103,7 @@ const COARSE = new Set([
 ])
 
 const KIND = {
+  "aws:lambda/functionUrl:FunctionUrl": "url",
   "aws:s3/bucket:Bucket": "bucket",
   "aws:lambda/function:Function": "function",
   "aws:dynamodb/table:Table": "table",
@@ -118,6 +120,10 @@ function secretValues(outputs) {
 function resourceLabel(resource) {
   const outputs = resource?.outputs || {}
   const hidden = secretValues(outputs)
+  // A function URL goes by its host: abc123.lambda-url.eu-north-1.on.aws
+  if (typeof outputs.functionUrl === "string" && /^https:\/\//.test(outputs.functionUrl)) {
+    return outputs.functionUrl.replace(/^https:\/\//, "").replace(/\/$/, "")
+  }
   for (const key of ["bucket", "functionName", "name", "id"]) {
     const value = outputs[key]
     if (typeof value === "string" && value && !hidden.includes(value)) return value
@@ -144,6 +150,7 @@ export function campFixtures(resources, grain) {
       vpcId: "",
       kind: KIND[type] || "generic",
       name,
+      ...(KIND[type] === "url" ? { url: resource.outputs.functionUrl } : {}),
       status: "ok",
       uses: resource.dependencies || [],
       // For vaults: match by ARN or tags.

@@ -480,6 +480,27 @@ const page = `<!doctype html>
   .vp-facts dd { margin: 0; color: var(--pip-bright); overflow-wrap: anywhere; }
   .vp-checks h4 { margin: 0 0 4px; color: var(--pip-dim); font-size: 11px; letter-spacing: 0.14em; border-top: 1px dashed var(--pip-dark); padding-top: 8px; }
   .vp-checks ul, .vp-errors { list-style: none; margin: 0; padding: 0; }
+  .vp-trouble h4, .vp-errlines h4 {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    margin: 8px 0 4px; padding-top: 8px; border-top: 1px dashed var(--pip-dark);
+    font-size: 11px; letter-spacing: 0.14em; color: var(--pip-dim);
+  }
+  .vp-trouble h4 { color: var(--status-broken); }
+  .vp-trouble ul { list-style: none; margin: 0; padding: 0; }
+  .vp-trouble li { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; }
+  .vp-trouble .dot { flex: none; width: 10px; height: 10px; margin-top: 3px; border-radius: 50%; background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
+  .vp-trouble .body { display: flex; flex-direction: column; min-width: 0; }
+  .vp-trouble .when, .vp-errlines .when { color: var(--pip-dim); font-size: 11px; }
+  .vp-trouble .call { color: var(--pip-bright); overflow-wrap: anywhere; }
+  .vp-trouble .err { color: var(--status-broken); overflow-wrap: anywhere; }
+  .vp-reload { min-height: 20px; padding: 0 6px; font: inherit; font-size: 10px; letter-spacing: 0.12em; color: var(--pip-mid); background: transparent; border: 1px solid var(--pip-dim); cursor: pointer; }
+  .vp-reload:hover, .vp-reload:focus-visible { outline: none; color: var(--pip-hot); border-color: var(--pip-hot); }
+  .vp-reload:disabled { opacity: 0.6; cursor: default; }
+  .vp-note { margin: 2px 0 4px; color: var(--pip-dim); font-size: 11px; overflow-wrap: anywhere; }
+  .vp-note.err { color: var(--status-broken); }
+  .vp-lines { list-style: none; margin: 0; padding: 4px 6px; max-height: 132px; overflow: auto; background: var(--pip-ink); border: 1px solid var(--pip-dark); font-size: 11px; line-height: 1.4; }
+  .vp-lines li { display: flex; gap: 6px; padding: 1px 0; }
+  .vp-lines .text { color: var(--status-hang); overflow-wrap: anywhere; min-width: 0; }
   .vp-checks li { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; border-bottom: 1px solid rgba(20, 255, 106, 0.08); }
   .vp-checks .dot { flex: none; width: 10px; height: 10px; margin-top: 3px; border-radius: 50%; background: var(--pip-dim); box-shadow: inset 0 0 0 1px #000; }
   .vp-checks li.ok .dot { background: var(--status-ok); box-shadow: 0 0 6px var(--status-ok), inset 0 0 0 1px #000; }
@@ -881,6 +902,11 @@ async function route(app, req, res) {
     // No boot here: vaults come from files, so they show even before (or
     // without) an AWS read; ownership fills in once the place is known.
     send(res, 200, await app.vaultsView({ sample: url.searchParams.get("sample") === "1" }));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/vaults/logs") {
+    send(res, 200, await app.vaultLogs(url.searchParams.get("key") || "", { sample: url.searchParams.get("sample") === "1" }));
     return;
   }
 

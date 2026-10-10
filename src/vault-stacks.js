@@ -50,6 +50,19 @@ export function stackOutputs(resources) {
   return out;
 }
 
+// Log groups worth reading when a vault opens: its own log groups and the
+// groups of its Lambda functions.
+export function stackLogGroups(resources) {
+  const out = new Set();
+  for (const resource of resources || []) {
+    const name = resource?.outputs?.name;
+    if (typeof name !== "string" || !name) continue;
+    if (resource.type === "aws:cloudwatch/logGroup:LogGroup") out.add(name);
+    if (resource.type === "aws:lambda/function:Function") out.add(`/aws/lambda/${name}`);
+  }
+  return [...out];
+}
+
 export function countResources(resources) {
   return (resources || []).filter((item) => item?.type && item.type !== "pulumi:pulumi:Stack" && !String(item.type).startsWith("pulumi:providers:")).length;
 }
@@ -106,7 +119,7 @@ export function createStackReader({ run = spawn, cwd = root, env = process.env, 
               const resources = loaded.stacks.flatMap((item) => item.resources);
               const outputs = {};
               for (const item of loaded.stacks) Object.assign(outputs, stackOutputs(item.resources));
-              const value = { ...loaded, handles: stackHandles(resources), outputs, count: countResources(resources) };
+              const value = { ...loaded, handles: stackHandles(resources), outputs, count: countResources(resources), logGroups: stackLogGroups(resources) };
               cache.set(key, { at: clock(), value });
               inflight.delete(key);
               return value;

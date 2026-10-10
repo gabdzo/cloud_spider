@@ -19,6 +19,7 @@ import { CloudTrailClient, LookupEventsCommand } from "@aws-sdk/client-cloudtrai
 import {
   CloudWatchLogsClient,
   GetLogEventsCommand,
+  FilterLogEventsCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
 
 export function createAws() {
@@ -35,7 +36,7 @@ export function createAws() {
       startInstances,
     },
     trail: { lookupEvents },
-    logs: { filter: readLogStream },
+    logs: { filter: readLogStream, search: searchLogGroup },
     eks: { listClusters: listUpgradeClusters, describeCluster: describeUpgradeCluster },
   };
 }
@@ -143,9 +144,27 @@ async function lookupEvents(region) {
         time: event.EventTime ? new Date(event.EventTime).getTime() : 0,
         resources: (event.Resources || []).map(resourceId).filter(Boolean),
         error: trailIssue(event),
+        // For vault trouble: a failed call often names no resource (nothing
+        // was made), so keep the names it asked for.
+        names: trailNames(event),
       })),
     };
   } catch (error) {
+    return publicError(error);
+  }
+}
+
+// Error lines from one log group (a vault's function or log group), newest
+// last. Read-only: logs:FilterLogEvents.
+async function searchLogGroup({ region, group, pattern, start, limit = 20 }) {
+  try {
+    const client = new CloudWatchLogsClient({ region });
+    const out = await client.send(
+      new FilterLogEventsCommand({ logGroupName: group, filterPattern: pattern, startTime: start, limit }),
+    );
+    return { events: (out.events || []).map((event) => ({ message: event.message || "", time: event.timestamp || 0, stream: event.logStreamName || "" })) };
+  } catch (error) {
+    if (error?.name === "ResourceNotFoundException") return { missing: true };
     return publicError(error);
   }
 }
@@ -359,6 +378,24 @@ function trailIssue(event) {
   const message = String(body.errorMessage || "").replace(/\s+/g, " ").trim();
   if (!message || message.length > 90) return code;
   return message.toLowerCase().includes(String(code).toLowerCase()) ? code : `${code}: ${message}`;
+}
+
+export function trailNames(event) {
+  if (!event?.CloudTrailEvent) return [];
+  let body;
+  try {
+    body = JSON.parse(event.CloudTrailEvent);
+  } catch {
+    return [];
+  }
+  if (!body.errorCode) return [];
+  const names = new Set();
+  const params = body.requestParameters && typeof body.requestParameters === "object" ? body.requestParameters : {};
+  for (const [key, value] of Object.entries(params)) {
+    if (!/(name|id|arn)$/i.test(key)) continue;
+    if (typeof value === "string" && value && value.length <= 256) names.add(value.slice(value.lastIndexOf("/") + 1) || value);
+  }
+  return [...names].slice(0, 6);
 }
 
 function resourceId(resource) {

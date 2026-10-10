@@ -331,7 +331,7 @@ function placedMap() {
 // ---- vaults ----
 
 function vaultSignature(vaults) {
-  return vaults.map((vault) => `${vault.key}:${vault.number}:${vault.damaged ? 1 : 0}:${vault.title}:${vault.stack ? `${vault.stack.dir}/${vault.stack.name}/${vault.stackInfo?.stacks?.length || 0}` : ""}:${(vault.owned || []).join(",")}`).join("|");
+  return vaults.map((vault) => `${vault.key}:${vault.number}:${vault.damaged ? 1 : 0}:${vault.title}:${vault.stack ? `${vault.stack.dir}/${vault.stack.name}/${vault.stackInfo?.stacks?.length || 0}` : ""}:${(vault.trouble || []).length}:${(vault.owned || []).join(",")}`).join("|");
 }
 
 async function loadVaults() {
@@ -425,6 +425,88 @@ function checkLine(check) {
   return li;
 }
 
+// TROUBLE: failed AWS calls (CloudTrail, via the radio) on this vault's
+// resources, and the last error lines of its log groups.
+function hhmm(time) {
+  if (!time) return "--:--";
+  const date = new Date(time);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function troubleBlock(vault) {
+  const block = vel("div", "vp-trouble");
+  block.append(vel("h4", "", `TROUBLE · ${vault.trouble.length} FAILED CALL${vault.trouble.length === 1 ? "" : "S"}`));
+  const list = vel("ul");
+  for (const item of vault.trouble) {
+    const li = vel("li", "fail");
+    li.append(vel("span", "dot"));
+    const body = vel("span", "body");
+    body.append(vel("span", "when", hhmm(item.time)), vel("span", "call", `${item.call}${item.resource ? ` · ${item.resource}` : ""}`), vel("span", "err", item.issue));
+    li.append(body);
+    list.append(li);
+  }
+  block.append(list);
+  return block;
+}
+
+const vaultLogState = new Map();
+const LOG_REFRESH_MS = 60_000;
+
+function errorLinesBlock(vault) {
+  const block = vel("div", "vp-errlines");
+  const head = vel("h4");
+  const state = vaultLogState.get(vault.key);
+  head.append(vel("span", "", state?.lines?.length ? `ERROR LINES · LAST HOUR · ${state.lines.length}` : "ERROR LINES · LAST HOUR"));
+  const again = vel("button", "vp-reload", state?.loading ? "READING…" : "RE-READ");
+  again.type = "button";
+  again.disabled = Boolean(state?.loading);
+  again.title = `read ${vault.logGroups.join(", ")} again`;
+  again.addEventListener("click", () => loadVaultLogs(vault.key, true));
+  head.append(again);
+  block.append(head);
+  if (!state || state.loading) block.append(vel("p", "vp-note", "reading the log groups…"));
+  else {
+    if (state.note) block.append(vel("p", state.error ? "vp-note err" : "vp-note", state.note));
+    if (state.lines?.length) {
+      const pre = vel("ol", "vp-lines");
+      for (const line of state.lines) {
+        const li = vel("li");
+        li.append(vel("span", "when", hhmm(line.time)), vel("span", "text", line.text));
+        li.title = line.group;
+        pre.append(li);
+      }
+      block.append(pre);
+    }
+  }
+  return block;
+}
+
+async function loadVaultLogs(key, force = false) {
+  const state = vaultLogState.get(key);
+  if (state?.loading) return;
+  if (!force && state && Date.now() - state.at < LOG_REFRESH_MS) return;
+  vaultLogState.set(key, { ...(state || {}), loading: true, at: Date.now() });
+  repaintPanels();
+  const wasSample = sample;
+  let next;
+  try {
+    const body = await fetch(`/api/vaults/logs?key=${encodeURIComponent(key)}${wasSample ? "&sample=1" : ""}`).then((response) => response.json());
+    next = body?.error ? { lines: [], note: body.error, error: true } : { lines: body?.lines || [], note: body?.note || "" };
+  } catch {
+    next = { lines: [], note: "the logs did not load", error: true };
+  }
+  if (wasSample !== sample) return;
+  vaultLogState.set(key, { ...next, loading: false, at: Date.now() });
+  repaintPanels();
+}
+
+function repaintPanels() {
+  panelsShown = "";
+  chromeFor = { placed: null, data: null };
+  renderChrome();
+  draw();
+}
+
 function stackFact(vault) {
   if (!vault.stack) return "";
   const info = vault.stackInfo;
@@ -479,6 +561,8 @@ function vaultPanel(cell) {
     for (const check of vault.checks || []) list.append(checkLine(check));
     checks.append(list);
     body.append(checks);
+    if (vault.trouble?.length) body.append(troubleBlock(vault));
+    if (vault.logGroups?.length) body.append(errorLinesBlock(vault));
   }
   section.append(body);
   const nav = vel("nav", "vp-links");
@@ -564,7 +648,7 @@ function placeVaultChrome(placed) {
   if (!vaultTemplates.hidden) renderTemplates();
   const open = area.cells.filter((cell) => cell.open && cell.panel);
   const shown = open
-    .map((cell) => `${cell.key}@${cell.panel.x},${cell.panel.y},${cell.panel.w},${cell.panel.h}:${JSON.stringify([cell.vault.checks, cell.vault.status, cell.vault.description, cell.vault.links, cell.vault.errors, (cell.vault.owned || []).length, cell.vault.stackInfo])}`)
+    .map((cell) => `${cell.key}@${cell.panel.x},${cell.panel.y},${cell.panel.w},${cell.panel.h}:${JSON.stringify([cell.vault.checks, cell.vault.status, cell.vault.description, cell.vault.links, cell.vault.errors, (cell.vault.owned || []).length, cell.vault.stackInfo, cell.vault.trouble, vaultLogState.get(cell.key)])}`)
     .join("|");
   if (shown === panelsShown) return;
   panelsShown = shown;
@@ -580,6 +664,8 @@ function placeVaultChrome(placed) {
       return panel;
     }),
   );
+  // Error lines load when a vault opens (cached a minute on both sides).
+  for (const cell of open) if (cell.vault.logGroups?.length && !vaultLogState.has(cell.key)) loadVaultLogs(cell.key);
 }
 
 // On a narrow window the diagnosis can land past the edge of the scrolled
