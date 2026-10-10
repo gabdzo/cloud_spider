@@ -92,3 +92,28 @@ Skip a stack that is not up. Running Up again from the Stacks panel does the sam
     aws resourcegroupstaggingapi tag-resources --region eu-north-1 --resource-arn-list arn:aws:s3:::cloudspider-state-550536272523 --tags project=pulumi-state,managed-by=bootstrap
 
 Load balancer tags are read with elasticloadbalancing:DescribeTags. Without that permission, ALBs match by name only.
+
+EKS clusters, one stack each:
+
+Every cluster has its own Pulumi stack in upgrades/eks, so its own state file, lock and Pulumi.<stack>.yaml. The first cluster, cloudspider-up, stays in the stack upgrade. Nothing moves and nothing is replaced. Any other name gets the stack eks-<name>. Its IAM roles and node group are named <name>-cluster, <name>-node and <name>-nodes, and every resource is tagged cluster=<name>. The program refuses to run a stack for a different cluster name. Before this, every name went to the stack upgrade, so a "new" cluster rewrote the old cluster's config and tried to rename it in place.
+
+To make a second cluster in the Stacks panel: open EKS, type a new clusterName (for example cloudspider-two) and press Up. The card shows the stack it uses (stack eks-cloudspider-two). When Pulumi fails, the card shows Pulumi's own error lines, not just the exit code. Down needs the same name.
+
+The same from a shell, from the repo root:
+
+    cd upgrades/eks && npm ci
+    pulumi stack select eks-cloudspider-two --create
+    pulumi config set --stack eks-cloudspider-two aws:region eu-north-1
+    pulumi config set --stack eks-cloudspider-two --path 'aws:allowedAccountIds[0]' 550536272523
+    pulumi config set --stack eks-cloudspider-two cloudspider-upgrade:clusterName cloudspider-two
+    pulumi up --stack eks-cloudspider-two
+
+Pass --stack every time. stack select changes the stack a bare pulumi up uses in that folder. Pulumi.eks-*.yaml files stay local (they are in .gitignore).
+
+At most two clusters can be up at once. Set CLOUDSPIDER_MAX_CLUSTERS to change that. The account's on-demand limit is 5 vCPU. Each cluster's t4g.small node uses 2, and so does the running test nano. Stop the nano or ask AWS for a higher limit before you bring up a second cluster.
+
+If an earlier try at a second cluster changed upgrades/eks/Pulumi.upgrade.yaml, put the first cluster's name back before you press Up on it again:
+
+    cd upgrades/eks && pulumi config set --stack upgrade cloudspider-upgrade:clusterName cloudspider-up
+
+Running git checkout upgrades/eks/Pulumi.upgrade.yaml does the same. Then run pulumi preview --stack upgrade --diff. It should show nothing to replace.

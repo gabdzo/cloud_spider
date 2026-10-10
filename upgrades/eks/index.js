@@ -13,6 +13,18 @@ if (!["t4g.small", "t4g.medium"].includes(instanceType)) {
 }
 if (nodeCount !== 1) throw new Error("nodeCount must be 1");
 
+// One stack per cluster: eks-<clusterName>. The first cluster predates that
+// and lives in the stack "upgrade" with Pulumi's auto-generated role and node
+// group names; it keeps them, because naming them now would replace them.
+// Every other cluster names its account-wide resources after itself, so two
+// clusters never collide and the console shows which is which.
+const stack = pulumi.getStack();
+const legacy = stack === "upgrade";
+if (!legacy && stack !== `eks-${clusterName}`) {
+  throw new Error(`stack ${stack} is for another cluster: cluster ${clusterName} belongs in stack eks-${clusterName}`);
+}
+const named = (suffix) => (legacy ? {} : { name: `${clusterName}-${suffix}` });
+
 // Vault: vaults/eks.yaml selects project=eks (every cluster stack).
 inheritTags(pulumi, stackTags("eks", { cluster: clusterName }));
 
@@ -56,13 +68,13 @@ const assume = (service) =>
     Statement: [{ Effect: "Allow", Principal: { Service: service }, Action: "sts:AssumeRole" }],
   });
 
-const clusterRole = new aws.iam.Role("cluster", { assumeRolePolicy: assume("eks.amazonaws.com"), tags });
+const clusterRole = new aws.iam.Role("cluster", { ...named("cluster"), assumeRolePolicy: assume("eks.amazonaws.com"), tags });
 const clusterPolicy = new aws.iam.RolePolicyAttachment("cluster", {
   role: clusterRole,
   policyArn: "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy",
 });
 
-const nodeRole = new aws.iam.Role("node", { assumeRolePolicy: assume("ec2.amazonaws.com"), tags });
+const nodeRole = new aws.iam.Role("node", { ...named("node"), assumeRolePolicy: assume("ec2.amazonaws.com"), tags });
 const nodePolicies = [
   "AmazonEKSWorkerNodePolicy",
   "AmazonEKS_CNI_Policy",
@@ -95,6 +107,7 @@ const nodes = new aws.eks.NodeGroup(
   "nodes",
   {
     clusterName: cluster.name,
+    ...(legacy ? {} : { nodeGroupName: `${clusterName}-nodes` }),
     nodeRoleArn: nodeRole.arn,
     subnetIds: [subnetA.id, subnetB.id],
     instanceTypes: [instanceType],

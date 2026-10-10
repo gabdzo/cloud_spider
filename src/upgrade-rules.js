@@ -18,6 +18,9 @@ export function upgradeSpiderLine({ action, title, sample, response }) {
 }
 
 export function watchLine({ cluster, history }) {
+  if (history?.missing) {
+    return { status: "ok", text: `no stack ${history.stack || ""} yet. Run makes it.`.replace("  ", " ") }
+  }
   const kind = history?.kind || ""
   const resources = Number.isInteger(history?.resources) ? history.resources : 0
   const count = `${resources} resources`
@@ -34,8 +37,42 @@ export function watchLine({ cluster, history }) {
   return { status: "fail", text: `Pulumi finished and the stack still has ${count}` }
 }
 
-export function blocksSecondCluster(clusters, wanted) {
-  return Array.isArray(clusters) && clusters.some((name) => name !== wanted)
+// The first cluster lived in the stack "upgrade" before clusters had their
+// own stacks. It keeps that stack (and its state) so nothing is replaced.
+export const LEGACY_CLUSTER = "cloudspider-up"
+
+// Which Pulumi stack a card runs. EKS: one stack per cluster name, so a new
+// name is a new stack with its own state, lock and Pulumi.<stack>.yaml,
+// never a rename of the cluster that is already up.
+// legacyName: the cluster the old stack actually holds (its `name` output),
+// in case it is not cloudspider-up.
+export function stackFor(spec, values = {}, legacyName = LEGACY_CLUSTER) {
+  if (spec?.id !== "eks") return spec?.stack || ""
+  const name = values.clusterName || LEGACY_CLUSTER
+  return name === (legacyName || LEGACY_CLUSTER) ? spec.stack : `eks-${name}`
+}
+
+// Up is refused only for a NEW cluster when the account already runs max.
+// Re-running up on a cluster that exists is always fine.
+export function tooManyClusters(clusters, wanted, max = 2) {
+  if (!Array.isArray(clusters) || clusters.includes(wanted)) return false
+  return clusters.length >= max
+}
+
+// What the card shows when a pulumi step fails: Pulumi's own words. Pulumi
+// prints its diagnostics ("error: ...") on stdout during up and on stderr
+// for everything else, so look at both, newest first.
+export function failureText(args, code, lines = [], errLines = [], stack = "") {
+  const head = `pulumi ${args[0]}${stack ? ` (stack ${stack})` : ""} failed, exit ${code}`
+  const all = lines.flatMap((chunk) => String(chunk).split("\n"))
+  const errors = all.filter((line) => /^\s*(error|Details):/i.test(line)).map((line) => line.trim())
+  const unique = [...new Set(errors)].slice(-6)
+  let detail = unique
+  if (!detail.length) {
+    detail = errLines.flatMap((chunk) => String(chunk).split("\n")).map((line) => line.trim()).filter(Boolean).slice(-8)
+  }
+  if (!detail.length) detail = all.map((line) => line.trim()).filter(Boolean).slice(-8)
+  return [head, ...detail].join("\n")
 }
 
 export function pulumiMissing(status) {

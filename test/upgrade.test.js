@@ -9,6 +9,11 @@ import {
   createUpgrade,
   pulumiWarning,
   upgradeSpiderLine,
+  LEGACY_CLUSTER,
+  failureText,
+  stackFor,
+  tooManyClusters,
+  upgradeSteps,
   UPGRADES,
   watchLine,
 } from "../src/upgrade.js";
@@ -64,7 +69,7 @@ test("an EKS upgrade only accepts the listed parameters and never uses a shell",
   assert.deepEqual(fake.calls[0].args.slice(0, 3), ["stack", "select", "upgrade"]);
   assert.equal(fake.calls.at(-1).args[0], "up");
   assert.deepEqual(fake.calls[1].args, ["install"]);
-  const config = fake.calls.find((call) => call.args[0] === "config");
+  const config = fake.calls.find((call) => call.args[0] === "config" && call.args.includes("cloudspider-upgrade:clusterName"));
   assert.equal(config.args.at(-2), "cloudspider-upgrade:clusterName");
   assert.equal(config.args.at(-1), "cloudspider-up");
   assert.match(fake.calls[0].cwd, /upgrades\/eks$/);
@@ -149,24 +154,93 @@ test("destroy skips config and refuses a name that does not match", async () => 
   assert.deepEqual(fake.calls[0].stdio, ["ignore", "pipe", "pipe"]);
 });
 
-test("run refuses a second cluster name", () => {
+test("a new cluster name is a new stack; the first cluster keeps the stack upgrade", async () => {
+  const spec = UPGRADES.find((item) => item.id === "eks");
+  assert.equal(stackFor(spec, {}), "upgrade");
+  assert.equal(stackFor(spec, { clusterName: LEGACY_CLUSTER }), "upgrade");
+  assert.equal(stackFor(spec, { clusterName: "cloudspider-two" }), "eks-cloudspider-two");
+  assert.equal(stackFor(UPGRADES.find((item) => item.id === "camp"), { name: "other" }), "camp");
+
+  const steps = upgradeSteps(spec, "eks-cloudspider-two", "up", { clusterName: "cloudspider-two", instanceType: "t4g.small", nodeCount: "1" });
+  for (const step of steps.slice(1)) {
+    if (step[0] === "install") continue;
+    assert.ok(step.includes("--stack") && step[step.indexOf("--stack") + 1] === "eks-cloudspider-two", step.join(" "));
+  }
+  assert.deepEqual(steps[0], ["stack", "select", "eks-cloudspider-two", "--create", "--non-interactive"]);
+  assert.ok(steps.some((step) => step.join(" ") === "config set --stack eks-cloudspider-two --non-interactive aws:region eu-north-1"));
+  assert.ok(steps.some((step) => step.join(" ") === "config set --stack eks-cloudspider-two --non-interactive --path aws:allowedAccountIds[0] 550536272523"));
+  assert.deepEqual(steps.at(-1), ["up", "--yes", "--non-interactive", "--stack", "eks-cloudspider-two"]);
+
+  const fake = fakeRun();
+  const upgrade = createUpgrade({
+    env: {},
+    run(cmd, args, opts) {
+      const child = fake.run(cmd, args, opts);
+      queueMicrotask(() => child.close(0));
+      return child;
+    },
+  });
+  const second = upgrade.run({ module: "eks", action: "up", params: { clusterName: "cloudspider-two" }, clusters: ["cloudspider-up"] });
+  assert.equal(second.running, true);
+  assert.equal(second.stack, "eks-cloudspider-two");
+  while (upgrade.status().running) await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(fake.calls.every((call) => !call.args.includes("upgrade")), "the first cluster's stack is never touched");
+  const down = upgrade.run({ module: "eks", action: "destroy", params: { clusterName: "cloudspider-two", confirmName: "cloudspider-two" } });
+  assert.equal(down.stack, "eks-cloudspider-two");
+});
+
+test("a third cluster is refused, re-running an existing one is not", () => {
+  assert.equal(tooManyClusters(["cloudspider-up"], "cloudspider-two", 2), false);
+  assert.equal(tooManyClusters(["cloudspider-up", "cloudspider-two"], "cloudspider-three", 2), true);
+  assert.equal(tooManyClusters(["cloudspider-up", "cloudspider-two"], "cloudspider-two", 2), false);
+  assert.equal(tooManyClusters(undefined, "x", 2), false);
   const fake = fakeRun();
   const upgrade = createUpgrade({ env: {}, run: fake.run });
   const blocked = upgrade.run({
     module: "eks",
     action: "up",
-    params: { clusterName: "cloudspider-other" },
-    clusters: ["cloudspider-up"],
+    params: { clusterName: "cloudspider-three" },
+    clusters: ["cloudspider-up", "cloudspider-two"],
   });
-  assert.equal(blocked.error, "a cluster is already up");
+  assert.match(blocked.error, /^2 clusters are already up \(cloudspider-up, cloudspider-two\); the limit is 2/);
   assert.equal(fake.calls.length, 0);
-  const same = upgrade.run({
-    module: "eks",
-    action: "up",
-    params: { clusterName: "cloudspider-up" },
-    clusters: ["cloudspider-up"],
+  const more = createUpgrade({ env: { CLOUDSPIDER_MAX_CLUSTERS: "3" }, run: fake.run });
+  assert.equal(more.run({ module: "eks", action: "up", params: { clusterName: "cloudspider-three" }, clusters: ["cloudspider-up", "cloudspider-two"] }).running, true);
+});
+
+test("a failed up shows Pulumi's own error, even after pages of progress", async () => {
+  const children = [];
+  const upgrade = createUpgrade({
+    env: {},
+    run(cmd, args) {
+      const handlers = {};
+      const out = {};
+      const err = {};
+      const child = {
+        stdout: { on: (event, fn) => (out[event] = fn) },
+        stderr: { on: (event, fn) => (err[event] = fn) },
+        on: (event, fn) => (handlers[event] = fn),
+        out, err, handlers,
+      };
+      children.push(child);
+      queueMicrotask(() => {
+        if (args[0] !== "up") return handlers.close(0);
+        for (let i = 0; i < 600; i += 1) out.data(` +  aws:eks:Cluster up creating (${i}s) ${"#".repeat(40)}\n`);
+        out.data("Diagnostics:\n  aws:eks:Cluster (up):\n    error: creating EKS Cluster (cloudspider-two): ResourceInUseException: Cluster already exists with name: cloudspider-two\n");
+        err.data("error: update failed\n");
+        handlers.close(255);
+      });
+      return child;
+    },
   });
-  assert.equal(same.running, true);
+  upgrade.run({ module: "eks", action: "up", params: { clusterName: "cloudspider-two" }, clusters: [] });
+  while (upgrade.status().running) await new Promise((resolve) => setTimeout(resolve, 0));
+  const status = upgrade.status();
+  assert.match(status.error, /^pulumi up \(stack eks-cloudspider-two\) failed, exit 255/);
+  assert.match(status.error, /ResourceInUseException: Cluster already exists with name: cloudspider-two/);
+  assert.match(status.error, /error: update failed/);
+  assert.match(status.lines.join("\n"), /error: update failed/, "the newest lines are kept");
+  assert.equal(failureText(["stack"], 1, [], ["  no Pulumi.yaml project file found  "], "x"), "pulumi stack (stack x) failed, exit 1\nno Pulumi.yaml project file found");
 });
 
 test("a refused cluster list does not start pulumi", async () => {
@@ -381,4 +455,34 @@ test("sample view does not export the camp stack", async () => {
   } finally {
     server.close();
   }
+});
+
+test("the old stack keeps whatever cluster it really holds, read from its state", async () => {
+  const spec = UPGRADES.find((item) => item.id === "eks");
+  assert.equal(stackFor(spec, { clusterName: "my-first" }, "my-first"), "upgrade");
+  assert.equal(stackFor(spec, { clusterName: LEGACY_CLUSTER }, "my-first"), "eks-cloudspider-up");
+  const outputs = [];
+  function stub(text, error) {
+    return (cmd, args) => {
+      outputs.push(args.join(" "));
+      const handlers = {};
+      const out = {};
+      const err = {};
+      queueMicrotask(() => {
+        if (text) out.data?.(Buffer.from(text));
+        if (error) err.data?.(Buffer.from(error));
+        handlers.close?.(error ? 255 : 0);
+      });
+      return {
+        stdout: { on: (_e, fn) => (out.data = fn) },
+        stderr: { on: (_e, fn) => (err.data = fn) },
+        on: (event, fn) => (handlers[event] = fn),
+      };
+    };
+  }
+  assert.equal(await createUpgrade({ env: {}, run: stub("my-first\n") }).legacyCluster(), "my-first");
+  assert.equal(outputs.at(-1), "stack output name --stack upgrade");
+  assert.equal(await createUpgrade({ env: {}, run: stub("", "error: no stack named 'upgrade' found") }).legacyCluster(), LEGACY_CLUSTER);
+  const up = createUpgrade({ env: {}, run: stub("") }).run({ module: "eks", action: "up", params: { clusterName: "my-first" }, legacyName: "my-first" });
+  assert.equal(up.stack, "upgrade");
 });

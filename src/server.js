@@ -818,7 +818,12 @@ async function route(app, req, res) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/upgrade") {
-    send(res, 200, await app.upgradeStatus(url.searchParams.get("module") || "", url.searchParams.get("fresh") === "1"));
+    const values = {};
+    for (const key of ["clusterName", "name"]) {
+      const value = url.searchParams.get(key);
+      if (value) values[key] = value;
+    }
+    send(res, 200, await app.upgradeStatus(url.searchParams.get("module") || "", url.searchParams.get("fresh") === "1", values));
     return;
   }
 

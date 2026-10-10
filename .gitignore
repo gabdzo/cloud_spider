@@ -3,3 +3,5 @@ preview.png
 .gstack/
 screenshots-before/
 screenshots-after/
+# Per-cluster stack config written by the Stacks panel (pulumi config set).
+upgrades/eks/Pulumi.eks-*.yaml
