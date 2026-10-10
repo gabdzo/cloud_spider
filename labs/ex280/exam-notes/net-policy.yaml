@@ -1,0 +1,11 @@
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  name: deny-backend
+  namespace: ex280-app
+spec:
+  podSelector:
+    matchLabels:
+      app: ex280-app-be
+  policy:
+    - Ingress

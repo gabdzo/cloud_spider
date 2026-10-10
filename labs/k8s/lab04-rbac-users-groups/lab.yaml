@@ -1,0 +1,39 @@
+# Kubernetes (EKS) variant of labs/ex280/lab04-rbac-users-groups (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab04-rbac-users-groups
+title: "RBAC: users and groups"
+track: k8s
+openshift: labs/ex280/lab04-rbac-users-groups
+task: "In `k8s-lab04`, three people need different access. Kubernetes has no user objects: who someone is and which groups they are in comes from the authenticator (on EKS, an IAM principal mapped by an access entry). Here the ConfigMap `group-membership` says who is in which group; you test with impersonation."
+requirements:
+  - "`alice` (group `lab04-readers`) can get, list and watch pods and read pod logs, and cannot delete pods"
+  - "`bob` (group `lab04-deployers`) can create and delete deployments, and cannot create RoleBindings"
+  - "`carol` (group `lab04-guests`) cannot get pods or secrets"
+  - "Grant alice and bob through their groups: a binding on the user alone does not count"
+setup:
+  - kubectl apply -f labs/k8s/lab04-rbac-users-groups/setup.yaml
+hints:
+  - "`kubectl auth can-i list pods -n k8s-lab04 --as alice --as-group lab04-readers`"
+  - Logs are the `pods/log` subresource.
+  - "`kubectl get rolebindings -n k8s-lab04 -o wide` shows who each binding names."
+check: labs/k8s/lab04-rbac-users-groups/check.sh
+reset:
+  - kubectl delete namespace k8s-lab04 --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab04-rbac-users-groups/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab04 --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: htpasswd identity provider, `oc create user`
+    kubernetes: IAM users/roles + EKS access entries (`kubernetesGroups`)
+  - openshift: "`oc adm groups add-users`"
+    kubernetes: the group list on the access entry
+  - openshift: "`oc adm policy add-role-to-group`"
+    kubernetes: "`kubectl create rolebinding --group`"
+noEquivalent:
+  - "In-cluster users and identity providers: EKS identities live in IAM. Making IAM users and access entries is an AWS write, so the lab uses impersonation instead."
+docs:
+  - https://kubernetes.io/docs/reference/access-authn-authz/rbac/
+  - https://docs.aws.amazon.com/eks/latest/userguide/access-entries.html

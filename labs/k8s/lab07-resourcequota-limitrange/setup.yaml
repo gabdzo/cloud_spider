@@ -1,0 +1,114 @@
+# Starting state for lab07-resourcequota-limitrange (deliberately broken). Apply with:
+#   kubectl apply -f labs/k8s/lab07-resourcequota-limitrange/setup.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8s-lab07
+  labels:
+    cloudspider.lab: k8s
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: project-quota
+  namespace: k8s-lab07
+spec:
+  hard:
+    pods: "4"
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.cpu: "2"
+    limits.memory: 2Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-page
+  namespace: k8s-lab07
+data:
+  index.html: |
+    <h1>OK</h1>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alpha
+  namespace: k8s-lab07
+  labels:
+    app: alpha
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: alpha
+  template:
+    metadata:
+      labels:
+        app: alpha
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: page
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: page
+          configMap:
+            name: app-page
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beta
+  namespace: k8s-lab07
+  labels:
+    app: beta
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: beta
+  template:
+    metadata:
+      labels:
+        app: beta
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: page
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: page
+          configMap:
+            name: app-page

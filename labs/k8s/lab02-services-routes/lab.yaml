@@ -1,0 +1,37 @@
+# Kubernetes (EKS) variant of labs/ex280/lab02-services-routes (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab02-services-routes
+title: Services and Ingress
+track: k8s
+openshift: labs/ex280/lab02-services-routes
+task: Namespace `k8s-lab02` should publish a web page and an API on one hostname, `shop-lab02.example.test`. Neither Service has ready endpoints and the Ingress points at the wrong port.
+requirements:
+  - Service `web` has ready endpoints for the web pods, on port 8080
+  - Service `api` has ready endpoints for the api pods, on port 8080
+  - "Ingress `shop`: `/` goes to `web:8080`, `/api` goes to `api:8080`"
+setup:
+  - kubectl apply -f labs/k8s/lab02-services-routes/setup.yaml
+hints:
+  - "`kubectl get endpointslices -n k8s-lab02` shows which Service selects nothing."
+  - Compare `kubectl get svc api -o yaml` targetPort with the container port.
+  - An Ingress backend names the Service port, not the container port.
+check: labs/k8s/lab02-services-routes/check.sh
+reset:
+  - kubectl delete namespace k8s-lab02 --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab02-services-routes/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab02 --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: Route with path
+    kubernetes: Ingress rule with a path
+  - openshift: "`oc expose svc`"
+    kubernetes: "`kubectl expose` + an Ingress"
+  - openshift: router (HAProxy)
+    kubernetes: an ingress controller (none on EKS by default)
+noEquivalent:
+  - "The check reads the Ingress, it does not curl it: the EKS stack has no ingress controller (an AWS Load Balancer Controller or ingress-nginx would add a load balancer, ~$17/month)."
+docs:
+  - https://kubernetes.io/docs/concepts/services-networking/ingress/

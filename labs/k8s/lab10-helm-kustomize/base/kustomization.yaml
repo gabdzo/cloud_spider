@@ -1,0 +1,4 @@
+resources: [deployment.yaml]
+configMapGenerator:
+  - name: notice-page
+    literals: ["index.html=<h1>NOTICE-OK</h1>"]

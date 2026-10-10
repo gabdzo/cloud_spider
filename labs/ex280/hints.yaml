@@ -1,0 +1,73 @@
+# Hints for the OpenShift labs, shown one at a time in Cloud Spider's LEARN
+# tab. They point at the commands to investigate with; none of them gives the
+# fix. The full solutions live in each lab's answer/ folder, which Cloud
+# Spider never displays.
+lab01-workloads:
+  - "`oc rollout history deploy/catalog` and `oc rollout status` show which revision broke the rollout."
+  - "`oc describe pod` on a pod that is not ready names the image it cannot pull."
+  - "`oc get is inventory` lists the tags that already exist. `oc set image` accepts an image stream tag."
+lab02-services-routes:
+  - "`oc get endpoints` (or endpointslices) shows whether a Service selects any ready pod."
+  - "Compare the Service selector and targetPort with the pod labels and the container port."
+  - "`oc describe route` shows the path, the service and the target port it forwards to."
+lab03-networkpolicy:
+  - "Begin from what is denied: `oc get networkpolicy -A` in the three lab projects."
+  - "Projects carry the label `kubernetes.io/metadata.name`. Use it in a namespaceSelector."
+  - "The router reaches pods from the ingress namespace, and DNS lives in `openshift-dns`. Both need their own allow rules."
+lab04-rbac-users-groups:
+  - "`oc auth can-i <verb> <resource> --as <user>` tests a user without logging in as them."
+  - "`oc get rolebindings -n ex280-lab04 -o wide` shows who is bound to which role."
+  - "`pods/log` is its own subresource. A role that reads pods does not read logs on its own."
+lab05-serviceaccounts-scc:
+  - "`oc get pod <pod> -o yaml | grep scc` shows the SCC that admitted a pod."
+  - "`oc adm policy who-can use scc <name>` and `oc describe scc` show who may use an SCC and what it allows."
+  - "A purpose-built SCC can pin `runAsUser` to exactly 1000. Grant `use` on it to the workload's ServiceAccount."
+lab06-configmaps-secrets:
+  - "`oc describe pod` reports missing ConfigMap or Secret keys in the events."
+  - "A volume item maps a key to a file name. Compare `items[].path` with the path the requirement asks for."
+  - "Files mounted with `subPath` never see updates. Mount the whole Secret as a directory instead."
+lab07-resourcequota-limitrange:
+  - "`oc describe quota` shows usage against each hard ceiling."
+  - "`oc get events` and `oc describe rs` explain why a ReplicaSet cannot create pods."
+  - "A LimitRange gives defaults to containers that set nothing. Check what it sets for requests."
+lab08-probes-health:
+  - "`oc get pods` RESTARTS and `oc describe pod` show which probe fails and why."
+  - "Check that the probe port and path match what the container really serves."
+  - "A liveness probe that starts too early restarts a slow app forever. Look at initialDelaySeconds or add a startupProbe."
+lab09-jobs-cronjobs:
+  - "Job completions and parallelism cannot change once it exists. Delete the Job and create it again."
+  - "`oc get cronjob -o yaml` shows schedule, suspend and the history limits together."
+  - "`oc get jobs --watch` shows the CronJob creating Jobs once the schedule is right."
+lab10-helm-kustomize:
+  - "`helm status`, `helm history` and `helm get values` show what the release was installed with."
+  - "`helm upgrade` with the right values adds a revision. Do not uninstall the release."
+  - "`oc kustomize <overlay>` renders the overlay so you can read it before you apply it."
+lab11-operators:
+  - "`oc get packagemanifest cert-manager -n openshift-marketplace` lists the channels and the catalog."
+  - "An OperatorGroup in the target namespace decides where the operator installs."
+  - "`oc get csv -n ex280-lab11` shows the install phase, and `oc describe issuer` shows why it is not Ready."
+lab12-tls-routes:
+  - "`oc create route edge|passthrough|reencrypt --help` lists the certificate flags for each kind."
+  - "Passthrough sends TLS straight to the pod, so the pod has to serve the certificate."
+  - "Reencrypt needs `--dest-ca-cert` so the router trusts the backend certificate."
+lab13-project-admin:
+  - "`oc adm create-bootstrap-project-template -o yaml` prints a template to start from."
+  - "`oc edit project.config.openshift.io/cluster` sets `spec.projectRequestTemplate`."
+  - "Create a test project with `oc new-project` to see what the template adds."
+lab14-troubleshooting:
+  - "Go one failure at a time: `oc get all,events --sort-by=.lastTimestamp`."
+  - "`oc describe` names the reason for scheduling, image, probe and mount failures."
+  - "`oc logs --previous` shows the output of a container that already crashed."
+lab15-mixed-exam:
+  - "Read every requirement first, then build the objects in dependency order: config, workloads, service, route."
+  - "Run `./verify.sh` early and often. Each FAIL names the area to look at."
+  - "`oc explain <kind>.spec` is faster than searching the docs."
+mock01:
+  - "Timebox the mock to 30 minutes, the way the exam would."
+  - "`oc set env --from=configmap/shop-config` and `oc set probe` save time over editing YAML."
+mock02:
+  - "Find the group with `oc get groups` before you bind anything."
+  - "Peer and stranger differ only by namespace. Select on the namespace name label."
+mock03:
+  - "`helm history store` first. Then fix the release with `helm upgrade` rather than replacing it."
+  - "For the edge route, generate a certificate whose SAN is the route host."

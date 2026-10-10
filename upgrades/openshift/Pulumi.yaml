@@ -1,0 +1,5 @@
+name: cloudspider-openshift
+runtime: nodejs
+description: "One EC2 host for OpenShift Local (CRC) with nested virtualization, reached only through SSM; it stops itself after maxHours and every night at 22:00 Prague time."
+backend:
+  url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"

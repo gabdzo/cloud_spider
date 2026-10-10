@@ -1,0 +1,5 @@
+# What setup applies: one replica of a tag that does not exist.
+resources: [../../base]
+images:
+  - name: nginxinc/nginx-unprivileged
+    newTag: 1.27-alpine-dev

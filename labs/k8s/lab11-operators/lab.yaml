@@ -1,0 +1,38 @@
+# Kubernetes (EKS) variant of labs/ex280/lab11-operators (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab11-operators
+title: Operators (as a Helm-installed controller)
+track: k8s
+openshift: labs/ex280/lab11-operators
+task: "OpenShift installs cert-manager through OLM (Subscription → CSV). EKS has no OLM: install cert-manager with its Helm chart into `k8s-lab11`, then fix Issuer `selfsigned`."
+requirements:
+  - cert-manager runs in `k8s-lab11` (deployments `cert-manager`, `cert-manager-webhook`, `cert-manager-cainjector` ready)
+  - Issuer `selfsigned` in `k8s-lab11` is Ready and is a self-signed issuer
+setup:
+  - kubectl create namespace k8s-lab11
+  - helm repo add jetstack https://charts.jetstack.io && helm repo update
+  - "# install cert-manager yourself (see hints), then:"
+  - kubectl apply -f labs/k8s/lab11-operators/setup.yaml
+hints:
+  - "`helm install cert-manager jetstack/cert-manager -n k8s-lab11 --set crds.enabled=true`"
+  - "An Issuer with `ca:` needs a CA secret; a self-signed issuer is `selfSigned: {}`."
+  - "`kubectl describe issuer selfsigned -n k8s-lab11`."
+check: labs/k8s/lab11-operators/check.sh
+reset:
+  - helm uninstall cert-manager -n k8s-lab11 || true
+  - kubectl delete namespace k8s-lab11 --wait=true
+cleanup:
+  - kubectl delete namespace k8s-lab11 --ignore-not-found
+needs:
+  - kubectl
+  - python3
+  - helm
+mapping:
+  - openshift: Subscription, InstallPlan, ClusterServiceVersion (OLM)
+    kubernetes: a Helm release (or an EKS community add-on)
+  - openshift: OperatorHub catalog
+    kubernetes: a Helm repository
+noEquivalent:
+  - "OLM itself (Subscription, InstallPlan approval, CSV phases): there is no operator lifecycle manager on EKS. The lab practises the same controller, installed by Helm."
+docs:
+  - https://cert-manager.io/docs/installation/helm/

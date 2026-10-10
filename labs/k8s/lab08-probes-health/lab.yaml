@@ -1,0 +1,32 @@
+# Kubernetes (EKS) variant of labs/ex280/lab08-probes-health (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab08-probes-health
+title: Probes and health
+track: k8s
+openshift: labs/ex280/lab08-probes-health
+task: In `k8s-lab08`, `web` pods are Running but never Ready, and `worker` keeps restarting.
+requirements:
+  - Deployment `web` has 2 ready replicas and Service `web` has ready endpoints
+  - Deployment `worker` has 1 ready replica
+  - "`worker`'s liveness probe checks a port the container listens on, so it stops restarting"
+setup:
+  - kubectl apply -f labs/k8s/lab08-probes-health/setup.yaml
+hints:
+  - "Running is not Ready: `kubectl describe pod` shows the probe failures."
+  - nginx serves `/`; there is no `/healthz` here.
+  - A liveness probe on a closed port kills a healthy container.
+check: labs/k8s/lab08-probes-health/check.sh
+reset:
+  - kubectl delete namespace k8s-lab08 --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab08-probes-health/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab08 --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: "`oc set probe`"
+    kubernetes: "`kubectl patch` / edit the probe in the pod template"
+noEquivalent: []
+docs:
+  - https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/

@@ -1,0 +1,9 @@
+{
+  "name": "cloudspider-upgrade-openshift",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@pulumi/aws": "^7.50.0",
+    "@pulumi/pulumi": "3.144.1"
+  }
+}

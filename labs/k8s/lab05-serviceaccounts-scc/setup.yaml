@@ -1,0 +1,199 @@
+# Starting state for lab05-serviceaccounts-scc (deliberately broken). Apply with:
+#   kubectl apply -f labs/k8s/lab05-serviceaccounts-scc/setup.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8s-lab05
+  labels:
+    cloudspider.lab: k8s
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-page
+  namespace: k8s-lab05
+data:
+  index.html: |
+    <h1>OK</h1>
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fixed-uid
+  namespace: k8s-lab05
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: priv
+  namespace: k8s-lab05
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: normal
+  namespace: k8s-lab05
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: collector
+  namespace: k8s-lab05
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fixed-uid
+  namespace: k8s-lab05
+  labels:
+    app: fixed-uid
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fixed-uid
+  template:
+    metadata:
+      labels:
+        app: fixed-uid
+    spec:
+      securityContext:
+        runAsUser: 0
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: page
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: page
+          configMap:
+            name: app-page
+      serviceAccountName: fixed-uid
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: priv
+  namespace: k8s-lab05
+  labels:
+    app: priv
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: priv
+  template:
+    metadata:
+      labels:
+        app: priv
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: page
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          securityContext:
+            privileged: true
+      volumes:
+        - name: page
+          configMap:
+            name: app-page
+      serviceAccountName: priv
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: normal
+  namespace: k8s-lab05
+  labels:
+    app: normal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: normal
+  template:
+    metadata:
+      labels:
+        app: normal
+    spec:
+      securityContext: {}
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: page
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          securityContext: {}
+      volumes:
+        - name: page
+          configMap:
+            name: app-page
+      serviceAccountName: normal
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: collector
+  namespace: k8s-lab05
+  labels:
+    app: collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: collector
+  template:
+    metadata:
+      labels:
+        app: collector
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: page
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: page
+          configMap:
+            name: app-page
+      serviceAccountName: default

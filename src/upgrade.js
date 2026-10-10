@@ -139,6 +139,22 @@ export const UPGRADES = [
     cost: [{ usage: "sqs" }, { usage: "lambda" }, { usage: "logs" }],
     parameters: [{ name: "name", type: "string", default: "cloudspider-worker" }],
   },
+  {
+    id: "openshift",
+    title: "OpenShift Local",
+    note: "One m7i-flex.2xlarge with nested virtualization for OpenShift Local (CRC), for the EX280 labs. No inbound ports: connect with Session Manager. It stops itself maxHours after each boot and every night at 22:00 Prague time; stopped, only the 120 GB disk bills (~$10/mo). You bring the Red Hat pull secret (docs/RUN-ME.md §12). c5.metal is the fallback if CRC refuses nested KVM (~$4.39/h).",
+    dir: "upgrades/openshift",
+    stack: "openshift",
+    project: "cloudspider-openshift",
+    vault: "openshift",
+    needs: [],
+    cost: [{ price: "ec2:m7i-flex.2xlarge" }, { price: "ebs-gp3-gb", qty: 120 }, { price: "public-ipv4" }],
+    parameters: [
+      { name: "name", type: "string", default: "cloudspider-openshift" },
+      { name: "instanceType", type: "string", default: "m7i-flex.2xlarge", choices: ["m7i-flex.2xlarge", "m7i.2xlarge", "c5.metal"] },
+      { name: "maxHours", type: "number", default: 4, min: 1, max: 12 },
+    ],
+  },
 ];
 
 const NAME = /^[a-z][a-z0-9-]{1,27}$/;
@@ -150,7 +166,7 @@ export function checkParams(spec, input = {}) {
     if (parameter.type === "number") {
       const number = Number(raw);
       if (!Number.isInteger(number) || number < parameter.min || number > parameter.max) {
-        return { error: `${parameter.name} must be ${parameter.min}` };
+        return { error: parameter.min === parameter.max ? `${parameter.name} must be ${parameter.min}` : `${parameter.name} must be a whole number from ${parameter.min} to ${parameter.max}` };
       }
       values[parameter.name] = String(number);
       continue;

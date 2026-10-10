@@ -1,0 +1,35 @@
+# Kubernetes (EKS) variant of labs/ex280/lab14-troubleshooting (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab14-troubleshooting
+title: Troubleshooting
+track: k8s
+openshift: labs/ex280/lab14-troubleshooting
+task: Five namespaces, five independent tickets. Find the failed layer in each and restore it.
+requirements:
+  - "`k8s-lab14-store`: deployment `storefront` has 2 ready replicas"
+  - "`k8s-lab14-pay`: Service `payments` has ready endpoints"
+  - "`k8s-lab14-cat`: deployment `catalog` is ready"
+  - "`k8s-lab14-inv`: deployment `inventory` has 2 ready replicas (do not raise the quota)"
+  - "`k8s-lab14-audit`: deployment `audit` is ready"
+setup:
+  - kubectl apply -f labs/k8s/lab14-troubleshooting/setup.yaml
+hints:
+  - "Work down the layers: events, pod status, describe, logs, endpoints."
+  - "`kubectl get events -A --field-selector type=Warning`."
+check: labs/k8s/lab14-troubleshooting/check.sh
+reset:
+  - kubectl delete namespace k8s-lab14-store k8s-lab14-pay k8s-lab14-cat k8s-lab14-inv k8s-lab14-audit --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab14-troubleshooting/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab14-store k8s-lab14-pay k8s-lab14-cat k8s-lab14-inv k8s-lab14-audit --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: "`oc adm must-gather`"
+    kubernetes: "`kubectl get events`, `kubectl describe`, `kubectl logs --previous`"
+  - openshift: "`oc debug`"
+    kubernetes: "`kubectl debug`"
+noEquivalent: []
+docs:
+  - https://kubernetes.io/docs/tasks/debug/debug-application/

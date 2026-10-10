@@ -1,0 +1,35 @@
+# Kubernetes (EKS) variant of labs/ex280/lab06-configmaps-secrets (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab06-configmaps-secrets
+title: ConfigMaps and Secrets
+track: k8s
+openshift: labs/ex280/lab06-configmaps-secrets
+task: In `k8s-lab06`, `config-app` does not start and `secret-app` does not see a rotated secret.
+requirements:
+  - Deployment `config-app` is ready
+  - ConfigMap `app-config` key `message` is mounted at `/etc/app/message`
+  - Secret `app-secret` key `password` is mounted at `/etc/secret/password` in `secret-app` so a rotation shows up without a restart (no `subPath`)
+setup:
+  - kubectl apply -f labs/k8s/lab06-configmaps-secrets/setup.yaml
+hints:
+  - "`kubectl describe pod` on config-app names the missing key."
+  - "A `subPath` mount is a copy taken at start: it never updates."
+  - Mount the whole secret as a directory and the kubelet refreshes it.
+check: labs/k8s/lab06-configmaps-secrets/check.sh
+reset:
+  - kubectl delete namespace k8s-lab06 --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab06-configmaps-secrets/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab06 --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: "`oc set volume --add --configmap-name`"
+    kubernetes: "`volumes` + `volumeMounts` in the pod spec"
+  - openshift: "`oc set data secret`"
+    kubernetes: "`kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -`"
+noEquivalent:
+  - The OpenShift verify rotates the secret itself (a write). This check stays read-only and reads the mount spec instead; rotate it yourself to see the file change.
+docs:
+  - https://kubernetes.io/docs/concepts/configuration/configmap/#mounted-configmaps-are-updated-automatically

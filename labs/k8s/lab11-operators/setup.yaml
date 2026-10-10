@@ -1,0 +1,10 @@
+# Starting state for lab11-operators (deliberately broken). Apply with:
+#   kubectl apply -f labs/k8s/lab11-operators/setup.yaml
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned
+  namespace: k8s-lab11
+spec:
+  ca:
+    secretName: missing-ca

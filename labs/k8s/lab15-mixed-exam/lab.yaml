@@ -1,0 +1,36 @@
+# Kubernetes (EKS) variant of labs/ex280/lab15-mixed-exam (OpenShift EX280).
+# The Learn view reads this file. check.sh only reads the cluster.
+id: lab15-mixed-exam
+title: Mixed exam
+track: k8s
+openshift: labs/ex280/lab15-mixed-exam
+task: Build the application in `k8s-lab15` from what is half there, and fix access and network behaviour.
+requirements:
+  - Namespace `k8s-lab15` is labelled `env=lab15`
+  - ConfigMap `web-config` key `greeting` = `hello`, exposed to deployment `web` as env `GREETING`
+  - "Deployment `web`: 2 ready replicas, a readiness probe on `/`, cpu request at least `50m`"
+  - Service `web` publishes port 8080
+  - "ResourceQuota `project-quota`: pods 5, requests.cpu 1"
+  - User `reader` (group `lab15-readers`) can list pods through the group and cannot delete pods
+  - Pods in `k8s-lab15-peer` cannot reach `web` (a NetworkPolicy in `k8s-lab15` that admits nothing from `k8s-lab15-peer`)
+setup:
+  - kubectl apply -f labs/k8s/lab15-mixed-exam/setup.yaml
+hints:
+  - Start with the namespace and the quota, then the workload.
+  - "`kubectl set env deploy/web --from=configmap/web-config`."
+  - Use impersonation to test the group binding.
+check: labs/k8s/lab15-mixed-exam/check.sh
+reset:
+  - kubectl delete namespace k8s-lab15 k8s-lab15-peer --ignore-not-found --wait=true
+  - kubectl apply -f labs/k8s/lab15-mixed-exam/setup.yaml
+cleanup:
+  - kubectl delete namespace k8s-lab15 k8s-lab15-peer --ignore-not-found
+needs:
+  - kubectl
+  - python3
+mapping:
+  - openshift: Route in task 5
+    kubernetes: "skipped: no ingress controller on the EKS stack"
+noEquivalent: []
+docs:
+  - https://kubernetes.io/docs/reference/kubectl/

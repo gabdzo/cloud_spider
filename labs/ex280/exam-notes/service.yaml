@@ -1,0 +1,12 @@
+kind: Service
+apiVersion: v1
+namespace: ex280-app
+metadata:
+  name: backend
+spec:
+  selector:
+    app: ex280-app-be
+
+  ports:
+  - port: 8080
+    targetPort: 8080

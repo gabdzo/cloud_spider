@@ -1,0 +1,32 @@
+# Starting state for lab13-project-admin (deliberately broken). Apply with:
+#   kubectl apply -f labs/k8s/lab13-project-admin/setup.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8s-lab13-app
+  labels:
+    cloudspider.lab: k8s
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: data
+  namespace: k8s-lab13-app
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: does-not-exist
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: project-quota
+  namespace: k8s-lab13-app
+spec:
+  hard:
+    pods: "2"

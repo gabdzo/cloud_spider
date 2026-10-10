@@ -1,0 +1,9 @@
+# The overlay the lab asks for. It is wrong on purpose: fix it, then
+#   kubectl apply -k labs/k8s/lab10-helm-kustomize/overlays/prod -n k8s-lab10
+resources: [../../base]
+replicas:
+  - name: notice
+    count: 1
+images:
+  - name: nginxinc/nginx-unprivileged
+    newTag: 1.27-alpine-prod

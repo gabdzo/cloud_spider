@@ -1,0 +1,133 @@
+# Starting state for lab06-configmaps-secrets (deliberately broken). Apply with:
+#   kubectl apply -f labs/k8s/lab06-configmaps-secrets/setup.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k8s-lab06
+  labels:
+    cloudspider.lab: k8s
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-page
+  namespace: k8s-lab06
+data:
+  index.html: |
+    <h1>OK</h1>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: k8s-lab06
+data:
+  message: hello from the config map
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secret
+  namespace: k8s-lab06
+stringData:
+  password: initial-password
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-app
+  namespace: k8s-lab06
+  labels:
+    app: config-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: config-app
+  template:
+    metadata:
+      labels:
+        app: config-app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: page
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+            - name: cfg
+              mountPath: /etc/app
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: page
+          configMap:
+            name: app-page
+        - name: cfg
+          configMap:
+            name: app-config
+            items:
+              - key: msg
+                path: message
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secret-app
+  namespace: k8s-lab06
+  labels:
+    app: secret-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: secret-app
+  template:
+    metadata:
+      labels:
+        app: secret-app
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: page
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+            - name: sec
+              mountPath: /etc/secret/password
+              subPath: password
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: page
+          configMap:
+            name: app-page
+        - name: sec
+          secret:
+            secretName: app-secret

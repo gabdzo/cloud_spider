@@ -226,3 +226,61 @@ After `init`, the TERRAFORM card in the Stacks panel shows the state ("6 resourc
 | tf-rds | 0.0198 | 0.48 | 14.48 |
 
 Prices and sources: docs/plan-expansion.md.
+
+## 12. OpenShift Local on EC2 (PR learn, about $0.43/h while running, about $10/month stopped)
+
+The `openshift` stack is one m7i-flex.2xlarge (8 vCPU, 32 GiB) with EC2 nested virtualization and a 120 GB gp3 disk. It runs OpenShift Local (CRC), which is what the EX280 labs were written on. It has no inbound ports and no SSH key. You get in with Session Manager, so the AWS CLI needs the [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html).
+
+| state | $/hour | $/day | $/month |
+| --- | ---: | ---: | ---: |
+| running (m7i-flex.2xlarge 0.407 + disk 0.0137 + IPv4 0.005) | 0.4257 | 10.22 | 310.79 |
+| stopped (the 120 GB disk only) | 0.0137 | 0.33 | 10.03 |
+| 2 h a day, 22 days a month | | | about 28 |
+| fallback `instanceType=c5.metal` while running | 4.387 | 105.28 | 3202 |
+
+It stops itself in two ways. A timer powers it off `maxHours` (default 4, 1–12) after **every** boot; the instance is set to stop on shutdown, not terminate. EventBridge Scheduler also stops it every night at 22:00 Europe/Prague. When it is stopped, only the disk bills.
+
+1. **Get your pull secret.** Download it from <https://console.redhat.com/openshift/create/local> (free Red Hat account). Keep it on your laptop. It never goes into the repo, Pulumi config or state.
+2. **Raise it.** Open STACKS → OPENSHIFT LOCAL, keep `m7i-flex.2xlarge` and `maxHours` 4, then press Bring it up. Or from the shell:
+   ```bash
+   cd upgrades/openshift && npm ci
+   pulumi stack select openshift --create
+   pulumi config set aws:region eu-north-1
+   pulumi up                       # ~2 minutes; first-boot setup runs ~5 more
+   pulumi stack output connect     # the aws ssm start-session line
+   ```
+3. **Copy the pull secret in and start CRC.** Run this from the laptop:
+   ```bash
+   ID=$(pulumi stack output instanceId)
+   aws ssm start-session --region eu-north-1 --target "$ID"
+   # on the host:
+   sudo -iu crc
+   cat > ~/pull-secret.txt      # paste the secret, then Ctrl-D
+   crc setup                    # ~5 min (downloads the ~5 GB bundle)
+   crc start -p ~/pull-secret.txt   # ~10 min; prints the kubeadmin password
+   eval $(crc oc-env) && oc login -u kubeadmin https://api.crc.testing:6443
+   ```
+   If `crc setup` says virtualization is not available, nested KVM did not work. Set `instanceType` to `c5.metal`, run Bring it up again and repeat. That host costs ~$4.39/h, so keep `maxHours` low.
+4. **Run the labs on the host.** Clone the repo there (`git clone https://github.com/gabdzo/cloud_spider`) and follow the LEARN tab's OPENSHIFT EX280 holotapes (`cd labs/ex280/lab01-workloads && ./setup.sh`). The route hosts are `*.apps-crc.testing`; the verify scripts curl them from the host itself.
+5. **The console from your laptop (optional):**
+   ```bash
+   aws ssm start-session --region eu-north-1 --target "$ID" \
+     --document-name AWS-StartPortForwardingSession --parameters portNumber=443,localPortNumber=8443
+   ```
+   Then point `console-openshift-console.apps-crc.testing` and `oauth-openshift.apps-crc.testing` at 127.0.0.1 in /etc/hosts and open https://console-openshift-console.apps-crc.testing:8443. CRC listens on the host's 443 only after `crc start`.
+6. **Pause and resume.** The map's stop key (it is tagged `cloudspider=expendable`) or `aws ec2 stop-instances --instance-ids "$ID"` pauses it. To keep going past the timer, run `sudo shutdown -c`. After a start, run `crc start` again (~5 min). The cluster keeps its state on the disk.
+7. **Tear down.** Use STACKS → OPENSHIFT LOCAL → Take it down, or `pulumi destroy` in `upgrades/openshift`. That deletes the instance, the disk, the VPC, the role and the schedule. Nothing bills afterwards.
+
+## 13. LEARN: the lab shelf (free in Cloud Spider; the clusters cost what they cost)
+
+The LEARN key on the console opens the holotape shelf. It has two tracks:
+
+- **KUBERNETES / EKS**: `labs/k8s/lab01…lab15`, the EX280 labs rewritten for `kubectl` (namespaces `k8s-labNN`, Pod Security `restricted`, an unprivileged nginx on 8080). They run on the `cloudspider-up` EKS cluster (§6, about $0.13/h; pick t4g.medium for the bigger labs) or any kind/k3s cluster. Some labs need extras:
+  - lab03 NetworkPolicy needs the VPC CNI network policy agent: `aws eks update-addon --cluster-name cloudspider-up --addon-name vpc-cni --configuration-values '{"enableNetworkPolicy":"true"}'` (free).
+  - lab10 and lab11 need `helm`. Lab11 installs cert-manager into `k8s-lab11` (free).
+  - lab12 reads the Ingress objects and the TLS secrets only, so it needs no ingress controller. Installing ingress-nginx to curl them would add an NLB, about $0.024/h, $17/month.
+- **OPENSHIFT EX280**: `labs/ex280/…`, the original labs and mock exams. They need `oc` as cluster-admin, which means the §12 host.
+
+Each tape shows the task, the setup commands (COPY), hints one at a time and the check. Cloud Spider runs a check only when a scan of the script and every helper it calls finds no write, exec or install. All 15 Kubernetes checks qualify, and so do 14 of the 18 OpenShift ones. The OpenShift lab03, lab06, lab15 and mock02 checks exec into pods or rotate a secret, so their RUN CHECK stays off; copy the command instead. Progress is kept in `.learn/progress.json` (gitignored); with SAMPLE on it is kept in the browser instead, and nothing runs. FORGET PROGRESS clears a lab.
+
+Clean up a Kubernetes lab with its CLEAN command (`kubectl delete namespace k8s-labNN…`). For OpenShift, use `labs/ex280/common/cleanup-all.sh`.

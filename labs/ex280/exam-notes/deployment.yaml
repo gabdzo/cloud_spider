@@ -1,0 +1,27 @@
+kind: Deployment
+namespace: ex280-app
+apiVersion: apps/v1
+metadata:
+  name: ex280-app
+spec:
+  selector:
+    matchLabels:
+      app: ex280-app-be
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: ex280-app-be
+    spec:
+      serviceAccount: backend-sa
+      containers:
+        - name: backend
+          image: registry.access.redhat.com/ubi9/httpd-24
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 100m
+            limits:
+              memory: 256Mi
+              cpu: 200m
+          containerPort: 8080
