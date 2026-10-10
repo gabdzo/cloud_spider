@@ -296,6 +296,8 @@ export function actionFrom(raw) {
   return {
     type: raw.Type || "",
     targetGroupArns: [...new Set(arns)],
+    weightless: Boolean(weighted?.length) && arns.length === 0,
+    redirectHost: raw.RedirectConfig?.Host || "",
     redirectPort: raw.RedirectConfig?.Port || "",
     redirectProtocol: raw.RedirectConfig?.Protocol || "",
     statusCode: raw.RedirectConfig?.StatusCode || raw.FixedResponseConfig?.StatusCode || "",

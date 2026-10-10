@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  actionFrom,
   collect,
   chunks,
   interfacesFrom,
@@ -124,7 +125,10 @@ test("a weight 0 target group gets no traffic, and a prefix-delegated interface 
     "l1",
   );
   assert.deepEqual(rule.actions[0].targetGroupArns, ["tg-live"]);
+  assert.equal(rule.actions[0].weightless, false);
   assert.equal(rule.others, 1);
+  const idle = actionFrom({ Type: "forward", ForwardConfig: { TargetGroups: [{ TargetGroupArn: "tg-idle", Weight: 0 }] } });
+  assert.deepEqual([idle.targetGroupArns, idle.weightless], [[], true]);
   const entries = interfacesFrom({
     NetworkInterfaceId: "eni-2",
     PrivateIpAddress: "10.0.12.10",

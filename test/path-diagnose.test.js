@@ -12,7 +12,7 @@ const BLOCKED = "sample-sg-node-b does not allow tcp 8080 from sample-sg-alb. Th
 test("the sample host path names the security group that blocks the slow pod first", () => {
   const graph = samplePathGraph();
   const [match] = matchHost(graph, "https://API.sample.test:443/orders?id=1");
-  assert.deepEqual(match, { lbArn: LB, ruleArn: "sample-rule-443-api" });
+  assert.deepEqual(match, { lbArn: LB, ruleArn: "sample-rule-443-api", via: [], skipped: [] });
   const result = diagnose(graph, LB, { ruleArn: match.ruleArn });
   assert.deepEqual(
     result.nodes.filter((node) => node.kind === "rule").map((node) => node.id),
@@ -152,35 +152,75 @@ test("health reasons read as plain sentences", () => {
   assert.equal(healthVerdict({ ...base, reason: "Target.Timeout", description: "" }, tg).status, "hang");
 });
 
+const routes = (graph, text) => matchHost(graph, text).map(({ lbArn, ruleArn }) => ({ lbArn, ruleArn }));
+
 test("a host matches by load balancer DNS, by exact rule host, and by wildcard", () => {
   const graph = samplePathGraph();
-  assert.deepEqual(matchHost(graph, "dualstack.api-alb-sample.eu-north-1.elb.amazonaws.com"), [
+  assert.deepEqual(routes(graph, "dualstack.api-alb-sample.eu-north-1.elb.amazonaws.com"), [
     { lbArn: LB, ruleArn: "sample-rule-443-default" },
-    { lbArn: LB, ruleArn: "sample-rule-80-default" },
   ]);
   graph.rules.find((rule) => rule.arn === "sample-rule-443-web").hosts = ["*.shop.test"];
-  assert.deepEqual(matchHost(graph, "a.b.shop.test")[0], { lbArn: LB, ruleArn: "sample-rule-443-web" });
+  assert.deepEqual(routes(graph, "a.b.shop.test")[0], { lbArn: LB, ruleArn: "sample-rule-443-web" });
   assert.deepEqual(matchHost(graph, ""), []);
   assert.deepEqual(matchHost(graph, "http://"), []);
 });
 
 test("a URL walks its listener by port and priority down to the default rule", () => {
   const graph = samplePathGraph();
-  assert.deepEqual(matchHost(graph, "http://api.sample.test/orders"), [
-    { lbArn: LB, ruleArn: "sample-rule-80-default" },
-  ]);
   const api = graph.rules.find((rule) => rule.arn === "sample-rule-443-api");
   api.paths = ["/v1/*"];
-  assert.deepEqual(matchHost(graph, "https://api.sample.test/v2/orders"), [
-    { lbArn: LB, ruleArn: "sample-rule-443-default" },
+  assert.deepEqual(routes(graph, "https://api.sample.test/v2/orders"), [{ lbArn: LB, ruleArn: "sample-rule-443-default" }]);
+  assert.deepEqual(routes(graph, "https://api.sample.test/v1/orders"), [{ lbArn: LB, ruleArn: "sample-rule-443-api" }]);
+});
+
+test("an http URL follows the redirect to the HTTPS listener", () => {
+  const graph = samplePathGraph();
+  assert.deepEqual(matchHost(graph, "http://api.sample.test/orders"), [
+    { lbArn: LB, ruleArn: "sample-rule-443-api", via: ["sample-rule-80-default"], skipped: [] },
   ]);
-  assert.deepEqual(matchHost(graph, "https://api.sample.test/v1/orders"), [
-    { lbArn: LB, ruleArn: "sample-rule-443-api" },
+  graph.rules.find((rule) => rule.arn === "sample-rule-80-default").actions[0].redirectHost = "elsewhere.test";
+  assert.deepEqual(routes(graph, "http://api.sample.test/orders"), [{ lbArn: LB, ruleArn: "sample-rule-80-default" }]);
+});
+
+test("a rule with conditions not read here is passed over and named", () => {
+  const graph = samplePathGraph();
+  graph.rules.find((rule) => rule.arn === "sample-rule-443-api").others = 1;
+  assert.deepEqual(matchHost(graph, "https://api.sample.test/orders"), [
+    { lbArn: LB, ruleArn: "sample-rule-443-default", via: [], skipped: ["sample-rule-443-api"] },
   ]);
-  api.others = 1;
-  assert.deepEqual(matchHost(graph, "https://api.sample.test/v1/orders"), [
-    { lbArn: LB, ruleArn: "sample-rule-443-default" },
-  ]);
+});
+
+test("a default rule the API did not list can still be the focus", () => {
+  const graph = samplePathGraph();
+  graph.rules = graph.rules.filter((rule) => rule.listenerArn !== "sample-listener-80");
+  const result = diagnose(graph, LB, { ruleArn: "sample-listener-80|default" });
+  assert.deepEqual(
+    result.nodes.filter((node) => node.kind === "listener").map((node) => node.label),
+    ["HTTP 80"],
+  );
+});
+
+test("a mix of unhealthy and starting targets still fails open", () => {
+  const graph = samplePathGraph();
+  graph.health["sample-tg-api"] = [
+    { ...graph.health["sample-tg-api"][0], state: "initial", reason: "Elb.InitialHealthChecking", description: "" },
+    graph.health["sample-tg-api"][1],
+  ];
+  const group = diagnose(graph, LB).nodes.find((node) => node.id === "sample-tg-api");
+  assert.equal(
+    group.sentence,
+    "no target in k8s-shop-api is healthy. The load balancer sends requests to the unhealthy ones anyway, so callers see errors or hangs.",
+  );
+  assert.equal(group.symptom, true);
+});
+
+test("a forward whose target groups all weigh 0 is broken", () => {
+  const graph = samplePathGraph();
+  const rule = graph.rules.find((item) => item.arn === "sample-rule-443-api");
+  rule.actions = [{ ...rule.actions[0], targetGroupArns: [], weightless: true }];
+  const node = diagnose(graph, LB, { ruleArn: rule.arn }).nodes.find((item) => item.id === rule.arn);
+  assert.equal(node.status, "broken");
+  assert.equal(node.sentence, "rule 1 gives every target group weight 0, so the requests it matches reach no target.");
 });
 
 test("a pod IP inside a delegated prefix still finds its node and cluster", () => {
