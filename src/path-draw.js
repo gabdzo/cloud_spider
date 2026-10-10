@@ -3,7 +3,7 @@ import { FONT_PX } from "./layout.js";
 const FONT = `bold ${FONT_PX}px Menlo, Monaco, "Courier New", monospace`;
 const SMALL = `bold ${FONT_PX - 2}px Menlo, Monaco, "Courier New", monospace`;
 const TEXT = "#5fcf95";
-const MUTED = "#6dff6d";
+const MUTED = "#4a9a6a";
 const PANEL = "rgba(10, 14, 26, 0.95)";
 
 export const STATUS_COLOR = { ok: "#6dff6d", broken: "#ff4444", hang: "#ffa726", unknown: "#4db8ff" };
