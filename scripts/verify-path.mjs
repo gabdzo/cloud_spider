@@ -60,7 +60,11 @@ async function js(expression) {
 async function loaded() {
   for (let i = 0; i < 80; i += 1) {
     try {
-      if ((await js(`document.readyState`)) === "complete") return;
+      const ready = await js(`location.href.startsWith(${JSON.stringify(page)}) && document.readyState === "complete" && Boolean(document.querySelector("#region"))`);
+      if (ready) {
+        await sleep(300);
+        return;
+      }
     } catch {}
     await sleep(250);
   }

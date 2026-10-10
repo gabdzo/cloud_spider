@@ -18,7 +18,9 @@ export function diagnose(graph, lbArn, { ruleArn = null } = {}) {
   const link = (from, to, status = "ok", sentence = "") => edges.push({ from, to, status, sentence });
 
   add(lbNode(graph, lb));
-  const focus = ruleArn ? graph.rules.find((rule) => rule.arn === ruleArn) : null;
+  const focus = ruleArn
+    ? graph.listeners.flatMap((listener) => rulesFor(graph, listener)).find((rule) => rule.arn === ruleArn) || null
+    : null;
   const listeners = graph.listeners
     .filter((listener) => listener.lbArn === lb.arn)
     .filter((listener) => !focus || listener.arn === focus.listenerArn)
@@ -104,19 +106,51 @@ export function matchHost(graph, text) {
         rule.hosts.some((pattern) => wildcard(pattern, request.host, true)),
     );
     if (lb.dns !== bare && !named) continue;
-    const open = listeners
-      .filter((listener) => request.port === null || listener.port === request.port)
-      .sort((a, b) => Number(b.protocol === "HTTPS") - Number(a.protocol === "HTTPS") || a.port - b.port);
-    for (const listener of open) {
-      const rule = rulesFor(graph, listener).find((item) => ruleServes(item, request));
-      if (rule) out.push({ lbArn: lb.arn, ruleArn: rule.arn });
-    }
+    out.push(...routeOn(graph, lb.arn, request));
   }
   return out;
 }
 
+export function routeOn(graph, lbArn, request) {
+  const listeners = graph.listeners.filter((item) => item.lbArn === lbArn);
+  const open = listeners
+    .filter((listener) => request.port === null || listener.port === request.port)
+    .sort((a, b) => Number(b.protocol === "HTTPS") - Number(a.protocol === "HTTPS") || a.port - b.port);
+  const out = [];
+  for (const listener of open) {
+    const route = follow(graph, listeners, listener, request, 0);
+    if (route && !out.some((item) => item.ruleArn === route.ruleArn)) out.push(route);
+  }
+  return out;
+}
+
+function follow(graph, listeners, listener, request, hops) {
+  const skipped = [];
+  const rule = rulesFor(graph, listener).find((item) => {
+    if (!ruleServes(item, request)) return false;
+    if (item.others) skipped.push(item.arn);
+    return !item.others;
+  });
+  if (!rule) return null;
+  const action = rule.actions[0];
+  const sameHost = !action?.redirectHost || action.redirectHost === "#{host}";
+  if (action?.type === "redirect" && sameHost && hops < 3) {
+    const port = redirectPort(action, listener);
+    const next = listeners.find((item) => item.port === port && item.arn !== listener.arn);
+    const after = next && follow(graph, listeners, next, request, hops + 1);
+    if (after) return { ...after, via: [rule.arn, ...after.via], skipped: [...skipped, ...after.skipped] };
+  }
+  return { lbArn: listener.lbArn, ruleArn: rule.arn, via: [], skipped };
+}
+
+function redirectPort(action, listener) {
+  if (/^\d+$/.test(action.redirectPort || "")) return Number(action.redirectPort);
+  const protocol = /^HTTPS?$/.test(action.redirectProtocol || "") ? action.redirectProtocol : listener.protocol;
+  if (protocol !== listener.protocol) return protocol === "HTTPS" ? 443 : 80;
+  return listener.port;
+}
+
 function ruleServes(rule, request) {
-  if (rule.others) return false;
   const hostOk = !rule.hosts.length || rule.hosts.some((pattern) => wildcard(pattern, request.host, true));
   const pathOk = !rule.paths.length || rule.paths.some((pattern) => wildcard(pattern, request.path, false));
   return hostOk && pathOk;
@@ -355,7 +389,7 @@ function listenerNode(listener, rules) {
 
 function ruleNode(rule) {
   const match = [...rule.hosts, ...rule.paths].join(" ") || "everything else";
-  return {
+  const node = {
     id: rule.arn,
     kind: "rule",
     label: rule.isDefault ? "default" : `rule ${rule.priority}`,
@@ -363,6 +397,14 @@ function ruleNode(rule) {
     status: "ok",
     sentence: `${ruleName(rule)} matches ${match} and ${actionWords(rule.actions[0], "", "")}.`,
   };
+  if (rule.actions.some((action) => action.type === "forward" && action.weightless)) {
+    return {
+      ...node,
+      status: "broken",
+      sentence: `${ruleName(rule)} gives every target group weight 0, so the requests it matches reach no target.`,
+    };
+  }
+  return node;
 }
 
 function k8sService(tags) {
@@ -395,6 +437,10 @@ function targetGroupNode(graph, tg) {
     node.status = "broken";
     node.symptom = true;
     node.sentence = `every target in ${tg.name} is unhealthy. The load balancer sends requests to all of them anyway, so callers see errors or hangs.`;
+  } else if (!health.some((item) => item.state === "healthy") && health.some((item) => item.state === "unhealthy")) {
+    node.status = "broken";
+    node.symptom = true;
+    node.sentence = `no target in ${tg.name} is healthy. The load balancer sends requests to the unhealthy ones anyway, so callers see errors or hangs.`;
   } else if (!health.some((item) => item.state === "healthy")) {
     node.status = "broken";
     node.symptom = true;
