@@ -18,6 +18,7 @@ import {
 import { layoutDiagram, layoutPath, nodeAt } from "./path-layout.js";
 import { paintDiagram, paintPath, sentenceRect } from "./path-draw.js";
 import { CLUSTER_COLUMNS } from "./cluster.js";
+import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { upgradeSpiderLine } from "./upgrade-rules.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
@@ -67,6 +68,7 @@ const upgradeButton = document.querySelector("#upgrade");
 const pipEl = document.querySelector("#pip");
 const vaultPanels = document.querySelector("#vault-panels");
 const vaultAll = document.querySelector("#vault-all");
+const kubePanel = document.querySelector("#kube-panel");
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
 const askTab = document.querySelector("#ask");
@@ -692,7 +694,7 @@ function drawPath() {
 
 function placedCluster() {
   return clusterData?.diagram
-    ? layoutDiagram(clusterData.diagram, CLUSTER_COLUMNS, map.clientWidth || 0)
+    ? layoutDiagram(clusterData.diagram, clusterData.diagram.layout === "kube" ? clusterData.diagram.columns || KUBE_COLUMNS : CLUSTER_COLUMNS, map.clientWidth || 0)
     : { nodes: [], edges: [], contentWidth: 0, contentHeight: 0 };
 }
 
@@ -931,6 +933,7 @@ function enterPath() {
   mode = "path";
   clusterData = null;
   clusterSelected = null;
+  showPod(null);
   pathData = null;
   pathSelected = null;
   lbSelect.hidden = false;
@@ -992,6 +995,7 @@ function enterCluster() {
   mode = "cluster";
   clusterData = null;
   clusterSelected = null;
+  showPod(null);
   pathData = null;
   pathSelected = null;
   lbSelect.hidden = true;
@@ -1009,6 +1013,7 @@ function leaveCluster() {
   mode = "map";
   clusterData = null;
   clusterSelected = null;
+  showPod(null);
   setStatus(ui, "");
   renderChrome();
   pull();
@@ -1096,12 +1101,74 @@ wallGrain.addEventListener("change", () => {
   pull();
 });
 
+// Cluster view: a pod's last log lines and events, read-only, on click.
+let podTicket = 0;
+function showPod(node) {
+  const ticket = ++podTicket;
+  if (!node) {
+    kubePanel.hidden = true;
+    kubePanel.replaceChildren();
+    return;
+  }
+  const { ns, name, containers, node: host } = node.pod;
+  const head = vel("div", "kp-title");
+  head.append(vel("span", "kp-name", `POD · ${ns}/${name}`));
+  const close = vel("button", "vp-close", "CLOSE");
+  close.type = "button";
+  close.addEventListener("click", () => {
+    clusterSelected = null;
+    showPod(null);
+    draw();
+  });
+  head.append(close);
+  const facts = vel("dl", "vp-facts");
+  for (const [label, value] of [["STATE", node.caption], ["NODE", host], ["CONTAINERS", (containers || []).join(", ")]]) {
+    if (value) facts.append(vel("dt", "", label), vel("dd", "", value));
+  }
+  const body = vel("div", "kp-body");
+  body.append(facts, vel("p", "vp-note", "reading logs and events…"));
+  kubePanel.replaceChildren(head, body);
+  kubePanel.hidden = false;
+  const query = new URLSearchParams({ ns, name });
+  if (sample) query.set("sample", "1");
+  fetch(`/api/cluster/pod?${query}`)
+    .then((response) => response.json())
+    .catch(() => ({ error: "the pod did not answer" }))
+    .then((detail) => {
+      if (ticket !== podTicket) return;
+      body.replaceChildren(facts);
+      if (detail.error) {
+        body.append(vel("p", "vp-note err", detail.error));
+        return;
+      }
+      const logsHead = vel("h4", "", `LOG · LAST ${detail.lines?.length || 0} LINES`);
+      body.append(logsHead);
+      if (detail.logNote) body.append(vel("p", "vp-note err", detail.logNote));
+      const lines = vel("ol", "vp-lines kp-log");
+      for (const line of detail.lines || []) lines.append(vel("li", /error|fail|panic|exception|giving up/i.test(line) ? "bad" : "", line));
+      body.append(lines);
+      body.append(vel("h4", "", `EVENTS · ${detail.events?.length || 0}`));
+      if (detail.eventNote) body.append(vel("p", "vp-note err", detail.eventNote));
+      const events = vel("ul", "kp-events");
+      for (const event of detail.events || []) {
+        const li = vel("li", event.type === "Warning" ? "warn" : "");
+        li.append(vel("span", "when", hhmm(event.time)), vel("span", "reason", `${event.reason}${event.count > 1 ? ` ×${event.count}` : ""}`), vel("span", "msg", event.message));
+        events.append(li);
+      }
+      body.append(events);
+      lines.scrollTop = lines.scrollHeight;
+    });
+}
+
 canvas.addEventListener("click", async (event) => {
   if (mode === "path" || mode === "cluster") {
     const placed = mode === "path" ? placedPath() : placedCluster();
     const hit = nodeAt(placed, event.offsetX, event.offsetY);
     if (mode === "path") pathSelected = hit?.id || null;
-    else clusterSelected = hit?.id || null;
+    else {
+      clusterSelected = hit?.id || null;
+      showPod(hit?.pod ? hit : null);
+    }
     draw();
     if (hit?.sentence) revealPanel(sentenceRect(hit, canvas.clientWidth, canvas.clientHeight));
     return;

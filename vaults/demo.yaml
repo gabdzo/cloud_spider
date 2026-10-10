@@ -1,0 +1,28 @@
+# upgrades/demo (Pulumi project cloudspider-demo, stack demo): the demo
+# workload on the EKS cluster. Namespace demo: podinfo web → api, a load
+# generator, and an ADOT collector DaemonSet shipping pod logs to CloudWatch
+# Logs (/cloudspider/eks/<cluster>/demo, 1 day) and traces to X-Ray, with
+# credentials from EKS Pod Identity. The AWS parts (log group, collector role,
+# pod identity association, add-ons) carry project=demo; the Kubernetes
+# objects are in the Cluster view.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: demo
+  number: 115
+  title: EKS demo app
+  description: Podinfo web and api with a load generator on the EKS cluster, and an OpenTelemetry collector sending pod logs to CloudWatch and traces to X-Ray.
+  owner: gabriel
+  tags: [demo, eks, observability]
+spec:
+  type: service
+  resources:
+    tags:
+      project: demo
+  stack:
+    dir: upgrades/demo
+    name: demo
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/demo
+    docs: https://github.com/gabdzo/cloud_spider/blob/main/docs/RUN-ME.md
+    dashboard: "https://eu-north-1.console.aws.amazon.com/cloudwatch/home?region=eu-north-1#logsV2:log-groups/log-group/$252Fcloudspider$252Feks$252Fcloudspider-up$252Fdemo"

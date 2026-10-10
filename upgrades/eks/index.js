@@ -98,6 +98,10 @@ const cluster = new aws.eks.Cluster(
       endpointPublicAccess: true,
       endpointPrivateAccess: false,
     },
+    // Access entries (the EKS API) next to aws-auth, so Cloud Spider's
+    // read-only viewer role can be let in without editing a ConfigMap.
+    // Changing the mode updates in place; the creator keeps admin.
+    accessConfig: { authenticationMode: "API_AND_CONFIG_MAP" },
     tags,
   },
   { dependsOn: [clusterPolicy], customTimeouts: { create: "40m", update: "40m", delete: "40m" } },
@@ -119,6 +123,45 @@ const nodes = new aws.eks.NodeGroup(
   { dependsOn: nodePolicies, customTimeouts: { create: "40m", update: "40m", delete: "40m" } },
 );
 
+// Cloud Spider's read-only door into the cluster: a role anyone in this
+// account may assume, mapped to AmazonEKSViewPolicy (no Secrets) and to the
+// group cloudspider-viewers, which upgrades/demo binds to "get/list nodes and
+// metrics". Use it with:
+//   aws eks update-kubeconfig --name <cluster> --role-arn <viewerRoleArn> --alias cloudspider-viewer
+const account = aws.getCallerIdentityOutput({}).accountId;
+const viewerRole = new aws.iam.Role("viewer", {
+  name: `${clusterName}-viewer`,
+  assumeRolePolicy: account.apply((id) =>
+    JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [{ Effect: "Allow", Principal: { AWS: `arn:aws:iam::${id}:root` }, Action: "sts:AssumeRole" }],
+    }),
+  ),
+  inlinePolicies: [
+    {
+      name: "describe-cluster",
+      policy: cluster.arn.apply((arn) =>
+        JSON.stringify({ Version: "2012-10-17", Statement: [{ Effect: "Allow", Action: ["eks:DescribeCluster"], Resource: arn }] }),
+      ),
+    },
+  ],
+  tags,
+});
+const viewerEntry = new aws.eks.AccessEntry("viewer", {
+  clusterName: cluster.name,
+  principalArn: viewerRole.arn,
+  type: "STANDARD",
+  kubernetesGroups: ["cloudspider-viewers"],
+  tags,
+});
+new aws.eks.AccessPolicyAssociation("viewer", {
+  clusterName: cluster.name,
+  principalArn: viewerRole.arn,
+  policyArn: "arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy",
+  accessScope: { type: "cluster" },
+}, { dependsOn: [viewerEntry] });
+
 export const name = cluster.name;
+export const viewerRoleArn = viewerRole.arn;
 export const versionOut = cluster.version;
 export const nodeGroup = nodes.nodeGroupName;

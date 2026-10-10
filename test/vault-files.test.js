@@ -67,6 +67,7 @@ const PROGRAMS = [
   { dir: "upgrades/signal", project: "cloudspider-signal", stack: "signal", vaults: ["signal"], template: true },
   { dir: "upgrades/barrel", project: "cloudspider-barrel", stack: "barrel", vaults: ["barrel"], template: true },
   { dir: "upgrades/camp", project: "cloudspider-camp", stack: "camp", vaults: ["camp"] },
+  { dir: "upgrades/demo", project: "cloudspider-demo", stack: "demo", vaults: ["demo"] },
 ];
 
 async function mocked(program, config = {}) {
@@ -120,7 +121,8 @@ for (const program of PROGRAMS) {
 test("upgrades/eks: a second cluster names its roles and node group after itself; the first is unchanged", { skip: existsSync(`${root}upgrades/eks/node_modules/@pulumi/pulumi`) ? false : "run npm ci in upgrades/eks" }, async () => {
   const program = PROGRAMS.find((item) => item.dir === "upgrades/eks");
   const first = await mocked(program);
-  for (const item of first.filter((r) => /iam\/role:Role$|eks\/nodeGroup:NodeGroup$/.test(r.type))) {
+  // The viewer role is new (no rename risk), so it is named on every stack.
+  for (const item of first.filter((r) => /iam\/role:Role$|eks\/nodeGroup:NodeGroup$/.test(r.type) && r.name !== "viewer")) {
     assert.equal(item.inputs.name, undefined, `${item.name} keeps its auto name on the old stack`);
     assert.equal(item.inputs.nodeGroupName, undefined);
   }
@@ -130,6 +132,12 @@ test("upgrades/eks: a second cluster names its roles and node group after itself
   assert.equal(byName("Role", "node").name, "cloudspider-two-node");
   assert.equal(byName("NodeGroup", "nodes").nodeGroupName, "cloudspider-two-nodes");
   assert.equal(byName("Cluster", "up").name, "cloudspider-two");
+  assert.equal(byName("Role", "viewer").name, "cloudspider-two-viewer");
+  assert.equal(byName("Cluster", "up").accessConfig.authenticationMode, "API_AND_CONFIG_MAP");
+  assert.equal(first.find((r) => r.type.endsWith("Cluster")).inputs.accessConfig.bootstrapClusterCreatorAdminPermissions, undefined, "not set: changing it would replace the cluster");
+  const policy = byName("AccessPolicyAssociation", "viewer");
+  assert.equal(policy.policyArn, "arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy", "view only, no Secrets");
+  assert.deepEqual(byName("AccessEntry", "viewer").kubernetesGroups, ["cloudspider-viewers"]);
   for (const item of second.filter((r) => r.inputs.tags)) assert.equal(item.inputs.tags.cluster, "cloudspider-two", item.name);
   await assert.rejects(mocked({ ...program, stack: "eks-other" }, { "cloudspider-upgrade:clusterName": "cloudspider-two" }), /belongs in stack eks-cloudspider-two/);
 });
@@ -162,4 +170,19 @@ test("vaults:new copies a template with the name, a free number and the project 
   assert.equal(entry.resources.tags.project, "shop-api");
   assert.equal(entry.number, 100);
   await assert.rejects(run(process.execPath, ["scripts/vaults-new.mjs", "example", "shop-api"], { cwd: root, env }), (error) => /already exists/.test(error.stdout));
+});
+
+test("upgrades/demo: logs to a 1-day group, Pod Identity for the collector, read-only RBAC for the viewer group", { skip: existsSync(`${root}upgrades/demo/node_modules/@pulumi/kubernetes`) ? false : "run npm ci in upgrades/demo" }, async () => {
+  const resources = await mocked(PROGRAMS.find((item) => item.dir === "upgrades/demo"));
+  const one = (type, name) => resources.find((r) => r.type.endsWith(type) && r.name === name)?.inputs;
+  assert.equal(one("LogGroup", "demo").retentionInDays, 1);
+  assert.equal(one("LogGroup", "demo").name, "/cloudspider/eks/cloudspider-up/demo");
+  assert.match(one("Role", "collector").assumeRolePolicy, /pods\.eks\.amazonaws\.com/);
+  assert.equal(one("PodIdentityAssociation", "otel-collector").serviceAccount, "otel-collector");
+  const rules = one("ClusterRole", "cloudspider-viewer").rules;
+  assert.ok(rules.every((rule) => rule.verbs.every((verb) => ["get", "list", "watch"].includes(verb))), "read verbs only");
+  assert.equal(one("ClusterRoleBinding", "cloudspider-viewer").subjects[0].name, "cloudspider-viewers");
+  assert.ok(!resources.some((r) => /Service$/.test(r.type) && r.inputs.spec?.type === "LoadBalancer"), "no load balancer (cost)");
+  const config = one("ConfigMap", "otel-collector").data["config.yaml"];
+  for (const word of ["filelog", "awscloudwatchlogs", "awsxray", "/var/log/pods/demo_"]) assert.ok(config.includes(word), word);
 });

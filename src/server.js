@@ -8,6 +8,7 @@ import { pathResult } from "./path-view.js";
 import { cssVars } from "./theme.js";
 import { sampleCost } from "./cost.js";
 import { sampleCluster } from "./cluster.js";
+import { samplePodDetail } from "./kube-sample.js";
 
 const root = dirname(fileURLToPath(import.meta.url));
 export const FILES = new Set([
@@ -25,6 +26,7 @@ export const FILES = new Set([
   "path-draw.js",
   "scene.js",
   "cluster.js",
+  "kube-diagram.js",
   "upgrade-rules.js",
   "theme.js",
   "draw-kit.js",
@@ -445,6 +447,20 @@ const page = `<!doctype html>
   .vt-cmd { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--pip-hot); font-size: 11px; user-select: all; }
   .vt-copy { flex: none; min-height: 24px; padding: 0 8px; font-size: 11px; }
   .vt-empty { color: var(--pip-dim); }
+  #kube-panel { position: absolute; z-index: 3; right: 12px; top: 12px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 24px); }
+  .kp-title { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.12em; font-size: 11px; }
+  .kp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kp-body { overflow: auto; padding: 6px 12px 10px; }
+  .kp-body h4 { margin: 8px 0 4px; padding-top: 8px; border-top: 1px dashed var(--pip-dark); font-size: 11px; letter-spacing: 0.14em; color: var(--pip-dim); }
+  .kp-log { max-height: 200px; }
+  .kp-log li { color: var(--pip-mid); overflow-wrap: anywhere; }
+  .kp-log li.bad { color: var(--status-broken); }
+  .kp-events { list-style: none; margin: 0; padding: 0; font-size: 11px; }
+  .kp-events li { display: grid; grid-template-columns: max-content max-content 1fr; gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--pip-dark); }
+  .kp-events .when { color: var(--pip-dim); }
+  .kp-events .reason { color: var(--pip-bright); }
+  .kp-events li.warn .reason { color: var(--status-hang); }
+  .kp-events .msg { color: var(--pip-mid); overflow-wrap: anywhere; min-width: 0; }
   #vault-panels { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 2; }
   .vault-panel {
     position: absolute; display: flex; flex-direction: column; min-width: 0;
@@ -792,6 +808,7 @@ const page = `<!doctype html>
         <section id="vault-templates" aria-label="vault templates" hidden></section>
         <div id="vault-panels"></div>
       </div>
+      <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
       <form id="pip" hidden></form>
       <section id="term" hidden></section>
     </div>
@@ -982,6 +999,15 @@ async function route(app, req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/cluster-sample") {
     send(res, 200, sampleCluster());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/cluster/pod") {
+    if (url.searchParams.get("sample") === "1") {
+      send(res, 200, samplePodDetail(url.searchParams.get("name") || ""));
+      return;
+    }
+    send(res, 200, await app.clusterPod({ ns: url.searchParams.get("ns"), name: url.searchParams.get("name"), container: url.searchParams.get("container") }));
     return;
   }
 
