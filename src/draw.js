@@ -46,7 +46,10 @@ function getCacheKey(width, height, placed) {
   const vaultKey = (placed.vaults?.cells || [])
     .map((c) => `${c.key}@${c.x},${c.y},${c.w},${c.h},${c.open ? 1 : 0},${c.vault.number},${c.vault.damaged ? 1 : 0}`)
     .join(";");
-  return `${width}x${height}:${settlementKey}:${campKey}:${vaultKey}`;
+  const region = placed.region ? `${placed.region.x},${placed.region.y},${placed.region.w},${placed.region.h},${placed.region.view}` : "";
+  const zones = (placed.zones || []).map((z) => `${z.x},${z.y},${z.w},${z.h}`).join(";");
+  const tiers = placed.settlements.map((s) => (s.tiers || []).map((t) => `${t.y},${t.w}`).join(",")).join(";");
+  return `${width}x${height}:${settlementKey}:${campKey}:${vaultKey}:${region}:${zones}:${tiers}`;
 }
 
 // Deterministic debris placement (seeded by simple hash)
@@ -91,7 +94,7 @@ function generateDebris(width, height, placed) {
     }
     
     // Check settlements, the account-wide camp and the vault row
-    for (const settlement of [...(placed.settlements || []), ...(placed.camp ? [placed.camp] : []), ...(placed.vaults ? [placed.vaults] : [])]) {
+    for (const settlement of [...(placed.settlements || []), ...(placed.camp ? [placed.camp] : []), ...(placed.zones || []), ...(placed.vaults ? [placed.vaults] : []), ...(placed.region ? [{ x: placed.region.x, y: placed.region.y - 8, w: Math.min(placed.region.w, 620), h: 44 }] : [])]) {
       if (x + w > settlement.x && x < settlement.x + settlement.w &&
           y + h > settlement.y && y < settlement.y + settlement.h) {
         return false;
@@ -140,7 +143,9 @@ function generateDebris(width, height, placed) {
           const gap = item.big || type.big ? 20 : 4;
           return x + type.w + gap < item.x || x > item.x + item.w + gap || y + type.h + gap < item.y || y > item.y + item.h + gap;
         };
-        if (isFree(x, y, type.w, type.h) && (type.sprite === 'grass' || debris.filter((item) => item.sprite !== 'grass').every(clear))) {
+        // Inside the region's fence only grass and rubble: the diagram stays readable.
+        const fenced = placed.region && !['grass', 'rubble'].includes(type.sprite) && x + type.w > placed.region.x && x < placed.region.x + placed.region.w && y + type.h > placed.region.y && y < placed.region.y + placed.region.h;
+        if (!fenced && isFree(x, y, type.w, type.h) && (type.sprite === 'grass' || debris.filter((item) => item.sprite !== 'grass').every(clear))) {
           debris.push({ sprite: type.sprite, x, y, w: type.w, h: type.h, big: Boolean(type.big), variant: Math.floor(rng.next() * 10) });
           break;
         }
@@ -156,7 +161,7 @@ let layerCache = { key: null, canvas: null };
 
 function layerKey(width, height, dpr, placed, settled) {
   const plots = placed.settlements
-    .map((s) => s.plots.map((p) => `${p.x},${p.y},${p.w},${p.h}`).join(","))
+    .map((s) => s.plots.map((p) => `${p.x},${p.y},${p.w},${p.h},${p.tier || ""}`).join(","))
     .join(";");
   return `${dpr}|${getCacheKey(width, height, placed)}|${plots}|${[...settled].join(",")}`;
 }
@@ -174,6 +179,7 @@ function staticLayer(ctx, width, height, placed, settled) {
   layer.imageSmoothingEnabled = false;
 
   drawWastelandBackground(layer, width, height);
+  if (placed.region) drawTerritory(layer, placed.region);
   // Debris positions are cached with the layout too (same key).
   if (debrisCache.key !== key) {
     debrisCache.debris = generateDebris(width, height, placed);
@@ -182,6 +188,11 @@ function staticLayer(ctx, width, height, placed, settled) {
   for (const item of debrisCache.debris) drawDebris(layer, item);
   drawCampfireStill(layer, width, height);
   drawVaultsStatic(layer, placed.vaults, settled);
+  if (placed.region) drawRegionFence(layer, placed.region);
+  for (const zone of placed.zones || []) {
+    drawSettlement(layer, { ...zone, gate: "" });
+    drawBanner(layer, zone);
+  }
   if (placed.camp) {
     drawSettlement(layer, { ...placed.camp, gate: "" });
     drawBanner(layer, placed.camp);
@@ -193,6 +204,7 @@ function staticLayer(ctx, width, height, placed, settled) {
     }
     drawSettlement(layer, settlement);
     if (settlement.closed) drawClosedYard(layer, settlement);
+    for (const row of settlement.tiers || []) drawTierRule(layer, row);
     for (const plot of settlement.plots) drawPlot(layer, plot);
     drawBanner(layer, settlement);
   }
@@ -233,11 +245,14 @@ export function paint(ctx, scene) {
   for (const settlement of placed.settlements) drawLinks(ctx, settlement.edges, animTime, reducedMotion);
   for (const settlement of placed.settlements) if (settlement.closed) drawFoldLamp(ctx, settlement, animTime, reducedMotion);
   if (placed.camp) drawLinks(ctx, placed.camp.edges, animTime, reducedMotion);
+  drawPeering(ctx, placed.regionEdges, animTime, reducedMotion);
   for (const fixture of allFixtures(placed)) drawFixture(ctx, fixture, ui, phase, reducedMotion);
 
   // Text last, so smoke, wanderers and sprites never cover a label.
   ctx.font = FONT;
   drawVaultLabels(ctx, placed.vaults, settled);
+  if (placed.region) drawRegionLabel(ctx, placed.region, width);
+  for (const zone of placed.zones || []) drawSettlementLabel(ctx, zone);
   if (!placed.settlements.length && !placed.camp && !placed.vaults && !placed.orphans?.items?.length && !placed.orphans?.fixtures?.length) {
     ctx.fillStyle = TEXT;
     ctx.fillText(region ? `${region} has no VPCs` : "", 24, 40);
@@ -255,6 +270,7 @@ export function paint(ctx, scene) {
     }
     if (settlement.gate) drawGateLabel(ctx, settlement);
     if (settlement.closed) drawClosedLabel(ctx, settlement);
+    for (const row of settlement.tiers || []) drawTierLabel(ctx, row);
     for (const plot of settlement.plots) {
       ctx.font = FONT;
       plaque(ctx, plot.label, plot.x + 12, plot.y + 24, FONT_PX, TEXT);
@@ -265,7 +281,7 @@ export function paint(ctx, scene) {
         ctx.fillText(plot.caption, plot.x + 12, plot.y + 42);
       }
       ctx.fillStyle = MUTED;
-      if (!plot.buildings.length) ctx.fillText("[ empty plot ]", plot.x + 12, plot.y + 68 + SMOKE_PX);
+      if (!plot.buildings.length && !(plot.cards || []).length) ctx.fillText("[ empty plot ]", plot.x + 12, plot.y + 68 + SMOKE_PX);
     }
     drawSettlementLabel(ctx, settlement);
   }
@@ -316,7 +332,15 @@ function drawGateLabel(ctx, settlement) {
   ctx.fillText(label, gateX, settlement.y + 34);
 }
 
-const LINK_STATE = { unhealthy: "bad", unavailable: "bad", "unhealthy.draining": "bad", unused: "off", draining: "off" };
+const LINK_STATE = { unhealthy: "bad", unavailable: "bad", "unhealthy.draining": "bad", unused: "off", draining: "off", route: "route", control: "control" };
+// Wire looks by kind: hue, dash, pulse speed (0 = still).
+const WIRE = {
+  ok: { hue: PIP.bright, core: PIP.mid, dash: [8, 6], speed: 40, halo: 0.18 },
+  bad: { hue: STATUS.broken, core: STATUS.broken, dash: [8, 6], speed: 90, halo: 0.18 },
+  off: { hue: PIP.dim, core: PIP.dark, dash: [3, 7], speed: 0, halo: 0.08 },
+  route: { hue: WORLD.amber, core: WORLD.amber, dash: [10, 5, 2, 5], speed: 70, halo: 0.14 },
+  control: { hue: PIP.dim, core: PIP.dim, dash: [2, 5], speed: 0, halo: 0.06 },
+};
 
 // Balancer-to-target and camp lines: glowing phosphor traces with a pulse
 // that walks along them (still under reduced motion).
@@ -331,25 +355,196 @@ function drawLinks(ctx, edges, animTime, reducedMotion) {
   ctx.lineCap = "round";
   for (const edge of edges) {
     // The target state rides on a balancer line: a failing target's line
-    // runs red, a stopped (unused) one is a dim, still trace.
+    // runs red, a stopped (unused) one is a dim, still trace. NAT routes
+    // run amber, control-plane wires are faint dots.
     const state = LINK_STATE[edge.state] || "ok";
-    const hue = state === "bad" ? STATUS.broken : state === "off" ? PIP.dim : PIP.bright;
-    ctx.strokeStyle = rgba(hue, state === "off" ? 0.08 : 0.18);
-    ctx.lineWidth = 7;
+    const wire = WIRE[state];
+    ctx.strokeStyle = rgba(wire.hue, wire.halo);
+    ctx.lineWidth = state === "control" ? 4 : 7;
     curve(edge);
     ctx.stroke();
-    ctx.strokeStyle = state === "bad" ? STATUS.broken : state === "off" ? PIP.dark : PIP.mid;
+    ctx.strokeStyle = wire.core;
     ctx.lineWidth = 2;
-    ctx.setLineDash(state === "off" ? [3, 7] : [8, 6]);
-    ctx.lineDashOffset = reducedMotion || state === "off" ? 0 : -((animTime || 0) / (state === "bad" ? 90 : 40)) % 14;
+    ctx.setLineDash(wire.dash);
+    const period = wire.dash.reduce((a, b) => a + b, 0);
+    ctx.lineDashOffset = reducedMotion || !wire.speed ? 0 : -((animTime || 0) / wire.speed) % period;
     curve(edge);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = state === "bad" ? STATUS.broken : state === "off" ? PIP.dim : PIP.bright;
-    ctx.fillRect(edge.x1 - 3, edge.y1 - 3, 6, 6);
-    ctx.fillRect(edge.x2 - 3, edge.y2 - 3, 6, 6);
+    ctx.fillStyle = state === "off" ? PIP.dim : wire.hue;
+    const nib = state === "control" ? 2 : 3;
+    ctx.fillRect(edge.x1 - nib, edge.y1 - nib, nib * 2, nib * 2);
+    ctx.fillRect(edge.x2 - nib, edge.y2 - nib, nib * 2, nib * 2);
   }
   ctx.lineCap = "butt";
+}
+
+// ---- architecture: the region's territory, fence, tiers and peering ----
+
+// Inside the region the ground is surveyed: darker, with faint grid pegs.
+function drawTerritory(ctx, region) {
+  const { x, y, w, h } = region;
+  ctx.fillStyle = rgba(WORLD.territory, 0.55);
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = rgba(PIP.dark, 0.5);
+  for (let gx = x + 32; gx < x + w - 8; gx += 32) {
+    for (let gy = y + 48; gy < y + h - 8; gy += 32) ctx.fillRect(gx, gy, 2, 2);
+  }
+}
+
+// Chain-link fence with rusty posts and razor wire on top.
+function drawRegionFence(ctx, region) {
+  const { x, y, w, h } = region;
+  const wire = (x1, y1, x2, y2) => {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+  };
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = rgba(WORLD.fence, 0.55);
+  for (const off of [2, 6]) {
+    wire(x, y + off, x + w, y + off);
+    wire(x, y + h - off, x + w, y + h - off);
+    wire(x + off, y, x + off, y + h);
+    wire(x + w - off, y, x + w - off, y + h);
+  }
+  // Chain-link diamonds along the top and bottom runs.
+  ctx.strokeStyle = rgba(WORLD.fence, 0.22);
+  for (let px = x; px < x + w - 8; px += 8) {
+    wire(px, y + 2, px + 4, y + 6);
+    wire(px + 4, y + 6, px + 8, y + 2);
+    wire(px, y + h - 6, px + 4, y + h - 2);
+    wire(px + 4, y + h - 2, px + 8, y + h - 6);
+  }
+  // Razor wire: little barbs on the top run.
+  ctx.fillStyle = rgba(WORLD.metalLight, 0.7);
+  for (let px = x + 10; px < x + w - 10; px += 12) {
+    ctx.fillRect(px, y - 2, 1, 3);
+    ctx.fillRect(px - 1, y - 1, 3, 1);
+  }
+  // Posts.
+  for (let px = x; px <= x + w; px += 56) {
+    const postX = Math.min(px, x + w - 4);
+    ctx.fillStyle = WORLD.rustShade;
+    ctx.fillRect(postX, y - 4, 4, 14);
+    ctx.fillRect(postX, y + h - 10, 4, 14);
+    ctx.fillStyle = WORLD.rust;
+    ctx.fillRect(postX, y - 4, 4, 2);
+    ctx.fillRect(postX, y + h - 10, 4, 2);
+  }
+  for (let py = y + 56; py < y + h - 20; py += 56) {
+    ctx.fillStyle = WORLD.rustShade;
+    ctx.fillRect(x - 2, py, 8, 4);
+    ctx.fillRect(x + w - 6, py, 8, 4);
+  }
+}
+
+// Room the page keeps on the legend row for the ARCH / BY TAG switch.
+export const VIEW_SWITCH_W = 300;
+
+const LEGEND = [
+  { label: "PUBLIC", swatch: "sun" },
+  { label: "PRIVATE", swatch: "shade" },
+  { label: "TARGET", wire: "ok" },
+  { label: "NAT ROUTE", wire: "route" },
+  { label: "CONTROL", wire: "control" },
+  { label: "PEERING", wire: "peer" },
+];
+
+function drawRegionLabel(ctx, region, width) {
+  ctx.font = FONT;
+  const bx = region.x + 18;
+  const baseline = region.y + 12;
+  plaque(ctx, region.label, bx + 22, baseline, FONT_PX, PIP.bright);
+  drawSprite(ctx, icon("map"), bx - 2, baseline - FONT_PX - 2, 1);
+  const labelW = Math.ceil(ctx.measureText(region.label).width);
+  ctx.font = SMALL;
+  const capX = bx + 22 + labelW + 22;
+  labelBacking(ctx, region.caption, capX, baseline, FONT_PX - 2);
+  ctx.fillStyle = PIP.mid;
+  ctx.fillText(region.caption, capX, baseline);
+  if (region.view === "tag") return;
+  // Legend on the second row, up to the view switch (VIEW_SWITCH_W).
+  let lx = bx + 2;
+  const legendBase = baseline + 26;
+  const right = Math.min(region.x + region.w - 12, width - 12) - VIEW_SWITCH_W;
+  for (const item of LEGEND) {
+    const w = 30 + Math.ceil(ctx.measureText(item.label).width) + 14;
+    if (lx + w > right) break;
+    const baseline = legendBase;
+    ctx.fillStyle = rgba(PIP.ink, 0.85);
+    ctx.fillRect(lx - 4, baseline - 13, w, 18);
+    if (item.swatch) {
+      const sun = item.swatch === "sun";
+      ctx.fillStyle = sun ? WORLD.soilSunTop : WORLD.soilShadeTop;
+      ctx.fillRect(lx, baseline - 10, 22, 12);
+      ctx.fillStyle = sun ? WORLD.amber : PIP.dim;
+      ctx.fillRect(lx, baseline - 10, 22, 2);
+    } else {
+      const wire = item.wire === "peer" ? { core: WORLD.vault, dash: [6, 3] } : WIRE[item.wire];
+      ctx.strokeStyle = wire.core;
+      ctx.lineWidth = item.wire === "peer" ? 3 : 2;
+      ctx.setLineDash(wire.dash);
+      ctx.beginPath();
+      ctx.moveTo(lx, baseline - 4);
+      ctx.lineTo(lx + 22, baseline - 4);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = PIP.mid;
+    ctx.fillText(item.label, lx + 28, baseline);
+    lx += w + 6;
+  }
+}
+
+// A tier is a dashed rule across the settlement with its name at the left.
+function drawTierRule(ctx, row) {
+  const colour = row.tier === "public" ? WORLD.amber : row.tier === "services" ? WORLD.vault : PIP.dim;
+  ctx.fillStyle = rgba(colour, 0.45);
+  for (let px = row.x; px < row.x + row.w; px += 10) ctx.fillRect(px, row.y + 9, 6, 1);
+}
+
+function drawTierLabel(ctx, row) {
+  ctx.font = SMALL;
+  const colour = row.tier === "public" ? WORLD.amber : row.tier === "services" ? WORLD.vault : PIP.mid;
+  const [head, ...rest] = row.label.split("  ");
+  const tail = rest.join("  ");
+  labelBacking(ctx, `${head}  ${tail}`, row.x + 4, row.y + 14, FONT_PX - 2);
+  ctx.fillStyle = colour;
+  ctx.fillText(head, row.x + 4, row.y + 14);
+  ctx.fillStyle = PIP.dim;
+  ctx.fillText(tail, row.x + 4 + ctx.measureText(`${head}  `).width, row.y + 14);
+}
+
+// VPC peering: a thick blue-steel pipe down the region's left gutter.
+function drawPeering(ctx, edges, animTime, reducedMotion) {
+  for (const edge of edges || []) {
+    const gx = Math.max(4, edge.gutter);
+    const path = () => {
+      ctx.beginPath();
+      ctx.moveTo(edge.x1, edge.y1);
+      ctx.lineTo(gx, edge.y1);
+      ctx.lineTo(gx, edge.y2);
+      ctx.lineTo(edge.x2, edge.y2);
+    };
+    const live = edge.state === "peer";
+    ctx.strokeStyle = rgba(WORLD.vault, live ? 0.25 : 0.1);
+    ctx.lineWidth = 8;
+    path();
+    ctx.stroke();
+    ctx.strokeStyle = live ? WORLD.vault : PIP.dark;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 3]);
+    ctx.lineDashOffset = reducedMotion || !live ? 0 : -((animTime || 0) / 60) % 9;
+    path();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = WORLD.metalLight;
+    ctx.fillRect(gx - 4, Math.floor((edge.y1 + edge.y2) / 2) - 4, 8, 8);
+    ctx.fillStyle = WORLD.vault;
+    ctx.fillRect(gx - 2, Math.floor((edge.y1 + edge.y2) / 2) - 2, 4, 4);
+  }
 }
 
 // A fixture is a terminal kiosk: an ink card with phosphor corners, the
@@ -407,6 +602,7 @@ function allFixtures(placed) {
   return [
     ...vaultCards(placed.vaults),
     ...(placed.camp?.nodes || []),
+    ...(placed.zones || []).flatMap((zone) => zone.nodes || []),
     ...(placed.settlements || []).flatMap((settlement) => settlement.fixtures || []),
     ...(placed.orphans?.fixtures || []),
   ];
@@ -633,8 +829,10 @@ function drawSettlement(ctx, settlement) {
 function drawPlot(ctx, plot) {
   const { x, y, w, h } = plot;
   const soil = ctx.createLinearGradient(0, y, 0, y + h);
-  soil.addColorStop(0, WORLD.soilTop);
-  soil.addColorStop(1, WORLD.soilBottom);
+  const top = plot.tier === "public" ? WORLD.soilSunTop : plot.tier === "private" ? WORLD.soilShadeTop : WORLD.soilTop;
+  const bottom = plot.tier === "public" ? WORLD.soilSunBottom : plot.tier === "private" ? WORLD.soilShadeBottom : WORLD.soilBottom;
+  soil.addColorStop(0, top);
+  soil.addColorStop(1, bottom);
   ctx.fillStyle = soil;
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
@@ -655,6 +853,25 @@ function drawPlot(ctx, plot) {
     ctx.fillRect(x - 1, py, 3, 5);
     ctx.fillRect(x + w - 2, py, 3, 5);
   }
+  if (plot.tier === "public") {
+    // Sun-bleached top rail: this yard faces the internet.
+    ctx.fillStyle = rgba(WORLD.amber, 0.55);
+    ctx.fillRect(x + 2, y + 2, w - 4, 2);
+  } else if (plot.tier === "private") drawPadlock(ctx, x + w - 18, y + 8);
+}
+
+// A small iron padlock on a private yard's fence.
+function drawPadlock(ctx, x, y) {
+  ctx.fillStyle = WORLD.metalLight;
+  ctx.fillRect(x + 2, y, 6, 2);
+  ctx.fillRect(x + 1, y + 1, 2, 5);
+  ctx.fillRect(x + 7, y + 1, 2, 5);
+  ctx.fillStyle = WORLD.rust;
+  ctx.fillRect(x, y + 5, 10, 8);
+  ctx.fillStyle = WORLD.rustShade;
+  ctx.fillRect(x, y + 11, 10, 2);
+  ctx.fillStyle = WORLD.dark;
+  ctx.fillRect(x + 4, y + 7, 2, 3);
 }
 
 // ---- a collapsed VPC ----

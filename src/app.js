@@ -181,8 +181,12 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         return;
       }
       place.shelfNote = "";
-      const own = (place.fixtures || []).filter((item) => !item.camp);
       const extras = campFixtures(shelf?.resources, grain).map((item) => ({ ...item, camp: true }));
+      // The account read (Lambda, tagging API) can see the camp's pieces
+      // too; the camp's own copy (with its wires) wins.
+      const arns = new Set(extras.map((item) => item.arn).filter(Boolean));
+      const names = new Set(extras.map((item) => `${item.kind}|${item.name}`));
+      const own = (place.fixtures || []).filter((item) => !item.camp && !(item.arn && arns.has(item.arn)) && !names.has(`${item.kind}|${item.name}`));
       place.fixtures = [...own, ...extras];
     },
     async boot() {

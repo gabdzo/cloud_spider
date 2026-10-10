@@ -1,4 +1,6 @@
 import { placeVaults, vaultEdges } from "./vault-layout.js";
+import { buildingFace, cardFace, emptyLabel, natFixtures, peeringEdges, placeArchVpc, placeTagCamps, subnetRoutes } from "./arch-layout.js";
+export { tagKeys, tagOf as tagValueOf } from "./arch-layout.js";
 import { READ_ONLY, phrase } from "./radio.js";
 export const FONT_PX = 14;
 const CHAR_W = 8.5;
@@ -89,38 +91,7 @@ function placePlot(subnet, x, y, columns, buildings) {
   };
 }
 
-function tagOf(item, key) {
-  const tags = item?.tags;
-  if (Array.isArray(tags)) return tags.find((tag) => (tag.key ?? tag.Key) === key)?.value ?? tags.find((tag) => tag.Key === key)?.Value ?? "";
-  return tags?.[key] ?? "";
-}
-
-// An EKS node has no Name tag by default; say whose node it is instead of
-// leaving an unlabeled shack.
-export function buildingFace(item) {
-  if (item.label) return item;
-  const group = tagOf(item, "eks:nodegroup-name");
-  const cluster = tagOf(item, "eks:cluster-name");
-  if (!item.name && (group || cluster)) return { ...item, label: group ? `node · ${group}` : `node · ${cluster}` };
-  return item;
-}
-
-// The control plane's second line: version, node groups and how many of
-// their nodes are on the map.
-export function fixtureFace(item, place) {
-  if (item.kind !== "eks" || item.caption) return item;
-  const nodes = (place?.instances || []).filter((node) => tagOf(node, "eks:cluster-name") === item.name);
-  const running = nodes.filter((node) => node.state === "running").length;
-  const groups = item.nodegroups || [];
-  const want = groups.reduce((sum, group) => sum + (Number(group.desired) || 0), 0);
-  const bits = [`EKS${item.version ? ` ${item.version}` : ""}`];
-  if (groups.length) bits.push(`${groups.length} node group${groups.length === 1 ? "" : "s"}`);
-  bits.push(`${running}/${want || nodes.length} nodes`);
-  if (item.phase && item.phase !== "ACTIVE") bits.push(item.phase);
-  return { ...item, caption: bits.join(" · ") };
-}
-
-const CAMP_KIND = new Set(["bucket", "function", "table", "secret"]);
+const CAMP_KIND = new Set(["bucket", "function", "table", "secret", "url", "queue", "topic", "generic"]);
 const CAMP_COL = 132;
 const CAMP_ROW = 72;
 const CAMP_GAP_X = 56;
@@ -177,13 +148,14 @@ function campGrid(want, count, room) {
   return { colW, gap, perRow };
 }
 
-function placeCamp(items, originY, rowLimit = ROW_LIMIT) {
+function placeCamp(items, originY, rowLimit = ROW_LIMIT, campLeft = PAD) {
   if (!items.length) return null;
-  const fn = items.find((item) => item.kind === "function");
+  // The function that uses the most is the centre of the camp.
+  const fn = items.filter((item) => item.kind === "function").sort((a, b) => (b.uses || []).length - (a.uses || []).length)[0];
   const used = new Set(fn?.uses || []);
   const sources = items.filter((item) => used.has(item.id)).sort((a, b) => (CAMP_ORDER[a.kind] ?? 9) - (CAMP_ORDER[b.kind] ?? 9) || byId(a, b));
   const rest = items.filter((item) => item !== fn && !used.has(item.id)).sort(byId);
-  const left = PAD + INSET;
+  const left = campLeft + INSET;
   const top = originY + LINE + INSET + 8;
   const want = Math.max(CAMP_COL, ...items.map((item) => textWidth(campLabel(item)) + 24));
   const room = rowLimit - PAD * 2 - INSET * 2;
@@ -231,10 +203,10 @@ function placeCamp(items, originY, rowLimit = ROW_LIMIT) {
   const right = Math.max(...nodes.map((node) => node.x + node.w));
   const bottom = Math.max(...nodes.map((node) => node.y + node.h));
   return {
-    label: "camp",
-    x: PAD,
+    label: "REGIONAL  outside the VPCs",
+    x: campLeft,
     y: originY,
-    w: right - PAD + INSET,
+    w: right - campLeft + INSET,
     h: bottom - originY + INSET,
     nodes,
     edges,
@@ -326,7 +298,7 @@ export function vpcSummary(place, vpc) {
 // a card inside), or anywhere on a collapsed camp.
 export function foldAt(placed, x, y) {
   for (const s of placed?.settlements || []) {
-    if (s.empty || x < s.x || x >= s.x + s.w || y < s.y || y >= s.y + s.h) continue;
+    if (s.empty || s.tagCamp || x < s.x || x >= s.x + s.w || y < s.y || y >= s.y + s.h) continue;
     if (s.closed) return s;
     const banner = y < s.y + 32;
     const wall = x - s.x < 16 || s.x + s.w - x < 16 || s.y + s.h - y < 18;
@@ -335,7 +307,12 @@ export function foldAt(placed, x, y) {
   return null;
 }
 
-export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false, isClosed = () => false } = {}) {
+// Room between the region's fence and the settlements inside it (the
+// peering wires run in this gutter).
+export const REGION_IN = 14;
+const GLOBAL_KIND = new Set(["cdn"]);
+
+export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false, isClosed = () => false, view = "arch", groupBy = "project" } = {}) {
   const vpcs = [...(place.vpcs || [])].sort(byId);
   const subnets = [...(place.subnets || [])].sort(byId);
   const allInstances = [...(place.instances || [])].sort(byId);
@@ -347,7 +324,6 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
   // Vaults first: a hillside row of project doors. What a vault owns outside
   // any VPC (camp pieces, loose fixtures, no-VPC machines) moves into it;
   // VPC-bound pieces stay put and the open vault links to them.
-  const owned = new Set((vaults || []).flatMap((vault) => vault.owned || []));
   const resources = new Map();
   for (const item of allInstances) resources.set(item.id, { ...item, kind: "ec2" });
   for (const item of place.fixtures || []) resources.set(item.id, item);
@@ -355,96 +331,104 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
   for (const item of place.subnets || []) resources.set(item.id, { ...item, kind: "subnet" });
   const vaultArea = placeVaults(vaults, { top: cursorY, left: PAD, rowLimit, isOpen, resources });
   if (vaultArea) cursorY = vaultArea.bottom + GAP * 2;
-  // Owned pieces stay on the map where they live (camp included); an open
-  // vault lists them as cards and the closed door counts them.
-  const movesIn = () => false;
-  const instances = allInstances.filter((item) => !movesIn(item));
-  const fixtures = (place.fixtures || []).filter((item) => !movesIn(item));
+  const instances = allInstances;
+  // NAT gateways are cards in their subnet; they also keep the gate role.
+  const fixtures = [...(place.fixtures || []), ...natFixtures(place).filter((nat) => !(place.fixtures || []).some((item) => item.id === nat.id))];
+  const routes = subnetRoutes(place);
 
-  for (const vpc of vpcs) {
-    const label = vpc.name ? joinLabel(vpc.name, vpc.cidr) : joinLabel(vpc.id, vpc.cidr);
-    const vpcInstances = instances.filter((item) => item.vpcId === vpc.id);
-    if (isClosed(vpc.id) && (vpcInstances.length || fixtures.some((item) => item.vpcId === vpc.id))) {
-      const label = vpc.name ? joinLabel(vpc.name, vpc.cidr) : joinLabel(vpc.id, vpc.cidr);
-      const summary = vpcSummary(place, vpc);
-      const settlement = {
-        id: vpc.id,
-        label,
-        caption: summary.caption,
-        status: summary.status,
-        troubles: summary.troubles,
-        closed: true,
-        empty: false,
-        x: PAD,
-        y: cursorY,
-        w: Math.min(rowLimit - PAD * 2, Math.max(textWidth(label) + 220, textWidth(summary.caption) + 96, 420)),
-        h: CLOSED_H,
-        plots: [],
-        outsiders: [],
-        fixtures: [],
-        columns: [],
-        gate: gateKind(place, vpc.id),
-        edges: [],
-      };
-      settlements.push(settlement);
-      cursorY = settlement.y + settlement.h + GAP * 2;
-      continue;
-    }
-    // Empty means nothing at all: a VPC holding only a cluster control plane
-    // or a balancer (a fresh EKS VPC before its nodes join) is still drawn.
-    if (!vpcInstances.length && !fixtures.some((item) => item.vpcId === vpc.id)) {
-      const text = `${label}  empty`;
-      const settlement = {
-        id: vpc.id,
-        label: text,
-        empty: true,
-        x: PAD,
-        y: cursorY,
-        w: Math.max(textWidth(text) + 48, 180),
-        h: LINE + INSET,
-        plots: [],
-        outsiders: [],
-        fixtures: [],
-        columns: [],
-        gate: "",
-        edges: [],
-      };
-      settlements.push(settlement);
-      cursorY = settlement.y + settlement.h + GAP * 2;
-      continue;
-    }
-    const left = PAD;
-    const plotsTop = cursorY + LINE + INSET;
-    let cursorX = left + INSET;
-    let rowTop = plotsTop;
-    let rowBottom = plotsTop;
-    let right = left + INSET + textWidth(label);
-    const plots = [];
-    const zoneColumns = [];
-    const owned = subnets.filter((item) => item.vpcId === vpc.id);
+  // Global services (CloudFront) live above the region, outside its fence.
+  const globals = fixtures.filter((item) => item.global || GLOBAL_KIND.has(item.kind));
+  let globalZone = null;
+  if (view !== "tag" && globals.length) {
+    globalZone = placeZone(globals.map((item) => cardFace(item, place)), cursorY, rowLimit, "GLOBAL  edge locations, outside every region");
+    cursorY = globalZone.y + globalZone.h + GAP * 2;
+  }
 
-    if (owned.some((item) => item.zone)) {
-      const zones = [...new Set(owned.map((item) => item.zone || ""))].sort();
-      for (const zone of zones) {
-        if (zone) zoneColumns.push({ label: zone, x: cursorX, y: plotsTop });
-        let y = plotsTop + (zone ? LINE : 0);
-        let colW = textWidth(zone);
-        for (const subnet of owned.filter((item) => (item.zone || "") === zone)) {
-          const buildings = instances.filter((item) => item.subnetId === subnet.id).map(buildingFace);
-          const plot = placePlot(subnet, cursorX, y, columns, buildings);
-          plots.push(plot);
-          y += plot.h + GAP;
-          colW = Math.max(colW, plot.w);
-          rowBottom = Math.max(rowBottom, y - GAP);
-        }
-        cursorX += colW + GAP;
-        right = Math.max(right, cursorX - GAP);
+  const regionTop = cursorY;
+  const left = PAD + REGION_IN;
+  // Two header rows on the fence: name and counts, then the legend (and
+  // the ARCH / BY TAG switch, which the page lays over its right end).
+  cursorY += LINE * 2 + INSET + 16;
+  const settledRow = rowLimit - REGION_IN * 2;
+
+  if (view === "tag") {
+    const tagged = placeTagCamps(place, groupBy, { x: left, y: cursorY, rowLimit, fixtures, instances });
+    settlements.push(...tagged.camps);
+    cursorY = tagged.bottom;
+  } else {
+    for (const vpc of vpcs) {
+      const vpcInstances = instances.filter((item) => item.vpcId === vpc.id);
+      const gate = gateKind(place, vpc.id);
+      if (isClosed(vpc.id) && (vpcInstances.length || fixtures.some((item) => item.vpcId === vpc.id))) {
+        const label = vpc.name ? joinLabel(vpc.name, vpc.cidr) : joinLabel(vpc.id, vpc.cidr);
+        const summary = vpcSummary({ ...place, fixtures }, vpc);
+        const settlement = {
+          id: vpc.id,
+          label,
+          caption: summary.caption,
+          status: summary.status,
+          troubles: summary.troubles,
+          closed: true,
+          empty: false,
+          x: left,
+          y: cursorY,
+          w: Math.min(settledRow - PAD * 2, Math.max(textWidth(label) + 220, textWidth(summary.caption) + 96, 420)),
+          h: CLOSED_H,
+          plots: [],
+          outsiders: [],
+          fixtures: [],
+          columns: [],
+          tiers: [],
+          gate,
+          edges: [],
+        };
+        settlements.push(settlement);
+        cursorY = settlement.y + settlement.h + GAP * 2;
+        continue;
       }
-    } else {
+      // Empty means nothing at all: a VPC holding only a cluster control
+      // plane, a balancer or a NAT is still drawn whole.
+      if (!vpcInstances.length && !fixtures.some((item) => item.vpcId === vpc.id)) {
+        const text = emptyLabel(vpc, place);
+        const settlement = {
+          id: vpc.id,
+          label: text,
+          empty: true,
+          x: left,
+          y: cursorY,
+          w: Math.max(textWidth(text) + 48, 180),
+          h: LINE + INSET,
+          plots: [],
+          outsiders: [],
+          fixtures: [],
+          columns: [],
+          tiers: [],
+          gate: "",
+          edges: [],
+        };
+        settlements.push(settlement);
+        cursorY = settlement.y + settlement.h + GAP * 2;
+        continue;
+      }
+      const owned = subnets.filter((item) => item.vpcId === vpc.id);
+      if (owned.some((item) => item.zone)) {
+        const settlement = placeArchVpc(vpc, { place, x: left, y: cursorY, rowLimit: settledRow, routes, instances, fixtures, gate });
+        settlements.push(settlement);
+        cursorY = settlement.y + settlement.h + GAP * 2;
+        continue;
+      }
+      // No zone on any subnet (old reads, tests): plots flow in rows.
+      const label = vpc.name ? joinLabel(vpc.name, vpc.cidr) : joinLabel(vpc.id, vpc.cidr);
+      const plotsTop = cursorY + LINE + INSET;
+      let cursorX = left + INSET;
+      let rowTop = plotsTop;
+      let rowBottom = plotsTop;
+      let right = left + INSET + textWidth(label);
+      const plots = [];
       for (const subnet of owned) {
         const buildings = instances.filter((item) => item.subnetId === subnet.id).map(buildingFace);
         const sized = plotSize(subnet, buildings, columns);
-        if (cursorX > left + INSET && cursorX + sized.w > left + rowLimit) {
+        if (cursorX > left + INSET && cursorX + sized.w > left + settledRow) {
           cursorX = left + INSET;
           rowTop = rowBottom + GAP;
         }
@@ -454,84 +438,130 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
         right = Math.max(right, cursorX - GAP);
         rowBottom = Math.max(rowBottom, rowTop + plot.h);
       }
+      const ownedFixtures = fixtures.filter((item) => item.vpcId === vpc.id).map((item) => cardFace(item, place));
+      let fixtureItems = [];
+      if (ownedFixtures.length) {
+        const fixtureTop = plots.length ? rowBottom + GAP : plotsTop;
+        const packed = placeFixtures(ownedFixtures, left + INSET, fixtureTop);
+        fixtureItems = packed.items;
+        right = Math.max(right, packed.right);
+        rowBottom = packed.bottom;
+      }
+      const outsiders = instances.filter((item) => item.vpcId === vpc.id && !item.subnetId);
+      const outsideTop = plots.length || fixtureItems.length ? rowBottom + GAP : plotsTop;
+      const outside = pack(outsiders, left + INSET, outsideTop, columns);
+      const labeled = outside.items.map((item) => ({ ...item, label: "no subnet" }));
+      if (labeled.length) right = Math.max(right, left + INSET + outside.width);
+      const floor = plots.length || fixtureItems.length ? rowBottom : plotsTop;
+      const bottom = Math.max(floor, labeled.length ? outside.bottom : 0, cursorY + LINE * 3);
+      const settlement = {
+        id: vpc.id,
+        label,
+        x: left,
+        y: cursorY,
+        w: right - left + INSET,
+        h: bottom - cursorY + INSET + WALKWAY_PX,
+        plots,
+        outsiders: labeled,
+        fixtures: fixtureItems,
+        columns: [],
+        tiers: [],
+        gate,
+        empty: false,
+        edges: settlementEdges({ fixtures: fixtureItems, plots, outsiders: labeled }, place.links),
+      };
+      settlements.push(settlement);
+      cursorY = settlement.y + settlement.h + GAP * 2;
     }
-
-    const ownedFixtures = fixtures.filter((item) => item.vpcId === vpc.id).map((item) => fixtureFace(item, place));
-    let fixtureItems = [];
-    if (ownedFixtures.length) {
-      const fixtureTop = plots.length ? rowBottom + GAP : plotsTop;
-      const packed = placeFixtures(ownedFixtures, left + INSET, fixtureTop);
-      fixtureItems = packed.items;
-      right = Math.max(right, packed.right);
-      rowBottom = packed.bottom;
-    }
-
-    const outsiders = instances.filter((item) => item.vpcId === vpc.id && !item.subnetId);
-    const outsideTop = plots.length || fixtureItems.length ? rowBottom + GAP : plotsTop;
-    const outside = pack(outsiders, left + INSET, outsideTop, columns);
-    const labeled = outside.items.map((item) => ({ ...item, label: "no subnet" }));
-    if (labeled.length) right = Math.max(right, left + INSET + outside.width);
-    const floor = plots.length || fixtureItems.length ? rowBottom : plotsTop;
-    const bottom = Math.max(floor, labeled.length ? outside.bottom : 0, cursorY + LINE * 3);
-
-    const settlement = {
-      id: vpc.id,
-      label,
-      x: left,
-      y: cursorY,
-      w: right - left + INSET,
-      h: bottom - cursorY + INSET + WALKWAY_PX,
-      plots,
-      outsiders: labeled,
-      fixtures: fixtureItems,
-      columns: zoneColumns,
-      gate: gateKind(place, vpc.id),
-      empty: false,
-      edges: settlementEdges(
-        { fixtures: fixtureItems, plots, outsiders: labeled },
-        place.links,
-      ),
-    };
-    settlements.push(settlement);
-    cursorY = settlement.y + settlement.h + GAP * 2;
   }
 
-  const orphanItems = instances.filter((item) => !item.vpcId);
-  const looseFixtures = fixtures.filter((item) => !item.vpcId && !campMember(item));
-  const camp = placeCamp(fixtures.filter(campMember), cursorY, rowLimit);
+  const orphanItems = view === "tag" ? [] : instances.filter((item) => !item.vpcId);
+  const regional = view === "tag" ? [] : fixtures.filter((item) => !item.vpcId && !globals.includes(item));
+  const looseFixtures = regional.filter((item) => !campMember(item)).map((item) => cardFace(item, place));
+  const camp = placeCamp(regional.filter(campMember).map((item) => cardFace(item, place)), cursorY, rowLimit - REGION_IN * 2, left);
   if (camp) cursorY = camp.y + camp.h + GAP * 2;
-  const packedOrphans = pack(orphanItems, PAD + INSET, cursorY + LINE + INSET, columns);
+  const packedOrphans = pack(orphanItems, left + INSET, cursorY + LINE + INSET, columns);
   const fixtureTop = orphanItems.length ? packedOrphans.bottom + GAP : cursorY + LINE + INSET;
-  const packedShelf = placeFixtures(looseFixtures, PAD + INSET, fixtureTop);
-  const contentHeight = Math.max(
-    cursorY + PAD,
-    camp ? camp.y + camp.h + PAD : 0,
-    orphanItems.length ? packedOrphans.bottom + PAD : 0,
-    looseFixtures.length ? packedShelf.bottom + PAD : 0,
+  const packedShelf = placeFixtures(looseFixtures, left + INSET, fixtureTop);
+  const innerBottom = Math.max(
+    cursorY - GAP,
+    orphanItems.length ? packedOrphans.bottom + GAP : 0,
+    looseFixtures.length ? packedShelf.bottom + GAP : 0,
   );
+  const innerRight = Math.max(
+    left + 260,
+    ...settlements.map((item) => item.x + item.w),
+    camp ? camp.x + camp.w : 0,
+    ...packedOrphans.items.map((item) => item.x + item.w),
+    ...packedShelf.items.map((item) => item.x + item.w),
+  );
+  const zones = new Set(subnets.map((item) => item.zone).filter(Boolean));
+  const regionName = place.region || "";
+  const region = {
+    label: view === "tag" ? `REGION ${regionName.toUpperCase()}  ·  GROUPED BY TAG ${groupBy}` : `REGION ${regionName.toUpperCase()}`,
+    caption: view === "tag"
+      ? `${settlements.length} camp${settlements.length === 1 ? "" : "s"}`
+      : `${vpcs.length} VPC${vpcs.length === 1 ? "" : "s"} · ${zones.size} AZ${zones.size === 1 ? "" : "s"} · ${instances.length} EC2 · ${fixtures.length} other`,
+    x: PAD,
+    y: regionTop,
+    w: innerRight - PAD + REGION_IN,
+    h: innerBottom - regionTop + REGION_IN,
+    view,
+    groupBy,
+  };
+  cursorY = region.y + region.h + GAP * 2;
+  const regionEdges = view === "tag" ? [] : peeringEdges(place.peerings, settlements.filter((item) => !item.empty || true));
 
   if (vaultArea) vaultArea.edges = vaultEdges(vaultArea, (id) => findPlaced(settlements, id));
 
+  const contentHeight = Math.max(cursorY + PAD, region.y + region.h + PAD);
   return {
     settlements,
     vaults: vaultArea,
     camp,
+    zones: globalZone ? [globalZone] : [],
+    region,
+    regionEdges,
+    view,
+    groupBy,
     orphans: {
       label: "no VPC",
-      y: cursorY,
+      y: camp ? camp.y + camp.h + GAP * 2 : region.y + region.h,
       items: packedOrphans.items.map((item) => ({ ...item, label: "no VPC" })),
       fixtures: packedShelf.items,
     },
     contentHeight,
     contentWidth: Math.max(
+      region.x + region.w + PAD,
       ...settlements.map((item) => item.x + item.w + PAD),
       camp ? camp.x + camp.w + PAD : 0,
+      globalZone ? globalZone.x + globalZone.w + PAD : 0,
       vaultArea ? vaultArea.x + vaultArea.w + PAD : 0,
-      ...packedOrphans.items.map((item) => item.x + item.w + PAD),
-      ...packedShelf.items.map((item) => item.x + item.w + PAD),
       PAD * 2,
     ),
   };
+}
+
+// A walled zone of cards (the GLOBAL strip above the region).
+function placeZone(items, originY, rowLimit, label) {
+  const left = PAD + INSET;
+  const top = originY + LINE + INSET + 8;
+  const placed = [];
+  let x = left;
+  let y = top;
+  let bottom = top;
+  for (const item of items.sort(byId)) {
+    const w = Math.max(CAMP_COL, Math.min(232, textWidth(campLabel(item)) + 60));
+    if (x > left && x + w > rowLimit - PAD) {
+      x = left;
+      y = bottom + CAMP_GAP_Y;
+    }
+    placed.push({ ...item, label: campLabel(item), x, y, w, h: CAMP_ROW });
+    x += w + 24;
+    bottom = Math.max(bottom, y + CAMP_ROW);
+  }
+  const right = Math.max(left + textWidth(label) + 40, ...placed.map((item) => item.x + item.w));
+  return { label, x: PAD, y: originY, w: right - PAD + INSET, h: bottom - originY + INSET, nodes: placed, edges: [], zone: "global" };
 }
 
 // ---- SRE overview: the morning in three sentences ----

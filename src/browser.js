@@ -1,4 +1,4 @@
-import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail } from "./layout.js";
+import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, paint } from "./draw.js";
 import { isInstanceId } from "./ids.js";
@@ -90,6 +90,12 @@ const vaultPanels = document.querySelector("#vault-panels");
 const vaultAll = document.querySelector("#vault-all");
 const vpcFoldsEl = document.querySelector("#vpc-folds");
 let foldsFor = null;
+const mapViewEl = document.querySelector("#map-view");
+const viewArch = document.querySelector("#view-arch");
+const viewTag = document.querySelector("#view-tag");
+const viewTagKey = document.querySelector("#view-tag-key");
+const MAP_VIEW_KEY = "cloudspider.mapView";
+const MAP_TAG_KEY = "cloudspider.mapTagKey";
 const kubePanel = document.querySelector("#kube-panel");
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
@@ -122,6 +128,26 @@ let spendTicket = 0;
 let pipOpen = false;
 let openCard = null;
 let campGrain = "coarse";
+// The map's picture: "arch" (VPC > AZ > subnet) or "tag" (camps per tag value).
+let mapView = readPref(MAP_VIEW_KEY, "arch") === "tag" ? "tag" : "arch";
+let mapTagKey = readPref(MAP_TAG_KEY, "project") || "project";
+let tagKeysShown = "";
+
+function readPref(key, fallback) {
+  try {
+    return window.localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writePref(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // private mode: the choice lasts for this page only
+  }
+}
 let pipModules = [];
 let pipTerraform = [];
 let clusterData = null;
@@ -441,8 +467,8 @@ function placedMap() {
   const rowLimit = width ? Math.min(ROW_LIMIT, width) : ROW_LIMIT;
   const vaults = vaultsData.vaults;
   const extra = {
-    key: `${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}`,
-    options: { vaults, isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id) },
+    key: `${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}|${mapView}|${mapTagKey}`,
+    options: { vaults, isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey },
   };
   const placed = layoutCache.get(place || EMPTY_PLACE, rowLimit, extra);
   // A reload with the same vaults keeps the layout but brings new check
@@ -975,6 +1001,7 @@ function draw() {
     wallGrain.hidden = true;
     tallyEl.hidden = true;
     placeFolds(null);
+    mapViewEl.hidden = true;
     placeVaultChrome(null);
     if (mode === "path") drawPath();
     else drawCluster();
@@ -1006,12 +1033,13 @@ function draw() {
   placeGrain(placed);
   placeVaultChrome(placed);
   placeFolds(placed);
+  placeViewSwitch(placed);
 }
 
 // One real button per VPC camp (top-right of its wall), so Tab and
 // Enter/Space fold it too. Rebuilt only when the layout changes.
 function placeFolds(placed) {
-  const camps = mode === "map" ? (placed?.settlements || []).filter((item) => !item.empty) : [];
+  const camps = mode === "map" ? (placed?.settlements || []).filter((item) => !item.empty && !item.tagCamp) : [];
   if (foldsFor === placed && vpcFoldsEl.childElementCount === camps.length) return;
   foldsFor = placed;
   const focused = document.activeElement?.dataset?.vpc || "";
@@ -1039,6 +1067,40 @@ function toggleVpc(id) {
   renderChrome();
   draw();
 }
+
+// The ARCH / BY TAG switch rides on the region fence's second row.
+function placeViewSwitch(placed) {
+  const region = mode === "map" ? placed?.region : null;
+  mapViewEl.hidden = !region || Boolean(ui.selection);
+  if (!region) return;
+  const keys = tagKeys(place || {});
+  if (!keys.includes(mapTagKey)) keys.push(mapTagKey);
+  const sig = keys.join("|");
+  if (sig !== tagKeysShown) {
+    viewTagKey.replaceChildren(...keys.map((key) => Object.assign(document.createElement("option"), { value: key, textContent: key })));
+    tagKeysShown = sig;
+  }
+  viewTagKey.value = mapTagKey;
+  viewTagKey.disabled = mapView !== "tag";
+  viewArch.setAttribute("aria-pressed", String(mapView === "arch"));
+  viewTag.setAttribute("aria-pressed", String(mapView === "tag"));
+  const width = mapViewEl.offsetWidth || 260;
+  mapViewEl.style.left = `${Math.max(region.x + 8, region.x + region.w - width - 14)}px`;
+  mapViewEl.style.top = `${region.y + 20}px`;
+}
+
+function setMapView(next, key = mapTagKey) {
+  mapView = next === "tag" ? "tag" : "arch";
+  mapTagKey = key || "project";
+  writePref(MAP_VIEW_KEY, mapView);
+  writePref(MAP_TAG_KEY, mapTagKey);
+  clickGround(ui);
+  draw();
+}
+
+viewArch.addEventListener("click", () => setMapView("arch"));
+viewTag.addEventListener("click", () => setMapView("tag"));
+viewTagKey.addEventListener("change", () => setMapView("tag", viewTagKey.value));
 
 function syncSelection() {
   if (!ui.selection || !place) return;

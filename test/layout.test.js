@@ -172,7 +172,7 @@ test("camp resources share a wall, align in columns, and connect to what they us
     ],
   });
   const camp = place.camp;
-  assert.equal(camp.label, "camp");
+  assert.equal(camp.label, "REGIONAL  outside the VPCs");
   const labels = camp.nodes.map((node) => node.label);
   assert.deepEqual(labels.sort(), [
     "cloudspider-camp-550536272523",
@@ -282,7 +282,7 @@ test("a VPC with no instances is a short strip and a VPC with instances keeps it
   const empty = place.settlements.find((item) => item.id === "vpc-empty");
   assert.equal(empty.empty, true);
   assert.equal(empty.plots.length, 0);
-  assert.equal(empty.label, "vpc-empty  172.31.0.0/16  empty");
+  assert.equal(empty.label, "vpc-empty  172.31.0.0/16  1 subnet  default  empty");
   assert.ok(empty.h < 80);
   const full = place.settlements.find((item) => item.id === "vpc-full");
   assert.equal(full.empty, false);
