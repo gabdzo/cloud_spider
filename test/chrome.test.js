@@ -59,7 +59,7 @@ test("status bar counts the map and the path", () => {
   assert.equal(map.meter.label, "LIT 3/5");
   assert.equal(mapStats(null), null);
   const path = pathStats({ nodes: [{ status: "ok" }, { status: "broken" }, { status: "hang" }, { status: "ok" }] });
-  assert.deepEqual(path.cells, ["NODES 4", "BROKEN 1", "HANGING 1"]);
+  assert.deepEqual(path.cells, ["PARTS 4", "BROKEN 1", "HANGING 1"]);
   assert.equal(path.meter.fill, 0.5);
   assert.equal(pathStats({ nodes: [] }), null);
 });

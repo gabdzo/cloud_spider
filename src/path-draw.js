@@ -33,6 +33,20 @@ export function paintPath(ctx, scene) {
 
 // Path and Cluster share one picture: nodes, edges and a kind icon. `icon`
 // maps a node to its sprite; by default the Pip-Boy icon for its kind.
+function wrapText(ctx, text, max) {
+  const rows = [];
+  let row = "";
+  for (const word of String(text).split(" ")) {
+    const next = row ? `${row} ${word}` : word;
+    if (row && ctx.measureText(next).width > max) {
+      rows.push(row);
+      row = word;
+    } else row = next;
+  }
+  rows.push(row);
+  return rows;
+}
+
 export function paintDiagram(ctx, { placed, selectedId, animTime, width, height, empty, reducedMotion, icon: iconOf }) {
   ctx.imageSmoothingEnabled = false;
   ctx.textBaseline = "alphabetic";
@@ -41,8 +55,16 @@ export function paintDiagram(ctx, { placed, selectedId, animTime, width, height,
   if (layer) ctx.drawImage(layer, 0, 0, width, height);
   ctx.font = FONT;
   if (!placed.nodes.length) {
-    ctx.fillStyle = TEXT;
-    ctx.fillText(`> ${empty || ""}`, 24, 40);
+    // The first line is the headline; any further lines are quieter hints.
+    // Wrapped to the canvas width so narrow windows do not clip them.
+    let y = 40;
+    String(empty || "").split("\n").forEach((line, i) => {
+      ctx.fillStyle = i ? MUTED : TEXT;
+      for (const row of wrapText(ctx, line, Math.max(120, width - 64))) {
+        ctx.fillText(`${i || y > 40 ? " " : ">"} ${row}`, 24, y);
+        y += 22;
+      }
+    });
     return;
   }
   const phase = reducedMotion ? 0 : Math.floor((animTime || 0) / 180) % 4;

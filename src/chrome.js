@@ -221,7 +221,7 @@ export function pathStats(diagram) {
   const ok = nodes.filter((node) => node.status === "ok").length;
   const broken = nodes.filter((node) => node.status === "broken").length;
   return {
-    cells: [`NODES ${nodes.length}`, `BROKEN ${broken}`, `HANGING ${nodes.filter((node) => node.status === "hang").length}`],
+    cells: [`PARTS ${nodes.length}`, `BROKEN ${broken}`, `HANGING ${nodes.filter((node) => node.status === "hang").length}`],
     meter: { label: `HEALTHY ${ok}/${nodes.length}`, fill: ok / nodes.length },
   };
 }

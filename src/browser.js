@@ -232,6 +232,10 @@ function renderChrome() {
   acct.textContent = sample ? "SAMPLE" : "LIVE";
   const stats = mode === "path" ? pathStats(pathData?.diagram) : mode === "cluster" ? pathStats(clusterData?.diagram) : mapStats(place);
   renderStats(statsEl, stats);
+  // The picture is a canvas; give screen readers its one-line summary.
+  const view = mode === "path" ? "request path" : mode === "cluster" ? "cluster" : "survey map";
+  const summary = [sample ? `${view}, sample` : view, ...(stats?.cells || []), stats?.meter?.label || "", statusEl.textContent || ""].filter(Boolean).join(", ");
+  if (canvas.getAttribute("aria-label") !== summary) canvas.setAttribute("aria-label", summary);
   renderAskThis();
   if (termReady) terminal.refresh();
   if (mode === "path" || mode === "cluster") {
@@ -1222,6 +1226,18 @@ function revealPanel(rect) {
   if (left !== map.scrollLeft || top !== map.scrollTop) map.scrollTo({ left, top, behavior: reducedMotion ? "auto" : "smooth" });
 }
 
+// Path with nothing to draw: say why, and what would give it something.
+function pathEmptyText() {
+  if (pathData && !pathData.error && !pathData.loadBalancers?.length) {
+    return [
+      pathData.headline || "no load balancers here",
+      "Path follows one request through an ALB or NLB: listener, rule, target group, targets.",
+      "Pick another region, paste a host that resolves to a load balancer, or turn SAMPLE on to see one.",
+    ].join("\n");
+  }
+  return pathData?.headline || pathData?.error || pathFailure || "reading the path";
+}
+
 function drawPath() {
   const placed = placedPath();
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
@@ -1231,7 +1247,7 @@ function drawPath() {
     animTime,
     width,
     height,
-    empty: pathData?.headline || pathData?.error || pathFailure || "reading the path",
+    empty: pathEmptyText(),
     reducedMotion,
   });
 }
