@@ -1718,7 +1718,7 @@ const page = `<!doctype html>
      the console no longer fit on one row and the header wraps to three rows.
      Tighten the spacing so it stays two rows: plate, tabs, console / gauges,
      readout, knobs. */
-  @media (min-width: 901px) and (max-width: 1399px) {
+  @media (max-width: 1399px) {
     header { gap: 10px 12px; padding-left: 10px; padding-right: 10px; }
     .plate { padding-right: 10px; }
     h1 { letter-spacing: 0.12em; }
