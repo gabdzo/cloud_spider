@@ -7,8 +7,9 @@ import { REGION, fill, helmRelease, podIdentityRole, policyFile, setup, small, v
 //     policies of policies/karpenter-controller.json (vendored, pinned)
 //   - the interruption queue and its EventBridge rules (spot warnings, health)
 //   - one EC2NodeClass (AL2023, the cluster's subnets and security group,
-//     20 GB encrypted gp3, IMDSv2) and one NodePool: arm64 t4g.small/medium,
-//     spot first, capped at 4 vCPU, consolidated a minute after it is empty.
+//     20 GB encrypted gp3, IMDSv2, kubelet maxPods) and one NodePool: arm64
+//     t4g.small/medium in the cluster's zones, spot first, capped at 4 vCPU,
+//     consolidated a minute after it is empty.
 // The controller runs on the cluster's own node group (the chart keeps it
 // off Karpenter's nodes).
 export default function karpenter({ pulumi, aws, k8s, addon }) {
@@ -32,6 +33,21 @@ export default function karpenter({ pulumi, aws, k8s, addon }) {
       return undefined;
     }
     return { maxPods: Number(maxPods) };
+  });
+  // Zones: the NodePool may launch in every AZ of the cluster's subnets
+  // (read from AWS, so any cluster works), or in the ones `zones` names
+  // ("eu-north-1a,eu-north-1b"). Allowing both zones does not make Karpenter
+  // spread: it picks the cheapest offering. Pods spread it, with
+  // topologySpreadConstraints on topology.kubernetes.io/zone (Karpenter
+  // launches in the zone the scheduler needs); RUN-ME section 16.
+  const wanted = String(config.get("zones") || "").split(",").map((zone) => zone.trim()).filter(Boolean);
+  const zones = cluster.vpcConfig.subnetIds.apply(async (ids) => {
+    const subnets = await Promise.all(ids.map((id) => aws.ec2.getSubnet({ id })));
+    const all = [...new Set(subnets.map((subnet) => subnet.availabilityZone).filter(Boolean))].sort();
+    if (!wanted.length) return all;
+    const unknown = wanted.filter((zone) => !all.includes(zone));
+    if (unknown.length) throw new Error(`zones ${unknown.join(", ")}: ${clusterName} has subnets only in ${all.join(", ")}`);
+    return [...new Set(wanted)].sort();
   });
   const account = aws.getCallerIdentityOutput({}).accountId;
 
@@ -136,6 +152,7 @@ export default function karpenter({ pulumi, aws, k8s, addon }) {
             { key: "kubernetes.io/arch", operator: "In", values: ["arm64"] },
             { key: "node.kubernetes.io/instance-type", operator: "In", values: ["t4g.small", "t4g.medium"] },
             { key: "karpenter.sh/capacity-type", operator: "In", values: capacity === "spot" ? ["spot", "on-demand"] : ["on-demand"] },
+            { key: "topology.kubernetes.io/zone", operator: "In", values: zones },
           ],
           expireAfter: "24h",
         },

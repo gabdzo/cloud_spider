@@ -3,7 +3,7 @@ import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
-import { EKS_OWNED, PREFIX_DELEGATION, adoptList, eksOwnPlan, maxPodsProblem, nodeConfigUserData, ownerText, readAddon } from "../eks-addons.js";
+import { EKS_OWNED, PREFIX_DELEGATION, adoptList, eksOwnPlan, maxPodsProblem, nodeConfigUserData, ownerText, podsPerNodeText, readAddon } from "../eks-addons.js";
 
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
@@ -130,13 +130,18 @@ if (!["import", "retag"].includes(adoptPhase)) throw new Error("adoptPhase must 
 const addonTags = { ...tags, project: "eks", cluster: clusterName, "managed-by": "pulumi" };
 const addons = {};
 
-// Pod capacity: VPC CNI prefix delegation (on by default) lifts the ENI cap
-// on pods per node (11 on a t4g.small, 17 on a t4g.medium); maxPods sets
-// kubelet's cap through a launch template (AL2023 nodeadm NodeConfig).
+// Pod capacity: VPC CNI prefix delegation (on by default) gives each node
+// enough pod IPs, but it does NOT raise kubelet's pod cap on a managed node
+// group: without a launch template EKS keeps its ENI-based default (11 on a
+// t4g.small, 17 on a t4g.medium; seen live on cloudspider-up 2026-10-11 on a
+// node launched after prefix delegation was on). maxPods sets that cap
+// through a launch template (AL2023 nodeadm NodeConfig kubelet.maxPods).
 // "auto" (default) adds no launch template: an existing node group stays as
 // it is. A number REPLACES the node group once (new nodes; EKS only reads a
-// launch template at node group creation), and only new nodes get the new
-// cap (existing ones keep theirs until replaced).
+// launch template at node group creation): the new group is created first
+// (Pulumi's default create-before-delete, a new name), then the old one is
+// drained and deleted, so there is always a managed node for the Karpenter
+// controller and CoreDNS.
 const prefixDelegation = isOn("vpcCni") && isOn("prefixDelegation");
 const maxPods = String(config.get("maxPods") || "auto");
 const maxPodsError = maxPodsProblem(instanceType, maxPods, prefixDelegation);
@@ -220,7 +225,9 @@ const nodes = new aws.eks.NodeGroup(
     scalingConfig: { desiredSize: nodeCount, minSize: nodeCount, maxSize: nodeCount },
     tags,
   },
-  { dependsOn: [...nodePolicies, ...(addons["vpc-cni"] ? [addons["vpc-cni"]] : [])], customTimeouts: { create: "40m", update: "40m", delete: "40m" } },
+  // deleteBeforeReplace false (Pulumi's default, said out loud): a replaced
+  // node group's successor is Ready before the old one goes.
+  { dependsOn: [...nodePolicies, ...(addons["vpc-cni"] ? [addons["vpc-cni"]] : [])], deleteBeforeReplace: false, customTimeouts: { create: "40m", update: "40m", delete: "40m" } },
 );
 
 for (const item of EKS_OWNED.filter((entry) => entry.addonName !== "vpc-cni")) await ownAddon(item, [nodes]);
@@ -307,5 +314,7 @@ export const viewerRoleArn = viewerRole.arn;
 export const versionOut = cluster.version;
 export const nodeGroup = nodes.nodeGroupName;
 export const eksAddons = Object.keys(addons);
-export const podsPerNode = maxPods === "auto" ? (prefixDelegation ? "auto (EKS picks; 110 with prefix delegation)" : "auto (ENI limit)") : maxPods;
+// What kubelet's cap on the managed nodes really is: "auto" is EKS's ENI
+// limit even with prefix delegation on.
+export const podsPerNode = podsPerNodeText(instanceType, maxPods);
 export const vpcCniPrefixDelegation = prefixDelegation;

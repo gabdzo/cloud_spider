@@ -8,12 +8,12 @@
 // and fakes only.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { maxPodsProblem, nodeConfigUserData, prefixDelegationOn } from "../upgrades/eks-addons.js";
+import { maxPodsProblem, nodeConfigUserData, podsPerNodeText, prefixDelegationOn } from "../upgrades/eks-addons.js";
 import { nodeGroupChange, runHint } from "../src/upgrade-rules.js";
 import { UPGRADES } from "../src/upgrade.js";
 
@@ -141,4 +141,39 @@ test("RUN demo is refused before pulumi when a node is full of pods it may not p
   const got = await app.upgradeRun("http://127.0.0.1:9241", { module: "demo", action: "up", params: { clusterName: "cloudspider-up" } });
   assert.match(got.error, /ip-10-43-1-5 \(t4g\.medium\) has 17\/17 pods/);
   assert.equal(runs.length, 0);
+});
+
+test("podsPerNode says what kubelet's cap really is: auto is the ENI limit even with prefix delegation", () => {
+  assert.match(podsPerNodeText("t4g.medium", "auto"), /^auto: 17 on a t4g\.medium .*prefix delegation does not raise it, set maxPods/);
+  assert.match(podsPerNodeText("t4g.small", undefined), /^auto: 11 on a t4g\.small/);
+  assert.equal(podsPerNodeText("t4g.medium", "110"), "110 (kubelet maxPods from the launch template)");
+  assert.doesNotMatch(podsPerNodeText("t4g.medium", "auto"), /110/);
+});
+
+test("eks legacy stack, maxPods=110 on a t4g.medium: launch template with maxPods 110, auto-named group, create-before-delete", { skip: ready("upgrades/eks") }, async () => {
+  const { resources } = await mock(LEGACY[0], LEGACY[1], LEGACY[2], { ...LEGACY[3], "cloudspider-upgrade:instanceType": "t4g.medium", "cloudspider-upgrade:maxPods": "110" }, {});
+  const lt = resources.find((r) => r.type === "aws:ec2/launchTemplate:LaunchTemplate");
+  assert.match(Buffer.from(lt.inputs.userData, "base64").toString(), /maxPods: 110/);
+  const nodes = resources.find((r) => r.type === "aws:eks/nodeGroup:NodeGroup");
+  assert.equal(nodes.inputs.nodeGroupName, undefined, "Pulumi's auto-name: the replacement gets a new name and comes up first");
+  assert.ok(nodes.inputs.launchTemplate.id);
+  assert.deepEqual(nodes.inputs.instanceTypes, ["t4g.medium"]);
+  const source = readFileSync(join(root, "upgrades/eks/index.js"), "utf8");
+  assert.match(source, /deleteBeforeReplace: false/);
+  assert.doesNotMatch(source, /110 with prefix delegation/);
+});
+
+test("the committed legacy stack config matches cloudspider-up: t4g.medium, maxPods 110", () => {
+  const text = readFileSync(join(root, "upgrades/eks/Pulumi.upgrade.yaml"), "utf8");
+  assert.match(text, /cloudspider-upgrade:instanceType: t4g\.medium/);
+  assert.match(text, /cloudspider-upgrade:maxPods: "110"/);
+});
+
+test("Karpenter's NodePool may use every zone of the cluster's subnets; zones narrows it, an unknown zone is refused", { skip: ready("upgrades/addons") }, async () => {
+  const zoneReq = (resources) => resources.find((r) => r.inputs?.kind === "NodePool").inputs.spec.template.spec.requirements.find((r) => r.key === "topology.kubernetes.io/zone");
+  const all = await mock(...KARP, AGENT);
+  assert.deepEqual(zoneReq(all.resources), { key: "topology.kubernetes.io/zone", operator: "In", values: ["eu-north-1a", "eu-north-1b"] });
+  const one = await mock(KARP[0], KARP[1], KARP[2], { ...KARP[3], "cloudspider-addons:zones": "eu-north-1a" }, AGENT);
+  assert.deepEqual(zoneReq(one.resources).values, ["eu-north-1a"]);
+  await assert.rejects(mock(KARP[0], KARP[1], KARP[2], { ...KARP[3], "cloudspider-addons:zones": "eu-north-1c" }, AGENT), (error) => /zones eu-north-1c: cloudspider-up has subnets only in eu-north-1a, eu-north-1b/.test(failure(error)));
 });

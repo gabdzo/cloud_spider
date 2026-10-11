@@ -139,12 +139,25 @@ export function prefixDelegationOn(configurationValues) {
 }
 
 // kubelet maxPods per node (EKS card maxPods, Karpenter's EC2NodeClass).
-// "auto" leaves it to EKS: with prefix delegation a managed node group then
-// picks 110, and kubelet reserves 11 MiB per pod + 255 MiB (1.4 GiB of a
-// t4g.small's 2 GiB). An explicit number caps that: 32 on a t4g.small
-// (607 MiB reserved), 58 on a t4g.medium (893 MiB of 4 GiB).
+// "auto" leaves it to EKS, and EKS keeps the ENI limit (11 on a t4g.small,
+// 17 on a t4g.medium) even with prefix delegation on: only an explicit
+// number raises it. kubelet reserves 11 MiB per pod + 255 MiB of memory:
+// 32 on a t4g.small (607 MiB of 2 GiB), 58 (893 MiB) or 110 (1.47 GiB) of a
+// t4g.medium's 4 GiB.
 export const MAX_PODS = { "t4g.small": ["32"], "t4g.medium": ["32", "58", "110"] };
 export const MAX_PODS_CHOICES = ["auto", "32", "58", "110"];
+
+// kubelet's pod cap without maxPods: the ENI limit, one IP per pod
+// (ENIs x (IPs per ENI - 1) + 2).
+export const ENI_PODS = { "t4g.small": 11, "t4g.medium": 17 };
+
+// The EKS stack's podsPerNode output: what kubelet's cap really is.
+export function podsPerNodeText(instanceType, maxPods) {
+  const value = String(maxPods ?? "auto");
+  if (value !== "auto") return `${value} (kubelet maxPods from the launch template)`;
+  const eni = ENI_PODS[instanceType];
+  return `auto: ${eni ? `${eni} on a ${instanceType}` : "the ENI limit"} (EKS's ENI limit; prefix delegation does not raise it, set maxPods)`;
+}
 
 export function maxPodsProblem(instanceType, maxPods, prefixDelegation = true) {
   const value = String(maxPods ?? "auto");

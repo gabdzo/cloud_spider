@@ -441,6 +441,18 @@ The change reaches a running cluster on the lbc stack's next RUN (Helm values on
 
 **Room for pods** (read this before Kyverno on the demo cluster): every EKS node has a hard pod cap from the VPC CNI (one IP per pod). A **t4g.small holds 11 pods**, and the demo cluster's single node already runs 11 (4 demo + 7 kube-system). Kyverno needs 3 more, so its pods stay Pending, Helm's atomic install times out after 10 minutes, and its rollback hangs on a Pending hook. (That happened on 2026-10-11, and the leftovers were cleaned up.) Now both Cloud Spider's RUN and `pulumi preview`/`up` on the add-on stack count free slots first and refuse with a message like *"Kyverno needs 3 free pod slots on cloudspider-up, and its 1 node has 0 (11/11 in use; t4g.small holds 11 pods)"*. If Karpenter will add the node anyway, `pulumi config set skipRoomCheck true` skips the check.
 
+**Pod capacity** (the EKS stack's VPC CNI prefix delegation is on by default): prefix delegation gives a node enough IPs, but it does **not** raise kubelet's pod cap by itself. A managed node with EKS card `maxPods auto` stays at the ENI limit, **11 on a t4g.small and 17 on a t4g.medium**; the stack output `podsPerNode` says which. Set the EKS card's `maxPods` (32 on a t4g.small; 32, 58 or 110 on a t4g.medium) to raise it. That replaces the node group once: the new group comes up first, then the old one drains and goes. Karpenter's nodes take the Karpenter card's `maxPods` (default 32), applied only when prefix delegation is on at the time of its RUN, so RUN Karpenter again after turning it on. Check: `kubectl get nodes -L topology.kubernetes.io/zone -o custom-columns=NAME:.metadata.name,PODS:.status.allocatable.pods`.
+
+**Zones**: Karpenter's NodePool may use every AZ of the cluster's subnets (`pulumi config set zones eu-north-1a,eu-north-1b` narrows it), but it picks the cheapest spot offering, so its nodes often share one zone. To spread them, give your Deployments a zone spread, and Karpenter launches where the scheduler needs a node:
+
+```yaml
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector: { matchLabels: { app: web } }
+```
+
 To make room, pick one:
 - **A second node** (about +$0.02/h, $0.50/day for a t4g.small and its disk): raise the node group's desired size to 2 in the cluster's stack (section 6), `pulumi up` there, and wait for `kubectl --context cloudspider-up get nodes` to show 2 Ready nodes.
 - **A larger instance** (t4g.medium also holds only 17 pods; t4g.large holds 35): only if you also want the CPU.
