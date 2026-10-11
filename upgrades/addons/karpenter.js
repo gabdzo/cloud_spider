@@ -63,7 +63,21 @@ export default function karpenter({ pulumi, aws, k8s, addon }) {
       }))),
       tags,
     }));
-  const controller = podIdentityRole({ pulumi, aws, name: "karpenter", clusterName, namespace: addon.namespace, serviceAccount: "karpenter", managed: managed.map((policy) => policy.arn), tags });
+  // Spot needs the account's EC2 Spot service-linked role. An account that
+  // never ran spot has none, and CreateFleet then fails with
+  // AuthFailure.ServiceLinkedRoleCreationNotPermitted (live test 2026-10-11):
+  // let the controller create that one role, nothing else.
+  const spotRole = {
+    Version: "2012-10-17",
+    Statement: [{
+      Sid: "AllowSpotServiceLinkedRole",
+      Effect: "Allow",
+      Action: "iam:CreateServiceLinkedRole",
+      Resource: "*",
+      Condition: { StringEquals: { "iam:AWSServiceName": "spot.amazonaws.com" } },
+    }],
+  };
+  const controller = podIdentityRole({ pulumi, aws, name: "karpenter", clusterName, namespace: addon.namespace, serviceAccount: "karpenter", managed: managed.map((policy) => policy.arn), inline: spotRole, tags });
 
   const release = helmRelease(k8s, k, addon, {
     replicas: 1,

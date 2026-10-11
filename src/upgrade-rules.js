@@ -213,6 +213,11 @@ export function addonCommands(spec, cluster) {
 // and the page (the ERROR plate).
 const HINTS = [
   {
+    kind: "demo-missing",
+    test: /namespaces "demo" not found/i,
+    hint: "The HPA scaling demo scales the demo app (namespace demo), which is not on this cluster. Set hpa to off to run only the burst and inflate parts (Karpenter still gets work), or raise the demo stack on this cluster first.",
+  },
+  {
     kind: "aws-missing",
     test: /spawn aws ENOENT|aws is not on PATH/i,
     hint: "The AWS CLI is not on the PATH of the shell that started Cloud Spider. Install it (brew install awscli), check `aws --version` there, then restart the server from that terminal.",
