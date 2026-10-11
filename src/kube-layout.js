@@ -12,6 +12,8 @@
 //     the workload is expanded.
 // Pure: no canvas, so it is unit tested and cached by the browser.
 
+import { nodeInfoLine } from "./node-labels.js";
+
 export const KUBE_LAYOUT = {
   PAD: 24,
   CHAR: 8.4, // bold 14px mono, per character
@@ -509,6 +511,6 @@ export function hoverText(hit) {
   const n = hit.node;
   if (n.members) return `${n.ns}/${n.members.join(", ")}: ${n.members.length} Services on the same workloads`;
   if (n.kind === "pod") return `${n.pod?.ns}/${n.label}${n.pod?.node ? ` on ${n.pod.node}` : ""}`;
-  if (n.kind === "node") return n.host?.name || n.label;
+  if (n.kind === "node") return [n.host?.name || n.label, nodeInfoLine(n.host)].filter(Boolean).join(" · ");
   return n.ns ? `${n.ns}/${n.label}` : n.label;
 }

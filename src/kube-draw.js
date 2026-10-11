@@ -10,6 +10,7 @@ import { brackets, clip, drawSprite } from "./draw-kit.js";
 import { backdropLayer } from "./path-draw.js";
 import { KUBE_LAYOUT, cardText, expandChip, middle, pathOf } from "./kube-layout.js";
 import { placedMatches } from "./kube-search.js";
+import { nodeChips } from "./node-labels.js";
 
 const FONT = font(FONT_PX);
 const SMALL = font(FONT_PX - 2);
@@ -273,6 +274,28 @@ function frame(ctx, n, color, { selected, lit, hover }) {
   else if (lit || hover) brackets(ctx, n.x - 3, n.y - 3, n.w + 6, n.h + 6, rgba(PIP.bright, 0.85), 7, 2);
 }
 
+// Small outlined tags, right to left from `right`; returns the left edge.
+// Spot and Karpenter read brighter than the defaults (on-demand, node group).
+const TAG_COLOR = { zone: () => PIP.bright, capacity: (c) => (c.text === "SPOT" ? STATUS.hang : PIP.mid), source: (c) => (c.text === "KARP" ? PIP.hot : PIP.mid) };
+function placeChips(ctx, chips, right, y) {
+  ctx.font = TINY;
+  let x = right;
+  for (const chip of [...chips].reverse()) {
+    const w = Math.ceil(ctx.measureText(chip.text).width) + 8;
+    x -= w;
+    const color = (TAG_COLOR[chip.kind] || (() => PIP.mid))(chip);
+    ctx.fillStyle = rgba(color, 0.14);
+    ctx.fillRect(x, y, w, 14);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, 13);
+    ctx.fillStyle = color;
+    ctx.fillText(chip.text, x + 4, y + 10);
+    x -= 4;
+  }
+  return x;
+}
+
 function nodeChip(ctx, x, y, index, w = 28) {
   const color = chipColor(index);
   ctx.fillStyle = rgba(color, 0.18);
@@ -422,10 +445,12 @@ function drawHost(ctx, n, { selected, lit }) {
   }
   drawSprite(ctx, icon("node"), n.x + 12, n.y + 9, 1);
   nodeChip(ctx, n.x + 34, n.y + 8, n.chip ?? 0);
+  // Zone, capacity, source chips on the right of the name row.
+  const chipsLeft = placeChips(ctx, nodeChips(n.host), n.x + n.w - 10, n.y + 9);
   ctx.font = FONT;
   ctx.fillStyle = PIP.hot;
   const left = n.x + 70;
-  ctx.fillText(middle(n.label, Math.floor((n.x + n.w - left - 10) / L.CHAR)), left, n.y + 21);
+  ctx.fillText(middle(n.label, Math.floor((chipsLeft - left - 6) / L.CHAR)), left, n.y + 21);
   const host = n.host || {};
   const load = host.load || {};
   ctx.font = SMALL;

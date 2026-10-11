@@ -30,6 +30,7 @@ import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
 import { addonCommands, confirmPrompt, upgradeSpiderLine } from "./upgrade-rules.js";
 import { liveLine, numberProblem, radioLine, runModel } from "./run-pane.js";
+import { sourceText } from "./node-labels.js";
 import { costFor, costLine, estimate } from "./stack-costs.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
@@ -2435,7 +2436,7 @@ function showNode(node) {
   });
   head.append(close);
   const facts = vel("dl", "vp-facts");
-  for (const [label, value] of [["STATE", host.ready === null ? "not listed" : host.ready ? "Ready" : "NotReady"], ["TYPE", host.type], ["PODS", `${host.pods} running`], ["INSTANCE", host.instanceId]]) {
+  for (const [label, value] of [["STATE", host.ready === null ? "not listed" : host.ready ? "Ready" : "NotReady"], ["TYPE", host.type], ["ZONE", host.zone], ["CAPACITY", host.capacity], ["SOURCE", sourceText(host.source)], ["PODS", `${host.pods} running`], ["INSTANCE", host.instanceId]]) {
     if (value) facts.append(vel("dt", "", label), vel("dd", "", value));
   }
   const body = vel("div", "kp-body vp-metrics");
