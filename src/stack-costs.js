@@ -66,6 +66,20 @@ export function estimate(lines = []) {
   };
 }
 
+// A card's lines for the parameters picked in it: a line with `param`
+// takes its price from that parameter ("ec2:" + instanceType) and a line
+// with `perNode` is counted once per node (nodeCount).
+export function costFor(lines = [], params = {}) {
+  const nodes = Math.max(1, Number(params.nodeCount) || 1);
+  return lines.map((line) => {
+    if (line.usage) return line;
+    let price = line.price;
+    if (line.param && params[line.param] && PRICES[`${line.prefix || ""}${params[line.param]}`]) price = `${line.prefix || ""}${params[line.param]}`;
+    const qty = (line.qty ?? 1) * (line.perNode ? nodes : 1);
+    return { price, qty };
+  });
+}
+
 function money(value) {
   if (value === 0) return "$0";
   if (value < 0.01) return "<$0.01";

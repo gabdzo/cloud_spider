@@ -21,6 +21,7 @@ import { sampleKubeSnapshot } from "./kube-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, runHint, watchLine } from "./upgrade-rules.js";
+import { CONNECT_REGION, connectCommand, connectionOf, validCluster, viewerAlias } from "./kube-connect.js";
 import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
 import { createMetricsCache, sampleMetrics } from "./metrics.js";
@@ -43,7 +44,7 @@ function accountRead(error) {
 export const KUBE_VIEW_TTL = 5_000;
 export const KUBE_MAP_TTL = 30_000;
 
-export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -89,12 +90,104 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   // snapshot cache; the first is the primary one (`kube`), the only one that
   // feeds the SLOs, the map, TELEMETRY and OPS.
   const contexts = (kubeContexts?.length ? kubeContexts : kube ? [{ name: kube.context, label: kube.context, namespaces: kube.scope || "*", pollMs: DEFAULT_POLL_MS, kube }] : []).map((ctx, index) => ({ ...ctx, primary: index === 0 }));
-  const primary = contexts[0] || null;
+  let primary = contexts[0] || null;
   if (primary && !kube) kube = primary.kube;
+  // Hot reload (cloudspider.contexts.yaml changed, or CONNECT added one):
+  // contexts that stay keep their client, cache and health; new ones join,
+  // gone ones leave. The first stays the primary one.
+  function setContexts(next = []) {
+    const keep = new Map(contexts.map((ctx) => [ctx.name, ctx]));
+    const list = next.filter((ctx) => ctx?.name && ctx.kube).map((ctx, index) => {
+      const old = keep.get(ctx.name);
+      const same = old && JSON.stringify(old.namespaces) === JSON.stringify(ctx.namespaces) && old.pollMs === ctx.pollMs;
+      return same ? { ...old, label: ctx.label, primary: index === 0 } : { ...ctx, primary: index === 0 };
+    });
+    if (!list.length) return contextNames();
+    for (const ctx of contexts) {
+      if (!list.some((item) => item.name === ctx.name)) {
+        kubeCaches.delete(ctx.name);
+        polledAt.delete(ctx.name);
+      }
+    }
+    contexts.splice(0, contexts.length, ...list);
+    if (primary?.name !== contexts[0].name) {
+      primary = contexts[0];
+      kube = primary.kube;
+      kubeCaches.delete(primary.name);
+    } else {
+      primary = contexts[0];
+    }
+    return contextNames();
+  }
+  function contextNames() {
+    return contexts.map((ctx) => ctx.name);
+  }
+  async function reloadContexts() {
+    if (!loadKubeContexts) return { error: "contexts cannot be reloaded here" };
+    const got = await loadKubeContexts().catch((failure) => ({ error: failure?.message || "the contexts did not load", contexts: [] }));
+    if (got.error && !got.contexts?.length) return { error: got.error };
+    return { names: setContexts(got.contexts || []), source: got.source || "", errors: got.errors || [] };
+  }
   const kubeCaches = new Map();
   const kubeFlights = new Map();
   const polledAt = new Map();
   const health = createHealthWatch({ clock: now });
+  // CONNECT's access check, cached a minute per context.
+  const probes = new Map();
+  async function probeContext(ctx, { fresh = false } = {}) {
+    const hit = probes.get(ctx.name);
+    if (!fresh && hit && now() - hit.at < 60_000) return hit.value;
+    const got = ctx.kube?.probe ? await ctx.kube.probe().catch((failure) => ({ error: failure?.message || "the cluster did not answer" })) : { ok: true };
+    const text = String(got.error || "");
+    const value = got.ok ? { ok: true } : { noAccess: Boolean(got.unauthorized || got.forbidden || /401|forbidden|AccessDenied|not authorized to perform: sts:AssumeRole/i.test(text)), error: text };
+    probes.set(ctx.name, { at: now(), value });
+    return value;
+  }
+  function noAccessHint(cluster) {
+    return `The cluster does not let the viewer role ${viewerAlias(cluster)} in (no access entry, or you may not assume the role). RUN the EKS card again for ${cluster}: its stack makes the access entry. Check: aws eks list-access-entries --cluster-name ${cluster} --region ${CONNECT_REGION}`;
+  }
+  function connectSteps(cluster, st, current = "") {
+    const alias = viewerAlias(cluster);
+    const steps = [];
+    steps.push({ text: `back up ${connector.kubeconfigPath()} to ${connector.backupPath()}`, fn: () => connector.backupKubeconfig() });
+    if (st.context) {
+      steps.push({ text: `context ${st.context} already reads ${cluster} with its viewer role: nothing to write`, fn: async () => ({ skipped: true, lines: ["CONNECTED already; the kubeconfig is not touched"] }) });
+    } else {
+      steps.push({ cmd: "aws", args: connectCommand({ cluster, roleArn: st.roleArn }), text: `aws ${connectCommand({ cluster, roleArn: st.roleArn }).join(" ")}` });
+      // update-kubeconfig switches the current context; put it back.
+      if (current) steps.push({ cmd: "kubectl", args: ["config", "use-context", current], text: `kubectl config use-context ${current}   (update-kubeconfig switched it; put it back)` });
+    }
+    const name = st.context || alias;
+    steps.push({ text: `add ${name} to cloudspider.contexts.yaml`, fn: () => connector.addToList({ context: name, label: cluster.replace(/^cloudspider-/, "").toUpperCase().slice(0, 24) || cluster, namespaces: "*" }, contexts) });
+    steps.push({ text: "reload Cloud Spider's kube contexts (no restart)", fn: async () => {
+      const got = await reloadContexts();
+      if (got.error) return { error: got.error };
+      if (!got.names.includes(name)) {
+        return { error: `${name} is not among the contexts after the reload`, hint: got.source === "CLOUDSPIDER_KUBE_CONTEXTS" ? `CLOUDSPIDER_KUBE_CONTEXTS is set and wins over cloudspider.contexts.yaml: add ";${name}:*" to it and restart.` : `Check cloudspider.contexts.yaml${got.errors?.length ? `: ${got.errors.join("; ")}` : ""}.` };
+      }
+      return { lines: [`contexts now: ${got.names.join(", ")}`] };
+    } });
+    steps.push({ text: `check the viewer role can read ${cluster} (one GET)`, fn: async () => {
+      const ctx = contexts.find((item) => item.name === name);
+      const access = ctx ? await probeContext(ctx, { fresh: true }) : { error: "the context is not loaded" };
+      if (access.ok) return { lines: [`CONNECTED: ${name} reads ${cluster}`] };
+      if (access.noAccess) return { error: `NO ACCESS: ${access.error}`, hint: noAccessHint(cluster) };
+      return { error: `the cluster did not answer: ${access.error}` };
+    } });
+    return steps;
+  }
+  function disconnectSteps(conn) {
+    const steps = [{ text: `back up ${connector.kubeconfigPath()} to ${connector.backupPath()}`, fn: () => connector.backupKubeconfig() }];
+    steps.push({ cmd: "kubectl", args: ["config", "delete-context", conn.alias], text: `kubectl config delete-context ${conn.alias}` });
+    if (conn.userIsOurs && !conn.userShared) steps.push({ cmd: "kubectl", args: ["config", "delete-user", conn.alias], text: `kubectl config delete-user ${conn.alias}` });
+    steps.push({ text: `remove ${conn.alias} from cloudspider.contexts.yaml`, fn: () => connector.removeFromList(conn.alias) });
+    steps.push({ text: "reload Cloud Spider's kube contexts (no restart)", fn: async () => {
+      const got = await reloadContexts();
+      probes.delete(conn.alias);
+      return got.error ? { error: got.error } : { lines: [`contexts now: ${got.names.join(", ")}`] };
+    } });
+    return steps;
+  }
   async function readContext(ctx, maxAge) {
     const cached = kubeCaches.get(ctx.name);
     if (cached && now() - cached.at < maxAge) return cached.snap;
@@ -438,6 +531,61 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     agentCancel(requestOrigin) {
       if (!originAllowed(requestOrigin, pageOrigin)) return { status: 403, error: "nothing was cancelled" };
       return agent ? agent.cancel() : { cancelled: false };
+    },
+    // ---- CONNECT: a viewer kube context per EKS cluster (kube-connect.js) ----
+    contextNames,
+    reloadContexts,
+    async connectStatus(cluster = "") {
+      if (!validCluster(cluster)) return { cluster, state: "error", text: "not a cluster name", hint: "" };
+      if (!connector || !upgrade?.outputs) return { cluster, state: "error", text: "CONNECT is not set up", hint: "" };
+      const out = await upgrade.outputs("eks", { clusterName: cluster }).catch((failure) => ({ error: failure?.message || "pulumi did not answer" }));
+      const roleArn = String(out?.outputs?.viewerRoleArn || "");
+      const kc = await connector.readKubeconfig();
+      const conn = connectionOf(kc.config, { cluster, roleArn });
+      const base = { cluster, stack: out?.stack || "", alias: conn.alias, context: conn.match, ours: conn.ours, roleArn, kubeconfig: kc.path };
+      if (kc.error) return { ...base, state: "error", text: kc.error, hint: "Fix or restore the kubeconfig (a backup is ~/.kube/config.cloudspider.bak after a CONNECT)." };
+      if (!conn.match) {
+        if (!roleArn) {
+          return { ...base, state: "no-cluster", text: out?.missing ? `no stack ${out.stack} yet` : `stack ${out?.stack || "?"} has no viewer role output${out?.error ? ` (${String(out.error).split("\n").pop()})` : ""}`, hint: out?.error && !out.missing ? runHint(out.error).hint || "pulumi could not read the cluster's stack; see the error." : "RUN the cluster on the Stacks EKS card first; CONNECT needs its viewer role." };
+        }
+        if (conn.clash) return { ...base, state: "error", text: `a kube context ${conn.clash} already exists and is not this cluster's viewer`, hint: `CONNECT never overwrites it. Rename it (kubectl config rename-context ${conn.clash} <other>) and press CONNECT again.` };
+        return { ...base, state: "not-connected", text: "NOT CONNECTED", hint: `CONNECT writes kube context ${conn.alias} (viewer role, read-only) to ${kc.path} and adds it to Cloud Spider.` };
+      }
+      const ctx = contexts.find((item) => item.name === conn.match);
+      if (!ctx) return { ...base, state: "not-listed", text: `context ${conn.match} exists, not in Cloud Spider's list`, hint: "CONNECT adds it to cloudspider.contexts.yaml; nothing is written to the kubeconfig." };
+      const access = await probeContext(ctx);
+      if (access.ok) return { ...base, state: "connected", text: `CONNECTED as ${conn.match}`, hint: "" };
+      if (access.noAccess) return { ...base, state: "no-access", text: "NO ACCESS", hint: noAccessHint(cluster), detail: access.error };
+      return { ...base, state: "connected", text: `CONNECTED as ${conn.match}; the cluster did not answer`, hint: access.error || "", detail: access.error };
+    },
+    async connectAll() {
+      const listed = eks?.listClusters ? await eks.listClusters().catch((failure) => ({ error: failure?.message })) : { names: [] };
+      if (listed.error) return { clusters: [], error: listed.error, hint: runHint(listed.error).hint };
+      const clusters = await Promise.all((listed.names || []).filter(validCluster).map((name) => this.connectStatus(name)));
+      return { clusters };
+    },
+    async connectRun(requestOrigin, body = {}) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { error: "nothing was connected", hint: "Open Cloud Spider at the address npm start printed." };
+      const cluster = String(body.cluster || "");
+      const action = body.action === "disconnect" ? "disconnect" : "connect";
+      if (!validCluster(cluster)) return { error: "not a cluster name", hint: "" };
+      if (!connector || !upgrade?.runSteps) return { error: "CONNECT is not set up", hint: "" };
+      const st = await this.connectStatus(cluster);
+      const stack = st.stack || "";
+      const no = (error, hint = "") => upgrade.refuse ? { ...upgrade.refuse({ module: "eks", action, stack, error }), ...(hint ? { hint } : {}) } : { error, hint };
+      if (action === "connect") {
+        if (st.state === "no-cluster" || st.state === "error") return no(st.text, st.hint);
+        const kc = await connector.readKubeconfig();
+        const current = String(kc.config?.["current-context"] || "");
+        const steps = connectSteps(cluster, st, current);
+        const command = st.context ? "" : `aws ${connectCommand({ cluster, roleArn: st.roleArn }).join(" ")}${current ? ` && kubectl config use-context ${current}` : ""}`;
+        return upgrade.runSteps({ module: "eks", action: "connect", stack, steps, command, where: st.kubeconfig });
+      }
+      if (!st.context) return no(`${cluster} is not connected`, "");
+      if (!st.ours) return no(`${st.context} was not made by CONNECT`, `Cloud Spider only removes the context it made (${st.alias}). Remove ${st.context} yourself if you want it gone.`);
+      const kc = await connector.readKubeconfig();
+      const conn = connectionOf(kc.config, { cluster, roleArn: st.roleArn });
+      return upgrade.runSteps({ module: "eks", action: "disconnect", stack, steps: disconnectSteps(conn), command: `kubectl config delete-context ${conn.alias}`, where: st.kubeconfig });
     },
     async upgradeLog(module = "", values = {}) {
       return upgrade?.logFor ? upgrade.logFor(module, values) : null;

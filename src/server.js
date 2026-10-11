@@ -1105,6 +1105,13 @@ const page = `<!doctype html>
      one per context, each with its health lamp and scope. */
   #kube-ctx { position: absolute; z-index: 4; right: 14px; top: 8px; display: flex; align-items: stretch; gap: 0; padding: 3px; background: var(--btn-skirt); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-rim-hi), 0 2px 6px var(--btn-shade); max-width: calc(100% - 330px); overflow-x: auto; }
   #kube-ctx[hidden] { display: none; }
+  #kube-connect { position: absolute; z-index: 4; right: 14px; top: 8px; width: min(460px, calc(100% - 28px)); display: flex; flex-direction: column; gap: 4px; padding: 5px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-mid); box-shadow: 0 0 12px var(--btn-glow-far); font-size: 12px; max-height: calc(100% - 70px); overflow: auto; }
+  #kube-connect[hidden] { display: none; }
+  #kube-connect .kc-head { display: flex; gap: 8px; align-items: center; width: 100%; padding: 0 2px; font: inherit; color: var(--pip-dim); background: transparent; border: 0; text-align: left; cursor: pointer; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+  #kube-connect .kc-head b { color: var(--pip-bright); letter-spacing: 0.2em; }
+  #kube-connect .kc-head em { margin-left: auto; font-style: normal; }
+  #kube-connect[data-open="0"] .connect-row, #kube-connect[data-open="0"] .runpane { display: none; }
+  #kube-connect .connect-row .act { display: flex; gap: 4px; }
   #kube-ctx > b { align-self: center; padding: 0 8px 0 6px; font-size: 9px; letter-spacing: 0.2em; color: var(--pip-dim); white-space: nowrap; }
   #kube-ctx button { position: relative; display: grid; grid-template-columns: 10px auto; grid-template-rows: auto auto; gap: 0 7px; align-items: center; min-width: 92px; padding: 4px 12px 4px 9px; font: inherit; text-align: left; color: var(--btn-off-label); background: linear-gradient(180deg, var(--btn-off-top), var(--btn-off-mid) 45%, var(--btn-off-low)); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-gloss), inset 0 -2px 0 var(--btn-shade); cursor: pointer; }
   #kube-ctx button + button { margin-left: 3px; }
@@ -1550,37 +1557,57 @@ const page = `<!doctype html>
   /* The run pane: the card's terminal (live log, steps, clock) and the red
      ERROR plate when a run fails or is refused. */
   #pip:has(.runpane:not([hidden])) { width: min(600px, calc(100% - 24px)); }
-  #pip .runpane { display: flex; flex-direction: column; gap: 5px; padding: 6px; background: var(--pip-ink); border: 1px solid var(--pip-dark); box-shadow: inset 0 0 10px var(--pip-ink), 0 0 0 1px var(--pip-screen); }
-  #pip .runpane[hidden], #pip .runpane [hidden] { display: none; }
-  #pip .run-head { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.1em; color: var(--pip-bright); }
-  #pip .run-title { font-weight: normal; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #pip .run-word { color: var(--pip-dim); }
-  #pip .run-time { font-variant-numeric: tabular-nums; color: var(--pip-bright); text-shadow: 0 0 6px var(--glow-bright); }
-  #pip .run-lamp { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--pip-dim); }
-  #pip .run-lamp.run { background: var(--world-amber); box-shadow: 0 0 6px var(--world-amber); animation: run-blink 1s steps(2) infinite; }
-  #pip .run-lamp.ok { background: var(--pip-bright); box-shadow: 0 0 6px var(--glow-bright); }
-  #pip .run-lamp.fail { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
+  .runpane { display: flex; flex-direction: column; gap: 5px; padding: 6px; background: var(--pip-ink); border: 1px solid var(--pip-dark); box-shadow: inset 0 0 10px var(--pip-ink), 0 0 0 1px var(--pip-screen); }
+  .runpane[hidden], .runpane [hidden] { display: none; }
+  .runpane .run-head { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.1em; color: var(--pip-bright); }
+  .runpane .run-title { font-weight: normal; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .runpane .run-word { color: var(--pip-dim); }
+  .runpane .run-time { font-variant-numeric: tabular-nums; color: var(--pip-bright); text-shadow: 0 0 6px var(--glow-bright); }
+  .runpane .run-lamp { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--pip-dim); }
+  .runpane .run-lamp.run { background: var(--world-amber); box-shadow: 0 0 6px var(--world-amber); animation: run-blink 1s steps(2) infinite; }
+  .runpane .run-lamp.ok { background: var(--pip-bright); box-shadow: 0 0 6px var(--glow-bright); }
+  .runpane .run-lamp.fail { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
   @keyframes run-blink { 50% { opacity: 0.35; } }
-  @media (prefers-reduced-motion: reduce) { #pip .run-lamp.run { animation: none; } }
-  #pip .runpane[data-state="failed"] .run-word, #pip .runpane[data-state="refused"] .run-word { color: var(--status-broken); }
-  #pip .run-steps { margin: 0; padding: 0; list-style: none; font-size: 11px; display: flex; flex-direction: column; gap: 1px; }
-  #pip .run-steps li { display: grid; grid-template-columns: 14px 1fr; gap: 4px; color: var(--pip-dim); }
-  #pip .run-steps li code { font: inherit; overflow-wrap: anywhere; }
-  #pip .run-steps li.done { color: var(--pip-mid); }
-  #pip .run-steps li.running { color: var(--world-amber); }
-  #pip .run-steps li.failed { color: var(--status-broken); }
-  #pip .runpane #pip-out { max-height: 260px; min-height: 3em; padding: 4px 6px; color: var(--pip-mid); background: repeating-linear-gradient(0deg, var(--pip-screen) 0 2px, var(--pip-ink) 2px 3px); border: 1px solid var(--pip-dark); font-size: 11px; }
-  #pip .run-plate { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; color: var(--status-broken); background: color-mix(in srgb, var(--status-broken) 16%, var(--pip-ink)); border: 2px solid var(--status-broken); box-shadow: 0 0 10px color-mix(in srgb, var(--status-broken) 40%, transparent); }
-  #pip .run-plate .plate-title { font-size: 12px; letter-spacing: 0.24em; font-weight: bold; }
-  #pip .run-plate .plate-step { font-size: 10px; letter-spacing: 0.06em; overflow-wrap: anywhere; }
-  #pip .run-plate .plate-lines { max-height: none; color: var(--status-broken); font-size: 12px; white-space: pre-wrap; }
-  #pip .run-plate .plate-hint { margin: 0; color: var(--pip-bright); font-size: 12px; line-height: 1.35; }
-  #pip .run-plate .plate-hint b { color: var(--world-amber); font-weight: normal; letter-spacing: 0.12em; font-size: 10px; }
-  #pip .run-plate .plate-cmd { border-color: var(--status-broken); }
-  #pip .run-plate .plate-cmd code { max-height: 4.4em; overflow: auto; scrollbar-width: thin; }
-  #pip .run-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--pip-dim); }
-  #pip .run-foot a { color: var(--pip-dim); overflow-wrap: anywhere; }
-  #pip .run-foot a:hover { color: var(--pip-bright); }
+  @media (prefers-reduced-motion: reduce) { .runpane .run-lamp.run { animation: none; } }
+  .runpane[data-state="failed"] .run-word, .runpane[data-state="refused"] .run-word { color: var(--status-broken); }
+  .runpane .run-steps { margin: 0; padding: 0; list-style: none; font-size: 11px; display: flex; flex-direction: column; gap: 1px; }
+  .runpane .run-steps li { display: grid; grid-template-columns: 14px 1fr; gap: 4px; color: var(--pip-dim); }
+  .runpane .run-steps li code { font: inherit; overflow-wrap: anywhere; }
+  .runpane .run-steps li.done { color: var(--pip-mid); }
+  .runpane .run-steps li.running { color: var(--world-amber); }
+  .runpane .run-steps li.failed { color: var(--status-broken); }
+  .runpane .run-out, .runpane .run-out { max-height: 260px; min-height: 3em; padding: 4px 6px; color: var(--pip-mid); background: repeating-linear-gradient(0deg, var(--pip-screen) 0 2px, var(--pip-ink) 2px 3px); border: 1px solid var(--pip-dark); font-size: 11px; }
+  .runpane .run-plate { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; color: var(--status-broken); background: color-mix(in srgb, var(--status-broken) 16%, var(--pip-ink)); border: 2px solid var(--status-broken); box-shadow: 0 0 10px color-mix(in srgb, var(--status-broken) 40%, transparent); }
+  .runpane .run-plate .plate-title { font-size: 12px; letter-spacing: 0.24em; font-weight: bold; }
+  .runpane .run-plate .plate-step { font-size: 10px; letter-spacing: 0.06em; overflow-wrap: anywhere; }
+  .runpane .run-plate .plate-lines { max-height: none; color: var(--status-broken); font-size: 12px; white-space: pre-wrap; }
+  .runpane .run-plate .plate-hint { margin: 0; color: var(--pip-bright); font-size: 12px; line-height: 1.35; }
+  .runpane .run-plate .plate-hint b { color: var(--world-amber); font-weight: normal; letter-spacing: 0.12em; font-size: 10px; }
+  .runpane .run-plate .plate-cmd { border-color: var(--status-broken); }
+  .runpane .run-plate .plate-cmd code { max-height: 4.4em; overflow: auto; scrollbar-width: thin; }
+  .runpane .run-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--pip-dim); }
+  .runpane .run-foot a { color: var(--pip-dim); overflow-wrap: anywhere; }
+  .runpane .run-foot a:hover { color: var(--pip-bright); }
+  .runpane pre { margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+  .runpane .run-out { max-height: 260px; min-height: 3em; }
+  .runpane .cmdrow { display: grid; grid-template-columns: 52px 1fr auto; gap: 6px; align-items: center; padding: 2px 3px; background: var(--pip-screen); border: 1px solid var(--pip-dark); }
+  .runpane .cmdrow .lbl { font-size: 9px; letter-spacing: 0.16em; color: var(--pip-dim); }
+  .runpane .cmdrow code { font: inherit; font-size: 11px; color: var(--pip-bright); overflow-wrap: anywhere; }
+  .runpane .cmdrow .copy { min-height: 22px; padding: 0 6px; font-size: 10px; letter-spacing: 0.12em; }
+  .runpane .run-offer { display: flex; align-items: center; gap: 8px; padding: 5px 8px; color: var(--pip-bright); border: 1px dashed var(--pip-mid); font-size: 12px; }
+  .runpane .run-offer button { margin-left: auto; }
+  /* CONNECT: a lamp, what it means and one button (Stacks EKS card, the
+     Cluster view's EKS strip). */
+  .connect-row { display: grid; grid-template-columns: 10px 1fr auto; gap: 4px 8px; align-items: center; padding: 5px 7px; border: 1px solid var(--pip-dark); background: var(--pip-ink); font-size: 12px; }
+  .connect-row .lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim); }
+  .connect-row[data-state="connected"] .lamp { background: var(--lamp-on); box-shadow: 0 0 6px var(--btn-glow); }
+  .connect-row[data-state="not-connected"] .lamp, .connect-row[data-state="not-listed"] .lamp { background: var(--world-amber); box-shadow: 0 0 5px var(--world-amber); }
+  .connect-row[data-state="no-access"] .lamp, .connect-row[data-state="error"] .lamp { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
+  .connect-row .what { color: var(--pip-bright); letter-spacing: 0.08em; overflow-wrap: anywhere; }
+  .connect-row[data-state="no-access"] .what, .connect-row[data-state="error"] .what { color: var(--status-broken); }
+  .connect-row .hint { grid-column: 2 / 4; color: var(--pip-dim); font-size: 11px; line-height: 1.35; }
+  .connect-row .hint:empty { display: none; }
+  .connect-row button { min-height: 24px; }
   /* Stacks cards: cost chip, engine plate, the bill readout, Terraform commands. */
   #pip .card-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #pip .cost-chip {
@@ -1996,6 +2023,7 @@ const page = `<!doctype html>
       <section id="vault-page" aria-label="vaults page" hidden></section>
       <nav id="kube-tabs" aria-label="cluster screens" hidden></nav>
       <nav id="kube-ctx" aria-label="kube contexts" hidden></nav>
+      <section id="kube-connect" aria-label="EKS clusters: kube connection" hidden></section>
       <section id="kube-tele" aria-label="cluster telemetry" hidden></section>
       <section id="kube-ops" aria-label="cluster add-ons" hidden></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
@@ -2191,6 +2219,24 @@ async function route(app, req, res) {
       return;
     }
     send(res, 200, await app.upgradeRun(req.headers.origin, body));
+    return;
+  }
+
+  // CONNECT: one cluster's viewer context (GET status, POST connect or
+  // disconnect, same-origin only).
+  if (req.method === "GET" && url.pathname === "/api/kube/connect") {
+    const cluster = url.searchParams.get("cluster") || "";
+    send(res, 200, cluster ? await app.connectStatus(cluster) : await app.connectAll());
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/kube/connect") {
+    const body = await readJson(req).catch(() => null);
+    if (!body || typeof body !== "object") {
+      send(res, 400, { error: "the request was not JSON", hint: "Reload the page and press the button again." });
+      return;
+    }
+    send(res, 200, await app.connectRun(req.headers.origin, body));
     return;
   }
 

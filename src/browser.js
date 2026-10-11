@@ -30,7 +30,7 @@ import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
 import { addonCommands, upgradeSpiderLine } from "./upgrade-rules.js";
 import { radioLine, runModel } from "./run-pane.js";
-import { costLine } from "./stack-costs.js";
+import { costFor, costLine, estimate } from "./stack-costs.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
 } from "./chrome.js";
@@ -112,6 +112,14 @@ const MAP_TAG_KEY = "cloudspider.mapTagKey";
 const kubePanel = document.querySelector("#kube-panel");
 const kubeTabs = document.querySelector("#kube-tabs");
 const kubeCtxEl = document.querySelector("#kube-ctx");
+const kubeConnectEl = document.querySelector("#kube-connect");
+// CONNECT state (see "CONNECT" below), declared early: views use it on load.
+let connectStripAt = 0;
+let connectStripBody = null;
+const pipKept = {};
+const connectState = new Map();
+let connectSeq = 0;
+let connectWatch = null;
 const kubeSearchEl = document.querySelector("#kube-search");
 const kubeSearchCount = document.querySelector("#kube-search-count");
 const k9sEl = document.querySelector("#k9s");
@@ -472,6 +480,8 @@ function plateFacts(id) {
   else if (/not checked/.test(report.changed?.text || "")) facts.push({ label: "LAST CHANGE", text: "not checked", tone: "unknown" });
   else facts.push({ label: "LAST CHANGE", text: "none in the radio's CloudTrail window", tone: "unknown" });
   if (place) facts.push({ label: "BLAST", text: blastLine(place, id).replace(/^touches: /, "") });
+  const eks = (place?.fixtures || []).find((item) => item.id === id && item.kind === "eks");
+  if (eks?.name && !sample) facts.push(kubeFact(eks.name, id));
   // The SLOs of the vault(s) that own this piece.
   for (const vault of vaultsData.vaults) {
     if (!vault.damaged && vault.slos?.length && (vault.owned || []).includes(id)) facts.push(...sloFacts(vault.slos));
@@ -1609,6 +1619,7 @@ function setClusterScreen(id) {
   if (id === clusterScreen) return;
   CLUSTER_SCREENS.find((item) => item.id === clusterScreen)?.hide?.();
   clusterScreen = id;
+  if (connectStripBody) renderConnectStrip(connectStripBody);
   try {
     window.localStorage.setItem(CLUSTER_SCREEN_KEY, id);
   } catch {
@@ -1780,7 +1791,7 @@ function draw() {
     height,
     reducedMotion,
     vaultDoor: (key) => vaultState.door(key, reducedMotion),
-    kube: { hover: mapKube.hover, selected: null },
+    kube: { hover: mapKube.hover, selected: null, chip: kubeChipState },
   });
   placeGrain(placed);
   placeVaultChrome(placed);
@@ -2094,6 +2105,7 @@ function enterPath() {
   dropVaultRoute();
   setViewHash("path");
   kubeCtxEl.hidden = true;
+  if (kubeConnectEl) kubeConnectEl.hidden = true;
   contextsShown = "";
   showRadioFor("path");
   mode = "path";
@@ -2143,6 +2155,7 @@ async function pullCluster() {
     const body = await readBody(response);
     if (body.stale || mode !== "cluster" || wasSample !== sample || asked !== clusterContext) return;
     renderContexts(body);
+    pullConnectStrip();
     clusterData = body;
     clusterFailure = "";
     if (clusterSelected && !body.diagram?.nodes?.some((node) => node.id === clusterSelected)) clusterSelected = null;
@@ -2193,6 +2206,7 @@ function enterCluster() {
 function leaveCluster() {
   setViewHash("");
   kubeCtxEl.hidden = true;
+  if (kubeConnectEl) kubeConnectEl.hidden = true;
   contextsShown = "";
   showRadioFor("map");
   mode = "map";
@@ -2586,6 +2600,12 @@ canvas.addEventListener("click", async (event) => {
       setKubeLevel(kubeHitNow.cluster, kubeHitNow.value);
       return;
     }
+    if (kubeHitNow?.type === "kube") {
+      const item = kubeChipState(kubeHitNow.cluster).item;
+      if (item) openEksCard(item.cluster);
+      else openInCluster({ type: "compound", cluster: kubeHitNow.cluster });
+      return;
+    }
     if (kubeHitNow) {
       openInCluster(kubeHitNow);
       return;
@@ -2798,7 +2818,8 @@ canvas.addEventListener("mousemove", (event) => {
   }
   if (mode === "map" && mapKube.models.size) {
     const hit = compoundHit(placedMap(), event.offsetX, event.offsetY);
-    const id = hit ? (hit.type === "lod" ? `lod:${hit.cluster}:${hit.value}` : hit.id || `compound:${hit.cluster}`) : null;
+    const id = hit ? (hit.type === "lod" ? `lod:${hit.cluster}:${hit.value}` : hit.type === "kube" ? `kube:${hit.cluster}` : hit.id || `compound:${hit.cluster}`) : null;
+    if (hit?.type === "kube") hit.text = kubeChipState(hit.cluster).text;
     if (id !== mapKube.hover) {
       mapKube.hover = id;
       draw();
@@ -3173,6 +3194,7 @@ function cardBody(spec, preset = {}) {
   body.append(el("div", { textContent: spec.note || "" }), costBlock(spec));
   if (spec.nodeCost) body.append(nodeCostBlock(spec.nodeCost));
   body.append(watch);
+  if (spec.id === "eks") body.append(connectRow("pip-connect"));
   if (spec.id === "camp") {
     const grain = el("select", { id: "camp-grain" });
     for (const choice of ["coarse", "fine"]) {
@@ -3188,17 +3210,31 @@ function cardBody(spec, preset = {}) {
   for (const parameter of spec.parameters || []) {
     let field;
     const fixed = preset[parameter.name];
+    // What was typed stays when the panel redraws (and CONNECT can open the
+    // card on a cluster).
+    const kept = pipKept[spec.id]?.[parameter.name];
     if (parameter.choices) {
       field = el("select");
       for (const choice of parameter.choices) {
-        field.append(el("option", { value: choice, textContent: choice, selected: choice === parameter.default }));
+        field.append(el("option", { value: choice, textContent: choice, selected: choice === (kept ?? parameter.default) }));
       }
     } else {
-      field = el("input", { value: fixed ?? parameter.default ?? "" });
+      field = el("input", { value: fixed ?? kept ?? parameter.default ?? "" });
       if (fixed !== undefined) field.readOnly = true;
     }
     field.name = parameter.name;
+    if (fixed === undefined) {
+      field.addEventListener("change", () => {
+        pipKept[spec.id] = { ...(pipKept[spec.id] || {}), [parameter.name]: field.value };
+      });
+    }
+    if (spec.id === "eks" && parameter.name === "clusterName") field.addEventListener("change", () => refreshConnect(true));
     if (parameter.name === "clusterName" || parameter.name === "name") field.addEventListener("change", () => refreshUpgrade(true));
+    // The bill follows the instance type and node count picked here.
+    if (spec.costLines?.some((line) => line.param === parameter.name || (line.perNode && parameter.name === "nodeCount"))) {
+      field.addEventListener("change", () => repriceCard(spec));
+      field.addEventListener("input", () => repriceCard(spec));
+    }
     body.append(el("label", {}, `${parameter.name} `, field));
   }
   const confirm = el("input", { name: "confirmName", placeholder: "type the name", autocomplete: "off" });
@@ -3211,7 +3247,32 @@ function cardBody(spec, preset = {}) {
   body.append(el("div", { className: "actions" }, confirm, preview, run, down));
   if (spec.addon) body.append(commandRows(addonCommands(spec, preset.clusterName)));
   body.append(runPane());
+  if (pipKept[spec.id] && spec.costLines) queueMicrotask(() => repriceCard(spec));
   return body;
+}
+
+// The open card's cost for the parameters in its fields: the chip in its
+// head and the bill block.
+function cardCost(spec, params = pipParams()) {
+  if (!spec?.costLines?.length) return spec?.cost;
+  try {
+    return estimate(costFor(spec.costLines, params));
+  } catch {
+    return spec.cost;
+  }
+}
+
+function repriceCard(spec) {
+  const card = pipEl.querySelector(".card.open");
+  if (!card) return;
+  const cost = cardCost(spec);
+  const chip = card.querySelector(".card-head .cost-chip");
+  if (chip && cost) {
+    chip.textContent = costLine(cost).split(" · ")[0];
+    chip.title = `about ${costLine(cost)} in ${cost.region}`;
+  }
+  const bill = card.querySelector(".card-body > .bill");
+  if (bill) bill.replaceWith(costBlock({ ...spec, cost }));
 }
 
 // What Karpenter's nodes cost while they run (each one), apart from the
@@ -3425,8 +3486,6 @@ function pipParams() {
 // one poll.
 let runLocal = null;
 let runPolledAt = 0;
-let runShownId = "";
-let runStick = true;
 const runRadioSeen = new Set();
 
 function runCardKey() {
@@ -3434,17 +3493,19 @@ function runCardKey() {
   return `${openCard}|${params.clusterName || params.name || ""}`;
 }
 
-function runPane() {
-  const pane = el("div", { id: "pip-run", className: "runpane", hidden: true, role: "region", ariaLabel: "stack run" });
+function runPane(id = "pip-run") {
+  const pane = el("div", { id, className: "runpane", hidden: true, role: "region", ariaLabel: "stack run" });
   const head = el("div", { className: "run-head" }, el("i", { className: "run-lamp" }), el("b", { className: "run-title" }), el("span", { className: "run-word" }), el("span", { className: "run-time" }));
   const plate = el("div", { className: "run-plate", hidden: true, role: "alert" });
+  const offer = el("div", { className: "run-offer", hidden: true });
   const steps = el("ol", { className: "run-steps" });
-  const out = el("pre", { id: "pip-out", tabIndex: 0, ariaLabel: "run log" });
+  const out = el("pre", { className: "run-out", tabIndex: 0, ariaLabel: "run log" });
+  if (id === "pip-run") out.id = "pip-out";
   out.addEventListener("scroll", () => {
-    runStick = out.scrollTop + out.clientHeight >= out.scrollHeight - 8;
+    pane.dataset.stick = out.scrollTop + out.clientHeight >= out.scrollHeight - 8 ? "1" : "0";
   });
   const foot = el("div", { className: "run-foot" }, el("span", { className: "run-busy" }), el("a", { className: "run-log", target: "_blank", rel: "noopener" }));
-  pane.append(head, plate, steps, out, foot);
+  pane.append(head, plate, offer, steps, out, foot);
   return pane;
 }
 
@@ -3452,16 +3513,36 @@ function paintRun(body) {
   const pane = pipEl.querySelector("#pip-run");
   if (!pane) return;
   const local = runLocal && runLocal.card === runCardKey() ? runLocal : null;
+  const query = new URLSearchParams({ module: openModule() });
+  const params = pipParams();
+  for (const key of ["clusterName", "name"]) if (params[key]) query.set(key, params[key]);
+  const model = drawRun(pane, body, { local, query });
+  // A cluster that just came up: CONNECT is one press away.
+  const offer = pane.querySelector(".run-offer");
+  const cluster = params.clusterName || "";
+  const fresh = model.state === "done" && body?.module === "eks" && body?.action === "up" && openModule() === "eks";
+  const want = fresh && connectState.get(cluster)?.state && !["connected"].includes(connectState.get(cluster).state);
+  offer.hidden = !want;
+  if (want && offer.dataset.cluster !== cluster) {
+    offer.dataset.cluster = cluster;
+    const press = el("button", { type: "button", className: "cmd", textContent: "CONNECT NOW" });
+    press.addEventListener("click", () => startConnect(cluster, "connect"));
+    offer.replaceChildren(el("span", { textContent: `${cluster} is up. Connect kubectl and Cloud Spider to it (viewer role, read-only).` }), press);
+  }
+}
+
+// One run, drawn into a pane (the Stacks card's or the Cluster view's).
+function drawRun(pane, body, { local = null, query = null } = {}) {
   const model = runModel(body, { local, polledAt: runPolledAt, now: Date.now() });
   const busy = pane.querySelector(".run-busy");
   pane.hidden = !model.show && !model.busy;
   pane.dataset.state = model.state;
   if (busy) busy.textContent = model.busy || "";
   if (!model.show) {
-    for (const part of pane.querySelectorAll(".run-head, .run-plate, .run-steps, #pip-out, .run-log")) part.hidden = true;
-    return;
+    for (const part of pane.querySelectorAll(".run-head, .run-plate, .run-steps, .run-out, .run-log")) part.hidden = true;
+    return model;
   }
-  for (const part of pane.querySelectorAll(".run-head, .run-steps, #pip-out")) part.hidden = false;
+  for (const part of pane.querySelectorAll(".run-head, .run-steps, .run-out")) part.hidden = false;
   pane.querySelector(".run-lamp").className = `run-lamp ${model.lamp}`;
   pane.querySelector(".run-title").textContent = model.title;
   pane.querySelector(".run-word").textContent = model.fromDisk ? `${model.word} · LAST RUN` : model.word;
@@ -3483,18 +3564,15 @@ function paintRun(body) {
     }
     plate.replaceChildren(...parts);
   }
-  const out = pane.querySelector("#pip-out");
+  const out = pane.querySelector(".run-out");
   if (out.textContent !== model.log) {
     out.textContent = model.log;
-    if (runStick || runShownId !== model.id) out.scrollTop = out.scrollHeight;
+    if (pane.dataset.stick !== "0" || pane.dataset.runId !== model.id) out.scrollTop = out.scrollHeight;
   }
-  runShownId = model.id;
+  pane.dataset.runId = model.id;
   const link = pane.querySelector(".run-log");
-  link.hidden = !model.logPath;
-  if (model.logPath) {
-    const query = new URLSearchParams({ module: openModule() });
-    const params = pipParams();
-    for (const key of ["clusterName", "name"]) if (params[key]) query.set(key, params[key]);
+  link.hidden = !model.logPath || !query;
+  if (model.logPath && query) {
     link.href = `/api/upgrade/log?${query}`;
     link.textContent = `log: ${model.logPath}`;
   }
@@ -3503,6 +3581,7 @@ function paintRun(body) {
     runRadioSeen.add(radio.key);
     if (noteSpider(radio.text, radio.status)) renderRadioPanel();
   }
+  return model;
 }
 
 function paintUpgrade(body) {
@@ -3547,6 +3626,7 @@ async function refreshUpgrade(fresh) {
   if (sample) return;
   const query = new URLSearchParams({ module: openModule() });
   if (fresh) query.set("fresh", "1");
+  if (openModule() === "eks" && (fresh || upgradeTicks % 10 === 0)) refreshConnect(fresh);
   // Which stack to watch: the cluster (or name) typed in the card.
   const params = pipParams();
   for (const key of ["clusterName", "name"]) if (params[key]) query.set(key, params[key]);
@@ -3587,6 +3667,205 @@ async function postUpgrade(action) {
   paintUpgrade(body?.error && !kept ? { action, stack: body.stack || "", lines: [] } : body);
   refreshUpgrade(true);
   if (spec.addon) setTimeout(() => pullAddons(true), 1500);
+}
+
+// ---- CONNECT (kube-connect.js on the server) ----
+// One lamp per EKS cluster: NOT CONNECTED, CONNECTED, NO ACCESS. CONNECT
+// runs as a stack run of the cluster's eks stack, so the card's run pane
+// shows its commands and its ERROR plate.
+
+const CONNECT_WORD = { connected: "CONNECTED", "not-connected": "NOT CONNECTED", "not-listed": "NOT LISTED", "no-access": "NO ACCESS", "no-cluster": "NOT UP", error: "CANNOT CONNECT" };
+
+function connectRow(id) {
+  const row = el("div", { id, className: "connect-row", hidden: true, role: "group", ariaLabel: "kube connection" });
+  row.append(el("i", { className: "lamp" }), el("span", { className: "what" }), el("span", { className: "act" }), el("span", { className: "hint" }));
+  return row;
+}
+
+function paintConnect(row, status, { onPress } = {}) {
+  if (!row) return;
+  row.hidden = !status;
+  if (!status) return;
+  row.dataset.state = status.state;
+  const word = CONNECT_WORD[status.state] || status.state.toUpperCase();
+  const what = status.state === "connected" ? `${word} · ${status.context}` : status.state === "no-cluster" ? `${word} · ${status.text}` : status.state === "error" ? status.text : `${word}${status.context ? ` · ${status.context}` : ""}`;
+  row.querySelector(".what").textContent = what;
+  row.querySelector(".hint").textContent = status.hint || "";
+  const act = row.querySelector(".act");
+  const buttons = [];
+  const button = (label, action, title) => {
+    const b = el("button", { type: "button", className: `cmd${action === "disconnect" ? " danger" : ""}`, textContent: label, title });
+    b.addEventListener("click", () => (onPress || startConnect)(status.cluster, action));
+    buttons.push(b);
+  };
+  if (["not-connected", "not-listed"].includes(status.state)) button("CONNECT", "connect", `aws eks update-kubeconfig … --alias ${status.alias} (writes ~/.kube/config only)`);
+  if (status.state === "no-access") button("CHECK AGAIN", "connect", "run CONNECT again: nothing is rewritten, the access check runs again");
+  if (status.state === "connected" && status.ours) button("DISCONNECT", "disconnect", `remove ${status.alias} from ~/.kube/config and from Cloud Spider`);
+  act.replaceChildren(...buttons);
+}
+
+async function refreshConnect(force = false) {
+  if (!pipOpen || openModule() !== "eks" || sample) return;
+  const cluster = pipParams().clusterName || "";
+  if (!cluster) return;
+  const seq = ++connectSeq;
+  if (!force && connectState.has(cluster)) paintConnect(pipEl.querySelector("#pip-connect"), connectState.get(cluster));
+  const status = await upgradeJson(`/api/kube/connect?cluster=${encodeURIComponent(cluster)}`);
+  if (seq !== connectSeq || (pipParams().clusterName || "") !== cluster) return;
+  connectState.set(cluster, status);
+  paintConnect(pipEl.querySelector("#pip-connect"), status);
+}
+
+// CONNECT / DISCONNECT from anywhere: the run goes to the cluster's EKS
+// card (opened on that cluster) and, in the Cluster view, to its strip.
+async function startConnect(cluster, action = "connect") {
+  if (sample) return;
+  if (action === "disconnect" && !window.confirm(`Remove kube context ${cluster}-viewer from ~/.kube/config and from Cloud Spider? (a backup is kept)`)) return;
+  const body = await upgradeJson("/api/kube/connect", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cluster, action }),
+  });
+  const line = body.error ? { status: "fail", text: `${action} ${cluster}: ${body.error}` } : { status: "ok", text: `${action === "connect" ? "connecting" : "disconnecting"} ${cluster}` };
+  if (noteSpider(line.text, line.status)) renderRadioPanel();
+  connectWatch = { cluster, until: Date.now() + 120_000 };
+  if (mode === "cluster") paintConnectStrip(body, cluster);
+  if (pipOpen && openModule() === "eks" && (pipParams().clusterName || "") === cluster) {
+    if (body.error && !(body.state === "refused" && body.stack)) runLocal = { error: body.error, hint: body.hint || "", action, at: Date.now(), card: runCardKey() };
+    paintUpgrade(body.error && !(body.state === "refused" && body.stack) ? { action, stack: body.stack || "", lines: [] } : body);
+    refreshUpgrade(true);
+  }
+}
+
+
+// While a CONNECT runs: follow it, then read the lamps again.
+setInterval(async () => {
+  if (!connectWatch || sample) return;
+  if (Date.now() > connectWatch.until) {
+    connectWatch = null;
+    return;
+  }
+  const { cluster } = connectWatch;
+  const run = await upgradeJson(`/api/upgrade?${new URLSearchParams({ module: "eks", clusterName: cluster })}`);
+  if (mode === "cluster") paintConnectStrip(run, cluster);
+  if (!run.running && ["connect", "disconnect"].includes(run.action)) {
+    connectWatch = null;
+    connectState.delete(cluster);
+    if (pipOpen) refreshConnect(true);
+    if (mode === "cluster") pullConnectStrip(true);
+  }
+}, 1000);
+
+// The Cluster view's EKS strip: every EKS cluster of the account with its
+// lamp; a press connects, a connected one switches the view to it.
+
+let connectListing = null;
+async function fetchConnectList(force = false) {
+  if (!force && Date.now() - connectStripAt < 30_000 && connectStripBody) return connectStripBody;
+  if (connectListing) return connectListing;
+  connectStripAt = Date.now();
+  connectListing = upgradeJson("/api/kube/connect").then((body) => {
+    connectStripBody = body;
+    for (const item of body.clusters || []) connectState.set(item.cluster, item);
+    return body;
+  }).finally(() => {
+    connectListing = null;
+  });
+  return connectListing;
+}
+
+async function pullConnectStrip(force = false) {
+  if (!kubeConnectEl || mode !== "cluster" || sample) {
+    if (kubeConnectEl) kubeConnectEl.hidden = true;
+    return;
+  }
+  renderConnectStrip(await fetchConnectList(force));
+}
+
+// The map compound's KUBE chip: which EKS cluster the context is, and its
+// lamp. Asks the server at most once a minute while compounds are shown.
+function kubeChipState(context) {
+  if (!connectListing && !sample && Date.now() - connectStripAt > 60_000) fetchConnectList(true).then(() => draw());
+  const item = (connectStripBody?.clusters || []).find((entry) => entry.cluster === context) || (connectStripBody?.clusters || []).find((entry) => entry.context === context);
+  if (!item) return { label: "KUBE", tone: "unknown", text: `${context}: kube context (no EKS card for it) · click: open the Cluster view`, item: null };
+  const tone = { connected: "ok", "no-access": "fail", "not-listed": "warn", "not-connected": "warn" }[item.state] || "unknown";
+  return { label: "KUBE", tone, text: `EKS ${item.cluster}: ${item.text}${item.hint ? ` · ${item.hint}` : ""} · click: open its card on Stacks (CONNECT / DISCONNECT)`, item };
+}
+
+// The EKS plate's KUBE line: is this cluster in kubectl and Cloud Spider.
+function kubeFact(cluster, id) {
+  const item = connectState.get(cluster);
+  if (!item) {
+    fetchConnectList().then(() => {
+      if (connectState.has(cluster) && ui.selection?.id === id) {
+        setFacts(ui, plateFacts(id));
+        renderChrome();
+      }
+    });
+    return { label: "KUBE", text: "checking the kube context", tone: "unknown" };
+  }
+  const where = "press CONNECT on Stacks › EKS";
+  if (item.state === "connected") return { label: "KUBE", text: item.text, tone: "" };
+  if (item.state === "no-access") return { label: "KUBE", text: `NO ACCESS · ${item.hint || ""}`.trim(), tone: "fail" };
+  if (item.state === "not-connected" || item.state === "not-listed") return { label: "KUBE", text: `NOT CONNECTED · ${where}`, tone: "warn" };
+  return { label: "KUBE", text: item.text || "unknown", tone: "unknown" };
+}
+
+async function openEksCard(cluster) {
+  if (cluster) pipKept.eks = { ...(pipKept.eks || {}), clusterName: cluster };
+  if (!pipOpen) await toggleUpgrade();
+  if (!pipModules.some((item) => item.id === "eks")) return;
+  openCard = "eks";
+  drawPipForm();
+  refreshUpgrade(true);
+  renderChrome();
+}
+
+function renderConnectStrip(body) {
+  if (mode !== "cluster" || sample || clusterScreen !== "topology") {
+    kubeConnectEl.hidden = true;
+    return;
+  }
+  const clusters = body?.clusters || [];
+  kubeConnectEl.hidden = !clusters.length && !body?.error;
+  kubeConnectEl.style.top = kubeCtxEl.hidden ? "8px" : `${(kubeCtxEl.offsetTop || 8) + (kubeCtxEl.offsetHeight || 40) + 6}px`;
+  const ok = clusters.filter((item) => item.state === "connected").length;
+  // Folded when every cluster is connected; open when one needs a press.
+  if (!kubeConnectEl.dataset.touched) kubeConnectEl.dataset.open = ok === clusters.length && !body?.error ? "0" : "1";
+  const head = el("button", { type: "button", className: "kc-head", ariaExpanded: String(kubeConnectEl.dataset.open !== "0") }, el("b", { textContent: "EKS" }), el("span", { textContent: body?.error ? `the clusters did not list: ${body.error}` : "kube connection · viewer role" }), el("em", { textContent: `${ok}/${clusters.length} CONNECTED ${kubeConnectEl.dataset.open === "0" ? "▸" : "▾"}` }));
+  head.addEventListener("click", () => {
+    kubeConnectEl.dataset.touched = "1";
+    kubeConnectEl.dataset.open = kubeConnectEl.dataset.open === "0" ? "1" : "0";
+    renderConnectStrip(body);
+  });
+  const rows = clusters.map((status) => {
+    const row = connectRow("");
+    row.removeAttribute("id");
+    paintConnect(row, status);
+    row.querySelector(".what").textContent = `${status.cluster} · ${row.querySelector(".what").textContent}`;
+    if (status.state === "connected" && status.context) {
+      const go = el("button", { type: "button", className: "cmd", textContent: "VIEW", title: `show ${status.context} in the Cluster view` });
+      go.addEventListener("click", () => setClusterContext(status.context));
+      row.querySelector(".act").prepend(go);
+    }
+    return row;
+  });
+  const pane = kubeConnectEl.querySelector(".runpane") || runPane("kube-connect-run");
+  kubeConnectEl.replaceChildren(head, ...rows, pane);
+}
+
+function paintConnectStrip(run, cluster) {
+  if (!kubeConnectEl) return;
+  let pane = kubeConnectEl.querySelector(".runpane");
+  if (!pane) {
+    pane = runPane("kube-connect-run");
+    kubeConnectEl.append(pane);
+  }
+  kubeConnectEl.hidden = false;
+  kubeConnectEl.dataset.open = "1";
+  const local = run?.error && !(run.state === "refused" && run.stack) ? { error: run.error, hint: run.hint || "", action: "connect", at: Date.now() } : null;
+  runPolledAt = Date.now();
+  drawRun(pane, local ? { action: "connect", stack: run.stack || cluster, lines: [] } : run, { local, query: new URLSearchParams({ module: "eks", clusterName: cluster }) });
 }
 
 async function toggleUpgrade() {

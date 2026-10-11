@@ -623,10 +623,29 @@ Every PREVIEW, RUN and TAKE IT DOWN in a Stacks card now shows a terminal under 
 
 ### A second, medium cluster (about $0.14/h, $3.40/day while up)
 
-EKS control plane $0.10/h + one t4g.medium $0.0344/h + 20 GB gp3 + a public IPv4 (eu-north-1). The card's cost chip still prices the default t4g.small.
+EKS control plane $0.10/h + one t4g.medium $0.0344/h + 20 GB gp3 + a public IPv4 (eu-north-1). The card's cost chip follows instanceType and nodeCount.
 
 1. Start the server from a terminal where `aws sts get-caller-identity --profile default` answers with account 550536272523 and `pulumi version` works: `AWS_PROFILE=default AWS_REGION=eu-north-1 PULUMI_CONFIG_PASSPHRASE= npm start`.
 2. Stacks → EKS: clusterName `cloudspider-medium` (or any short lowercase name), instanceType `t4g.medium`, nodeCount 1.
 3. Optional: PREVIEW, and wait until the pane says DONE (about a minute). A RUN pressed while the preview is still going is refused.
 4. RUN. Leave the tab open: about 15 minutes; the pane shows each step and the log. When it says DONE, the cluster is up and billing.
 5. Take it down when done: type the cluster name in the box, TAKE IT DOWN (about 10 minutes).
+
+## 21. CONNECT: put an EKS cluster in kubectl and Cloud Spider (free)
+
+No more editing the kubeconfig or `cloudspider.contexts.yaml` by hand. The Stacks EKS card (for the cluster named in its fields), the Cluster view's EKS strip (top right, folded when everything is connected) and the map compound's KUBE chip / the EKS plate's KUBE line show a lamp:
+
+- NOT CONNECTED (amber): press CONNECT.
+- CONNECTED (green): the cluster has a kube context and Cloud Spider reads it. DISCONNECT shows only for a context CONNECT made.
+- NO ACCESS (red): the context is there but the cluster refuses the viewer role (no access entry yet, or you may not assume `<cluster>-viewer`). RUN the EKS card again for that cluster, then CHECK AGAIN.
+
+CONNECT runs on this Mac, in the cluster's run pane (log and ERROR plate as in §20):
+
+1. backs up `~/.kube/config` to `~/.kube/config.cloudspider.bak`;
+2. `aws eks update-kubeconfig --region eu-north-1 --name <cluster> --alias <cluster>-viewer --user-alias <cluster>-viewer --role-arn <viewerRoleArn from the stack>` with the server's AWS_PROFILE. It writes only the kubeconfig, nothing in AWS; other contexts are untouched;
+3. `kubectl config use-context <the one you had>` (update-kubeconfig switches it; this puts it back);
+4. adds `<cluster>-viewer` to `cloudspider.contexts.yaml` (made from the example if it is missing; your entries and comments stay);
+5. reloads the contexts without a restart, and does one GET to check the viewer can read.
+
+A context that already points at the cluster (for example `cloudspider-viewer` for `cloudspider-up`) counts as CONNECTED and nothing is rewritten. CONNECT never overwrites a context of the same name that is something else. DISCONNECT removes only `<cluster>-viewer` (its context, its user if nothing else uses it, and its yaml line), after a backup. After a RUN that made a cluster, the pane offers CONNECT NOW. If you start the server with `CLOUDSPIDER_KUBE_CONTEXTS` set, that list wins over the file and the run says so.
+

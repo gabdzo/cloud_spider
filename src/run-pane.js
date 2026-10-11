@@ -5,7 +5,7 @@
 // the hint and the command to run it by hand.
 import { errorHead, runHint } from "./upgrade-rules.js";
 
-const MARK = { done: "✓", running: "▶", failed: "✗", waiting: "·" };
+const MARK = { done: "✓", running: "▶", failed: "✗", waiting: "·", skipped: "–" };
 const VERB = { up: "RUN", preview: "PREVIEW", destroy: "TAKE DOWN" };
 
 export function elapsedText(ms = 0) {

@@ -4,7 +4,7 @@
 import { PIP, STATUS, WORLD, font, rgba } from "./theme.js";
 import { brackets, clip, drawSprite, labelBacking, plaque } from "./draw-kit.js";
 import { podFigure, signPost, tent } from "./sprites/kube.js";
-import { compoundsOf, MK } from "./map-kube.js";
+import { compoundsOf, kubeChip, MK } from "./map-kube.js";
 
 const TENT_SCALE = 3;
 const FIG_SCALE = 2;
@@ -49,6 +49,20 @@ function lodButton(ctx, b, hover) {
   ctx.textAlign = "left";
 }
 
+// kube: { text, tone } for the chip; tone ok | warn | fail | unknown.
+function kubeButton(ctx, b, kube, hover) {
+  const tone = { ok: PIP.bright, warn: STATUS.hang, fail: STATUS.broken }[kube?.tone] || PIP.dim;
+  ctx.fillStyle = rgba(PIP.ink, 0.9);
+  ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.strokeStyle = hover ? PIP.hot : tone;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+  ctx.fillStyle = tone;
+  ctx.fillRect(b.x + 4, b.y + b.h / 2 - 2, 4, 4);
+  ctx.font = font(9);
+  ctx.fillText(kube?.label || "KUBE", b.x + 11, b.y + b.h - 4);
+}
+
 function stallLabel(ctx, s) {
   ctx.font = font(10);
   const name = clip(s.label, Math.floor((s.w - 6) / 6.2));
@@ -67,7 +81,7 @@ function stallLabel(ctx, s) {
 }
 
 // opts: { animTime, reducedMotion, hover: hit id or lod key, selected }
-export function drawCompoundTop(ctx, placed, { animTime = 0, reducedMotion = false, hover = null, selected = null } = {}) {
+export function drawCompoundTop(ctx, placed, { animTime = 0, reducedMotion = false, hover = null, selected = null, kube = () => null } = {}) {
   const frame = reducedMotion ? 0 : Math.floor(animTime / 420) % 2;
   for (const c of compoundsOf(placed)) {
     // Header: cluster plate, summary, LOD switch.
@@ -75,7 +89,8 @@ export function drawCompoundTop(ctx, placed, { animTime = 0, reducedMotion = fal
     plaque(ctx, `⎈ ${c.cluster}`, c.x + 10, c.y + 16, 11, PIP.bright);
     ctx.font = font(9);
     const labelW = ctx.measureText(`⎈ ${c.cluster}`).width * (11 / 9);
-    const room = c.lod[0].x - (c.x + 22 + labelW) - 8;
+    const chip = kubeChip(c);
+    const room = chip.x - (c.x + 22 + labelW) - 8;
     if (room > 40) {
       const text = clip(`${c.summary} · L${c.level}`, Math.floor(room / 5.6));
       labelBacking(ctx, text, c.x + 22 + labelW, c.y + 16, 9);
@@ -83,6 +98,7 @@ export function drawCompoundTop(ctx, placed, { animTime = 0, reducedMotion = fal
       ctx.fillText(text, c.x + 22 + labelW, c.y + 16);
     }
     for (const b of c.lod) lodButton(ctx, b, hover === `lod:${c.cluster}:${b.value}`);
+    if (chip.x > c.x + 22 + labelW) kubeButton(ctx, chip, kube(c.cluster), hover === `kube:${c.cluster}`);
     // Namespace lines.
     for (const line of c.ns) {
       ctx.font = font(9);
