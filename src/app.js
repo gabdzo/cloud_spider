@@ -14,7 +14,7 @@ import { diagramFromKube } from "./kube-diagram.js";
 import { createTelemetry } from "./kube-telemetry.js";
 import { inspectPod } from "./kube-inspect.js";
 import { opsView, sampleOps } from "./kube-ops.js";
-import { detectAddons, refuseUp, sampleAddons } from "./addons.js";
+import { demoAppSeen, detectAddons, refuseUp, sampleAddons } from "./addons.js";
 import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./addon-bundle.js";
 import { podRoom } from "../upgrades/addons/pod-room.js";
 import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.js";
@@ -466,6 +466,30 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   // Stacks still up on a cluster: add-on stacks with resources (the add-on
   // tree) and pgcluster / shopapi / demo whose clusterName is this cluster.
   // Read-only; a read that fails counts nothing.
+  // The kube read of one cluster, through the context CONNECT made for it
+  // (or the primary one when that is the same cluster); null if none.
+  async function clusterSnapshot(cluster) {
+    const conn = connector ? await api.connectStatus(cluster).catch(() => null) : null;
+    const ctx = conn?.state === "connected" ? contexts.find((item) => item.name === conn.context) : null;
+    if (ctx) return readContext(ctx, 30_000).catch(() => null);
+    const snap = primary ? await readContext(primary, 30_000).catch(() => null) : null;
+    return snap && !snap.error && (snap.clusterName === cluster || String(snap.clusterName || "").endsWith(`/${cluster}`)) ? snap : null;
+  }
+  // scaling-demo's HPAs scale demo/web and demo/api (the EKS demo app). Not
+  // seen there (or not checked): hpa off, demoApp absent, and a note in the
+  // run log, instead of an up that fails on namespaces "demo" not found.
+  async function scalingDemoCheck(cluster, params = {}) {
+    const seen = demoAppSeen(await clusterSnapshot(cluster));
+    const present = seen === true;
+    const wanted = String(params.hpa ?? "on") === "on";
+    const next = { ...params, demoApp: present ? "present" : "absent", ...(present ? {} : { hpa: "off" }) };
+    if (!wanted || present) return { params: next, notes: [] };
+    const why = seen === false
+      ? `the EKS demo app (namespace demo, web and api) is not on ${cluster}`
+      : `could not check ${cluster} for the EKS demo app (CONNECT it so Cloud Spider can read it)`;
+    return { params: next, notes: [{ text: `check: the EKS demo app on ${cluster}`, lines: [`HPA on demo/web+api skipped: ${why}. Deploy the EKS demo app first (Stacks → EKS demo app), then run scaling-demo again for its HPAs. burst and inflate run as asked.`] }] };
+  }
+
   async function stacksOn(cluster) {
     const found = [];
     const tree = addons?.view ? await addons.view({ fresh: true }).catch(() => null) : null;
@@ -910,7 +934,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       const legacyName = upgrade.legacyCluster ? await upgrade.legacyCluster().catch(() => undefined) : undefined;
       if (plan.refusal) return upgrade.refuse ? { ...upgrade.refuse({ module: "eks", action: "add-ons", params: { clusterName: cluster }, error: plan.refusal }), plan } : { error: plan.refusal, plan };
       addons?.forget?.();
-      const started = upgrade.addonBatch({ cluster, ids: plan.order, legacyName, onDone: () => addons?.forget?.() });
+      const demo = plan.order.includes("scaling-demo") ? await scalingDemoCheck(cluster) : null;
+      const started = upgrade.addonBatch({ cluster, ids: plan.order, legacyName, onDone: () => addons?.forget?.(), ...(demo ? { params: { "scaling-demo": demo.params }, notes: { "scaling-demo": demo.notes } } : {}) });
       return { ...started, plan };
     },
     async stacksOn(cluster) {
@@ -952,6 +977,12 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         // it (add-ons, pgcluster, shopapi, demo) unless the name is typed
         // with " anyway".
         let params = body.params || {};
+        let notes = [];
+        if (body.module === "scaling-demo" && ["up", "preview"].includes(body.action)) {
+          const demo = await scalingDemoCheck(String(params.clusterName || "cloudspider-up"), params);
+          params = demo.params;
+          notes = demo.notes;
+        }
         if (body.module === "eks" && body.action === "destroy") {
           const typed = String(params.confirmName || "").trim();
           const target = String(params.clusterName || "cloudspider-up");
@@ -970,6 +1001,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
           action: body.action,
           clusters,
           legacyName,
+          notes,
           onDone: withAddons.length
             ? (done) => afterCreate(cluster, withAddons, done)
             : autoConnectOn && connector && body.module === "eks" && validCluster(cluster || "cloudspider-up") && ["up", "destroy"].includes(body.action)

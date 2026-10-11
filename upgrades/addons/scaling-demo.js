@@ -6,18 +6,23 @@ import { setup, small, viewerAccess } from "./common.js";
 //   - burst=on: a second load generator, 8 parallel loops on web
 //   - inflate=N: N pause pods asking for 500m CPU each in scaling-demo; more
 //     than the node has left makes Karpenter (if up) add a node
-//   - hpa=off: no HPAs, for a cluster without the demo app (the HPAs live in
-//     namespace demo, and an up there fails with namespaces "demo" not found)
+//   - the HPAs only with demoApp=present (Cloud Spider sets it from what it
+//     sees on the cluster; by hand: pulumi config set demoApp present). The
+//     HPAs live in namespace demo: without the demo app an up there fails
+//     with namespaces "demo" not found, after the rest was made.
+//   - hpa=off: no HPAs even when the demo app is there
 export default function scalingDemo({ pulumi, aws, k8s, addon }) {
   const { config, k } = setup({ pulumi, aws, k8s, addon });
   const burst = config.get("burst") || "off";
   const inflate = Number(config.get("inflate") ?? 0);
   const hpa = config.get("hpa") || "on";
+  const demoApp = config.get("demoApp") || "absent";
   if (!["on", "off"].includes(hpa)) throw new Error("hpa must be on or off");
+  if (!["absent", "present"].includes(demoApp)) throw new Error("demoApp must be absent or present");
   if (!["on", "off"].includes(burst)) throw new Error("burst must be on or off");
   if (!Number.isInteger(inflate) || inflate < 0 || inflate > 6) throw new Error("inflate must be a whole number from 0 to 6");
 
-  for (const name of hpa === "on" ? ["web", "api"] : []) {
+  for (const name of hpa === "on" && demoApp === "present" ? ["web", "api"] : []) {
     new k8s.autoscaling.v2.HorizontalPodAutoscaler(`hpa-${name}`, {
       metadata: { name, namespace: "demo", labels: { "app.kubernetes.io/part-of": "cloudspider-addons" } },
       spec: {
@@ -70,5 +75,5 @@ export default function scalingDemo({ pulumi, aws, k8s, addon }) {
     },
   }, inNs);
   viewerAccess(k8s, k, addon.id, [{ apiGroups: ["autoscaling"], resources: ["horizontalpodautoscalers"] }, { apiGroups: [""], resources: ["events"] }, { apiGroups: ["events.k8s.io"], resources: ["events"] }]);
-  return { version: "", details: { burst, inflate } };
+  return { version: "", details: { burst, inflate, hpa: hpa === "on" && demoApp === "present" ? "on demo/web, demo/api" : "off" } };
 }

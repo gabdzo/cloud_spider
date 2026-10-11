@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { costFor, estimate } from "./stack-costs.js";
 import { ADDONS, DIR as ADDON_DIR, PROJECT as ADDON_PROJECT } from "../upgrades/addons/catalog.js";
-import { LEGACY_CLUSTER, cardName, confirmMatches, confirmMismatch, confirmNames, errorHead, failureText, historyFact, rerunCommand, resourceFact, runHint, stackFor, tooManyClusters } from "./upgrade-rules.js";
+import { LEGACY_CLUSTER, cardName, confirmMatches, confirmMismatch, confirmNames, errorHead, failureText, historyFact, maskKubeconfig, rerunCommand, resourceFact, runHint, stackFor, tooManyClusters } from "./upgrade-rules.js";
 import { volumeSweepStep } from "./volume-sweep.js";
 import { createRunLog } from "./run-log.js";
 
@@ -42,6 +42,9 @@ const ADDON_PARAMETERS = {
     { name: "hpa", type: "string", default: "on", choices: ["on", "off"] },
     { name: "burst", type: "string", default: "off", choices: ["off", "on"] },
     { name: "inflate", type: "number", default: 0, min: 0, max: 6 },
+    // Set by Cloud Spider from what it sees on the cluster (not a field on
+    // the card): the HPAs go on demo/web and demo/api only when present.
+    { name: "demoApp", type: "string", default: "absent", choices: ["absent", "present"], auto: true },
   ],
 };
 
@@ -471,7 +474,9 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       campCache = { at: now, value };
       return value;
     },
-    run({ module, params, action, clusters, legacyName, onDone, maxClusters = Number(env.CLOUDSPIDER_MAX_CLUSTERS) || 2 }) {
+    // notes: [{ text, lines }] shown first in the run log (a preflight's
+    // findings), as in-process steps that change nothing.
+    run({ module, params, action, clusters, legacyName, onDone, notes = [], maxClusters = Number(env.CLOUDSPIDER_MAX_CLUSTERS) || 2 }) {
       const spec = UPGRADES.find((item) => item.id === module);
       if (!spec) return refuse({ module, action, error: "no such upgrade" });
       const verb = ["destroy", "up", "preview"].includes(action) ? action : "";
@@ -503,7 +508,7 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
         where: spec.dir,
         command,
         onDone,
-        steps: [...steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}` })), ...afterSteps(spec, verb, checked.values)],
+        steps: [...noteSteps(notes), ...steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}` })), ...afterSteps(spec, verb, checked.values)],
       });
     },
     // Any list of steps as one run in a card's pane (CONNECT, an add-on
@@ -520,7 +525,9 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
     // INSTALL SELECTED: the add-ons in `ids` (already in order) on one
     // cluster, each preview then up, as one run in the cluster's EKS pane.
     // A step that fails stops the rest.
-    addonBatch({ cluster, ids, onDone, legacyName }) {
+    // params: { <id>: { name: value } } on top of the defaults; notes:
+    // { <id>: [{ text, lines }] } shown before that add-on's steps.
+    addonBatch({ cluster, ids, onDone, legacyName, params = {}, notes = {} }) {
       const eksSpec = UPGRADES.find((item) => item.id === "eks");
       const eksChecked = checkParams(eksSpec, { clusterName: cluster });
       if (eksChecked.error) return refuse({ module: "eks", action: "add-ons", error: eksChecked.error });
@@ -531,9 +538,10 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       for (const id of ids) {
         const spec = UPGRADES.find((item) => item.id === id && item.addon);
         if (!spec) return refuse({ module: "eks", action: "add-ons", stack, error: `no add-on ${id}` });
-        const checked = checkParams(spec, { clusterName: cluster });
+        const checked = checkParams(spec, { ...(params[id] || {}), clusterName: cluster });
         if (checked.error) return refuse({ module: "eks", action: "add-ons", stack, error: checked.error });
         const addonStack = stackFor(spec, checked.values);
+        steps.push(...noteSteps(notes[id] || [], `${id} · `));
         const dir = join(cwd, spec.dir);
         const preview = upgradeSteps(spec, addonStack, "preview", checked.values).filter((args) => !(args[0] === "install" && installed));
         if (preview.some((args) => args[0] === "install")) installed = true;
@@ -706,6 +714,11 @@ function clusterOf(spec, values = {}) {
 // One stack per thing: `stack` names the stack (and with it the state file,
 // its lock and Pulumi.<stack>.yaml). Every step names it; nothing relies on
 // the selected stack.
+// A preflight's findings as run-log steps: "$ <text>" then its lines.
+function noteSteps(notes = [], prefix = "") {
+  return (notes || []).filter((note) => note?.text).map((note) => ({ text: `${prefix}${note.text}`, fn: () => ({ lines: note.lines || [] }) }));
+}
+
 export function upgradeSteps(spec, stack, verb, values) {
   const steps = [["stack", "select", stack, "--create", "--non-interactive"]];
   if (verb !== "destroy") {
@@ -845,7 +858,7 @@ function apply(run, directory, job, env, { clock = () => Date.now(), save = () =
     }
     // Keep the newest lines in memory; all of them go to the log file.
     const take = (into, stream) => (chunk) => {
-      const text = String(chunk).trimEnd();
+      const text = maskKubeconfig(String(chunk).trimEnd());
       if (!text) return;
       log(stream === "err" ? text.replace(/^/gm, "! ") : text);
       for (const list of into) {

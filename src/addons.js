@@ -52,6 +52,17 @@ export function detectAddons(snapshot) {
   return found;
 }
 
+// The EKS demo app (upgrades/demo) on a cluster: its web and api
+// Deployments in namespace demo. true / false from a read that could see
+// namespace demo; null when it could not tell (no read, an error, or a
+// namespace-scoped read that does not list demo).
+export function demoAppSeen(snapshot) {
+  if (!snapshot || snapshot.error) return null;
+  if (Array.isArray(snapshot.scope) && !snapshot.scope.includes("demo")) return null;
+  const names = new Set((snapshot.deployments || []).filter((item) => item?.metadata?.namespace === "demo").map((item) => item?.metadata?.name));
+  return names.has("web") && names.has("api");
+}
+
 function ready(item, kind) {
   const status = item?.status || {};
   if (kind === "daemonset") return (status.numberReady || 0) >= (status.desiredNumberScheduled || 0) && (status.desiredNumberScheduled || 0) > 0;

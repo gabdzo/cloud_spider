@@ -3300,6 +3300,8 @@ function cardBody(spec, preset = {}) {
     body.append(el("label", {}, "grain ", grain));
   }
   for (const parameter of spec.parameters || []) {
+    // Set by Cloud Spider from the cluster (scaling-demo's demoApp), not typed.
+    if (parameter.auto) continue;
     let field;
     const fixed = preset[parameter.name];
     // What was typed stays when the panel redraws (and CONNECT can open the
