@@ -6,6 +6,7 @@ import { sampleMorning, samplePlace, sampleTrail } from "./sample.js";
 import { samplePathGraph } from "./path-sample.js";
 import { pathResult } from "./path-view.js";
 import { THEME_NAMES, cssVars } from "./theme.js";
+import { scoreRoute } from "./score/routes.js";
 import { defaults, effectiveConfig } from "./config.js";
 import { sampleCost } from "./cost.js";
 import { sampleCluster } from "./cluster.js";
@@ -2227,6 +2228,8 @@ export function featureOff(features, method, path) {
   if (features.ask === false && path.startsWith("/api/agent")) return "ask";
   if (features.stacksRun === false && method === "POST" && path === "/api/upgrade") return "stacksRun";
   if (features.learn === false && path.startsWith("/api/learn")) return "learn";
+  // FIX runs add-on stacks through upgradeRun directly, so it is gated here too.
+  if (features.stacksRun === false && method === "POST" && path === "/api/score/fix") return "stacksRun";
   return "";
 }
 
@@ -2293,6 +2296,7 @@ async function route(app, req, res) {
     send(res, 403, { error: `turned off in cloudspider.yaml (features.${off})` });
     return;
   }
+  if (await scoreRoute(req, res, url, app.score, { send, readJson })) return;
 
   if (req.method === "GET" && url.pathname === "/api/sample") {
     send(res, 200, { place: samplePlace(), trail: sampleTrail(), morning: sampleMorning() });
