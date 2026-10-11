@@ -308,6 +308,18 @@ function renderRadioPanel() {
 
 // ---- the map's own readouts: tally, trouble names, the bill ----
 
+// At >=1840px the header is one row and the tally reads on the terminal
+// line instead (review R6); narrower, it stays a header gauge before CAPS.
+const wideHeader = window.matchMedia("(min-width: 1840px)");
+function placeTally() {
+  const home = wideHeader.matches ? document.querySelector(".terminal") : document.querySelector(".gauges");
+  if (tallyEl.parentElement === home) return;
+  if (wideHeader.matches) home.append(tallyEl);
+  else home.prepend(tallyEl);
+}
+placeTally();
+wideHeader.addEventListener("change", placeTally);
+
 function renderTally() {
   const onMap = mode === "map" && Boolean(place);
   tallyEl.hidden = !onMap;
