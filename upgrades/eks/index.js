@@ -3,7 +3,7 @@ import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
-import { EKS_OWNED, adoptList, eksOwnPlan, ownerText, readAddon } from "../eks-addons.js";
+import { EKS_OWNED, PREFIX_DELEGATION, adoptList, eksOwnPlan, maxPodsProblem, nodeConfigUserData, ownerText, readAddon } from "../eks-addons.js";
 
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
@@ -114,48 +114,51 @@ const cluster = new aws.eks.Cluster(
   { dependsOn: [clusterPolicy], customTimeouts: { create: "40m", update: "40m", delete: "40m" } },
 );
 
-const nodes = new aws.eks.NodeGroup(
-  "nodes",
-  {
-    clusterName: cluster.name,
-    ...(legacy ? {} : { nodeGroupName: `${clusterName}-nodes` }),
-    nodeRoleArn: nodeRole.arn,
-    subnetIds: [subnetA.id, subnetB.id],
-    instanceTypes: [instanceType],
-    amiType: "AL2023_ARM_64_STANDARD",
-    capacityType: "ON_DEMAND",
-    // Changing nodeCount updates this node group in place (EKS
-    // UpdateNodegroupConfig): the cluster, VPC and subnets do not change.
-    scalingConfig: { desiredSize: nodeCount, minSize: nodeCount, maxSize: nodeCount },
-    tags,
-  },
-  { dependsOn: nodePolicies, customTimeouts: { create: "40m", update: "40m", delete: "40m" } },
-);
-
 // The cluster-level EKS managed add-ons belong to this stack
-// (docs/design/stack-dependencies.md): the Pod Identity agent, metrics-server
-// and the EBS CSI driver, each on unless its config says off. No other stack
-// creates them; they check for them and refuse without. On a cluster where
-// another stack made one earlier, this stack leaves it alone until
-// scripts/migrate-eks-addons.mjs hands it over: that removes it from the old
-// stack's state (no AWS call) and sets adoptAddons + adoptPhase here, so the
-// next up adopts it with the import option (phase import), then puts this
-// stack's tags on it (phase retag). Nothing here ever deletes one.
+// (docs/design/stack-dependencies.md): the VPC CNI, the Pod Identity agent,
+// metrics-server and the EBS CSI driver, each on unless its config says off.
+// No other stack creates them; they check for them and refuse without. On a
+// cluster where another stack made one earlier, this stack leaves it alone
+// until scripts/migrate-eks-addons.mjs hands it over: that removes it from
+// the old stack's state (no AWS call) and sets adoptAddons + adoptPhase here,
+// so the next up adopts it with the import option (phase import), then puts
+// this stack's tags on it (phase retag). Nothing here ever deletes one.
 const isOn = (key) => !["off", "false", "no", "0"].includes(String(config.get(key) ?? "on").toLowerCase());
 const adopt = adoptList(config.get("adoptAddons"));
 const adoptPhase = config.get("adoptPhase") || "import";
 if (!["import", "retag"].includes(adoptPhase)) throw new Error("adoptPhase must be import or retag");
 const addonTags = { ...tags, project: "eks", cluster: clusterName, "managed-by": "pulumi" };
 const addons = {};
-for (const item of EKS_OWNED.filter((entry) => isOn(entry.key))) {
+
+// Pod capacity: VPC CNI prefix delegation (on by default) lifts the ENI cap
+// on pods per node (11 on a t4g.small, 17 on a t4g.medium); maxPods sets
+// kubelet's cap through a launch template (AL2023 nodeadm NodeConfig).
+// "auto" (default) adds no launch template: an existing node group stays as
+// it is. A number REPLACES the node group once (new nodes; EKS only reads a
+// launch template at node group creation), and only new nodes get the new
+// cap (existing ones keep theirs until replaced).
+const prefixDelegation = isOn("vpcCni") && isOn("prefixDelegation");
+const maxPods = String(config.get("maxPods") || "auto");
+const maxPodsError = maxPodsProblem(instanceType, maxPods, prefixDelegation);
+if (maxPodsError) throw new Error(maxPodsError);
+
+async function ownAddon(item, dependsOn) {
+  if (!isOn(item.key)) return;
   const existing = await readAddon(aws.eks.getAddon, clusterName, item.addonName);
   const plan = eksOwnPlan(existing, item.addonName, { adopt, phase: adoptPhase });
   if (plan === "use") {
     pulumi.log.info(`${item.addonName} is on ${clusterName} from ${ownerText(existing.project, clusterName)}; left alone. To hand it to this stack: node scripts/migrate-eks-addons.mjs ${clusterName} (dry run first)`);
-    continue;
+    return;
   }
   const extra = {};
-  const opts = { dependsOn: [nodes, ...(item.addonName === "aws-ebs-csi-driver" && addons["eks-pod-identity-agent"] ? [addons["eks-pod-identity-agent"]] : [])] };
+  const opts = { dependsOn: [...dependsOn, ...(item.addonName === "aws-ebs-csi-driver" && addons["eks-pod-identity-agent"] ? [addons["eks-pod-identity-agent"]] : [])] };
+  if (item.addonName === "vpc-cni") {
+    // The self-managed aws-node DaemonSet EKS made with the cluster becomes
+    // this add-on (OVERWRITE on create); a config change restarts aws-node,
+    // running pods keep their IPs.
+    if (prefixDelegation) extra.configurationValues = JSON.stringify(PREFIX_DELEGATION);
+    extra.resolveConflictsOnUpdate = "OVERWRITE";
+  }
   if (item.addonName === "aws-ebs-csi-driver") {
     // Its controller's AWS credentials, through EKS Pod Identity.
     const csiRole = new aws.iam.Role("ebs-csi-driver", {
@@ -175,9 +178,9 @@ for (const item of EKS_OWNED.filter((entry) => isOn(entry.key))) {
     addons[item.addonName] = new aws.eks.Addon(item.addonName, { clusterName, addonName: item.addonName, tags: existing.tags }, {
       ...opts,
       import: `${clusterName}:${item.addonName}`,
-      ignoreChanges: ["podIdentityAssociations", "resolveConflictsOnCreate", "resolveConflictsOnUpdate"],
+      ignoreChanges: ["podIdentityAssociations", "resolveConflictsOnCreate", "resolveConflictsOnUpdate", "configurationValues"],
     });
-    continue;
+    return;
   }
   addons[item.addonName] = new aws.eks.Addon(item.addonName, {
     clusterName: cluster.name,
@@ -187,6 +190,40 @@ for (const item of EKS_OWNED.filter((entry) => isOn(entry.key))) {
     tags: addonTags,
   }, opts);
 }
+
+const cniItem = EKS_OWNED.find((item) => item.addonName === "vpc-cni");
+await ownAddon(cniItem, [cluster]);
+
+const launchTemplate = maxPods === "auto" ? null : new aws.ec2.LaunchTemplate("nodes", {
+  description: `${clusterName} nodes: kubelet maxPods ${maxPods} (VPC CNI prefix delegation)`,
+  userData: Buffer.from(nodeConfigUserData(maxPods)).toString("base64"),
+  metadataOptions: { httpEndpoint: "enabled", httpTokens: "required", httpPutResponseHopLimit: 2 },
+  tagSpecifications: [{ resourceType: "instance", tags }, { resourceType: "volume", tags }],
+  tags,
+});
+
+const nodes = new aws.eks.NodeGroup(
+  "nodes",
+  {
+    clusterName: cluster.name,
+    // A new maxPods is a new node group (a launch template is only read at
+    // creation); its own name lets the new one come up before the old goes.
+    ...(legacy ? {} : { nodeGroupName: maxPods === "auto" ? `${clusterName}-nodes` : `${clusterName}-nodes-mp${maxPods}` }),
+    ...(launchTemplate ? { launchTemplate: { id: launchTemplate.id, version: launchTemplate.latestVersion.apply(String) } } : {}),
+    nodeRoleArn: nodeRole.arn,
+    subnetIds: [subnetA.id, subnetB.id],
+    instanceTypes: [instanceType],
+    amiType: "AL2023_ARM_64_STANDARD",
+    capacityType: "ON_DEMAND",
+    // Changing nodeCount updates this node group in place (EKS
+    // UpdateNodegroupConfig): the cluster, VPC and subnets do not change.
+    scalingConfig: { desiredSize: nodeCount, minSize: nodeCount, maxSize: nodeCount },
+    tags,
+  },
+  { dependsOn: [...nodePolicies, ...(addons["vpc-cni"] ? [addons["vpc-cni"]] : [])], customTimeouts: { create: "40m", update: "40m", delete: "40m" } },
+);
+
+for (const item of EKS_OWNED.filter((entry) => entry.addonName !== "vpc-cni")) await ownAddon(item, [nodes]);
 
 // Cloud Spider's read-only door into the cluster: a role anyone in this
 // account may assume, mapped to AmazonEKSViewPolicy (no Secrets) and to the
@@ -270,3 +307,5 @@ export const viewerRoleArn = viewerRole.arn;
 export const versionOut = cluster.version;
 export const nodeGroup = nodes.nodeGroupName;
 export const eksAddons = Object.keys(addons);
+export const podsPerNode = maxPods === "auto" ? (prefixDelegation ? "auto (EKS picks; 110 with prefix delegation)" : "auto (ENI limit)") : maxPods;
+export const vpcCniPrefixDelegation = prefixDelegation;

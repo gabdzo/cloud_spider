@@ -199,6 +199,10 @@ new k8s.apps.v1.DaemonSet("otel-collector", {
       metadata: { labels: collectorLabels },
       spec: {
         serviceAccountName: collectorAccount.metadata.name,
+        // One per node, so it must fit on a full node: at system-node-critical
+        // the scheduler preempts a lower-priority pod for it instead of
+        // leaving it Pending ("Too many pods") while pulumi waits.
+        priorityClassName: "system-node-critical",
         containers: [{
           name: "collector",
           image: COLLECTOR_IMAGE,

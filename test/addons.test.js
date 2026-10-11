@@ -57,7 +57,7 @@ test("add-on cards: nested, previewable, priced, and named <addon>-<cluster>", (
   assert.equal(checkParams(demo, { inflate: 7 }).error, "inflate must be a whole number from 0 to 6");
   const commands = addonCommands(karpenter, "cloudspider-lab");
   assert.deepEqual(commands.map((c) => c.label), ["select", "preview", "up", "destroy"]);
-  assert.match(commands[0].text, /^cd upgrades\/addons && pulumi stack select --create karpenter-cloudspider-lab && pulumi config set clusterName cloudspider-lab && pulumi config set capacity spot$/);
+  assert.match(commands[0].text, /^cd upgrades\/addons && pulumi stack select --create karpenter-cloudspider-lab && pulumi config set clusterName cloudspider-lab && pulumi config set capacity spot && pulumi config set maxPods 32$/);
   assert.equal(commands[3].text, "pulumi destroy && pulumi stack rm karpenter-cloudspider-lab");
   for (const spec of cards) {
     assert.ok(spec.needs.includes("eks"), `${spec.id} needs a cluster`);
@@ -263,7 +263,8 @@ async function mocked(addon, cluster = "cloudspider-up", extra = {}) {
   // made them (tagged with their own project).
   const env = { ...process.env, CLOUDSPIDER_MOCK_EKS_ADDONS: JSON.stringify({ "eks-pod-identity-agent": { project: "pod-identity" }, "metrics-server": { project: "metrics-server" } }) };
   const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", "upgrades/addons", "cloudspider-addons", `${addon}-${cluster}`, JSON.stringify(config)], { cwd: root, env, maxBuffer: 16 * 1024 * 1024 });
-  return JSON.parse(stdout);
+  // Pulumi's own log lines (info:) come before the resources.
+  return JSON.parse(stdout.slice(stdout.indexOf("[{")));
 }
 const kind = (resources, name) => resources.filter((r) => r.inputs?.kind === name).map((r) => r.inputs);
 

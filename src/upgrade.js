@@ -39,7 +39,11 @@ export function withEksMaxNodes(list, max = EKS_MAX_NODES) {
 }
 
 const ADDON_PARAMETERS = {
-  karpenter: [{ name: "capacity", type: "string", default: "spot", choices: ["spot", "on-demand"] }],
+  karpenter: [
+    { name: "capacity", type: "string", default: "spot", choices: ["spot", "on-demand"] },
+    // kubelet maxPods on its nodes (only with the EKS stack's prefix delegation).
+    { name: "maxPods", type: "string", default: "32", choices: ["32", "58", "auto"] },
+  ],
   "scaling-demo": [
     { name: "hpa", type: "string", default: "on", choices: ["on", "off"] },
     { name: "burst", type: "string", default: "off", choices: ["off", "on"] },
@@ -58,7 +62,7 @@ export const UPGRADES = [
   {
     id: "eks",
     title: "EKS",
-    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them.",
+    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the VPC CNI (with prefix delegation, so a node is not capped at its ENI IPs: 11 pods on a t4g.small, 17 on a t4g.medium), the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them. maxPods: auto keeps the node group as it is; 32 (t4g.small) or 58 (t4g.medium) REPLACES the node group once so new nodes take that many pods (PREVIEW shows the replace; RUN asks you to confirm it).",
     dir: "upgrades/eks",
     stack: "upgrade",
     project: "cloudspider-upgrade",
@@ -72,6 +76,10 @@ export const UPGRADES = [
       { name: "nodeCount", type: "number", default: 1, min: 1, max: EKS_MAX_NODES },
       // The cluster-level EKS add-ons this stack owns (upgrades/eks-addons.js
       // EKS_OWNED); docs/design/stack-dependencies.md.
+      { name: "vpcCni", type: "string", default: "on", choices: ["on", "off"] },
+      { name: "prefixDelegation", type: "string", default: "on", choices: ["on", "off"] },
+      // kubelet's pod cap per node; a number REPLACES the node group once.
+      { name: "maxPods", type: "string", default: "auto", choices: ["auto", "32", "58", "110"] },
       { name: "podIdentityAgent", type: "string", default: "on", choices: ["on", "off"] },
       { name: "metricsServer", type: "string", default: "on", choices: ["on", "off"] },
       { name: "ebsCsiDriver", type: "string", default: "on", choices: ["on", "off"] },
@@ -161,6 +169,8 @@ export const UPGRADES = [
     vault: "demo",
     needs: ["eks"],
     eksAddons: ["eks-pod-identity-agent", "metrics-server"],
+    // One pod per node: the preflight checks every node has a slot.
+    daemonSets: [{ namespace: "demo", name: "otel-collector", labels: { app: "otel-collector" } }],
     cost: [{ usage: "logs" }],
     parameters: [{ name: "clusterName", type: "string", default: "cloudspider-up" }],
   },

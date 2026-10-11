@@ -25,7 +25,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-export const OWNED = ["eks-pod-identity-agent", "metrics-server", "aws-ebs-csi-driver"];
+export const OWNED = ["vpc-cni", "eks-pod-identity-agent", "metrics-server", "aws-ebs-csi-driver"];
 const ADDON_TYPE = "aws:eks/addon:Addon";
 const BAD_OPS = new Set(["delete", "replace", "create-replacement", "delete-replaced", "import-replacement", "discard", "discard-replaced"]);
 

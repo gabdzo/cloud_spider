@@ -49,7 +49,7 @@ await pulumi.runtime.setMocks(
           missing.details = missing.message;
           throw missing;
         }
-        return { ...args.inputs, addonVersion: "v1-mock", tags: on.tags || (on.project ? { project: on.project } : {}) };
+        return { ...args.inputs, addonVersion: "v1-mock", tags: on.tags || (on.project ? { project: on.project } : {}), ...(on.configurationValues ? { configurationValues: on.configurationValues } : {}) };
       }
       return args.inputs ?? {};
     },

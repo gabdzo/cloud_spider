@@ -20,7 +20,7 @@ import { needRefusal, needStates, needsOf } from "./stack-needs.js";
 import { shopReadiness } from "./shop-check.js";
 import { UPGRADES } from "./upgrade.js";
 import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./addon-bundle.js";
-import { podRoom } from "../upgrades/addons/pod-room.js";
+import { daemonSetCheck, daemonSetRoom, podRoom } from "../upgrades/addons/pod-room.js";
 import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.js";
 import { sampleKubeSnapshot } from "./kube-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
@@ -1063,7 +1063,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
             this.upgradeLive("eks", { clusterName: body.params?.clusterName || "cloudspider-up" }).catch(() => null),
             new Promise((done) => setTimeout(done, LIVE_MS, null).unref?.()),
           ]);
-          const change = nodeGroupChange({ instanceType: live?.values?.instanceType, nodeGroup: live?.nodeGroup }, body.params || {});
+          const change = nodeGroupChange({ instanceType: live?.values?.instanceType, maxPods: live?.values?.maxPods, nodeGroup: live?.nodeGroup }, body.params || {});
           if (change) return no(change);
         }
         // NEEDS (src/stack-needs.js): a stack on the cluster refuses before
@@ -1093,6 +1093,21 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
           const demo = await scalingDemoCheck(String(params.clusterName || "cloudspider-up"), params);
           params = demo.params;
           notes = demo.notes;
+        }
+        // A DaemonSet needs a slot on every node (demo's otel-collector hung
+        // Pending on a full t4g.medium, 2026-10-11): refuse naming the node,
+        // or say which pod it will preempt. No kube read: no check.
+        const dsSpec = UPGRADES.find((item) => item.id === body.module);
+        if (dsSpec?.daemonSets?.length && ["up", "preview"].includes(body.action)) {
+          const on = String(params.clusterName || "cloudspider-up");
+          const snap = await clusterSnapshot(on);
+          if (snap && !snap.error && snap.nodes?.length && !Array.isArray(snap.scope)) {
+            for (const ds of dsSpec.daemonSets) {
+              const checked = daemonSetCheck(dsSpec.title, ds, daemonSetRoom({ nodes: snap.nodes, pods: snap.pods || [] }, ds), on);
+              if (checked.refusal) return no(checked.refusal);
+              notes = [...notes, ...checked.notes];
+            }
+          }
         }
         // An EKS add-on this stack made before the EKS stack owned them is
         // never deleted by its take it down (docs/design/stack-dependencies.md).

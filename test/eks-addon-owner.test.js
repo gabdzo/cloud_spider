@@ -22,8 +22,8 @@ const fakeGet = (on) => async ({ clusterName, addonName }) => {
 };
 
 test("readAddon: absent, present with its project tag, other errors thrown", async () => {
-  assert.deepEqual(await readAddon(fakeGet({}), "c", "metrics-server"), { exists: false, project: "", version: "", tags: {} });
-  assert.deepEqual(await readAddon(fakeGet({ "metrics-server": { project: "metrics-server" } }), "c", "metrics-server"), { exists: true, project: "metrics-server", version: "v1", tags: { project: "metrics-server" } });
+  assert.deepEqual(await readAddon(fakeGet({}), "c", "metrics-server"), { exists: false, project: "", version: "", tags: {}, configurationValues: "" });
+  assert.deepEqual(await readAddon(fakeGet({ "metrics-server": { project: "metrics-server" } }), "c", "metrics-server"), { exists: true, project: "metrics-server", version: "v1", tags: { project: "metrics-server" }, configurationValues: "" });
   await assert.rejects(readAddon(fakeGet("boom"), "c", "metrics-server"), /AccessDenied/);
 });
 
