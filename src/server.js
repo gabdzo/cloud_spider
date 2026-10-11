@@ -714,7 +714,8 @@ const page = `<!doctype html>
   .m-head b { color: var(--world-amber); font-size: 13px; text-shadow: 0 0 6px rgba(255, 204, 51, 0.45); }
   .m-head small { color: var(--pip-mid); font-size: 10px; }
   .m-head output { color: var(--pip-dim); font-size: 10px; margin-top: 3px; letter-spacing: 0.06em; }
-  .m-lines { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; }
+  /* One row of cards, however many lines the report has (three, or four with PODS). */
+  .m-lines { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px 10px; }
   .m-line {
     position: relative;
     display: grid;
@@ -758,7 +759,7 @@ const page = `<!doctype html>
   #morning.folded { padding-top: 4px; padding-bottom: 4px; }
   #morning.folded #sunrise { width: 32px; height: 18px; }
   #morning.folded .m-head small, #morning.folded .m-head output { display: none; }
-  #morning.folded .m-lines { grid-template-columns: minmax(0, 1fr); }
+  #morning.folded .m-lines { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); }
   #morning.folded .m-line:not(.lead) { display: none; }
   #morning.folded .m-line { grid-template-rows: auto; grid-template-columns: 16px auto minmax(0, 1fr); padding-top: 3px; padding-bottom: 3px; }
   #morning.folded .m-text { grid-column: 3; grid-row: 1; -webkit-line-clamp: 1; }
@@ -769,7 +770,7 @@ const page = `<!doctype html>
   @media (max-width: 1180px) {
     #morning { grid-template-columns: auto minmax(0, 1fr) auto; }
     .m-head { display: none; }
-    .m-lines { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .m-lines { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); gap: 4px; }
     .m-line { grid-template-rows: auto; padding-top: 3px; padding-bottom: 3px; }
     .m-line .m-text { grid-column: 3; grid-row: 1; -webkit-line-clamp: 2; }
     .m-line b { min-width: 92px; }

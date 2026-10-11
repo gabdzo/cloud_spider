@@ -317,11 +317,16 @@ function renderTally() {
 // ---- the morning report ----
 const MORNING_RANK = { fail: 0, warn: 1, unknown: 2, ok: 3 };
 const MORNING_FOLD_KEY = "cloudspider.morning.folded";
+// Until you choose, the report starts folded on a narrow window (≤900px),
+// where open it takes a third of the height and LEARN, STACKS and ASK open
+// below it. The fold key remembers your choice either way.
 let morningFolded = (() => {
+  const narrow = window.matchMedia?.("(max-width: 900px)").matches ?? false;
   try {
-    return window.localStorage.getItem(MORNING_FOLD_KEY) === "1";
+    const saved = window.localStorage.getItem(MORNING_FOLD_KEY);
+    return saved === null ? narrow : saved === "1";
   } catch {
-    return false;
+    return narrow;
   }
 })();
 let morningShown = "";
