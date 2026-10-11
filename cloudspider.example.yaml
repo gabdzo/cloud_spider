@@ -74,6 +74,24 @@ scorecard:
   regions: []              # e.g. [eu-north-1, eu-west-1]
   packs: [kubernetes, aws]
 
+network:
+  # Network debugging: the DEBUG bar in PATH. Probes only the URL you type
+  # (GET/HEAD, no body, no cookies), rate-limited; metadata and link-local
+  # addresses are always refused, private ones unless allowed.
+  enabled: true            # env CLOUDSPIDER_FEATURE_NETWORK
+  local:
+    timeoutSeconds: 10     # per step
+    maxRedirects: 10       # followed only to port 80, 443 or the URL's own port
+    doh: [https://cloudflare-dns.com/dns-query, https://dns.google/resolve]   # [] turns the public DNS comparison off
+    ipv6: auto             # auto | off
+    allowInternalTargets: false   # env CLOUDSPIDER_NETWORK_INTERNAL. Loopback / RFC 1918 targets (VPN users)
+    rateLimit:
+      perHostPerMinute: 6
+      perMinute: 30
+      concurrent: 2
+  reports:
+    keep: 50               # reports kept under storage.path/netdebug
+
 features:
   ask: true                # env CLOUDSPIDER_FEATURE_ASK. ASK, the local agent terminal.
   stacksRun: true          # env CLOUDSPIDER_FEATURE_STACKS_RUN. Running Pulumi from STACKS.

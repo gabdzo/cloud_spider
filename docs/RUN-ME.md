@@ -742,3 +742,24 @@ Under the EKS card's run pane (for the cluster named in its fields) is the ADD-O
 - Scans and their history live under `storage.path` (default `.cloudspider/scorecard/`); evidence stays there and never reaches the page.
 - **Scanner read access (needs one live preview).** New clusters from the EKS card bind the read-only `cloudspider-scanner` ClusterRole (nodes, RBAC objects, NetworkPolicies, PDBs, policy reports, metrics; get/list only, no Secrets) to the viewer group, so SCAN sees more on a fresh cluster. This part of the EKS stack is tested statically only: before relying on it, run one PREVIEW on the EKS card for a test cluster and check it lists 3 creates (the `scanner` Kubernetes provider, ClusterRole and ClusterRoleBinding) and nothing else changes. For an existing cluster, a PREVIEW shows the same 3 creates; or apply `scorecard/rbac/cloudspider-scanner.yaml` by hand with an admin context.
 - The live acceptance run (fresh EKS cluster → low score → three fixes → higher score, about $0.30): [docs/scorecard/acceptance.md](scorecard/acceptance.md).
+
+## 24. Network debugging: DEBUG a URL (free; reads only, design docs/design/network-debugging.md)
+
+N1, the local core. It takes a URL you type (`https://shop.example.com/items`, `google.com`) and does the drill from this Mac:
+
+- **DNS:** the system resolver and two public DoH resolvers. Differences are reported (split horizon, CDN or geo DNS), along with NXDOMAIN/SERVFAIL and TTL.
+- **TCP:** a connect to each address (8 at most), IPv4 and IPv6.
+- **TLS:** protocol, cipher and ALPN; whether the certificate covers the name and the chain verifies; days to expiry for every certificate (FAIL under 21 days, critical under 7).
+- **HTTP:** one GET with the timing split (connect / TLS / TTFB / total), redirects (10 at most, loops caught), and who answered (ALB, CloudFront, origin) from a short header allowlist.
+
+Every check is a fact with its CLI twin to COPY (`dig`, `curl -w`, `openssl s_client`, `nc`). Findings are inferences ranked by confidence. One example: "the AWS load balancer answered 503 itself". Reports are kept under `.cloudspider/netdebug/` (the newest 50) and export as JSON or Markdown: `GET /api/netdebug/<id>.json|.md`.
+
+Safety:
+- Only the URL you typed is probed, and only by a press in the page (the API is POST, origin-checked); the ASK agent cannot start a probe.
+- Requests are GET/HEAD with no body, no cookies and no credentials.
+- Rate limit: 6 runs a minute per host, 30 in total, 2 at once.
+- The instance metadata and link-local addresses are always refused. Loopback and RFC 1918 addresses are refused unless `network.local.allowInternalTargets: true` (VPN users).
+- Redirects are followed only to port 80, 443 or the URL's own port.
+- The query string is never stored. The audit log (`.cloudspider/audit.jsonl`) gets host:port only.
+
+Config: `network.*` in cloudspider.yaml (see cloudspider.example.yaml).
