@@ -178,3 +178,34 @@ export function samplePodInspect(name) {
   const m = sampleKubeSnapshot().podMetrics.find((x) => x.metadata.name === pod.metadata.name);
   return { pod, events: detail.events, eventNote: "", chain, usage: m ? { containers: [{ name: pod.spec.containers[0].name, usage: m.containers[0].usage }] } : null };
 }
+
+// Sample mode's map: the same demo on the sample place's two-node cluster
+// (sample-cluster, nodes sample-node-a and sample-node-b in two private
+// subnets), web scaled to two, every DaemonSet on both nodes.
+export function sampleMapSnapshot() {
+  const snap = sampleKubeSnapshot();
+  const A = "ip-10-43-64-11.sample.compute.internal";
+  const B = "ip-10-43-96-12.sample.compute.internal";
+  const node = (name, id) => ({ ...snap.nodes[0], metadata: { ...snap.nodes[0].metadata, name }, spec: { providerID: `aws:///sample-a/${id}` } });
+  const onto = (pod, nodeName, suffix = "") => ({ ...pod, metadata: { ...pod.metadata, name: pod.metadata.name + suffix }, spec: { ...pod.spec, nodeName } });
+  const pods = [];
+  for (const pod of snap.pods) {
+    const owner = pod.metadata.ownerReferences?.[0];
+    if (owner?.kind === "DaemonSet") {
+      pods.push(onto(pod, A), onto(pod, B, "b"));
+    } else if (/^(web|loadgen|coredns-6d9c8b7f5-b2)/.test(pod.metadata.name)) pods.push(onto(pod, B));
+    else pods.push(onto(pod, A));
+  }
+  const web = snap.pods.find((pod) => pod.metadata.name.startsWith("web-"));
+  pods.push(onto(web, A, "a"));
+  const twice = (item) => ({ ...item, status: { ...item.status, desiredNumberScheduled: 2, numberReady: 2 } });
+  return {
+    ...snap,
+    clusterName: "sample-cluster",
+    nodes: [node(A, "sample-node-a"), node(B, "sample-node-b")],
+    pods,
+    deployments: snap.deployments.map((d) => (d.metadata.name === "web" ? { ...d, spec: { ...d.spec, replicas: 2 }, status: { readyReplicas: 2 } } : d)),
+    daemonsets: snap.daemonsets.map(twice),
+    nodeMetrics: [],
+  };
+}

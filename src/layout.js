@@ -313,7 +313,7 @@ export function foldAt(placed, x, y) {
 export const REGION_IN = 14;
 const GLOBAL_KIND = new Set(["cdn"]);
 
-export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false, isClosed = () => false, view = "arch", groupBy = "project", vaultMode = "doors" } = {}) {
+export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false, isClosed = () => false, view = "arch", groupBy = "project", vaultMode = "doors", kube = null } = {}) {
   const vpcs = [...(place.vpcs || [])].sort(byId);
   const subnets = [...(place.subnets || [])].sort(byId);
   const allInstances = [...(place.instances || [])].sort(byId);
@@ -415,7 +415,7 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
       }
       const owned = subnets.filter((item) => item.vpcId === vpc.id);
       if (owned.some((item) => item.zone)) {
-        const settlement = placeArchVpc(vpc, { place, x: left, y: cursorY, rowLimit: settledRow, routes, instances, fixtures, gate });
+        const settlement = placeArchVpc(vpc, { place, x: left, y: cursorY, rowLimit: settledRow, routes, instances, fixtures, gate, kube });
         settlements.push(settlement);
         cursorY = settlement.y + settlement.h + GAP * 2;
         continue;

@@ -216,7 +216,7 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       label: nodeName.replace(/\.[a-z0-9-]+\.compute\.internal$/, ""),
       caption: [item ? (healthy ? "Ready" : "NotReady") : "node", load.text, type, `${running} pods`].filter(Boolean).join(" · "),
       status: item ? (!healthy ? "broken" : load.hot ? "hang" : "ok") : "unknown",
-      host: { name: nodeName, type, pods: running, ready: item ? healthy : null, instanceId: (/\/(i-[0-9a-z]+)$/.exec(item?.spec?.providerID || "") || [])[1] || "", load },
+      host: { name: nodeName, type, pods: running, ready: item ? healthy : null, instanceId: (/\/((?:i-)?[0-9a-z-]+)$/.exec(item?.spec?.providerID || "") || [])[1] || "", load },
     });
   }
   for (const n of nodes) delete n.labels;

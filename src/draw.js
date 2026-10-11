@@ -11,6 +11,7 @@ import {
 import { FONT_PX, SMOKE_PX } from "./layout.js";
 import { drawVaultBadges, drawVaultLabels, drawVaultsLive, drawVaultsStatic, settledVaults, vaultCards } from "./vault-draw.js";
 import { isExpendable } from "./verbs.js";
+import { drawCompoundGround, drawCompoundTop } from "./map-kube-draw.js";
 import { PALETTE, PIP, STATE_COLOR, STATUS, WORLD, font, rgba } from "./theme.js";
 import {
   BAR_H, HORIZON, SKYLINE_DARK, SKYLINE_LIT, brackets, crtBackdrop, drawSprite, glow, ridge, road,
@@ -230,6 +231,7 @@ export function paint(ctx, scene) {
   drawCampfireFlames(ctx, width, height, animTime, reducedMotion);
   drawBeacon(ctx, animTime, reducedMotion);
   const buildings = allBuildings(placed);
+  drawCompoundGround(ctx, placed);
   for (const building of buildings) drawBuilding(ctx, building, animTime, ui, reducedMotion);
   for (const building of buildings) drawSmoke(ctx, building, animTime, reducedMotion);
   for (const settlement of placed.settlements) {
@@ -291,6 +293,7 @@ export function paint(ctx, scene) {
     plaque(ctx, placed.orphans.label, 36, placed.orphans.y + 22, FONT_PX, TEXT);
   }
   for (const building of buildings) drawBuildingLabel(ctx, building);
+  drawCompoundTop(ctx, placed, { animTime, reducedMotion, hover: scene.kube?.hover || null, selected: scene.kube?.selected || null });
   for (const fixture of allFixtures(placed)) drawFixtureLabel(ctx, fixture);
   drawVaultBadges(ctx, placed.badges, { animTime, reducedMotion });
 

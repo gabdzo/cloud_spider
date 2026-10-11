@@ -10,6 +10,8 @@
 // The other picture is GROUP BY TAG: one walled camp per value of a tag
 // (project by default), yards inside per VPC (or "regional").
 
+import { assignApps, layoutCompound, levelOf, moveCompound } from "./map-kube.js";
+
 export const A = { LINE: 20, CELL_W: 96, CELL_H: 92, GAP: 16, PAD: 24, INSET: 12, COLS: 4, CARD_H: 56, CARD_MAX: 232, WALKWAY: 40, SMOKE: 18, CHAR_W: 8.5 };
 
 function textWidth(text) {
@@ -135,7 +137,7 @@ function yardFace(subnet, route) {
 }
 
 // Natural size of a yard: header, shacks in `columns`, cards stacked.
-function yardSize(subnet, route, buildings, cards, columns, room, cardCols = 1) {
+function yardSize(subnet, route, buildings, cards, columns, room, cardCols = 1, compound = null) {
   const face = yardFace(subnet, route);
   const headerH = A.LINE * 2 + 8 + A.SMOKE;
   const cols = Math.max(1, Math.min(columns, buildings.length || 1));
@@ -146,14 +148,22 @@ function yardSize(subnet, route, buildings, cards, columns, room, cardCols = 1) 
   const cardW = widths.length ? Math.max(...widths) : 0;
   const cardsW = widths.length ? across * cardW + (across - 1) * A.GAP : 0;
   const cardsH = cards.length ? Math.ceil(cards.length / across) * (A.CARD_H + A.GAP) - A.GAP : 0;
-  const w = Math.max(textWidth(face.label) + 2 * A.INSET, textWidth(face.caption) + 2 * A.INSET, shacksW + 2 * A.INSET, cardsW + 2 * A.INSET, A.CELL_W + 2 * A.INSET);
-  const body = Math.max(A.LINE, shacksH + (shacksH && cardsH ? A.GAP : 0) + cardsH);
-  return { ...face, w, h: headerH + body + A.INSET, headerH, cols, widths, shacksH, across, cardW };
+  const compoundH = compound ? compound.h : 0;
+  const w = Math.max(textWidth(face.label) + 2 * A.INSET, textWidth(face.caption) + 2 * A.INSET, shacksW + 2 * A.INSET, cardsW + 2 * A.INSET, A.CELL_W + 2 * A.INSET, compound ? compound.w + 2 * A.INSET : 0);
+  const blocks = [shacksH, compoundH, cardsH].filter(Boolean);
+  const body = Math.max(A.LINE, blocks.reduce((sum, h) => sum + h, 0) + Math.max(0, blocks.length - 1) * A.GAP);
+  return { ...face, w, h: headerH + body + A.INSET, headerH, cols, widths, shacksH, across, cardW, compound, compoundH };
 }
 
 function placeYard(subnet, size, x, y, w, buildings, cards) {
   const shacks = packBuildings(buildings, x + A.INSET, y + size.headerH, size.cols);
-  const top = y + size.headerH + size.shacksH + (size.shacksH ? A.GAP : 0);
+  let top = y + size.headerH + size.shacksH + (size.shacksH ? A.GAP : 0);
+  // The cluster compound: its node buildings join the yard's buildings.
+  const compound = size.compound ? moveCompound(size.compound, x + A.INSET, top) : null;
+  if (compound) {
+    shacks.push(...compound.buildings);
+    top += compound.h + A.GAP;
+  }
   const across = size.across || 1;
   const placedCards = cards.map((card, index) => {
     const cw = across > 1 ? size.cardW : Math.min(size.widths[index], w - 2 * A.INSET);
@@ -173,6 +183,7 @@ function placeYard(subnet, size, x, y, w, buildings, cards) {
     h: size.h,
     buildings: shacks,
     cards: placedCards,
+    ...(compound ? { compound } : {}),
   };
 }
 
@@ -216,7 +227,7 @@ export function edgeBetween(from, to, state = "") {
 
 // ---- one VPC ----
 
-export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fixtures, gate }) {
+export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fixtures, gate, kube = null }) {
   const label = vpc.name ? `${vpc.name}  ${vpc.cidr || ""}`.trim() : `${vpc.id}  ${vpc.cidr || ""}`.trim();
   const subnets = (place.subnets || []).filter((item) => item.vpcId === vpc.id).sort(byId);
   const subnetIds = new Set(subnets.map((item) => item.id));
@@ -224,7 +235,7 @@ export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fi
   const edge = mine.filter((item) => !homeSubnet(item, subnetIds) && !(item.kind === "endpoint" && item.endpointType === "Gateway") && item.kind !== "endpoint");
   const services = mine.filter((item) => !homeSubnet(item, subnetIds) && item.kind === "endpoint");
   const inYard = (subnet) => mine.filter((item) => homeSubnet(item, subnetIds) === subnet.id).sort((a, b) => KIND_ORDER(a) - KIND_ORDER(b) || byId(a, b));
-  const shacksIn = (subnet) => instances.filter((item) => item.subnetId === subnet.id).map(buildingFace);
+  const allShacksIn = (subnet) => instances.filter((item) => item.subnetId === subnet.id).map(buildingFace);
 
   const zones = [...new Set(subnets.map((item) => item.zone || ""))].sort();
   const tiers = ["public", "private", ""].filter((tier) => subnets.some((subnet) => yardFace(subnet, routes.get(subnet.id)).tier === tier));
@@ -232,11 +243,21 @@ export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fi
   const budget = Math.max(A.CELL_W + 2 * A.INSET, Math.floor((inner - (zones.length - 1) * A.GAP) / Math.max(1, zones.length)));
   const columns = Math.max(1, Math.min(A.COLS, Math.floor((budget - 2 * A.INSET + A.GAP) / (A.CELL_W + A.GAP))));
 
+  // EKS clusters with kube data (map-kube.js): node buildings move into a
+  // compound in their subnet, with the cluster's apps or pods around them.
+  const compounds = kubeCompounds(kube, instances.filter((item) => item.vpcId === vpc.id), subnets, budget - 2 * A.INSET);
+  const inCompound = new Set([...compounds.values()].flatMap((c) => c.nodeIds));
+  const shacksIn = (subnet) => allShacksIn(subnet).filter((item) => !inCompound.has(item.id));
+  const compoundIn = (subnet) => {
+    const entry = compounds.get(subnet.id);
+    return entry ? layoutCompound({ ...entry, nodeShacks: allShacksIn(subnet).filter((item) => entry.nodeIds.includes(item.id)) }) : null;
+  };
+
   // Size every yard, then make each AZ column one width and each tier row
   // one height so the grid reads as a diagram.
   const sized = new Map();
   for (const subnet of subnets) {
-    sized.set(subnet.id, yardSize(subnet, routes.get(subnet.id), shacksIn(subnet), inYard(subnet), columns, budget));
+    sized.set(subnet.id, yardSize(subnet, routes.get(subnet.id), shacksIn(subnet), inYard(subnet), columns, budget, 1, compoundIn(subnet)));
   }
   const colW = zones.map((zone) => Math.max(textWidth(zone.toUpperCase()), ...subnets.filter((s) => (s.zone || "") === zone).map((s) => sized.get(s.id).w)));
   const left = x + A.INSET;
@@ -341,6 +362,31 @@ export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fi
     arch: true,
     edges,
   };
+}
+
+// Per subnet: which cluster's compound it holds and what goes in it.
+// kube = { models: Map(cluster -> kubeModel), choice(cluster) -> "1".."3"|"auto" }
+function kubeCompounds(kube, instances, subnets, room) {
+  const out = new Map();
+  if (!kube?.models?.size) return out;
+  const subnetIds = new Set(subnets.map((s) => s.id));
+  for (const [cluster, model] of kube.models) {
+    const ids = new Set(model.nodes.map((n) => n.instanceId).filter(Boolean));
+    const nodeSubnet = new Map();
+    for (const item of instances) {
+      if (!subnetIds.has(item.subnetId)) continue;
+      if (ids.has(item.id) || tagOf(item, "eks:cluster-name") === cluster) nodeSubnet.set(item.id, item.subnetId);
+    }
+    if (!nodeSubnet.size) continue;
+    const choice = kube.choice?.(cluster) || "auto";
+    const level = levelOf(choice, model, room);
+    const apps = assignApps(model, nodeSubnet, level);
+    for (const subnetId of new Set(nodeSubnet.values())) {
+      if (out.has(subnetId)) continue;
+      out.set(subnetId, { cluster, model, level, choice, room, apps: apps.get(subnetId) || [], nodeIds: [...nodeSubnet].filter(([, s]) => s === subnetId).map(([id]) => id) });
+    }
+  }
+  return out;
 }
 
 const TIER_LABEL = { public: "PUBLIC  0.0.0.0/0 → INTERNET GATEWAY", private: "PRIVATE  no inbound from the internet", "": "SUBNETS", services: "SERVICES  gateway endpoints" };
