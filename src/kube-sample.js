@@ -15,7 +15,7 @@ export function sampleKubeSnapshot() {
     clusterName: "cloudspider-up",
     notes: [],
     namespaces: ["default", "kube-system", "kube-public", "kube-node-lease", "demo"].map((name) => meta(undefined, name)),
-    nodes: [{ metadata: { name: NODE, labels: { "node.kubernetes.io/instance-type": "t4g.small" } }, spec: { providerID: "aws:///eu-north-1a/i-0node" }, status: { allocatable: { cpu: "1930m", memory: "1531Mi" }, conditions: [{ type: "MemoryPressure", status: "False" }, { type: "DiskPressure", status: "False" }, { type: "PIDPressure", status: "False" }, { type: "Ready", status: "True" }] } }],
+    nodes: [{ metadata: { name: NODE, labels: { "node.kubernetes.io/instance-type": "t4g.small", "topology.kubernetes.io/zone": "eu-north-1a", "eks.amazonaws.com/nodegroup": "cloudspider-up-nodes", "eks.amazonaws.com/capacityType": "ON_DEMAND" } }, spec: { providerID: "aws:///eu-north-1a/i-0node" }, status: { allocatable: { cpu: "1930m", memory: "1531Mi" }, conditions: [{ type: "MemoryPressure", status: "False" }, { type: "DiskPressure", status: "False" }, { type: "PIDPressure", status: "False" }, { type: "Ready", status: "True" }] } }],
     pods: [
       pod("demo", "web-7c9f6d8b5-x2lqp", rs("web-7c9f6d8b5"), running(), { app: "web" }),
       pod("demo", "api-5d8c7b9f4-k8zts", rs("api-5d8c7b9f4"), oomed(), { app: "api" }),

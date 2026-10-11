@@ -2,6 +2,8 @@
 // traffic flows: cluster → namespace → ingress → service → workload → pod →
 // node. System namespaces carry their insides too (marked `system`): the
 // lane layout (kube-layout.js) folds them shut until they are opened.
+import { nodeFacts } from "./node-labels.js";
+
 export const KUBE_COLUMNS = {
   "control-plane": 0,
   namespace: 1,
@@ -97,6 +99,13 @@ function ownerWorkload(pod, byKey) {
     if (byKey.has(`${ref.kind}:${ns}/${ref.name}`)) return `${ref.kind}:${ns}/${ref.name}`;
   }
   return "";
+}
+
+// Zone, capacity type and source (node group / Karpenter NodePool) from the
+// node's labels: the card's chips.
+function placeOf(item) {
+  const facts = nodeFacts(item?.metadata?.labels);
+  return { zone: facts.zone, capacity: facts.capacity, source: facts.source };
 }
 
 export function diagramFromKube(snapshot, { cluster = {} } = {}) {
@@ -224,7 +233,7 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       label: nodeName.replace(/\.[a-z0-9-]+\.compute\.internal$/, ""),
       caption: [item ? (healthy ? "Ready" : "NotReady") : "node", load.text, type, `${running} pods`].filter(Boolean).join(" · "),
       status: item ? (!healthy ? "broken" : load.hot ? "hang" : "ok") : "unknown",
-      host: { name: nodeName, type, pods: running, ready: item ? healthy : null, instanceId: (/\/((?:i-)?[0-9a-z-]+)$/.exec(item?.spec?.providerID || "") || [])[1] || "", load },
+      host: { name: nodeName, type, pods: running, ready: item ? healthy : null, instanceId: (/\/((?:i-)?[0-9a-z-]+)$/.exec(item?.spec?.providerID || "") || [])[1] || "", load, ...placeOf(item) },
     });
   }
   // Labels stay for the search bar (kube-search.js, k=v), minus the

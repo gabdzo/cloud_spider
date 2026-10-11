@@ -58,6 +58,7 @@ export const FILES = new Set([
   "metrics.js",
   "upgrade-rules.js",
   "run-pane.js",
+  "node-labels.js",
   "stack-costs.js",
   "theme.js",
   "draw-kit.js",
