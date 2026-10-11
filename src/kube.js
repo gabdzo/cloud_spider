@@ -106,6 +106,8 @@ export const PATHS = {
   corednsDeployment: () => "/apis/apps/v1/namespaces/kube-system/deployments/coredns",
   corednsConfig: () => "/api/v1/namespaces/kube-system/configmaps/coredns",
   corednsPods: () => `/api/v1/namespaces/kube-system/pods?labelSelector=${encodeURIComponent("k8s-app=kube-dns")}`,
+  // The scorecard's NET-K8S-002 (src/score/collectors/kube-network.js).
+  endpointSlicesAll: () => "/apis/discovery.k8s.io/v1/endpointslices",
   corednsMetrics: () => "/api/v1/namespaces/kube-system/services/kube-dns:metrics/proxy/metrics",
   podEvents: (ns, name) =>
     `/api/v1/namespaces/${checkName(ns)}/events?fieldSelector=${encodeURIComponent(`involvedObject.kind=Pod,involvedObject.name=${checkName(name)}`)}`,

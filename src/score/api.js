@@ -5,6 +5,7 @@
 import { CLUSTER_NAME } from "../../upgrades/addons/catalog.js";
 import { originAllowed } from "../origin.js";
 import { kubeMetrics } from "./collectors/kube-metrics.js";
+import { kubeNetwork } from "./collectors/kube-network.js";
 import { kubeNodes } from "./collectors/kube-nodes.js";
 import { kubePolicy } from "./collectors/kube-policy.js";
 import { kubeRbac } from "./collectors/kube-rbac.js";
@@ -22,7 +23,7 @@ import { runScan } from "./scan.js";
 import { permissionReport } from "./permissions.js";
 import { renderReport } from "./report.js";
 
-export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac];
+export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac, kubeNetwork];
 export const AWS_COLLECTORS = [awsNetwork, awsElbv2, awsEks, awsRds, awsCloudtrail, awsObservability];
 const SHORT = (name) => String(name || "").split("/").pop();
 

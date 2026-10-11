@@ -1,0 +1,17 @@
+kind: Control
+id: NET-DNS-003
+revision: 1
+title: "CoreDNS runs at least 2 ready replicas on 2 nodes, with a PDB"
+category: networking
+target: kubernetes
+evidenceType: config
+severity: { default: high, profiles: { kubernetes-development: medium } }
+confidence: high
+evaluator: coredns-resilient
+aggregation: all-or-nothing
+requires: [kube-coredns, kube-pdbs]
+whyItMatters: "Every Service name goes through CoreDNS. One replica, or all of them on one node, or no PodDisruptionBudget means a node drain or a node loss takes cluster DNS down, and with it every app."
+remediation: { summary: "Scale the coredns deployment to 2 or more with pod anti-affinity (the EKS add-on does both), and keep a PodDisruptionBudget with maxUnavailable 1.", effort: S }
+verification: "kubectl -n kube-system get pods -l k8s-app=kube-dns -o wide shows 2+ Ready pods on different nodes; kubectl -n kube-system get pdb lists one selecting k8s-app=kube-dns."
+references:
+  - { source: "docs/design/network-debugging.md §8 (K-DNS-01)", url: "https://docs.aws.amazon.com/eks/latest/userguide/managing-coredns.html" }

@@ -1,0 +1,18 @@
+kind: Control
+id: NET-K8S-002
+revision: 1
+title: "Services behind an Ingress or load balancer have ready endpoints in 2+ zones"
+category: networking
+target: kubernetes
+evidenceType: runtime
+severity: { default: high }
+confidence: high
+evaluator: service-endpoints-zones
+aggregation: proportional
+requires: [kube-services, kube-ingresses, kube-endpointslices]
+params: { minZones: 2 }
+whyItMatters: "A Service with no ready endpoint is the ALB 503; one with endpoints in one zone goes down with that zone."
+remediation: { summary: "Fix the selector or the readiness of the pods (WHY? in SNIFF walks it), then spread them: topologySpreadConstraints on topology.kubernetes.io/zone and 2+ replicas.", effort: M }
+verification: "kubectl get endpointslices -A -l kubernetes.io/service-name=<svc> -o wide shows ready endpoints in 2+ zones for every Service an Ingress routes to."
+references:
+  - { source: "docs/design/network-debugging.md §8 (K-SVC-02)", url: "https://kubernetes.io/docs/concepts/services-networking/endpoint-slices/" }
