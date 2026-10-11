@@ -47,7 +47,7 @@ const app = createApp({
   logs: aws.logs,
   metrics: aws.metrics,
   path: createPathAws(),
-  cost: createCost(),
+  cost: createCost({ cacheFile: join(root, ".cloudspider", "cost-cache.json") }),
   upgrade: createUpgrade({ runsDir: join(root, ".cloudspider", "runs") }),
   terraform: createTerraformReader(),
   learn: createLearn(),
