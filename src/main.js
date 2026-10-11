@@ -31,6 +31,7 @@ import { createScanHistory } from "./score/history.js";
 import { createScanClients } from "./score/aws-clients.js";
 import { createNetdebug } from "./netdebug/api.js";
 import { createAwsCollector } from "./netdebug/aws.js";
+import { createKubeCollector } from "./netdebug/kube-collect.js";
 import { createCloudFrontReader, createRoute53Reader, createVpcReader } from "./netdebug/aws-readers.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -138,6 +139,17 @@ app.netdebug.addCollector(createAwsCollector({
   cloudfront: config.network.aws.cloudfront ? createCloudFrontReader() : null,
   vpc: config.network.aws.vpc ? createVpcReader() : null,
   flowLogs: config.network.aws.flowLogs,
+}));
+// N6: from the ALB's target group into the cluster (viewer role, GET only).
+app.netdebug.addCollector(createKubeCollector({
+  async kubeFor(cluster) {
+    for (const name of app.contextNames()) {
+      const kube = app.kubeOf(name);
+      const t = await kube?.target?.().catch(() => null);
+      if (t?.clusterName === cluster) return { kube, context: name };
+    }
+    return null;
+  },
 }));
 
 // SLO history survives a restart (.cloudspider/slo-ledger.json).

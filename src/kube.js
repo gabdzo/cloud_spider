@@ -97,6 +97,16 @@ export const PATHS = {
   nsIngresses: (ns) => `/apis/networking.k8s.io/v1/namespaces/${checkName(ns)}/ingresses`,
   nsHpas: (ns) => `/apis/autoscaling/v2/namespaces/${checkName(ns)}/horizontalpodautoscalers`,
   nsPodMetrics: (ns) => `/apis/metrics.k8s.io/v1beta1/namespaces/${checkName(ns)}/pods`,
+  // Network debugging (src/netdebug/kube-*.js): read-only, fixed names.
+  // AmazonEKSViewPolicy covers all but the CoreDNS metrics proxy.
+  service: (ns, name) => `/api/v1/namespaces/${checkName(ns)}/services/${checkName(name)}`,
+  endpointSlices: (ns, svc) => `/apis/discovery.k8s.io/v1/namespaces/${checkName(ns)}/endpointslices?labelSelector=${encodeURIComponent(`kubernetes.io/service-name=${checkName(svc)}`)}`,
+  nsNetworkPolicies: (ns) => `/apis/networking.k8s.io/v1/namespaces/${checkName(ns)}/networkpolicies`,
+  nsPdbs: (ns) => `/apis/policy/v1/namespaces/${checkName(ns)}/poddisruptionbudgets`,
+  corednsDeployment: () => "/apis/apps/v1/namespaces/kube-system/deployments/coredns",
+  corednsConfig: () => "/api/v1/namespaces/kube-system/configmaps/coredns",
+  corednsPods: () => `/api/v1/namespaces/kube-system/pods?labelSelector=${encodeURIComponent("k8s-app=kube-dns")}`,
+  corednsMetrics: () => "/api/v1/namespaces/kube-system/services/kube-dns:metrics/proxy/metrics",
   podEvents: (ns, name) =>
     `/api/v1/namespaces/${checkName(ns)}/events?fieldSelector=${encodeURIComponent(`involvedObject.kind=Pod,involvedObject.name=${checkName(name)}`)}`,
 };
@@ -285,6 +295,11 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     async read(name, ...args) {
       if (!Object.hasOwn(PATHS, name) || typeof PATHS[name] !== "function") return { error: `no such read: ${String(name).slice(0, 60)}` };
       return getPath(PATHS[name](...args));
+    },
+    // The same, answered as text (Prometheus metrics): { text } | ...
+    async readText(name, ...args) {
+      if (!Object.hasOwn(PATHS, name) || typeof PATHS[name] !== "function") return { error: `no such read: ${String(name).slice(0, 60)}` };
+      return getPath(PATHS[name](...args), { text: true });
     },
     async target() {
       const t = await resolveTarget();
