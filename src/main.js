@@ -110,6 +110,11 @@ setInterval(() => {
 }, 15_000);
 setTimeout(() => app.watchKube().catch(() => {}), 3000);
 
+// SLOs without an open page: checks, ledgers and 1-minute ALB points.
+setInterval(() => {
+  app.watchSlos().catch(() => {});
+}, 30_000);
+
 setInterval(() => {
   app.refreshRadio(false).catch((error) => app.fail("LookupEvents", error));
 }, 30_000);

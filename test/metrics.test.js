@@ -51,7 +51,7 @@ test("targets are running instances, ALBs and functions, with the right dimensio
 
 test("one batch of queries, 5-minute period, no Container Insights or log metrics", () => {
   const { queries, index } = metricQueries(metricTargets(place()));
-  assert.equal(queries.length, 2 + 4 + 4);
+  assert.equal(queries.length, 2 + 6 + 4, "the ALB adds TargetResponseTime p95 and p99");
   assert.equal(index.size, queries.length);
   for (const q of queries) {
     assert.equal(q.MetricStat.Period, PERIOD);

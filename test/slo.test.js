@@ -83,8 +83,10 @@ test("CloudWatch series become counts: ALB 5XX over requests, Lambda errors over
   const alb = countsFromMetrics({ sli: "availability", source: "alb" }, hits);
   assert.ok(alb.total > 0 && alb.good === alb.total - 6, "two 5XX in each of the first three slots");
   assert.equal(alb.recent.total - alb.recent.good, 6, "the 5XX are in the newest slots");
-  const lat = countsFromMetrics({ sli: "latency", source: "alb", threshold: 60 }, hits);
+  // Latency reads p95 (the sample's p95 is twice its average, 80-180 ms).
+  const lat = countsFromMetrics({ sli: "latency", source: "alb", threshold: 130 }, hits);
   assert.ok(lat.good < lat.total && lat.good > 0);
+  assert.equal(countsFromMetrics({ sli: "latency", source: "alb", threshold: 200 }, hits).good, lat.total, "every p95 is under 200 ms");
   const fn = countsFromMetrics({ sli: "error-rate", source: "lambda" }, hits);
   assert.equal(fn.total - fn.good, 2);
   assert.equal(countsFromMetrics({ sli: "availability", source: "ec2" }, hits), null);
@@ -155,4 +157,29 @@ test("vault SLOs: checks are counted once per result, kube sources read the shar
   assert.equal(up.total, 2);
   assert.equal(up.good, 1);
   assert.equal(vaultSlos({ key: "x", slos: [vault.slos[2]] }, { ledger })[0].note, "no readings yet");
+});
+
+test("latency SLOs on an ALB read a percentile (p95 unless set), others warn", () => {
+  const out = validateSlos([
+    { name: "fast", sli: "latency", source: "alb", threshold: 300, target: 99 },
+    { name: "tail", sli: "latency", source: "alb", threshold: 800, target: 99, percentile: "P99" },
+    { name: "odd", sli: "latency", source: "alb", threshold: 800, target: 99, percentile: "p42" },
+    { name: "page", sli: "latency", source: "checks", threshold: 500, target: 99, percentile: "p95" },
+  ]);
+  assert.deepEqual(out.slos.map((s) => s.percentile), ["p95", "p99", null]);
+  assert.deepEqual(out.errors, ["spec.slos[2].percentile: must be one of p50, p90, p95, p99"]);
+  assert.deepEqual(out.warnings, ["spec.slos[3].percentile: only an alb latency SLO reads a percentile, ignored"]);
+});
+
+test("ledger.put sets a CloudWatch point (a re-read replaces it) and folds it into buckets after FOLD_MS", () => {
+  let now = Date.parse("2026-10-11T12:00:00Z");
+  const ledger = createSloLedger({ clock: () => now });
+  const at = now - 120_000;
+  ledger.put("k", at, 50, 100);
+  ledger.put("k", at, 90, 100); // CloudWatch filled the minute in
+  assert.deepEqual([ledger.counts("k").good, ledger.counts("k").total], [90, 100]);
+  now += 5 * 3600_000;
+  assert.equal(ledger.put("k", at, 0, 100), false, "too old to change");
+  const c = ledger.counts("k");
+  assert.deepEqual([c.good, c.total], [90, 100], "folded, still counted once");
 });

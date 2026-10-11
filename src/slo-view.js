@@ -102,7 +102,7 @@ function row(answer) {
   dial.setAttribute("aria-hidden", "true");
   const text = el("div", "slo-text");
   const head = el("p", "slo-head");
-  head.append(el("b", "", answer.name), el("span", "slo-kind", `${answer.sli.toUpperCase()}${answer.threshold ? ` ≤${answer.threshold}ms` : ""}`));
+  head.append(el("b", "", answer.name), el("span", "slo-kind", `${answer.sli.toUpperCase()}${answer.threshold ? ` ${answer.percentile ? `${answer.percentile.toUpperCase()} ` : ""}≤${answer.threshold}ms` : ""}`));
   text.append(head);
   const target = el("p", "slo-target");
   target.append(el("span", "", `SLI ${answer.sliPct == null ? "--" : `${answer.sliPct}%`}`), el("span", "", `SLO ${answer.target}% / ${answer.window}`));

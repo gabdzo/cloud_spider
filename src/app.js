@@ -25,7 +25,7 @@ import { campFixtures, runHint, watchLine } from "./upgrade-rules.js";
 import { CONNECT_REGION, connectCommand, connectionOf, sameEndpoint, validCluster, viewerAlias } from "./kube-connect.js";
 import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
-import { createMetricsCache, sampleMetrics } from "./metrics.js";
+import { createMetricsCache, sampleMetrics, SLO_PERIOD, SLO_TTL, SLO_WINDOW, sloSpecs } from "./metrics.js";
 import { idleCandidates, morningReport, nextIdleStreak } from "./layout.js";
 import { createHealthWatch, morningLine } from "./kube-health.js";
 import { DEFAULT_POLL_MS, scopeText } from "./kube-contexts.js";
@@ -334,6 +334,40 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     read: (name, queries, range) => (typeof metrics?.read === "function" ? metrics.read(name, queries, range) : { error: "metrics are not set up" }),
     clock: now,
   });
+  // The SLO reader: one-minute points for the ALBs a vault's alb SLO needs
+  // (and nothing else), read by watchSlos in the background, cached 60 s.
+  const sloMetricsCache = createMetricsCache({
+    read: (name, queries, range) => (typeof metrics?.read === "function" ? metrics.read(name, queries, range) : { error: "metrics are not set up" }),
+    clock: now,
+    ttl: SLO_TTL,
+    period: SLO_PERIOD,
+    window: SLO_WINDOW,
+    kinds: ["alb"],
+  });
+  let sloAlbIds = new Set();
+  let sloPercentiles = ["p95"];
+  let sloWatch = { at: 0, albs: 0, error: "" };
+  // The map's 5-minute answer with the SLO reader's ALB points on top.
+  function sloMetrics() {
+    const base = metricsCache.peek(region);
+    const fine = sloMetricsCache.peek(region);
+    if (!fine?.targets) return base;
+    return { ...(base || { region }), targets: { ...(base?.targets || {}), ...fine.targets } };
+  }
+  // Which owned ALBs the vaults' alb SLOs read (and which percentiles).
+  function albIdsOf(view) {
+    const ids = new Set();
+    const pcts = new Set();
+    const albs = new Set((place?.fixtures || []).filter((item) => item.kind === "alb").map((item) => item.id));
+    for (const vault of view?.vaults || []) {
+      const mine = (vault.slos || []).filter((slo) => slo.source === "alb");
+      if (!mine.length) continue;
+      for (const slo of mine) if (slo.percentile) pcts.add(slo.percentile);
+      for (const id of vault.owned || []) if (albs.has(id)) ids.add(id);
+    }
+    sloPercentiles = pcts.size ? [...pcts].sort() : ["p95"];
+    return ids;
+  }
 
   function stampLinks() {
     if (!place) return;
@@ -769,7 +803,9 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       if (!viewer) return { dir: "", note: "vaults are not set up", vaults: [] };
       try {
         if (sample) return await viewer.view(vaults.samplePlace?.(), { failures: vaults.sampleFailures?.() || [], slo: { metrics: sampleMetrics(vaults.samplePlace?.(), { now: now() }) } });
-        return await viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: metricsCache.peek(region), cluster: sloCluster } });
+        const view = await viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: sloMetrics(), cluster: sloCluster } });
+        sloAlbIds = albIdsOf(view);
+        return view;
       } catch (failure) {
         return { dir: "", note: `the vaults did not load: ${failure?.message || "error"}`, vaults: [] };
       }
@@ -792,6 +828,32 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       } catch (failure) {
         return { error: failure?.message || "the test did not run" };
       }
+    },
+    // SLOs in the background (main.js, every 30 s): the vaults are
+    // evaluated with no page open, so their checks keep running and their
+    // ledgers keep filling; ALBs that an alb SLO needs are read at 1-minute
+    // points (CloudWatch's floor for ALB metrics).
+    async watchSlos() {
+      const viewer = vaults?.live;
+      if (!viewer || !place) return { ...sloWatch, skipped: place ? "vaults are not set up" : "the map has not loaded yet" };
+      const evaluate = () => viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: sloMetrics(), cluster: sloCluster } });
+      const fetchAlbs = async () => {
+        if (!sloAlbIds.size) return "";
+        const got = await sloMetricsCache.get(region, place, { ids: sloAlbIds, specs: sloSpecs(sloPercentiles) }).catch((failure) => ({ error: failure?.message || "the metrics did not load" }));
+        return got?.error || "";
+      };
+      let failed = await fetchAlbs();
+      let view = await evaluate();
+      const ids = albIdsOf(view);
+      const fresh = [...ids].some((id) => !sloAlbIds.has(id));
+      sloAlbIds = ids;
+      // A newly owned ALB is read now, not a tick later.
+      if (fresh) {
+        failed = await fetchAlbs();
+        view = await evaluate();
+      }
+      sloWatch = { at: now(), albs: ids.size, vaults: (view?.vaults || []).filter((v) => v.slos?.length).length, error: failed };
+      return sloWatch;
     },
     // Monitoring: CloudWatch metrics for what the map shows, cached 5 min.
     async metricsView({ sample = false, samplePlace } = {}) {

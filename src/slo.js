@@ -20,6 +20,9 @@ export const RECENT_MS = 60 * 60_000; // the burn-rate window
 export const BURN = { warn: 2, fast: 14.4 };
 const NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 const WINDOW = /^(\d{1,3})([hd])$/;
+// Latency SLOs on CloudWatch read a percentile, p95 unless the vault says.
+export const PERCENTILES = ["p50", "p90", "p95", "p99"];
+export const DEFAULT_PERCENTILE = "p95";
 // Where the SLI comes from. Anything else is an error in the vault file.
 //   checks | check:<name>     the vault's HTTP checks, as the page runs them
 //   alb | lambda | ec2        the owned resource's 3 h CloudWatch series
@@ -67,7 +70,7 @@ export function validateSlos(list, path = "spec.slos") {
       return;
     }
     for (const key of Object.keys(item)) {
-      if (!["name", "sli", "source", "target", "window", "threshold", "description"].includes(key)) warnings.push(`${at}.${key}: unknown key, ignored`);
+      if (!["name", "sli", "source", "target", "window", "threshold", "percentile", "description"].includes(key)) warnings.push(`${at}.${key}: unknown key, ignored`);
     }
     const before = errors.length;
     const name = typeof item.name === "string" ? item.name.trim() : "";
@@ -81,23 +84,50 @@ export function validateSlos(list, path = "spec.slos") {
     const window = item.window === undefined ? DEFAULT_WINDOW : String(item.window);
     if (!windowMs(window) || windowMs(window) > 90 * 86_400_000) errors.push(`${at}.window: must be hours or days up to 90d, like 30d or 24h`);
     let threshold = null;
+    let percentile = null;
     if (item.sli === "latency") {
       threshold = Number(item.threshold);
       if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 60_000) errors.push(`${at}.threshold: a latency SLO needs a threshold in milliseconds`);
-    }
+      if (source === "alb") {
+        percentile = item.percentile === undefined ? DEFAULT_PERCENTILE : String(item.percentile).toLowerCase();
+        if (!PERCENTILES.includes(percentile)) errors.push(`${at}.percentile: must be one of ${PERCENTILES.join(", ")}`);
+      } else if (item.percentile !== undefined) warnings.push(`${at}.percentile: only an alb latency SLO reads a percentile, ignored`);
+    } else if (item.percentile !== undefined) warnings.push(`${at}.percentile: only a latency SLO has one, ignored`);
     if (errors.length !== before) return;
     seen.add(name);
-    slos.push({ name, sli: item.sli, source, target, window, threshold, description: typeof item.description === "string" ? item.description.trim() : "" });
+    slos.push({ name, sli: item.sli, source, target, window, threshold, percentile, description: typeof item.description === "string" ? item.description.trim() : "" });
   });
   return { slos, errors, warnings };
 }
 
 // ---- the ledger: good/total per 5-minute bucket, in memory ----
-// Kept since the server started (at most the longest window). Nothing is
-// written to disk; a restart starts the budget's view over, and says so.
+// Kept since the server started (at most the longest window).
+//
+// Two ways in: record() adds a reading (a check result, a kube read) to its
+// bucket; put() sets one CloudWatch point (key, the point's start, good,
+// total) and overwrites it on the next read, because CloudWatch fills a
+// minute in late. Points older than FOLD_MS no longer change and are folded
+// into the buckets.
+export const FOLD_MS = 4 * 60 * 60_000;
 export function createSloLedger({ clock = Date.now, keepMs = 30 * 86_400_000 } = {}) {
   const books = new Map();
   const marks = new Map();
+  const points = new Map(); // key -> Map(at -> { good, total })
+  function fold(key, now) {
+    const list = points.get(key);
+    if (!list) return;
+    for (const [at, cell] of list) {
+      if (at >= now - FOLD_MS) continue;
+      list.delete(at);
+      if (at < now - keepMs) continue;
+      const buckets = book(key);
+      const slot = Math.floor(at / BUCKET_MS);
+      const into = buckets.get(slot) || { good: 0, total: 0 };
+      into.good += cell.good;
+      into.total += cell.total;
+      buckets.set(slot, into);
+    }
+  }
   function book(key) {
     if (!books.has(key)) books.set(key, new Map());
     return books.get(key);
@@ -123,8 +153,20 @@ export function createSloLedger({ clock = Date.now, keepMs = 30 * 86_400_000 } =
       trim(buckets, clock());
       return true;
     },
+    // One CloudWatch point: set, not added (a re-read replaces it).
+    put(key, at, good, total) {
+      if (!(total > 0) || !Number.isFinite(at)) return false;
+      const now = clock();
+      if (at < now - FOLD_MS) return false; // already folded or too old to change
+      if (!points.has(key)) points.set(key, new Map());
+      points.get(key).set(at, { good: Math.max(0, Math.min(good, total)), total });
+      book(key);
+      fold(key, now);
+      return true;
+    },
     counts(key, window = 30 * 86_400_000) {
       const now = clock();
+      fold(key, now);
       const from = Math.floor((now - window) / BUCKET_MS);
       const recentFrom = Math.floor((now - RECENT_MS) / BUCKET_MS);
       const out = { good: 0, total: 0, span: 0, recent: { good: 0, total: 0 } };
@@ -137,9 +179,19 @@ export function createSloLedger({ clock = Date.now, keepMs = 30 * 86_400_000 } =
           out.recent.good += cell.good;
           out.recent.total += cell.total;
         }
-        first = first === null ? slot : Math.min(first, slot);
+        first = first === null ? slot * BUCKET_MS : Math.min(first, slot * BUCKET_MS);
       }
-      out.span = first === null ? 0 : Math.max(BUCKET_MS, now - first * BUCKET_MS);
+      for (const [at, cell] of points.get(key) || []) {
+        if (at < now - window) continue;
+        out.good += cell.good;
+        out.total += cell.total;
+        if (at >= now - RECENT_MS) {
+          out.recent.good += cell.good;
+          out.recent.total += cell.total;
+        }
+        first = first === null ? at : Math.min(first, at);
+      }
+      out.span = first === null ? 0 : Math.max(BUCKET_MS, now - first);
       return out;
     },
     keys() {
@@ -148,48 +200,81 @@ export function createSloLedger({ clock = Date.now, keepMs = 30 * 86_400_000 } =
   };
 }
 
-// ---- counts from the 3 h CloudWatch series (metrics.js answer) ----
-function series(hit, metric) {
-  return (hit?.series || []).find((item) => item.metric === metric)?.points || [];
+// ---- counts from the CloudWatch series (metrics.js answer) ----
+// The SLI per point: ALB availability is requests without a 5XX (the
+// ALB's own 503s included), ALB latency is the point's percentile under the
+// threshold (one good or bad point per period), Lambda the same with errors
+// over invocations and Duration, EC2 the status check.
+function series(hit, metric, stat = "") {
+  const list = hit?.series || [];
+  return (list.find((item) => item.metric === metric && (!stat || item.stat === stat)) || (stat ? null : list.find((item) => item.metric === metric)))?.points || [];
 }
 const PERIOD_MS = 5 * 60_000;
-function sum(points, from = 0) {
-  return points.slice(from).reduce((total, p) => total + (Number(p) || 0), 0);
-}
 
-export function countsFromMetrics(slo, hits) {
-  const kind = slo.source;
-  const target = (hits || []).find((hit) => hit.kind === kind);
-  if (!target) return null;
-  const recentFrom = -Math.round(RECENT_MS / PERIOD_MS);
-  const slots = (list, good) => {
-    const seen = list.map((p, i) => [p, i]).filter(([p]) => p !== null && p !== undefined);
-    const all = seen.length;
-    const ok = seen.filter(([p]) => good(p)).length;
-    const tail = seen.filter(([, i]) => i >= list.length + recentFrom);
-    return { good: ok, total: all, span: list.length * PERIOD_MS, recent: { good: tail.filter(([p]) => good(p)).length, total: tail.length } };
+// [{ at, good, total }] oldest first; at is the point's start. Periods with
+// no reading are left out.
+export function pointsFromMetrics(slo, hit) {
+  if (!hit) return [];
+  const kind = hit.kind;
+  const step = (Number(hit.period) || PERIOD_MS / 1000) * 1000;
+  const grid = (list) => {
+    const start = Number.isFinite(hit.end) ? hit.end - list.length * step : 0;
+    return (i) => start + i * step;
   };
+  const each = (list, fn) => {
+    const at = grid(list);
+    return list.map((p, i) => ({ at: at(i), ...fn(p, i) })).filter((p) => p.total > 0);
+  };
+  const latency = (list, good) => each(list, (p) => (p === null || p === undefined ? { good: 0, total: 0 } : { good: good(p) ? 1 : 0, total: 1 }));
   if (kind === "alb") {
-    if (slo.sli === "latency") return slots(series(target, "TargetResponseTime").map((p) => (p === 0 ? null : p)), (p) => p * 1000 <= slo.threshold);
-    const bad = series(target, "HTTPCode_ELB_5XX_Count").map((p, i) => (Number(p) || 0) + (Number(series(target, "HTTPCode_Target_5XX_Count")[i]) || 0));
+    if (slo.sli === "latency") {
+      const pct = series(hit, "TargetResponseTime", slo.percentile || DEFAULT_PERCENTILE);
+      const list = pct.length ? pct : series(hit, "TargetResponseTime");
+      // 0 s is a period without requests, not a fast one.
+      return latency(list.map((p) => (p === 0 ? null : p)), (p) => p * 1000 <= slo.threshold);
+    }
+    const elb = series(hit, "HTTPCode_ELB_5XX_Count");
+    const tgt = series(hit, "HTTPCode_Target_5XX_Count");
+    const req = series(hit, "RequestCount");
     // An ALB with no healthy target answers 503 itself and does not count
     // those in RequestCount (live drill 2026-10-11: REQ 0, ELB 5XX 1189 in
     // one 5 min period), so a period never holds fewer requests than errors.
-    const req = series(target, "RequestCount").map((p, i) => Math.max(Number(p) || 0, bad[i] || 0));
-    const total = sum(req);
-    const recentTotal = sum(req, recentFrom);
-    return { good: Math.max(0, total - sum(bad)), total, span: req.length * PERIOD_MS, recent: { good: Math.max(0, recentTotal - sum(bad, recentFrom)), total: recentTotal } };
+    return each(req, (p, i) => {
+      const bad = (Number(elb[i]) || 0) + (Number(tgt[i]) || 0);
+      const total = Math.max(Number(p) || 0, bad);
+      return { good: Math.max(0, total - bad), total };
+    });
   }
   if (kind === "lambda") {
-    if (slo.sli === "latency") return slots(series(target, "Duration"), (p) => p <= slo.threshold);
-    const inv = series(target, "Invocations");
-    const err = series(target, "Errors");
-    const total = sum(inv);
-    const recentTotal = sum(inv, recentFrom);
-    return { good: Math.max(0, total - sum(err)), total, span: inv.length * PERIOD_MS, recent: { good: Math.max(0, recentTotal - sum(err, recentFrom)), total: recentTotal } };
+    if (slo.sli === "latency") return latency(series(hit, "Duration"), (p) => p <= slo.threshold);
+    const err = series(hit, "Errors");
+    return each(series(hit, "Invocations"), (p, i) => {
+      const total = Number(p) || 0;
+      return { good: Math.max(0, total - (Number(err[i]) || 0)), total };
+    });
   }
-  if (kind === "ec2") return slots(series(target, "StatusCheckFailed"), (p) => !(p > 0));
-  return null;
+  if (kind === "ec2") return latency(series(hit, "StatusCheckFailed"), (p) => !(p > 0));
+  return [];
+}
+
+// Counts straight from one answer (no ledger): the answer's own window.
+export function countsFromMetrics(slo, hits) {
+  const target = (hits || []).find((hit) => hit.kind === slo.source);
+  if (!target || !["alb", "lambda", "ec2"].includes(slo.source)) return null;
+  const step = (Number(target.period) || PERIOD_MS / 1000) * 1000;
+  const length = (target.series || [])[0]?.points?.length || 0;
+  const list = pointsFromMetrics(slo, Number.isFinite(target.end) ? target : { ...target, end: length * step });
+  const end = Number.isFinite(target.end) ? target.end : length * step;
+  const out = { good: 0, total: 0, span: length * step, recent: { good: 0, total: 0 } };
+  for (const p of list) {
+    out.good += p.good;
+    out.total += p.total;
+    if (p.at >= end - RECENT_MS) {
+      out.recent.good += p.good;
+      out.recent.total += p.total;
+    }
+  }
+  return out;
 }
 
 function pct(value, digits = 3) {
@@ -213,6 +298,7 @@ export function evaluateSlo(slo, counts, { from = "" } = {}) {
     target: slo.target,
     window: slo.window,
     threshold: slo.threshold ?? null,
+    percentile: slo.percentile ?? null,
     description: slo.description || "",
     from,
   };
@@ -368,7 +454,19 @@ export function vaultSlos(vault, { ledger, checks = [], owned = [], hits = [], c
       }
       return evaluateSlo(slo, merged, { from: which ? `check ${which}` : "HTTP checks" });
     }
-    if (["alb", "lambda", "ec2"].includes(slo.source)) return evaluateSlo(slo, countsFromMetrics(slo, hits), { from: `${slo.source.toUpperCase()} · CloudWatch 3h` });
+    if (["alb", "lambda", "ec2"].includes(slo.source)) {
+      const hit = (hits || []).find((item) => item.kind === slo.source);
+      const what = `${slo.source.toUpperCase()}${slo.percentile ? ` ${slo.percentile}` : ""} · CloudWatch`;
+      // One-minute points (the server's SLO reader) go into the ledger, so
+      // the window reaches past the 3 h CloudWatch answer; the map's 5-minute
+      // answer is counted as it stands.
+      if (hit && Number(hit.period) <= 60 && Number.isFinite(hit.end)) {
+        for (const p of pointsFromMetrics(slo, hit)) ledger.put(`${key}:cw`, p.at, p.good, p.total);
+        return evaluateSlo(slo, ledger.counts(`${key}:cw`, win), { from: `${what} 1m` });
+      }
+      if (!hit && ledger.counts(`${key}:cw`, win).total) return evaluateSlo(slo, ledger.counts(`${key}:cw`, win), { from: `${what} 1m` });
+      return evaluateSlo(slo, countsFromMetrics(slo, hits), { from: `${what} 3h` });
+    }
     if (slo.source === "resources") {
       const health = resourcesHealthy(owned);
       if (health) ledger.record(key, health.good === health.total ? 1 : 0, 1, { at: now, stamp: Math.floor(now / 60_000) });
