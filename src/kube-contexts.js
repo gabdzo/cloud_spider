@@ -109,13 +109,21 @@ function ignoredSingle(env, winner) {
 // configured: kube.contexts from cloudspider.yaml (config.js, already
 // validated). They come first; the contexts file (which CONNECT writes) is
 // merged after them, and a name in both keeps the cloudspider.yaml entry.
-export async function loadContexts({ env = process.env, read, cwd = process.cwd(), configured = [] } = {}) {
+// Every context says where it came from (origin: env | config | file |
+// single), so CONNECT never copies a cloudspider.yaml entry into the file.
+export async function loadContexts(options = {}) {
+  const got = await readContexts(options);
+  const origin = { CLOUDSPIDER_KUBE_CONTEXTS: "env", CLOUDSPIDER_KUBE_CONTEXT: "single", [CONTEXTS_FILE]: "file" }[got.source] || "";
+  return { ...got, contexts: got.contexts.map((ctx) => ({ ...ctx, origin: ctx.origin || origin })) };
+}
+
+async function readContexts({ env = process.env, read, cwd = process.cwd(), configured = [] } = {}) {
   if (String(env.CLOUDSPIDER_KUBE_CONTEXTS || "").trim()) {
     const got = parseContextsEnv(env.CLOUDSPIDER_KUBE_CONTEXTS);
     if (got.contexts.length) return { ...got, errors: [...got.errors, ...ignoredSingle(env, "CLOUDSPIDER_KUBE_CONTEXTS")], source: "CLOUDSPIDER_KUBE_CONTEXTS" };
   }
   const errors = [];
-  const fromConfig = (configured || []).map((raw, index) => entry(raw, `cloudspider.yaml kube.contexts #${index + 1}`, errors)).filter(Boolean);
+  const fromConfig = unique((configured || []).map((raw, index) => entry(raw, `cloudspider.yaml kube.contexts #${index + 1}`, errors)).filter(Boolean), errors).map((ctx) => ({ ...ctx, origin: "config" }));
   const file = env.CLOUDSPIDER_KUBE_CONTEXTS_FILE || `${cwd.replace(/\/$/, "")}/${CONTEXTS_FILE}`;
   let fromFile = { contexts: [], errors: [] };
   if (read) {
@@ -124,7 +132,7 @@ export async function loadContexts({ env = process.env, read, cwd = process.cwd(
   }
   if (fromConfig.length) {
     const names = new Set(fromConfig.map((c) => c.name));
-    const extra = fromFile.contexts.filter((c) => !names.has(c.name));
+    const extra = fromFile.contexts.filter((c) => !names.has(c.name)).map((ctx) => ({ ...ctx, origin: "file" }));
     const fileErrors = fromFile.contexts.length ? fromFile.errors : [];
     const source = extra.length ? `cloudspider.yaml + ${CONTEXTS_FILE}` : "cloudspider.yaml";
     return { contexts: [...fromConfig, ...extra], errors: [...errors, ...fileErrors, ...ignoredSingle(env, source)], source };
