@@ -143,7 +143,7 @@ test("OPS: policy reports, scaling and events from what the cluster says", () =>
   const ops = sampleOps(Date.parse("2026-10-11T01:00:00Z"));
   const policy = policySummary(ops);
   assert.equal(policy.installed, true);
-  assert.deepEqual([policy.pass, policy.fail, policy.warn], [14, 4, 0]);
+  assert.deepEqual([policy.pass, policy.fail, policy.warn], [14, 3, 0], "the collector's Pod repeats its DaemonSet: counted once");
   assert.ok(policy.policies.every((p) => p.mode === "Audit"));
   assert.equal(policy.violations[0].policy, "disallow-host-path");
   const scaling = scalingSummary(ops);

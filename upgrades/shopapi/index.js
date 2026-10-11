@@ -28,7 +28,7 @@ if (!/^[a-z][a-z0-9-]{1,62}$/.test(secretName)) throw new Error("dbSecret must b
 inheritTags(pulumi, stackTags("shopapi", { cluster: clusterName }));
 
 const ns = "shop";
-const labels = { app: "shopapi", "app.kubernetes.io/part-of": "cloudspider-shop", "cloudspider/project": "shopapi" };
+const labels = { app: "shopapi", "app.kubernetes.io/name": "shopapi", "app.kubernetes.io/part-of": "cloudspider-shop", "cloudspider/project": "shopapi" };
 const provider = eksProvider({ pulumi, aws, k8s, clusterName });
 // Fail early without the Postgres cluster: namespace shop is pgcluster's (one
 // stack per namespace), so this stack reads it and never makes it. Missing,
@@ -52,7 +52,7 @@ const migrate = new k8s.batch.v1.Job(
       backoffLimit: 4,
       ttlSecondsAfterFinished: 3600,
       template: {
-        metadata: { labels: { ...labels, app: "shopapi-migrate" } },
+        metadata: { labels: { ...labels, app: "shopapi-migrate", "app.kubernetes.io/name": "shopapi-migrate" } },
         spec: {
           restartPolicy: "OnFailure",
           containers: [
@@ -61,6 +61,8 @@ const migrate = new k8s.batch.v1.Job(
               image: "postgres:16-alpine",
               command: ["sh", "-c", 'for f in /sql/*.sql; do echo "applying $f"; psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f" || exit 1; done'],
               env: [dbUri],
+              // Kyverno require-readiness-probe asks every container for one.
+              readinessProbe: { exec: { command: ["/bin/true"] }, periodSeconds: 30 },
               volumeMounts: [{ name: "sql", mountPath: "/sql", readOnly: true }],
               resources: { requests: { cpu: "50m", memory: "64Mi" }, limits: { memory: "128Mi" } },
               securityContext: { allowPrivilegeEscalation: false, runAsNonRoot: true, runAsUser: 70 },
@@ -104,7 +106,8 @@ const api = new k8s.apps.v1.Deployment(
       },
     },
   },
-  { ...k, dependsOn: [shopNamespace, migrate] },
+  // Not ready in 5 minutes: the run fails and the run pane says why.
+  { ...k, dependsOn: [shopNamespace, migrate], customTimeouts: { create: "5m", update: "5m" } },
 );
 
 new k8s.core.v1.Service("shopapi", {

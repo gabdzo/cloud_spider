@@ -18,10 +18,35 @@ function policyMode(policy) {
   return actions.some((action) => /enforce/i.test(action)) ? "Enforce" : "Audit";
 }
 
+// Kyverno autogen reports a Deployment and again its ReplicaSet (and a
+// DaemonSet and again its Pods): one finding counted twice ("6 FAIL" for 3
+// Deployments). A report on a ReplicaSet or Pod whose controller has its own
+// report in the namespace is left out; the controller's stands for it.
+// Owners by name: <deployment>-<hash> for a ReplicaSet; <rs>-<id>,
+// <daemonset|job|statefulset>-<id> for a Pod.
+const CONTROLLERS = new Set(["Deployment", "DaemonSet", "StatefulSet", "Job", "CronJob"]);
+export function ownedByReported(reports = []) {
+  const reported = new Set();
+  for (const report of reports) {
+    const scope = report?.scope || {};
+    if (CONTROLLERS.has(scope.kind)) reported.add(`${scope.namespace || report?.metadata?.namespace || ""}/${scope.name}`);
+  }
+  const strip = (name, n) => String(name || "").split("-").slice(0, -n).join("-");
+  return (report) => {
+    const scope = report?.scope || {};
+    const ns = scope.namespace || report?.metadata?.namespace || "";
+    if (scope.kind === "ReplicaSet") return reported.has(`${ns}/${strip(scope.name, 1)}`);
+    if (scope.kind === "Pod") return reported.has(`${ns}/${strip(scope.name, 1)}`) || reported.has(`${ns}/${strip(scope.name, 2)}`);
+    return false;
+  };
+}
+
 export function policySummary(ops = {}) {
   const absent = new Set(ops.absent || []);
   const installed = !(absent.has("policyReports") && absent.has("clusterPolicies"));
-  const reports = [...(ops.policyReports || []), ...(ops.clusterPolicyReports || [])];
+  const all = [...(ops.policyReports || []), ...(ops.clusterPolicyReports || [])];
+  const repeated = ownedByReported(all);
+  const reports = all.filter((report) => !repeated(report));
   const policies = new Map();
   for (const item of ops.clusterPolicies || []) {
     const name = item?.metadata?.name || "";

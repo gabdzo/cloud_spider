@@ -18,6 +18,7 @@ import { demoAppSeen, detectAddons, refuseUp, sampleAddons } from "./addons.js";
 import { HELD_BY, destroyRefusal } from "../upgrades/eks-addons.js";
 import { needRefusal, needStates, needsOf } from "./stack-needs.js";
 import { shopReadiness } from "./shop-check.js";
+import { waitingLines } from "./run-waiting.js";
 import { UPGRADES } from "./upgrade.js";
 import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./addon-bundle.js";
 import { daemonSetCheck, daemonSetRoom, podRoom } from "../upgrades/addons/pod-room.js";
@@ -53,6 +54,8 @@ export const KUBE_MAP_TTL = 30_000;
 const LIVE_MS = 20_000;
 // The NEEDS check before a run: bounded, no answer is no refusal.
 const NEEDS_MS = 40_000;
+// How often a running stack's pods are checked for what they wait on.
+const WAIT_MS = Number(process.env.CLOUDSPIDER_WAIT_MS) || 20_000;
 
 export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL }) {
   const stdout = [];
@@ -547,6 +550,26 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     if (!needs.length) return { module, cluster, needs: [], refusal: "" };
     const states = needStates(needs, await needProbes(needs, cluster, params));
     return { module, cluster, needs: states, refusal: needRefusal(spec, states, cluster) };
+  }
+
+  // While a stack's run goes, every WAIT_MS: why its pods wait (not
+  // scheduled, image pull, crash loop), from the kube read through the
+  // connected context, into the run pane. Each distinct line once; stops
+  // when the run ends.
+  function watchWaiting(stack, cluster, namespaces) {
+    if (!upgrade?.say || !namespaces?.length) return;
+    const said = new Set();
+    const tick = async () => {
+      if (!upgrade.say(stack, "")) return;
+      const snap = await clusterSnapshot(cluster).catch(() => null);
+      for (const line of waitingLines(snap, namespaces)) {
+        if (said.has(line)) continue;
+        said.add(line);
+        if (!upgrade.say(stack, line)) return;
+      }
+      setTimeout(tick, WAIT_MS).unref?.();
+    };
+    setTimeout(tick, WAIT_MS).unref?.();
   }
 
   async function stacksOn(cluster) {
@@ -1143,6 +1166,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
               ? (done) => (body.action === "up" ? autoConnectAfter : autoDisconnectAfter)(cluster || "cloudspider-up", done)
               : undefined,
         });
+        const waitIn = UPGRADES.find((item) => item.id === body.module)?.namespaces;
+        if (waitIn && body.action === "up" && started?.running) watchWaiting(started.stack, String(params.clusterName || "cloudspider-up"), waitIn);
         if (withAddons.length && !started?.error && validCluster(cluster)) bundleQueue.set(cluster, { items: withAddons, stage: "cluster", text: `after the cluster: CONNECT, then ${withAddons.length} add-on${withAddons.length === 1 ? "" : "s"}` });
         return started?.error && !started.hint ? { ...started, ...runHint(started.error) } : started;
       } catch (failure) {

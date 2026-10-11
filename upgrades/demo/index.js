@@ -174,7 +174,10 @@ exporters:
   otlp_grpc/gateway:
     endpoint: otel-gateway:4317
     tls: { insecure: true }
+extensions:
+  health_check: { endpoint: 0.0.0.0:13133 }
 service:
+  extensions: [health_check]
   pipelines:
     logs:
       receivers: [file_log, otlp]
@@ -191,12 +194,20 @@ service:
 `;
 const collectorConfigMap = new k8s.core.v1.ConfigMap("otel-collector", { metadata: { name: "otel-collector", namespace: ns }, data: { "config.yaml": collectorConfig } }, inNs);
 const collectorLabels = { app: "otel-collector" };
+// Pod labels on top of the selector's (a selector cannot change): the name
+// label our Kyverno policy require-app-name-label asks for.
+const podLabels = (labels, name) => ({ ...labels, "app.kubernetes.io/name": name, "app.kubernetes.io/part-of": "cloudspider-demo" });
+// A workload that is not ready in 5 minutes fails the run (instead of
+// pulumi's 10-minute wait); the run pane says what its pods wait on.
+const workload = { ...inNs, customTimeouts: { create: "5m", update: "5m" } };
+// The collectors' health_check extension (readiness, policy require-readiness-probe).
+const healthProbe = { httpGet: { path: "/", port: 13133 }, periodSeconds: 10 };
 new k8s.apps.v1.DaemonSet("otel-collector", {
   metadata: { name: "otel-collector", namespace: ns },
   spec: {
     selector: { matchLabels: collectorLabels },
     template: {
-      metadata: { labels: collectorLabels },
+      metadata: { labels: podLabels(collectorLabels, "otel-collector") },
       spec: {
         serviceAccountName: collectorAccount.metadata.name,
         // One per node, so it must fit on a full node: at system-node-critical
@@ -215,6 +226,7 @@ new k8s.apps.v1.DaemonSet("otel-collector", {
             { name: "K8S_NODE_IP", valueFrom: { fieldRef: { fieldPath: "status.hostIP" } } },
           ],
           ports: [{ containerPort: 4317, name: "otlp-grpc" }, { containerPort: 4318, name: "otlp-http" }],
+          readinessProbe: healthProbe,
           resources: { requests: { cpu: "20m", memory: "64Mi" }, limits: { memory: "200Mi" } },
           volumeMounts: [{ name: "conf", mountPath: "/conf" }, { name: "pods", mountPath: "/var/log/pods", readOnly: true }, { name: "hostfs", mountPath: "/hostfs", readOnly: true, mountPropagation: "HostToContainer" }],
         }],
@@ -222,7 +234,7 @@ new k8s.apps.v1.DaemonSet("otel-collector", {
       },
     },
   },
-}, inNs);
+}, workload);
 new k8s.core.v1.Service("otel-collector", { metadata: { name: "otel-collector", namespace: ns }, spec: { selector: collectorLabels, ports: [{ name: "otlp-grpc", port: 4317 }, { name: "otlp-http", port: 4318 }] } }, inNs);
 
 // The metrics gateway: one replica takes every node's OTLP metrics and serves
@@ -240,7 +252,10 @@ exporters:
     endpoint: 0.0.0.0:8889
     metric_expiration: 3m
     resource_to_telemetry_conversion: { enabled: true }
+extensions:
+  health_check: { endpoint: 0.0.0.0:13133 }
 service:
+  extensions: [health_check]
   pipelines:
     metrics:
       receivers: [otlp]
@@ -255,13 +270,14 @@ new k8s.apps.v1.Deployment("otel-gateway", {
     replicas: 1,
     selector: { matchLabels: gatewayLabels },
     template: {
-      metadata: { labels: gatewayLabels },
+      metadata: { labels: podLabels(gatewayLabels, "otel-gateway") },
       spec: {
         containers: [{
           name: "gateway",
           image: COLLECTOR_IMAGE,
           args: ["--config=/conf/config.yaml"],
           ports: [{ containerPort: 4317, name: "otlp-grpc" }, { containerPort: 8889, name: "prom" }],
+          readinessProbe: healthProbe,
           resources: { requests: { cpu: "10m", memory: "48Mi" }, limits: { memory: "128Mi" } },
           volumeMounts: [{ name: "conf", mountPath: "/conf" }],
         }],
@@ -269,7 +285,7 @@ new k8s.apps.v1.Deployment("otel-gateway", {
       },
     },
   },
-}, inNs);
+}, workload);
 new k8s.core.v1.Service("otel-gateway", { metadata: { name: "otel-gateway", namespace: ns }, spec: { selector: gatewayLabels, ports: [{ name: "otlp-grpc", port: 4317 }] } }, inNs);
 // One port only, so the proxy path is plain .../services/otel-metrics/proxy/metrics.
 new k8s.core.v1.Service("otel-metrics", { metadata: { name: "otel-metrics", namespace: ns }, spec: { selector: gatewayLabels, ports: [{ name: "prom", port: 8889, targetPort: 8889 }] } }, inNs);
@@ -284,7 +300,7 @@ function podinfo(name, extraArgs = []) {
       replicas: 1,
       selector: { matchLabels: labels },
       template: {
-        metadata: { labels },
+        metadata: { labels: podLabels(labels, name) },
         spec: {
           containers: [{
             name,
@@ -298,7 +314,7 @@ function podinfo(name, extraArgs = []) {
         },
       },
     },
-  }, inNs);
+  }, workload);
   new k8s.core.v1.Service(name, { metadata: { name, namespace: ns }, spec: { selector: labels, ports: [{ name: "http", port: 9898 }] } }, inNs);
 }
 podinfo("api");
@@ -310,18 +326,20 @@ new k8s.apps.v1.Deployment("loadgen", {
     replicas: 1,
     selector: { matchLabels: { app: "loadgen" } },
     template: {
-      metadata: { labels: { app: "loadgen" } },
+      metadata: { labels: podLabels({ app: "loadgen" }, "loadgen") },
       spec: {
         containers: [{
           name: "loadgen",
           image: "busybox:1.36",
           command: ["sh", "-c", "while true; do for p in / /echo /status/500 /delay/1; do wget -q -T 5 -O /dev/null http://web:9898$p && echo \"loadgen: GET $p ok\" || echo \"loadgen: GET $p failed\"; done; sleep 10; done"],
+          // No port to probe: ready while its shell runs (cheap, busybox's own true).
+          readinessProbe: { exec: { command: ["/bin/true"] }, periodSeconds: 30 },
           resources: { requests: { cpu: "5m", memory: "8Mi" }, limits: { memory: "32Mi" } },
         }],
       },
     },
   },
-}, inNs);
+}, workload);
 
 export const namespaceName = ns;
 export const portForward = `kubectl -n ${ns} port-forward svc/web 9898:9898   # then open http://127.0.0.1:9898`;

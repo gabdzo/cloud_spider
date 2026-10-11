@@ -233,6 +233,11 @@ export function addonCommands(spec, cluster) {
 // and the page (the ERROR plate).
 const HINTS = [
   {
+    kind: "rollout-timeout",
+    test: /failed to fully initialize or become live|Timeout occurred polling for/,
+    hint: "A Deployment or DaemonSet was not ready within its 5 minutes. The run log's \"waiting on …\" lines say why its pods waited (not scheduled: no room or no matching node; ImagePullBackOff; CrashLoopBackOff). Fix that, then RUN again: what is up stays, the rest is retried.",
+  },
+  {
     kind: "pods-full",
     test: /free pod slot on every node|Too many pods/,
     hint: "A node has no free pod slot: each EKS node caps its pods (11 on a t4g.small, 17 on a t4g.medium with one IP per pod). On the EKS card keep prefixDelegation=on and set maxPods (32 on a t4g.small, 58 on a t4g.medium; it replaces the node group once), or raise nodeCount, or take a stack down. Then RUN again: what did not start was not kept.",

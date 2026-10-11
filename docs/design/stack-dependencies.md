@@ -112,6 +112,26 @@ the VPC CNI caps a t4g.medium at 17 pods and a t4g.small at 11.
   with nothing it may preempt refuses RUN/PREVIEW naming the node; a full
   node with ordinary pods is a note in the run log (one is preempted).
 
+## While a run waits
+
+- Deployments and DaemonSets of ours (demo, shopapi, scaling-demo, keda-demo)
+  have `customTimeouts` 5m create/update: not ready in 5 minutes fails the
+  run (runHint rollout-timeout) instead of pulumi's silent 10-minute wait.
+- While a stack with `namespaces` runs (demo, pgcluster, shopapi, add-ons
+  outside kube-system), the run pane gets `waiting on <ns>/<pod>: …` lines
+  every 20 s from the kube read: not scheduled (the scheduler's message, e.g.
+  "Too many pods"), ImagePullBackOff, CrashLoopBackOff. Each line once.
+
+## Our workloads and our Kyverno policies
+
+All of ours carry `app.kubernetes.io/name` on the pod template (selectors
+unchanged) and a readiness probe: podinfo /readyz, PostgREST /items, the
+collectors' health_check extension (:13133), `/bin/true` for busybox and
+aws-cli loops and the psql Job, `/pause -v` for the pause placeholders. The
+demo collector's hostPath is a Kyverno PolicyException (kyverno.io/v2, in
+namespace kyverno) for DaemonSet demo/otel-collector and its pods only. OPS
+counts a Deployment's finding once, not again for its ReplicaSet or Pods.
+
 ## Follow-ups
 
 - Kyverno 1.19 warns that `kyverno.io/v1` ClusterPolicy is deprecated; move
