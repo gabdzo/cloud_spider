@@ -2,6 +2,9 @@
   "name": "cloud-spider",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node src/main.js",
     "test": "node --test test/*.test.js",
