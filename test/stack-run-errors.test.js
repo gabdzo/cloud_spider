@@ -103,7 +103,7 @@ test("RUN with pulumi missing: the card keeps a visible ERROR plate with a hint,
   }
 });
 
-test("RUN refused while another run goes: the refusal stays in the card instead of the other run's log", async () => {
+test("RUN refused while a run goes on the same cluster: the refusal stays in the card instead of the other run's log", async () => {
   const upgrade = createUpgrade({ env: {}, run: pulumi(() => child({ hang: true, out: "Previewing update (eks-cloudspider-up-2):" })) });
   const server = await listen(shell(upgrade), 0);
   try {
@@ -111,18 +111,26 @@ test("RUN refused while another run goes: the refusal stays in the card instead 
     const other = { clusterName: "cloudspider-up-2", instanceType: "t4g.medium", nodeCount: "1" };
     const preview = await post(base, { module: "eks", action: "preview", params: other });
     assert.equal(preview.running, true);
-    const refused = await post(base, { module: "eks", action: "up", params: MEDIUM });
-    assert.match(refused.error, /already running/);
+    // An add-on on that cluster waits for the cluster's own run.
+    const addon = { clusterName: "cloudspider-up-2" };
+    const refused = await post(base, { module: "metrics-server", action: "preview", params: addon });
+    assert.match(refused.error, /already running on cluster cloudspider-up-2/);
     assert.match(refused.hint, /Wait for it to finish/);
-    const body = await poll(base, { module: "eks", ...MEDIUM });
+    const body = await poll(base, { module: "metrics-server", ...addon });
     assert.match(body.error, /already running/, "the next poll must not wipe the refusal");
     const model = runModel(body);
     assert.equal(model.plate.title, "REFUSED · NOTHING RAN");
     assert.match(model.busy, /PREVIEW on eks-cloudspider-up-2/);
-    // The preview's own card still shows the preview, live.
+    // The same stack twice: refused, and its card still shows the preview, live.
+    const twice = await post(base, { module: "eks", action: "up", params: other });
+    assert.match(twice.error, /already running on stack eks-cloudspider-up-2/);
     const live = await poll(base, { module: "eks", ...other }, 1);
     assert.equal(live.running, true);
     assert.equal(live.error, "");
+    // Another cluster is independent: it runs alongside.
+    const medium = await post(base, { module: "eks", action: "preview", params: MEDIUM });
+    assert.equal(medium.running, true);
+    assert.equal(medium.stack, "eks-cloudspider-medium");
   } finally {
     server.close();
   }

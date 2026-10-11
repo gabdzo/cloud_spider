@@ -253,8 +253,15 @@ function tailLines(lines, max = SHOW_CHARS) {
 // runsDir: where every run's log goes (.cloudspider/runs). Omitted, runs
 // are kept in memory only (the tests).
 export function createUpgrade({ run = spawn, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined } = {}) {
+  // Runs go on side by side when they touch different stacks. One stack
+  // runs one thing at a time (its lock), and a cluster and the stacks on it
+  // never overlap (conflictFor). job / notice: the newest of each, for
+  // status(); jobs / notices: per stack, for each card.
   let job = null;
   let notice = null;
+  const jobs = new Map();
+  const notices = new Map();
+  const dirGates = new Map();
   let campCache = null;
   let legacyCache = null;
   let runs = 0;
@@ -290,8 +297,8 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
     if (!job && !notice) return { running: false, lines: [] };
     // A refusal newer than the run is what the user just did: it shows
     // first and stays until the next run, never wiped by the next poll.
-    if (notice && (!job || notice.at >= job.startedAt)) return { ...view(notice), ...(job?.running ? { busy: { stack: job.stack, action: job.action } } : {}) };
-    return view(job);
+    if (notice && (!job || notice.at >= job.startedAt)) return { ...view(notice), ...busyFor(notice.stack) };
+    return { ...view(job), ...busyFor(job.stack) };
   }
 
   function save(item) {
@@ -324,6 +331,9 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
     runs += 1;
     const { hint } = runHint(error);
     notice = { id: `r${runs}`, refused: true, running: false, module, action, stack, error, hint, command, startedAt: at, endedAt: at, at, steps: [], lines: [`refused: ${error}`], errLines: [] };
+    // A refusal on a stack that is running stays out of its card: the card
+    // keeps showing the live run (the answer still carries the refusal).
+    if (stack && !jobs.get(stack)?.running) notices.set(stack, notice);
     if (stack && runLog) {
       notice.logHandle = runLog.start(stack, { startedAt: at });
       notice.log = notice.logHandle?.rel || "";
@@ -340,8 +350,8 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
     const checked = checkParams(spec, values);
     const legacy = spec.id === "eks" ? await legacyFor() : undefined;
     const stack = stackFor(spec, checked.values || {}, legacy);
-    const busy = job?.running && job.stack !== stack ? { busy: { stack: job.stack, action: job.action } } : {};
-    const mine = [notice, job].filter((item) => item && item.stack === stack).sort((a, b) => b.startedAt - a.startedAt)[0];
+    const busy = busyFor(stack);
+    const mine = [notices.get(stack), jobs.get(stack)].filter(Boolean).sort((a, b) => b.startedAt - a.startedAt)[0];
     if (mine) return { ...view(mine), ...busy };
     const saved = runLog?.latest(stack);
     if (saved) {
@@ -461,8 +471,13 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       if (verb === "up" && tooManyClusters(clusters, cardName(spec, checked.values), maxClusters)) {
         return no(`${clusters.length} clusters are already up (${clusters.join(", ")}); the limit is ${maxClusters}. Take one down or set CLOUDSPIDER_MAX_CLUSTERS.`);
       }
-      if (job?.running) return no(`an upgrade is already running (${job.action} on stack ${job.stack})`);
+      const cluster = clusterOf(spec, checked.values);
+      const conflict = conflictFor({ locks: [stack], cluster, isCluster: spec.id === "eks" });
+      if (conflict) return no(conflict);
       return startJob({
+        locks: [stack],
+        cluster,
+        isCluster: spec.id === "eks",
         module: spec.id,
         action: verb,
         stack,
@@ -475,9 +490,14 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
     },
     // Any list of steps as one run in a card's pane (CONNECT, an add-on
     // batch): { cmd, args } spawned like pulumi, or { fn } done in-process.
-    runSteps({ module, action, stack, steps, command = "", directory = cwd, where = "", onDone }) {
-      if (job?.running) return refuse({ module, action, stack, error: `an upgrade is already running (${job.action} on stack ${job.stack})`, command });
-      return startJob({ module, action, stack, directory, where, command, onDone, steps });
+    // locks: the stacks it runs (default: its own); cluster: the cluster it
+    // works on. CONNECT, USE IT and DISCONNECT edit the kubeconfig, so they
+    // also take the kubeconfig lock (one at a time, whatever the cluster).
+    runSteps({ module, action, stack, steps, command = "", directory = cwd, where = "", onDone, locks = null, cluster = "" }) {
+      const held = [...new Set([...(locks || [stack]), ...(["connect", "disconnect", "use it"].includes(action) ? [KUBECONFIG_LOCK] : [])])].filter(Boolean);
+      const conflict = conflictFor({ locks: held, cluster, isCluster: false });
+      if (conflict) return refuse({ module, action, stack, error: conflict, command });
+      return startJob({ module, action, stack, directory, where, command, onDone, steps, locks: held, cluster, isCluster: false });
     },
     // INSTALL SELECTED: the add-ons in `ids` (already in order) on one
     // cluster, each preview then up, as one run in the cluster's EKS pane.
@@ -506,10 +526,33 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
         byHand.push(...preview, up);
       }
       const where = UPGRADES.find((item) => item.id === ids[0])?.dir || "";
-      return this.runSteps({ module: "eks", action: "add-ons", stack, steps, command: rerunCommand(join(cwd, where), byHand), directory: join(cwd, where), where, onDone });
+      // The batch holds every add-on stack it runs; the cluster's own stack
+      // is not held, but the cluster rule keeps an EKS run out meanwhile.
+      const locks = ids.map((id) => stackFor(UPGRADES.find((item) => item.id === id), { clusterName: cluster }));
+      return this.runSteps({ module: "eks", action: "add-ons", stack, steps, command: rerunCommand(join(cwd, where), byHand), directory: join(cwd, where), where, onDone, locks, cluster });
     },
     busy() {
-      return job?.running ? { stack: job.stack, action: job.action, module: job.module } : null;
+      const first = runningJobs()[0];
+      return first ? { stack: first.stack, action: first.action, module: first.module } : null;
+    },
+    // Every run going now (the Stacks panel can run several at once).
+    running() {
+      return runningJobs().map((item) => ({ stack: item.stack, action: item.action, module: item.module, cluster: item.cluster || "", locks: [...item.locks] }));
+    },
+    // What still runs on a cluster: pgcluster, shopapi and demo stacks that
+    // are up (they have outputs) with clusterName = cluster. Read-only
+    // (pulumi stack output / config get). The add-on stacks come from the
+    // add-on tree (app.js).
+    async dependentsOf(cluster) {
+      const found = [];
+      for (const spec of UPGRADES.filter((item) => !item.addon && item.id !== "eks" && item.needs?.includes("eks"))) {
+        const out = await this.outputs(spec.id, { clusterName: cluster }, { fresh: true });
+        if (out?.error || !Object.keys(out?.outputs || {}).length) continue;
+        const got = await capture(run, join(cwd, spec.dir), childEnvFor(env), ["config", "get", `${spec.project}:clusterName`, "--stack", spec.stack]);
+        const on = got.error ? LEGACY_CLUSTER : got.text.trim() || LEGACY_CLUSTER;
+        if (on === cluster) found.push(spec.stack);
+      }
+      return found;
     },
     // A stack's outputs (pulumi stack output --json), cached a minute.
     async outputs(module, values = {}, { fresh = false } = {}) {
@@ -546,16 +589,63 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
     return [volumeSweepStep({ volumes, project: "pgcluster", clusterName: values.clusterName || "cloudspider-up", clock, sleep, limits: sweepLimits })];
   }
 
-  function startJob({ module, action, stack, directory, where, command, steps, onDone }) {
+  function runningJobs() {
+    return [...new Set(jobs.values())].filter((item) => item.running).sort((a, b) => a.startedAt - b.startedAt);
+  }
+
+  // Another run going while this stack's card is shown.
+  function busyFor(stack) {
+    const other = runningJobs().find((item) => item.stack !== stack && !item.locks.includes(stack));
+    return other ? { busy: { stack: other.stack, action: other.action } } : {};
+  }
+
+  // Why a run cannot start now, or "". Same stack: one at a time. A cluster
+  // (its EKS stack) and the stacks on it (add-ons, pgcluster, shopapi,
+  // demo): never at the same time, so nothing is raised on a cluster that is
+  // being taken down, and a cluster is not taken down under a running up.
+  function conflictFor({ locks, cluster, isCluster }) {
+    for (const other of runningJobs()) {
+      const shared = locks.find((item) => other.locks.includes(item));
+      if (shared === KUBECONFIG_LOCK) return `an upgrade is already running on the kubeconfig (${other.action} on stack ${other.stack}); CONNECT and DISCONNECT go one at a time`;
+      if (shared) return `an upgrade is already running on stack ${shared} (${other.action}${other.stack === shared ? "" : ` in ${other.stack}`}); one run per stack at a time`;
+      if (cluster && other.cluster === cluster && (isCluster || other.isCluster)) {
+        return `an upgrade is already running on cluster ${cluster} (${other.action} on stack ${other.stack}); a cluster and the stacks on it run one at a time`;
+      }
+    }
+    return "";
+  }
+
+  // pulumi install in one project folder at a time (the add-ons share one).
+  function gateDir(dir) {
+    const before = dirGates.get(dir) || Promise.resolve();
+    let release;
+    const mine = new Promise((resolve) => {
+      release = resolve;
+    });
+    const chain = before.then(() => mine);
+    dirGates.set(dir, chain);
+    return before.then(() => () => {
+      release();
+      if (dirGates.get(dir) === chain) dirGates.delete(dir);
+    });
+  }
+
+  function startJob({ module, action, stack, directory, where, command, steps, onDone, locks = [stack], cluster = "", isCluster = false }) {
     runs += 1;
     const startedAt = clock();
+    // The newest event is this run; a refusal on another card stays on that
+    // card (notices).
     notice = null;
+    notices.delete(stack);
     job = {
       id: `u${runs}`,
       running: true,
       module,
       action,
       stack,
+      locks: [...new Set([stack, ...locks])].filter(Boolean),
+      cluster,
+      isCluster,
       lines: [],
       errLines: [],
       error: "",
@@ -572,16 +662,27 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       save(job);
     }
     const mine = job;
+    for (const lock of mine.locks) jobs.set(lock, mine);
     apply(run, directory, job, childEnvFor(env), {
       clock,
       save,
+      gate: gateDir,
       done: () => {
         if (mine.stack) outputsCache.delete(mine.stack);
         if (onDone) Promise.resolve().then(() => onDone(view(mine))).catch(() => {});
       },
     });
-    return status();
+    return { ...view(mine), ...busyFor(stack) };
   }
+}
+
+// The kubeconfig is one file: CONNECT / DISCONNECT / USE IT hold this.
+const KUBECONFIG_LOCK = "~kubeconfig";
+
+// The cluster a card works on: EKS itself and every card that needs it.
+function clusterOf(spec, values = {}) {
+  if (spec.id !== "eks" && !spec.needs?.includes("eks")) return "";
+  return values.clusterName || LEGACY_CLUSTER;
 }
 
 // One stack per thing: `stack` names the stack (and with it the state file,
@@ -616,7 +717,7 @@ export function upgradeSteps(spec, stack, verb, values) {
 
 const KEEP_LINES = 400;
 
-function apply(run, directory, job, env, { clock = () => Date.now(), save = () => {}, done = () => {} } = {}) {
+function apply(run, directory, job, env, { clock = () => Date.now(), save = () => {}, done = () => {}, gate = null } = {}) {
   let index = 0;
   const log = (text) => job.logHandle?.append(text);
   const say = (text, err = false) => {
@@ -628,6 +729,10 @@ function apply(run, directory, job, env, { clock = () => Date.now(), save = () =
     if (job.lines.length > KEEP_LINES) job.lines.splice(0, job.lines.length - KEEP_LINES);
   };
   const finish = (error = "") => {
+    for (const step of job.steps) {
+      step.release?.();
+      step.release = null;
+    }
     job.running = false;
     job.endedAt = clock();
     if (error) {
@@ -640,11 +745,31 @@ function apply(run, directory, job, env, { clock = () => Date.now(), save = () =
     save(job);
     done();
   };
+  const releaseAll = () => {
+    for (const step of job.steps) {
+      step.release?.();
+      step.release = null;
+    }
+  };
   const next = () => {
+    releaseAll();
     if (index >= job.steps.length) {
       finish();
       return;
     }
+    const step = job.steps[index];
+    // pulumi install (npm) waits for another install in the same folder.
+    if (gate && !step.fn && (step.cmd || "pulumi") === "pulumi" && step.args?.[0] === "install" && !step.gated) {
+      step.gated = true;
+      gate(step.cwd || directory).then((release) => {
+        step.release = release;
+        go();
+      });
+      return;
+    }
+    go();
+  };
+  const go = () => {
     const step = job.steps[index];
     index += 1;
     step.status = "running";

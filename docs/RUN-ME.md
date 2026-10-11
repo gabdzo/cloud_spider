@@ -176,6 +176,8 @@ The first 1 million GetMetricData metrics a month may fall under the free tier, 
 
 Every new card shows its cost on the card (hour / day / month, eu-north-1). Raise them from the Stacks panel (open the card, `preview`, then `run`) or by hand as below. Each stack is its own state; `take it down` (or `pulumi destroy`) removes everything it made. Install a stack's packages once: `cd upgrades/<name> && npm ci`.
 
+**Several runs at once.** Cards on different stacks run side by side (signal while camp goes down, two clusters at once). The rules: one stack runs one thing at a time; a cluster and the stacks on it (its add-ons, pgcluster, shopapi, demo) never run together, so nothing is raised on a cluster that is going down; CONNECT and DISCONNECT take turns on the kubeconfig; `pulumi install` takes turns in a shared folder (the add-ons). **TAKE IT DOWN** asks for the card's name or its stack name (`cloudspider-camp` or `camp`); the field shows which. On an EKS card it is refused while add-on, pgcluster, shopapi or demo stacks are still up on that cluster, with the list; take those down first, or type `<cluster> anyway`.
+
 ### RDS Postgres: about $0.02/h, $0.48/day, $14.48/month
 
 ```sh

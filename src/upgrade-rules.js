@@ -288,6 +288,11 @@ const HINTS = [
     hint: "The stack is locked by an earlier run that did not finish. Make sure no pulumi is still running (ps aux | grep pulumi); then in that stack's folder run `pulumi cancel --stack <stack> --yes` and try again.",
   },
   {
+    kind: "dependents",
+    test: /still has stacks on it/i,
+    hint: "Taking the cluster down first strands what those stacks made outside it (an ALB from the LBC, EBS volumes from pgcluster) and leaves their state pointing at a cluster that is gone. Take each down from its own card first. If you really mean it, type the cluster name followed by \" anyway\".",
+  },
+  {
     kind: "busy",
     test: /an upgrade is already running/i,
     hint: "Another stack run is still going (its log is in its own card). Wait for it to finish, then press RUN again. PREVIEW counts as a run.",

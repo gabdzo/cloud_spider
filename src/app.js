@@ -381,6 +381,18 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   let sloAlbIds = new Set();
   // The last vault evaluation's SLO answers, for the morning's HURTING.
   let lastSlos = [];
+  // Stacks still up on a cluster: add-on stacks with resources (the add-on
+  // tree) and pgcluster / shopapi / demo whose clusterName is this cluster.
+  // Read-only; a read that fails counts nothing.
+  async function stacksOn(cluster) {
+    const found = [];
+    const tree = addons?.view ? await addons.view({ fresh: true }).catch(() => null) : null;
+    const node = tree?.tree?.find((item) => item.cluster === cluster);
+    for (const item of node?.addons || []) if (item.state === "installed") found.push(`${item.id}-${cluster}`);
+    if (upgrade?.dependentsOf) found.push(...(await upgrade.dependentsOf(cluster).catch(() => [])));
+    return found;
+  }
+
   function keepSlos(view) {
     lastSlos = (view?.vaults || []).flatMap((vault) => (vault.slos || []).map((slo) => ({ vault: vault.name || vault.key, name: slo.name, flag: slo.flag, fast: slo.fast, burn: slo.burn, owned: vault.owned || [] })));
   }
@@ -793,6 +805,9 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       const started = upgrade.addonBatch({ cluster, ids: plan.order, legacyName, onDone: () => addons?.forget?.() });
       return { ...started, plan };
     },
+    async stacksOn(cluster) {
+      return stacksOn(cluster);
+    },
     async upgradeLog(module = "", values = {}) {
       return upgrade?.logFor ? upgrade.logFor(module, values) : null;
     },
@@ -825,12 +840,25 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
           clusters = listed.names;
         }
         const legacyName = body.module === "eks" && upgrade.legacyCluster ? await upgrade.legacyCluster() : undefined;
+        // Ordering: a cluster is not taken down under the stacks that run on
+        // it (add-ons, pgcluster, shopapi, demo) unless the name is typed
+        // with " anyway".
+        let params = body.params || {};
+        if (body.module === "eks" && body.action === "destroy") {
+          const typed = String(params.confirmName || "").trim();
+          const target = String(params.clusterName || "cloudspider-up");
+          if (/\sanyway$/i.test(typed)) params = { ...params, confirmName: typed.replace(/\s+anyway$/i, "") };
+          else if (validCluster(target) && [target, target === (legacyName || "cloudspider-up") ? "upgrade" : `eks-${target}`].includes(typed)) {
+            const still = await stacksOn(target);
+            if (still.length) return no(`${target} still has stacks on it: ${still.join(", ")}. Take them down first (their cards), or type "${target} anyway"`);
+          }
+        }
         // "with add-ons": after the cluster is DONE, CONNECT, then the bundle.
         const withAddons = body.module === "eks" && body.action === "up" && Array.isArray(body.withAddons) ? body.withAddons.map(String).filter((id) => BUNDLE_IDS.has(id)) : [];
         const cluster = String(body.params?.clusterName || "");
         const started = upgrade.run({
           module: body.module,
-          params: body.params || {},
+          params,
           action: body.action,
           clusters,
           legacyName,
