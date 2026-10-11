@@ -90,6 +90,19 @@ test("CloudWatch series become counts: ALB 5XX over requests, Lambda errors over
   assert.equal(countsFromMetrics({ sli: "availability", source: "ec2" }, hits), null);
 });
 
+test("an ALB with no healthy target: its own 503s count although RequestCount leaves them out", () => {
+  const points = (list) => list;
+  const hit = { kind: "alb", series: [
+    { metric: "RequestCount", points: points([1000, 1000, 0, 0]) },
+    { metric: "HTTPCode_ELB_5XX_Count", points: points([0, 0, 1200, 1189]) },
+    { metric: "HTTPCode_Target_5XX_Count", points: points([0, 0, 0, 0]) },
+  ] };
+  const alb = countsFromMetrics({ sli: "availability", source: "alb" }, [hit]);
+  assert.equal(alb.total, 4389);
+  assert.equal(alb.good, 2000);
+  assert.equal(alb.recent.total - alb.recent.good, 2389);
+});
+
 test("cluster reads: API answers, Ready nodes and new restarts per workload", () => {
   let now = Date.parse("2026-10-11T00:00:00Z");
   const ledger = createSloLedger({ clock: () => now });

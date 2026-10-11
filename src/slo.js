@@ -171,8 +171,11 @@ export function countsFromMetrics(slo, hits) {
   };
   if (kind === "alb") {
     if (slo.sli === "latency") return slots(series(target, "TargetResponseTime").map((p) => (p === 0 ? null : p)), (p) => p * 1000 <= slo.threshold);
-    const req = series(target, "RequestCount");
     const bad = series(target, "HTTPCode_ELB_5XX_Count").map((p, i) => (Number(p) || 0) + (Number(series(target, "HTTPCode_Target_5XX_Count")[i]) || 0));
+    // An ALB with no healthy target answers 503 itself and does not count
+    // those in RequestCount (live drill 2026-10-11: REQ 0, ELB 5XX 1189 in
+    // one 5 min period), so a period never holds fewer requests than errors.
+    const req = series(target, "RequestCount").map((p, i) => Math.max(Number(p) || 0, bad[i] || 0));
     const total = sum(req);
     const recentTotal = sum(req, recentFrom);
     return { good: Math.max(0, total - sum(bad)), total, span: req.length * PERIOD_MS, recent: { good: Math.max(0, recentTotal - sum(bad, recentFrom)), total: recentTotal } };
