@@ -1,0 +1,40 @@
+# Read-only extras the scorecard needs on top of AmazonEKSViewPolicy, for
+# the group the Stacks viewer role maps to. Apply once per cluster:
+#   kubectl apply -f scorecard/rbac/cloudspider-scanner.yaml
+# Verbs are get/list only; no Secrets, no pods/exec, no writes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cloudspider-scanner
+rules:
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterrolebindings, rolebindings, clusterroles, roles]
+    verbs: [get, list]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, list]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list]
+  - apiGroups: [wgpolicyk8s.io]
+    resources: [policyreports, clusterpolicyreports]
+    verbs: [get, list]
+  - apiGroups: [metrics.k8s.io]
+    resources: [nodes, pods]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cloudspider-scanner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cloudspider-scanner
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: Group
+    name: cloudspider-viewers

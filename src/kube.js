@@ -80,6 +80,11 @@ export const PATHS = {
   replicaSet: (ns, name) => `/apis/apps/v1/namespaces/${checkName(ns)}/replicasets/${checkName(name)}`,
   podMetricsOne: (ns, name) => `/apis/metrics.k8s.io/v1beta1/namespaces/${checkName(ns)}/pods/${checkName(name)}`,
   jobs: () => "/apis/batch/v1/jobs",
+  // Scorecard reads (src/score/collectors): policy objects and RBAC
+  // bindings. The viewer role may be denied some; a 403 is UNKNOWN there.
+  networkPolicies: () => "/apis/networking.k8s.io/v1/networkpolicies",
+  pdbs: () => "/apis/policy/v1/poddisruptionbudgets",
+  clusterRoleBindings: () => "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings",
   // Namespaced lists: all a Role bound in one namespace can read. A context
   // scoped to namespaces (kube-contexts.js) uses only these.
   nsPods: (ns) => `/api/v1/namespaces/${checkName(ns)}/pods`,
