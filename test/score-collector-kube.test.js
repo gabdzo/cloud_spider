@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { kubeWorkloads } from "../src/score/collectors/kube-workloads.js";
-import { deployment, fakeKube, freshCluster } from "./fixtures/fake-kube.js";
+import { kubeMetrics } from "../src/score/collectors/kube-metrics.js";
+import { ADDON_FOOTPRINT, deployment, fakeKube, freshCluster } from "./fixtures/fake-kube.js";
 
 const byKey = (records) => new Map(records.map((r) => [r.key, r]));
 
@@ -29,9 +30,19 @@ test("container facts: privileged, requests and readiness probe are read", async
   assert.deepEqual(web.containers[0], { name: "web", image: "web:2", privileged: true, runAsNonRoot: false, requests: { cpu: "100m", memory: null }, readinessProbe: true });
 });
 
+test("metrics API: absent on a fresh cluster, ok after metrics-server, denied stays denied", async () => {
+  const fresh = (await kubeMetrics.collect({ kube: fakeKube(freshCluster()) }))[0];
+  assert.deepEqual([fresh.status, fresh.fields.served], ["absent", false]);
+  const after = (await kubeMetrics.collect({ kube: fakeKube(ADDON_FOOTPRINT["metrics-server"](freshCluster())) }))[0];
+  assert.deepEqual([after.status, after.fields.served], ["ok", true]);
+  const denied = (await kubeMetrics.collect({ kube: fakeKube({ nodeMetrics: { forbidden: true } }) }))[0];
+  assert.equal(denied.status, "denied");
+});
+
 test("collectors only issue reads they declare", async () => {
   const kube = fakeKube(freshCluster());
   await kubeWorkloads.collect({ kube });
-  const declared = new Set(kubeWorkloads.reads.map((r) => r.replace("GET ", "")));
+  await kubeMetrics.collect({ kube });
+  const declared = new Set([...kubeWorkloads.reads, ...kubeMetrics.reads].map((r) => r.replace("GET ", "")));
   for (const call of kube.calls) assert.ok(declared.has(call), call);
 });
