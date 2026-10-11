@@ -29,7 +29,7 @@ export function roomRefusal(addon, room, cluster) {
   const need = addon?.podSlots || 0;
   if (!need || !room || room.free >= need) return "";
   const kinds = [...new Set(room.nodes.map((n) => (n.type ? `${n.type} holds ${n.max} pods` : `${n.max} pods per node`)))].join(", ");
-  return `${addon.title} needs ${need} free pod slots on ${cluster}, and its ${room.nodes.length} node${room.nodes.length === 1 ? "" : "s"} have ${room.free} (${room.used}/${room.capacity} in use${room.waiting ? `, ${room.waiting} already waiting` : ""}; ${kinds || "no ready node"}). Add a node first: RUN-ME §16, "Room for pods".`;
+  return `${addon.title} needs ${need} free pod slots on ${cluster}, and its ${room.nodes.length === 1 ? "1 node has" : `${room.nodes.length} nodes have`} ${room.free} (${room.used}/${room.capacity} in use${room.waiting ? `, ${room.waiting} already waiting` : ""}; ${kinds || "no ready node"}). Add a node first: RUN-ME §16, "Room for pods".`;
 }
 
 // The live read for the add-on program (GET nodes and pods with an
