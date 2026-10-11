@@ -23,6 +23,7 @@ export const FILES = new Set([
   "browser.js",
   "score/view.js",
   "netdebug/view.js",
+  "netdebug/walkthrough.js",
   "spend-view.js",
   "draw.js",
   "sprites.js",

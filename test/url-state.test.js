@@ -5,13 +5,21 @@ import { parseVaultHash } from "../src/vault-page.js";
 
 test("url state round-trips every piece", () => {
   const cases = [
-    { view: "", vault: null, sample: false, learn: "", stacks: "", lb: "", host: "" },
-    { view: "path", vault: null, sample: true, learn: "", stacks: "", lb: "arn:aws:elasticloadbalancing:eu-central-1:1:loadbalancer/app/web/abc", host: "shop.example.com" },
-    { view: "cluster", vault: null, sample: false, learn: "k8s/01-pods", stacks: "", lb: "", host: "" },
-    { view: "vaults", vault: "shop/api", sample: true, learn: "", stacks: "eks", lb: "", host: "" },
-    { view: "", vault: null, sample: false, learn: "", stacks: "1", lb: "", host: "" },
+    { view: "", vault: null, sample: false, learn: "", stacks: "", lb: "", host: "", debug: "", why: false },
+    { view: "path", vault: null, sample: true, learn: "", stacks: "", lb: "arn:aws:elasticloadbalancing:eu-central-1:1:loadbalancer/app/web/abc", host: "shop.example.com", debug: "", why: false },
+    { view: "cluster", vault: null, sample: false, learn: "k8s/01-pods", stacks: "", lb: "", host: "", debug: "", why: false },
+    { view: "vaults", vault: "shop/api", sample: true, learn: "", stacks: "eks", lb: "", host: "", debug: "", why: false },
+    { view: "", vault: null, sample: false, learn: "", stacks: "1", lb: "", host: "", debug: "", why: false },
   ];
   for (const state of cases) assert.deepEqual(parseUrlState(formatUrlState(state)), state);
+});
+
+test("a WHY? link runs DEBUG once: debug and why parse on the path view only and are not written back", () => {
+  const want = parseUrlState("#path?sample=1&debug=https%3A%2F%2Fweb.sample.test%2F&why=1");
+  assert.equal(want.debug, "https://web.sample.test/");
+  assert.equal(want.why, true);
+  assert.equal(parseUrlState("#cluster?debug=x&why=1").debug, "");
+  assert.equal(formatUrlState({ ...want }), "#path?sample=1");
 });
 
 test("the plain map has no hash; old hashes still parse", () => {

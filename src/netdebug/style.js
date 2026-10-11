@@ -126,7 +126,28 @@ export const ND_CSS = `
   #netdebug .nd-supports code { font-size: 10.5px; padding: 0 5px; border: 1px solid var(--n-line); color: var(--n-text2); }
   #netdebug .nd-next code { color: var(--n-text); overflow-wrap: anywhere; }
   #netdebug .nd-contra { color: var(--n-warn); }
-  #netdebug .nd-why { align-self: flex-start; margin-top: 2px; }
+  #netdebug .nd-whybtn { margin-left: auto; font-size: 10.5px; padding: 0 8px; color: var(--n-accent); border-color: var(--n-accent); }
+  #netdebug .nd-why { border: 1px solid var(--n-accent); background: var(--n-raised); padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 8px; }
+  #netdebug .nd-whyhead { display: flex; gap: 12px; align-items: baseline; }
+  #netdebug .nd-whyhead b { color: var(--n-accent); letter-spacing: .06em; }
+  #netdebug .nd-whyhead .nd-fold { margin-left: auto; }
+  #netdebug .nd-wsteps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  #netdebug .nd-wstep { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; position: relative; padding-bottom: 8px; }
+  #netdebug .nd-wstep::before { content: ""; position: absolute; left: 12px; top: 24px; bottom: 0; border-left: 1px dashed var(--n-strong); }
+  #netdebug .nd-wstep[data-last="1"]::before { display: none; }
+  #netdebug .nd-wn { width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--n-accent); color: var(--n-accent); font-weight: 600; background: var(--n-ink); }
+  #netdebug .nd-wstep[data-state="unknown"] .nd-wn { border-color: var(--n-warn); color: var(--n-warn); }
+  #netdebug .nd-wstep[data-last="1"] .nd-wn { background: var(--n-accent); color: var(--n-ink); }
+  #netdebug .nd-wbody { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  #netdebug .nd-wbody p { margin: 0; color: var(--n-text2); }
+  #netdebug .nd-supports code[data-status] { color: var(--n-tone); border-color: color-mix(in srgb, var(--n-tone) 55%, transparent); }
+  #netdebug .nd-wnext { font-size: 11px; color: var(--n-accent); }
+  #netdebug .nd-wverdict { border-left: 3px solid var(--n-accent); background: var(--n-ink); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  #netdebug .nd-wverdict > p { margin: 0; color: var(--n-text); font-weight: 500; }
+  #netdebug .nd-wverify { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 11.5px; color: var(--n-text2); }
+  #netdebug .nd-wverify .nd-lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--n-warn); }
+  #netdebug .nd-wverify[data-ok="1"] .nd-lamp { background: var(--n-ok); }
+  #netdebug .nd-wverify .nd-btn { margin-left: auto; }
   #netdebug .nd-drill { border: 1px solid var(--n-line); background: var(--n-raised); }
   #netdebug .nd-drill summary { display: flex; gap: 10px; align-items: center; padding: 6px 10px; cursor: pointer; list-style: none; }
   #netdebug .nd-drill summary::-webkit-details-marker { display: none; }
@@ -139,6 +160,9 @@ export const ND_CSS = `
 
   /* Pip-Boy: caps, glow, bracketed buttons. */
   :root:not([data-theme="pro"]) #netdebug { text-transform: uppercase; letter-spacing: .03em; box-shadow: inset 0 0 28px color-mix(in srgb, var(--n-text) 6%, transparent); }
+  :root:not([data-theme="pro"]) #netdebug .nd-wbody p, :root:not([data-theme="pro"]) #netdebug .nd-wverdict > p, :root:not([data-theme="pro"]) #netdebug .nd-wverify > span:not(.nd-label) { text-transform: none; }
+  :root:not([data-theme="pro"]) #netdebug .nd-why { box-shadow: inset 0 0 18px color-mix(in srgb, var(--n-accent) 10%, transparent); }
+  :root:not([data-theme="pro"]) #netdebug .nd-wn { box-shadow: 0 0 8px color-mix(in srgb, var(--n-accent) 40%, transparent); }
   :root:not([data-theme="pro"]) #netdebug .nd-url, :root:not([data-theme="pro"]) #netdebug code, :root:not([data-theme="pro"]) #netdebug .nd-next, :root:not([data-theme="pro"]) #netdebug .nd-drill li, :root:not([data-theme="pro"]) #netdebug .nd-finding p { text-transform: none; }
   :root:not([data-theme="pro"]) #netdebug .nd-title, :root:not([data-theme="pro"]) #netdebug .nd-verdict b, :root:not([data-theme="pro"]) #netdebug .nd-node .nd-glyph { text-shadow: 0 0 8px color-mix(in srgb, var(--n-tone, var(--n-accent)) 60%, transparent); }
   :root:not([data-theme="pro"]) #netdebug .nd-btn::before { content: "[ "; }
@@ -161,4 +185,7 @@ export const ND_CSS = `
   :root[data-theme="pro"] #netdebug .nd-finding { border-radius: 0 6px 6px 0; }
   :root[data-theme="pro"] #netdebug .nd-tbar { border-radius: 6px; }
   :root[data-theme="pro"] #netdebug .nd-copy { border-radius: 4px; }
+  :root[data-theme="pro"] #netdebug .nd-why { border-radius: 8px; }
+  :root[data-theme="pro"] #netdebug .nd-wn { border-radius: 50%; }
+  :root[data-theme="pro"] #netdebug .nd-wverdict { border-radius: 0 6px 6px 0; }
 `;
