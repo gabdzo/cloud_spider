@@ -2,11 +2,22 @@ import {
   CostExplorerClient,
   GetCostAndUsageCommand,
   GetCostAndUsageWithResourcesCommand,
+  GetCostForecastCommand,
 } from "@aws-sdk/client-cost-explorer";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { publicError } from "./aws.js";
 
 const REGION = "us-east-1";
 const DUST = 0.01;
+// Credits and refunds are their own record types in Cost Explorer. With a
+// promotional credit every service's UnblendedCost nets to about zero, so
+// the headline counts the charges and shows the credits beside them.
+const CREDIT_TYPES = new Set(["Credit", "Refund"]);
+const NOT_CREDITS = { Not: { Dimensions: { Key: "RECORD_TYPE", Values: [...CREDIT_TYPES] } } };
+// Every Cost Explorer request is billed ($0.01), so a bill is kept on disk
+// too: a server restart (RUN-ME's after-pull routine) does not read it again.
+export const COST_TTL = 6 * 60 * 60 * 1000;
 const MONTHS = [
   "January",
   "February",
@@ -43,6 +54,7 @@ export function formatAmount(value, unit) {
 export const SERVICE_ICON = {
   "Amazon Elastic Load Balancing": "lb",
   "Amazon Elastic Kubernetes Service": "cluster",
+  "Amazon Elastic Container Service for Kubernetes": "cluster",
   "Amazon Elastic Compute Cloud - Compute": "ec2",
   "Amazon Elastic Compute Cloud": "ec2",
   "EC2 - Other": "ec2",
@@ -65,15 +77,18 @@ export function shortService(service) {
   return String(service || "unknown").replace(/^(Amazon|AWS)\s+/, "").replace(/^Elastic Compute Cloud/, "EC2");
 }
 
+// Cost Explorer's own service names: EKS bills as "Amazon Elastic Container
+// Service for Kubernetes", not "Amazon Elastic Kubernetes Service".
 export const RESOURCE_SERVICES = [
   "Amazon Elastic Load Balancing",
-  "Amazon Elastic Kubernetes Service",
+  "Amazon Elastic Container Service for Kubernetes",
   "Amazon Elastic Compute Cloud - Compute",
 ];
 
 const SERVICE_SHORT = {
   "Amazon Elastic Load Balancing": "ELB",
   "Amazon Elastic Kubernetes Service": "EKS",
+  "Amazon Elastic Container Service for Kubernetes": "EKS",
   "Amazon Elastic Compute Cloud - Compute": "EC2",
   "Amazon Elastic Compute Cloud": "EC2",
   "EC2 - Other": "EC2 other",
@@ -111,18 +126,27 @@ export function resourceWindow(now = new Date()) {
   return { start: stamp(start), end: stamp(end) };
 }
 
-export function shapeCost(pages, window) {
+// GetCostAndUsage grouped by SERVICE and RECORD_TYPE. Charges (Usage, Tax,
+// Support, fees) make the headline; Credit and Refund rows are summed apart.
+// A page grouped by SERVICE alone counts as charges.
+export function shapeCost(pages, window, { dataThrough = "" } = {}) {
   const totals = new Map();
+  let creditValue = 0;
+  let estimated = false;
   for (const page of pages) {
     for (const period of page.ResultsByTime || []) {
+      if (period.Estimated) estimated = true;
       for (const group of period.Groups || []) {
         const metric = group.Metrics?.UnblendedCost;
         if (!metric) continue;
         const value = Number(metric.Amount);
         if (!Number.isFinite(value)) continue;
         const service = group.Keys?.[0] || "unknown";
-        const prev = totals.get(service) || { service, value: 0, unit: metric.Unit || "" };
-        prev.value += value;
+        const prev = totals.get(service) || { service, value: 0, credit: 0, unit: metric.Unit || "" };
+        if (CREDIT_TYPES.has(group.Keys?.[1])) {
+          prev.credit += value;
+          creditValue += value;
+        } else prev.value += value;
         if (!prev.unit && metric.Unit) prev.unit = metric.Unit;
         totals.set(service, prev);
       }
@@ -131,8 +155,10 @@ export function shapeCost(pages, window) {
   const kept = [...totals.values()].filter((row) => Math.abs(row.value) >= DUST);
   kept.sort((a, b) => b.value - a.value || a.service.localeCompare(b.service));
   const month = MONTHS[Number(window.start.slice(5, 7)) - 1] || "";
-  const note = `account, not this region. ${month}, estimated, about a day behind.`;
-  const base = { month, scope: "account", start: window.start, end: window.end };
+  const through = dataThrough ? `data through ${MONTHS[Number(dataThrough.slice(5, 7)) - 1]?.slice(0, 3)} ${Number(dataThrough.slice(8, 10))} (UTC)` : "about a day behind";
+  const note = `account, not this region. ${month}, ${estimated ? "estimated, " : ""}${through}.`;
+  const base = { month, scope: "account", start: window.start, end: window.end, estimated, dataThrough };
+  const credit = Math.abs(creditValue) >= DUST ? { value: Math.round(creditValue * 100) / 100, amount: formatAmount(creditValue, "USD") } : null;
   if (!kept.length) {
     return {
       ...base,
@@ -140,17 +166,20 @@ export function shapeCost(pages, window) {
       total: "$0.00",
       totalValue: 0,
       unit: "USD",
+      credit,
+      net: "$0.00",
+      netValue: 0,
       pace: monthPace(window, 0),
       rows: [],
       lines: [note, "no charge above $0.01 yet"],
     };
   }
   const sameUnit = kept.every((row) => row.unit === kept[0].unit);
-  const total = formatAmount(
-    kept.reduce((sum, row) => sum + row.value, 0),
-    sameUnit ? kept[0].unit : "",
-  );
-  const totalValue = Math.round(kept.reduce((sum, row) => sum + row.value, 0) * 100) / 100;
+  const unit = sameUnit ? kept[0].unit : "";
+  const sum = kept.reduce((acc, row) => acc + row.value, 0);
+  const total = formatAmount(sum, unit);
+  const totalValue = Math.round(sum * 100) / 100;
+  const netValue = Math.round((sum + (credit ? creditValue : 0)) * 100) / 100;
   const rows = kept.map((row) => ({
     service: row.service,
     short: shortService(row.service),
@@ -158,17 +187,45 @@ export function shapeCost(pages, window) {
     value: Math.round(row.value * 100) / 100,
     unit: row.unit,
     amount: formatAmount(row.value, row.unit),
+    ...(Math.abs(row.credit) >= DUST ? { credit: Math.round(row.credit * 100) / 100, creditAmount: formatAmount(row.credit, row.unit) } : {}),
   }));
+  const tail = credit ? [align("credits", credit.amount), align("you pay", formatAmount(netValue, unit))] : [];
   return {
     ...base,
     totalValue,
-    unit: sameUnit ? kept[0].unit : "",
-    pace: sameUnit && kept[0].unit === "USD" ? monthPace(window, totalValue) : monthPace(window, 0),
+    unit,
+    credit,
+    net: formatAmount(netValue, unit),
+    netValue,
+    pace: sameUnit && unit === "USD" ? monthPace(window, totalValue) : monthPace(window, 0),
     label: `Cost ${total}`,
     total,
     rows,
-    lines: [note, ...rows.map((row) => align(row.service, row.amount)), align("total", total)],
+    lines: [note, ...rows.map((row) => align(row.service, row.amount)), align("charges", total), ...tail],
   };
+}
+
+// The newest day a DAILY read has any amount for (Cost Explorer runs about
+// a day behind; today is usually empty).
+export function lastDataDay(pages) {
+  let last = "";
+  for (const page of pages) {
+    for (const period of page.ResultsByTime || []) {
+      const day = period.TimePeriod?.Start || "";
+      const any = (period.Groups || []).some((group) => Number(group.Metrics?.UnblendedCost?.Amount) !== 0);
+      if (any && day > last) last = day;
+    }
+  }
+  return last;
+}
+
+// The month's end, from GetCostForecast for what is left of the month plus
+// the month so far. A young account has no forecast (DataUnavailable): the
+// panel keeps its straight line and says why.
+export function forecastWindow(now = new Date()) {
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  return { start: stamp(start), end: stamp(end) };
 }
 
 export function shapeResources(service, pages) {
@@ -267,11 +324,15 @@ export function sampleCost(now = new Date()) {
   };
 }
 
-export function createCost({ client, now = () => new Date() } = {}) {
+export function createCost({ client, now = () => new Date(), cacheFile = "", ttl = COST_TTL } = {}) {
   const ce = client || new CostExplorerClient({ region: REGION });
   return {
     sample: sampleCost,
     async read() {
+      if (cacheFile) {
+        const kept = await loadCache(cacheFile, now(), ttl);
+        if (kept) return kept;
+      }
       const window = monthWindow(now());
       let pages;
       try {
@@ -281,7 +342,10 @@ export function createCost({ client, now = () => new Date() } = {}) {
               TimePeriod: { Start: window.start, End: window.end },
               Granularity: "MONTHLY",
               Metrics: ["UnblendedCost"],
-              GroupBy: [{ Type: "DIMENSION", Key: "SERVICE" }],
+              GroupBy: [
+                { Type: "DIMENSION", Key: "SERVICE" },
+                { Type: "DIMENSION", Key: "RECORD_TYPE" },
+              ],
               ...(token ? { NextPageToken: token } : {}),
             }),
           ),
@@ -289,9 +353,9 @@ export function createCost({ client, now = () => new Date() } = {}) {
       } catch (error) {
         return costFailure(error);
       }
-      const bill = shapeCost(pages, window);
       const span = resourceWindow(now());
       const blocks = [];
+      const dailyPages = [];
       for (const service of RESOURCE_SERVICES) {
         try {
           const resourcePages = await collect((token) =>
@@ -300,12 +364,14 @@ export function createCost({ client, now = () => new Date() } = {}) {
                 TimePeriod: { Start: span.start, End: span.end },
                 Granularity: "DAILY",
                 Metrics: ["UnblendedCost"],
-                Filter: { Dimensions: { Key: "SERVICE", Values: [service] } },
+                // Charges only: the credit would net each resource to zero.
+                Filter: { And: [{ Dimensions: { Key: "SERVICE", Values: [service] } }, NOT_CREDITS] },
                 GroupBy: [{ Type: "DIMENSION", Key: "RESOURCE_ID" }],
                 ...(token ? { NextPageToken: token } : {}),
               }),
             ),
           );
+          dailyPages.push(...resourcePages);
           blocks.push({ service, rows: shapeResources(service, resourcePages) });
         } catch (error) {
           blocks.push({ service, error: costFailure(error, "GetCostAndUsageWithResources").error });
@@ -315,9 +381,55 @@ export function createCost({ client, now = () => new Date() } = {}) {
       // meet a bill row to an object on the map.
       const resources = blocks.flatMap((block) => block.rows || []);
       const resourceErrors = Object.fromEntries(blocks.filter((block) => block.error).map((block) => [block.service, block.error]));
-      return { ...bill, lines: [...bill.lines, ...resourceLines(blocks)], resources, resourceErrors, resourceStart: span.start, resourceEnd: span.end };
+      const bill = shapeCost(pages, window, { dataThrough: lastDataDay(dailyPages) });
+      bill.forecast = bill.unit === "USD" ? await readForecast(ce, now(), bill.totalValue) : null;
+      const result = { ...bill, lines: [...bill.lines, ...resourceLines(blocks)], resources, resourceErrors, resourceStart: span.start, resourceEnd: span.end, readAt: now().toISOString() };
+      if (cacheFile) await saveCache(cacheFile, now(), result);
+      return result;
     },
   };
+}
+
+async function readForecast(ce, at, monthToDate) {
+  const span = forecastWindow(at);
+  try {
+    const out = await ce.send(
+      new GetCostForecastCommand({
+        TimePeriod: { Start: span.start, End: span.end },
+        Granularity: "MONTHLY",
+        Metric: "UNBLENDED_COST",
+        Filter: NOT_CREDITS,
+      }),
+    );
+    const rest = Number(out?.Total?.Amount);
+    if (!Number.isFinite(rest)) return { value: null, note: "no forecast in the answer" };
+    const value = Math.round((monthToDate + rest) * 100) / 100;
+    return { value, amount: formatAmount(value, "USD"), note: "AWS forecast, charges before credits" };
+  } catch (error) {
+    const name = error?.name || "";
+    const note = name === "DataUnavailableException" ? "AWS has too little history to forecast yet" : `no forecast (${publicError(error).error})`;
+    return { value: null, note };
+  }
+}
+
+async function loadCache(file, at, ttl) {
+  try {
+    const kept = JSON.parse(await readFile(file, "utf8"));
+    const age = at.getTime() - Date.parse(kept.readAt || "");
+    if (!(age >= 0 && age < ttl) || kept.error) return null;
+    return kept;
+  } catch {
+    return null;
+  }
+}
+
+async function saveCache(file, at, bill) {
+  try {
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify(bill));
+  } catch {
+    // A read-only checkout still shows the bill; it is only read again.
+  }
 }
 
 async function collect(send) {

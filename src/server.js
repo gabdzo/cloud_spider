@@ -888,6 +888,7 @@ const page = `<!doctype html>
     background: var(--pip-mid); border-radius: 2px; box-shadow: 0 0 0 1px #000, 0 0 8px var(--glow-soft);
   }
   .sp-pace { margin: 0; padding: 7px 14px; font-size: 11px; color: var(--pip-bright); border-bottom: 1px dashed var(--pip-dark); font-variant-numeric: tabular-nums; }
+  .sp-credits { color: var(--case-brass); }
   .sp-sec { padding: 8px 14px 2px; }
   .sp-sec h3 { margin: 0 0 6px; font-size: 10px; font-weight: normal; letter-spacing: 0.18em; color: var(--pip-dim); display: flex; align-items: center; gap: 8px; }
   .sp-sec h3::after { content: ""; flex: 1; border-top: 1px solid var(--pip-dark); }

@@ -744,7 +744,7 @@ export function nextIdleStreak(prev, ids, read) {
   return next;
 }
 
-const BILL_SERVICE = { alb: "Amazon Elastic Load Balancing", eks: "Amazon Elastic Kubernetes Service" };
+const BILL_SERVICE = { alb: "Amazon Elastic Load Balancing", eks: "Amazon Elastic Container Service for Kubernetes" };
 
 function billFor(bill, item, kind) {
   if (!bill || bill.error || !Array.isArray(bill.resources)) return { checked: false };

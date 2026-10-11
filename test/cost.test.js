@@ -11,7 +11,13 @@ import {
   sampleCost,
   shapeCost,
   shapeResources,
+  lastDataDay,
+  forecastWindow,
 } from "../src/cost.js";
+import { mkdtemp, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spendModel } from "../src/spend-view.js";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -138,8 +144,11 @@ test("GetCostAndUsage follows NextPageToken and a sample never calls the client"
   assert.equal(resourceCalls[0].Granularity, "DAILY");
   assert.equal(resourceCalls[0].TimePeriod.Start, "2026-09-27");
   assert.equal(resourceCalls[0].TimePeriod.End, "2026-10-11");
-  assert.equal(resourceCalls[0].Filter.Dimensions.Key, "SERVICE");
-  assert.equal(resourceCalls[0].Filter.Dimensions.Values[0], "Amazon Elastic Load Balancing");
+  assert.equal(resourceCalls[0].Filter.And[0].Dimensions.Key, "SERVICE");
+  assert.equal(resourceCalls[0].Filter.And[0].Dimensions.Values[0], "Amazon Elastic Load Balancing");
+  // Credits are not resource costs: they only add negative NoResourceId rows.
+  assert.deepEqual(resourceCalls[0].Filter.And[1], { Not: { Dimensions: { Key: "RECORD_TYPE", Values: ["Credit", "Refund"] } } });
+  assert.deepEqual(serviceCalls[0].GroupBy, [{ Type: "DIMENSION", Key: "SERVICE" }, { Type: "DIMENSION", Key: "RECORD_TYPE" }]);
   assert.equal(bill.rows[0].amount, "$1.20");
   assert.equal(bill.rows[1].amount, "$0.40");
   assert.equal(bill.total, "$1.60");
@@ -152,7 +161,7 @@ test("a resource read keeps the month total when one service is denied", async (
     client: {
       async send(command) {
         if (command.input.GroupBy?.[0]?.Key === "RESOURCE_ID") {
-          if (command.input.Filter.Dimensions.Values[0] === "Amazon Elastic Load Balancing") {
+          if (command.input.Filter.And[0].Dimensions.Values[0] === "Amazon Elastic Load Balancing") {
             throw new Error("not enabled yet");
           }
           return page([
@@ -171,7 +180,7 @@ test("a resource read keeps the month total when one service is denied", async (
   assert.match(bill.lines.join("\n"), /ELB: not enabled yet/);
   // The morning meets bill rows to objects by the raw resource id.
   assert.match(bill.resourceErrors["Amazon Elastic Load Balancing"], /not enabled yet/);
-  assert.ok(bill.resources.some((row) => row.id.endsWith("app/cloudspider-api/abc") && row.service === "Amazon Elastic Kubernetes Service"));
+  assert.ok(bill.resources.some((row) => row.id.endsWith("app/cloudspider-api/abc") && row.service === "Amazon Elastic Container Service for Kubernetes"));
   assert.match(bill.lines.join("\n"), /GetCostAndUsageWithResources/);
   assert.match(bill.lines.join("\n"), /EKS cloudspider-api/);
   assert.match(bill.lines.join("\n"), /\$0\.50/);
@@ -352,4 +361,133 @@ test("the CAPS panel model: credits, duplicate names, pace and the empty and err
   const sample = spendModel(sampleCost(new Date("2026-10-11T00:00:00Z")));
   assert.equal(sample.head.scope, "SAMPLE");
   assert.ok(sample.resources.some((row) => row.credit));
+});
+
+// Shaped like a real October answer for an account on a promotional credit:
+// GroupBy SERVICE x RECORD_TYPE, every Usage group matched by a Credit group.
+// Amounts and service names only; no account ids.
+const REAL_USAGE = [
+  ["Amazon Elastic Container Service for Kubernetes", "3.037951998"],
+  ["AWS Cost Explorer", "0.72"],
+  ["Amazon Elastic Load Balancing", "0.3591"],
+  ["EC2 - Other", "0.0664777765"],
+  ["Amazon Simple Storage Service", "0.0438610741"],
+  ["AmazonCloudWatch", "0.02669"],
+  ["Amazon Elastic Compute Cloud - Compute", "0.0258561451"],
+  ["Amazon Virtual Private Cloud", "0.015861115"],
+  ["AWS Secrets Manager", "0.0032009702"],
+  ["Amazon DynamoDB", "0.000002279"],
+  ["AWS Lambda", "0"],
+];
+
+function typed(service, type, amount) {
+  return { Keys: [service, type], Metrics: { UnblendedCost: { Amount: String(amount), Unit: "USD" } } };
+}
+
+function creditedMonth() {
+  const groups = [];
+  for (const [service, amount] of REAL_USAGE) {
+    groups.push(typed(service, "Usage", amount));
+    if (Number(amount)) groups.push(typed(service, "Credit", -Number(amount)));
+  }
+  groups.push(typed("AWS Data Transfer", "Credit", "-0.000000477"));
+  return { ResultsByTime: [{ TimePeriod: { Start: "2026-10-01", End: "2026-10-12" }, Total: {}, Groups: groups, Estimated: true }], DimensionValueAttributes: [] };
+}
+
+function dailyResources() {
+  const day = (start, groups) => ({ TimePeriod: { Start: start }, Total: {}, Groups: groups, Estimated: true });
+  const lb = "arn:aws:elasticloadbalancing:eu-north-1:1:loadbalancer/app/cloudspider-api/abc";
+  const row = (id, amount) => ({ Keys: [id], Metrics: { UnblendedCost: { Amount: String(amount), Unit: "USD" } } });
+  return { ResultsByTime: [day("2026-10-09", [row(lb, "0.10")]), day("2026-10-10", [row(lb, "0.24")]), day("2026-10-11", [])] };
+}
+
+function realClient(log, { forecast = "unavailable" } = {}) {
+  return {
+    async send(command) {
+      const name = command.constructor.name;
+      log.push({ name, input: command.input });
+      if (name === "GetCostForecastCommand") {
+        if (forecast === "unavailable") {
+          const error = new Error("Insufficient amount of historical data to generate forecast.");
+          error.name = "DataUnavailableException";
+          throw error;
+        }
+        return { Total: { Amount: String(forecast), Unit: "USD" } };
+      }
+      if (command.input.GroupBy?.[0]?.Key === "RESOURCE_ID") {
+        if (command.input.Filter.And[0].Dimensions.Values[0] === "Amazon Elastic Load Balancing") return dailyResources();
+        return { ResultsByTime: [] };
+      }
+      return creditedMonth();
+    },
+  };
+}
+
+test("a promotional credit no longer hides the bill: charges are the headline, credits apart", async () => {
+  const log = [];
+  const bill = await createCost({ client: realClient(log), now: () => new Date("2026-10-11T08:00:00Z") }).read();
+  // Before the fix every service netted to $0 and the panel said "Cost $0.00".
+  assert.equal(bill.label, "Cost $4.30");
+  assert.equal(bill.total, "$4.30");
+  assert.equal(bill.credit.amount, "−$4.30");
+  assert.equal(bill.net, "$0.00");
+  assert.equal(bill.rows[0].short, "EKS");
+  assert.equal(bill.rows[0].amount, "$3.04");
+  assert.equal(bill.rows[1].service, "AWS Cost Explorer");
+  assert.equal(bill.rows[1].amount, "$0.72");
+  assert.ok(!bill.rows.some((row) => row.service === "AWS Data Transfer"), "a credit-only crumb is not a charge row");
+  assert.match(bill.lines.join("\n"), /credits\s+−\$4\.30/);
+  assert.match(bill.lines.join("\n"), /you pay\s+\$0\.00/);
+  // Freshness is the newest day with data, not "today".
+  assert.equal(bill.dataThrough, "2026-10-10");
+  assert.match(bill.lines[0], /October, estimated, data through Oct 10 \(UTC\)/);
+  // Forecast: too little history is said plainly, not an error.
+  assert.equal(bill.forecast.value, null);
+  assert.match(bill.forecast.note, /too little history/);
+  const forecastCall = log.find((entry) => entry.name === "GetCostForecastCommand");
+  assert.equal(forecastCall.input.Metric, "UNBLENDED_COST");
+  assert.equal(forecastCall.input.TimePeriod.Start, "2026-10-11");
+  assert.equal(forecastCall.input.TimePeriod.End, "2026-11-01");
+  // One month read, three resource reads, one forecast: five billed calls.
+  assert.equal(log.length, 5);
+  // Resource rows stay optional detail.
+  assert.ok(bill.resources.some((row) => row.resource === "cloudspider-api" && row.amount === "$0.34"));
+
+  const model = spendModel(bill);
+  assert.equal(model.head.total, "$4.30");
+  assert.equal(model.head.caption, "estimated · data through Oct 10 UTC");
+  assert.equal(model.head.credits, "credits −$4.30 · you pay $0.00");
+  assert.match(model.pace, /straight line: AWS has too little history/);
+});
+
+test("an AWS forecast replaces the straight line when Cost Explorer has one", async () => {
+  const bill = await createCost({ client: realClient([], { forecast: "9.10" }), now: () => new Date("2026-10-11T08:00:00Z") }).read();
+  assert.equal(bill.forecast.amount, "$13.40");
+  const model = spendModel(bill);
+  assert.match(model.pace, /^AWS forecast \$13\.40 by Oct 31 · charges before credits$/);
+  assert.deepEqual(forecastWindow(new Date("2026-10-31T23:00:00Z")), { start: "2026-10-31", end: "2026-11-01" });
+});
+
+test("the bill is cached on disk so a restart does not pay Cost Explorer again", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "cost-cache-"));
+  const cacheFile = join(dir, "nested", "cost-cache.json");
+  let clock = new Date("2026-10-11T08:00:00Z");
+  const log = [];
+  const first = await createCost({ client: realClient(log), now: () => clock, cacheFile }).read();
+  assert.equal(log.length, 5);
+  assert.equal(JSON.parse(await readFile(cacheFile, "utf8")).total, "$4.30");
+  // A new process (fresh createCost) within the hour reuses the file.
+  clock = new Date("2026-10-11T13:00:00Z");
+  const again = await createCost({ client: realClient(log), now: () => clock, cacheFile }).read();
+  assert.equal(log.length, 5);
+  assert.equal(again.total, first.total);
+  // After the TTL it reads again.
+  clock = new Date("2026-10-11T14:30:00Z");
+  await createCost({ client: realClient(log), now: () => clock, cacheFile }).read();
+  assert.equal(log.length, 10);
+});
+
+test("lastDataDay is the newest day with a non-zero amount", () => {
+  assert.equal(lastDataDay([dailyResources()]), "2026-10-10");
+  assert.equal(lastDataDay([]), "");
 });
