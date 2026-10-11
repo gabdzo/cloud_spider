@@ -1231,7 +1231,7 @@ function drawPath() {
     animTime,
     width,
     height,
-    empty: pathData?.headline || pathData?.error || "reading the path",
+    empty: pathData?.headline || pathData?.error || pathFailure || "reading the path",
     reducedMotion,
   });
 }
@@ -1422,7 +1422,7 @@ function drawCluster() {
     animTime,
     width,
     height,
-    empty: clusterData?.headline || clusterData?.error || "reading the cluster",
+    empty: clusterData?.headline || clusterData?.error || clusterFailure || "reading the cluster",
     reducedMotion,
   });
 }
@@ -1690,17 +1690,19 @@ async function pullPath() {
     return;
   }
   pathPulling = true;
+  pathFailure = "";
   const wasSample = sample;
   const asked = pathQuery();
   try {
     const response = await fetch(`${wasSample ? "/api/path-sample" : "/api/path"}?${asked}`);
-    const body = await response.json();
+    const body = await readBody(response);
     if (body.stale || mode !== "path" || wasSample !== sample) return;
     if (pathQuery() !== asked) {
       pathAgain = true;
       return;
     }
     pathData = body;
+    pathFailure = "";
     syncLoadBalancers(body.loadBalancers || [], body.selected || "");
     if (pathSelected && !body.diagram?.nodes?.some((node) => node.id === pathSelected)) pathSelected = null;
     setStatus(ui, body.error ? "" : pathStatus(body));
@@ -1708,9 +1710,13 @@ async function pullPath() {
     errorEl.textContent = body.error || "";
     renderChrome();
     draw();
-  } catch {
+  } catch (error) {
+    if (mode !== "path") return;
+    setStatus(ui, "");
     errorEl.hidden = false;
-    errorEl.textContent = "the page failed";
+    errorEl.textContent = `the path did not come back: ${error.message || "the page failed"}`;
+    pathFailure = "the path did not come back. Check the server log, then pick a load balancer or paste a host to try again.";
+    draw();
   } finally {
     pathPulling = false;
     if (pathAgain) {
@@ -1720,20 +1726,43 @@ async function pullPath() {
   }
 }
 
-function dropSample() {
-  if (!sample) return;
-  sample = false;
-  ui.sample = false;
-  regionSelect.disabled = false;
-  // Forget the sample camp and stations at once; the live ones arrive with
-  // the next pull, and until then the screen must not pass sample off as LIVE.
+// A view read that failed on the server (a 500 with a status line, or not
+// JSON at all) must say so instead of leaving "reading the ..." up forever.
+let pathFailure = "";
+let clusterFailure = "";
+
+async function readBody(response) {
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!response.ok) throw new Error(body?.error || body?.status || `HTTP ${response.status}`);
+  if (!body || typeof body !== "object") throw new Error("the answer was not readable");
+  return body;
+}
+
+// SAMPLE is one switch for the whole device: it stays on across Map, Path
+// and Cluster. Coming back to the map in sample mode redraws the sample camp
+// (Path or Cluster may have switched sample on without ever loading it).
+async function restoreSampleMap() {
   place = null;
-  setRadio(ui, "");
-  setTrail(ui, []);
-  kubeRows = [];
-  mapKube.models = new Map();
-  mapKube.sig = "";
-  ++mapKube.ticket;
+  draw();
+  try {
+    const response = await fetch("/api/sample");
+    const body = await readBody(response);
+    if (!body.place) throw new Error("the page failed");
+    sampleTrail = body.trail || sampleTrail;
+    sampleMorningData = body.morning || sampleMorningData;
+    if (!sample || mode !== "map") return;
+    setTrail(ui, sampleTrail);
+    showSample(body.place);
+    queueSpend();
+  } catch {
+    if (!sample || mode !== "map") return;
+    leaveSample();
+  }
 }
 
 // The radio panel remembers whether it is open per view; the path needs the
@@ -1747,7 +1776,6 @@ function showRadioFor(next) {
 
 function enterPath() {
   dropVaultRoute();
-  dropSample();
   showRadioFor("path");
   mode = "path";
   clusterData = null;
@@ -1765,15 +1793,18 @@ function enterPath() {
 }
 
 function leavePath() {
-  dropSample();
   showRadioFor("map");
   mode = "map";
   pathData = null;
   pathSelected = null;
   lbSelect.hidden = true;
   hostInput.hidden = true;
-  setStatus(ui, "");
+  setStatus(ui, sample ? "sample, not the account" : "");
   renderChrome();
+  if (sample) {
+    restoreSampleMap();
+    return;
+  }
   pull();
   queueSpend();
 }
@@ -1784,12 +1815,14 @@ async function pullCluster() {
     return;
   }
   clusterPulling = true;
+  clusterFailure = "";
   const wasSample = sample;
   try {
     const response = await fetch(wasSample ? "/api/cluster-sample" : "/api/cluster");
-    const body = await response.json();
+    const body = await readBody(response);
     if (body.stale || mode !== "cluster" || wasSample !== sample) return;
     clusterData = body;
+    clusterFailure = "";
     if (clusterSelected && !body.diagram?.nodes?.some((node) => node.id === clusterSelected)) clusterSelected = null;
     applyClusterFocus();
     setStatus(ui, body.error ? "" : body.headline || (wasSample ? "sample, not the account" : ""));
@@ -1797,9 +1830,13 @@ async function pullCluster() {
     errorEl.textContent = body.error || "";
     renderChrome();
     draw();
-  } catch {
+  } catch (error) {
+    if (mode !== "cluster") return;
+    setStatus(ui, "");
     errorEl.hidden = false;
-    errorEl.textContent = "the page failed";
+    errorEl.textContent = `the cluster did not come back: ${error.message || "the page failed"}`;
+    clusterFailure = "the cluster did not come back. Check the server log and the kube context, then press CLUSTER again.";
+    draw();
   } finally {
     clusterPulling = false;
     if (clusterAgain) {
@@ -1811,8 +1848,7 @@ async function pullCluster() {
 
 function enterCluster() {
   dropVaultRoute();
-  // From a map compound in sample mode the Cluster view stays a sample.
-  if (!mapKube.keepSample) dropSample();
+  // Sample stays on across views (from a map compound as from the tab).
   mapKube.keepSample = false;
   showRadioFor("cluster");
   mode = "cluster";
@@ -1831,17 +1867,20 @@ function enterCluster() {
 }
 
 function leaveCluster() {
-  dropSample();
   showRadioFor("map");
   mode = "map";
   clusterData = null;
   clusterSelected = null;
   showPod(null);
-  setStatus(ui, "");
+  setStatus(ui, sample ? "sample, not the account" : "");
   renderChrome();
+  mapKube.focus = null;
+  if (sample) {
+    restoreSampleMap();
+    return;
+  }
   pull();
   queueSpend();
-  mapKube.focus = null;
   setTimeout(pullMapKube, 0);
 }
 
@@ -1879,6 +1918,13 @@ async function toggleSample() {
     }
     renderChrome();
     draw();
+    if (!sample) {
+      place = null;
+      kubeRows = [];
+      mapKube.models = new Map();
+      mapKube.sig = "";
+      ++mapKube.ticket;
+    }
     if (mode === "path") pullPath();
     else pullCluster();
     if (!sample) pull();
