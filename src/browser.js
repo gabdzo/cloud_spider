@@ -29,7 +29,7 @@ import { renderTelemetry } from "./tele-view.js";
 import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
 import { addonCommands, confirmPrompt, upgradeSpiderLine } from "./upgrade-rules.js";
-import { numberProblem, radioLine, runModel } from "./run-pane.js";
+import { liveLine, numberProblem, radioLine, runModel } from "./run-pane.js";
 import { costFor, costLine, estimate } from "./stack-costs.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
@@ -3293,7 +3293,7 @@ function cardBody(spec, preset = {}) {
   body.append(el("div", { textContent: spec.note || "" }), costBlock(spec));
   if (spec.nodeCost) body.append(nodeCostBlock(spec.nodeCost));
   body.append(watch);
-  if (spec.id === "eks") body.append(connectRow("pip-connect"));
+  if (spec.id === "eks") body.append(connectRow("pip-connect"), el("div", { id: "pip-live", className: "live-line", hidden: true }, el("span", { className: "live-what" }), el("em", { className: "field-note live-warn" })));
   if (spec.id === "camp") {
     const grain = el("select", { id: "camp-grain" });
     for (const choice of ["coarse", "fine"]) {
@@ -3329,7 +3329,9 @@ function cardBody(spec, preset = {}) {
         pipKept[spec.id] = { ...(pipKept[spec.id] || {}), [parameter.name]: field.value };
       });
     }
+    if (spec.id === "eks" && parameter.name === "instanceType") field.addEventListener("change", () => paintLive());
     if (spec.id === "eks" && parameter.name === "clusterName") field.addEventListener("change", () => {
+      refreshLive(true);
       refreshConnect(true);
       refreshBundle(true);
     });
@@ -3760,6 +3762,7 @@ async function refreshUpgrade(fresh) {
   const query = new URLSearchParams({ module: openModule() });
   if (fresh) query.set("fresh", "1");
   if (openModule() === "eks" && (fresh || upgradeTicks % 10 === 0)) {
+    if (fresh) refreshLive(false);
     refreshConnect(fresh);
     refreshBundle(fresh);
   }
@@ -3795,10 +3798,18 @@ async function postUpgrade(action) {
     paintUpgrade({ action, stack: "", lines: [] });
     return;
   }
+  let replaceNodeGroup = false;
+  if (spec.id === "eks" && action === "up") {
+    const warn = liveLine(liveState.get(values.clusterName || ""), values).warn;
+    if (warn) {
+      if (!window.confirm(`${warn}.\n\nNew nodes come up and every pod on the old ones restarts. RUN anyway?`)) return;
+      replaceNodeGroup = true;
+    }
+  }
   const body = await upgradeJson("/api/upgrade", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ module: spec.id, action, params: pipParams(), ...(spec.id === "eks" && action === "up" && bundleWith ? { withAddons: bundlePicked(pipParams().clusterName || "") } : {}) }),
+    body: JSON.stringify({ module: spec.id, action, params: pipParams(), ...(replaceNodeGroup ? { replaceNodeGroup: true } : {}), ...(spec.id === "eks" && action === "up" && bundleWith ? { withAddons: bundlePicked(pipParams().clusterName || "") } : {}) }),
   });
   const line = upgradeSpiderLine({ action, title: spec.title, response: body });
   noteSpider(line.text, line.status);
@@ -3959,6 +3970,46 @@ function paintConnect(row, status, { onPress } = {}) {
   if (status.state === "clash-same") button("USE IT", "adopt", `one GET with ${status.adopt}; if it can read ${status.cluster}, Cloud Spider lists it (the kubeconfig is not touched)`);
   if (status.state === "connected" && status.ours) button("DISCONNECT", "disconnect", `remove ${status.alias} from ~/.kube/config and from Cloud Spider`);
   act.replaceChildren(...buttons);
+}
+
+// ---- LIVE (GET /api/upgrade/live): the EKS card's fields as the stack has
+// them, so RUN never changes the instance type (a node group replace) or the
+// node count by accident. Filled once per cluster; typing wins after that.
+const liveState = new Map();
+let liveSeq = 0;
+
+async function refreshLive(force = false) {
+  if (!pipOpen || openModule() !== "eks" || sample) return;
+  const cluster = pipParams().clusterName || "";
+  if (!cluster) return;
+  if (!force && liveState.has(cluster)) return paintLive();
+  const seq = ++liveSeq;
+  const live = await upgradeJson(`/api/upgrade/live?${new URLSearchParams({ module: "eks", clusterName: cluster })}`);
+  if (seq !== liveSeq || (pipParams().clusterName || "") !== cluster) return;
+  const first = !liveState.has(cluster);
+  liveState.set(cluster, live);
+  const card = pipEl.querySelector(".card.open");
+  if (card && (first || force) && !live?.error) {
+    for (const name of ["instanceType", "nodeCount"]) {
+      const value = live?.values?.[name];
+      const field = card.querySelector(`[name="${name}"]`);
+      if (!value || !field || field.value === value) continue;
+      field.value = value;
+      pipKept.eks = { ...(pipKept.eks || {}), [name]: value };
+      field.dispatchEvent(new Event("input"));
+    }
+    repriceCard(openSpec());
+  }
+  paintLive();
+}
+
+function paintLive() {
+  const row = pipEl.querySelector("#pip-live");
+  if (!row) return;
+  const line = liveLine(liveState.get(pipParams().clusterName || ""), pipParams());
+  row.hidden = !line.text;
+  row.querySelector(".live-what").textContent = line.text;
+  row.querySelector(".live-warn").textContent = line.warn;
 }
 
 async function refreshConnect(force = false) {

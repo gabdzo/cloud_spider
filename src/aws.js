@@ -44,7 +44,7 @@ export function createAws() {
     },
     trail: { lookupEvents },
     logs: { filter: readLogStream, search: searchLogGroup },
-    eks: { listClusters: listUpgradeClusters, describeCluster: describeUpgradeCluster, describeAddon: describeUpgradeAddon },
+    eks: { listClusters: listUpgradeClusters, describeCluster: describeUpgradeCluster, describeAddon: describeUpgradeAddon, describeNodegroup: describeUpgradeNodegroup },
     metrics: { read: readMetricData },
     volumes: { list: listVolumes, remove: deleteVolume },
   };
@@ -493,6 +493,20 @@ export async function describeUpgradeCluster(name) {
   } catch (error) {
     const code = error?.name || error?.Code || "";
     if (/NotFound/.test(code)) return { found: false, status: "" };
+    return { error: publicError(error).error };
+  }
+}
+
+// One managed node group (read-only): instance type and size.
+export async function describeUpgradeNodegroup(clusterName, nodegroupName) {
+  try {
+    const eks = new EKSClient({ region: "eu-north-1" });
+    const out = await eks.send(new DescribeNodegroupCommand({ clusterName, nodegroupName }));
+    const group = out.nodegroup || {};
+    return { found: true, instanceType: group.instanceTypes?.[0] || "", desired: group.scalingConfig?.desiredSize ?? null, min: group.scalingConfig?.minSize ?? null, max: group.scalingConfig?.maxSize ?? null, subnets: group.subnets || [] };
+  } catch (error) {
+    const code = error?.name || error?.Code || "";
+    if (/NotFound/.test(code)) return { found: false };
     return { error: publicError(error).error };
   }
 }

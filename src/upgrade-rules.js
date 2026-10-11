@@ -311,6 +311,11 @@ const HINTS = [
     hint: "Cloud Spider allows two clusters at once so the bill cannot run away. Take one down first, or start the server with CLOUDSPIDER_MAX_CLUSTERS=3.",
   },
   {
+    kind: "replace-nodegroup",
+    test: /REPLACES the node group/,
+    hint: "Nothing ran. The card's INSTANCETYPE is not what the cluster's node group runs, and changing it replaces the node group. Set INSTANCETYPE back to the live one (the LIVE line on the card), or press RUN and confirm the replace.",
+  },
+  {
     kind: "preflight",
     test: /free pod slots|Room for pods|is already on|needs .* first|the name does not match|must be (?:a |one of|t4g|\d)|short lowercase name/i,
     hint: "Cloud Spider refused this before running pulumi, so nothing changed. The message says what to fix.",
@@ -372,4 +377,12 @@ export function maskKubeconfig(text) {
   return String(text)
     .replace(/(\bkubeconfig\s*:\s*)"(?:[^"\\]|\\.){40,}"/g, '$1"[kubeconfig hidden]"')
     .replace(/(certificate-authority-data\\?"?\s*[:=]\s*\\?")[A-Za-z0-9+/=]{20,}/g, "$1[hidden]");
+}
+
+// An EKS RUN whose instance type is not the live node group's replaces the
+// node group (new nodes, every pod moved). Said before it runs.
+export function nodeGroupChange(live, values) {
+  const was = live?.instanceType
+  if (!was || !values?.instanceType || was === values.instanceType) return ""
+  return `instanceType ${values.instanceType} is not the live node group's ${was}: this REPLACES the node group${live.nodeGroup ? ` ${live.nodeGroup}` : ""} (new nodes, every pod restarts). Set INSTANCETYPE to ${was} to keep it, or confirm the replace`
 }
