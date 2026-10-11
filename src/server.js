@@ -1683,6 +1683,21 @@ const page = `<!doctype html>
   @media (min-width: 1600px) {
     .gauges { order: 10; flex-basis: 100%; }
   }
+  /* Laptop (1280-ish): with a Menlo-width font (the Mac fallback when Share
+     Tech Mono and VT323 are not installed) the plate, the four view tabs and
+     the console no longer fit on one row and the header wraps to three rows.
+     Tighten the spacing so it stays two rows: plate, tabs, console / gauges,
+     readout, knobs. */
+  @media (min-width: 901px) and (max-width: 1399px) {
+    header { gap: 10px 12px; padding-left: 10px; padding-right: 10px; }
+    .plate { padding-right: 10px; }
+    h1 { letter-spacing: 0.12em; }
+    .plate small { letter-spacing: 0.12em; }
+    .tabs { gap: 6px; padding-left: 7px; padding-right: 7px; }
+    .tab { gap: 5px; padding: 0 8px; letter-spacing: 0.06em; }
+    .console { gap: 10px; padding-left: 9px; padding-right: 9px; }
+    .keys { gap: 7px; }
+  }
   @media (max-width: 1100px) {
     #radio-panel { flex-basis: 250px; }
     .knobs { display: none; }
