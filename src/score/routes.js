@@ -7,7 +7,17 @@ export async function scoreRoute(req, res, url, score, { send, readJson }) {
     return true;
   }
   if (req.method === "GET" && url.pathname === "/api/score") {
-    send(res, 200, await score.view({ context: url.searchParams.get("context") || "" }));
+    send(res, 200, await score.view({ context: url.searchParams.get("context") || "", target: url.searchParams.get("target") === "aws" ? "aws" : "kubernetes" }));
+    return true;
+  }
+  if (req.method === "GET" && url.pathname === "/api/score/report") {
+    const out = await score.report(url.searchParams.get("id") || "", url.searchParams.get("format") || "md");
+    if (out.error) {
+      send(res, out.error.startsWith("format") ? 400 : 404, out);
+      return true;
+    }
+    res.writeHead(200, { "content-type": out.type, "content-disposition": `attachment; filename="${out.filename}"`, "cache-control": "no-store" });
+    res.end(out.body);
     return true;
   }
   if (req.method === "GET" && url.pathname === "/api/score/fix") {
