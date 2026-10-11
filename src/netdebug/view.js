@@ -86,6 +86,12 @@ function nodeFact(layer, checks) {
     const hits = (get("A-VPC-05")?.observed?.hits || []).reduce((n, x) => n + x.count, 0);
     return [mark("A-VPC-01", "SG"), mark("A-VPC-02", "NACL"), mark("A-VPC-03", "RT"), hits ? `${hits} REJECT` : ""].filter(Boolean).join(" · ");
   }
+  if (layer === "cluster") {
+    const svc = get("K-SVC-01");
+    const eps = get("K-SVC-02")?.observed;
+    const name = /Service (\S+)/.exec(svc?.text || "")?.[1] || "";
+    if (eps) return short(`${name ? `${name} · ` : ""}${eps.ready}/${eps.ready + eps.notReady + eps.terminating} ready`, 30);
+  }
   const mine = checks.filter((c) => c.layer === layer);
   const bad = mine.find((c) => c.status === "FAIL") || mine.find((c) => c.status === "UNKNOWN") || mine[0];
   return short(bad?.text || bad?.reason || "", 30);
@@ -267,6 +273,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     modes.replaceChildren(
       chip("LOCAL", true, "DNS, TCP, TLS and HTTP from this machine"),
       chip("AWS", from.includes("aws"), "Route 53, CloudFront, ALB, VPC reads (read-only); on when the target is in this account"),
+      chip("KUBE", from.includes("kube"), "Service, EndpointSlices, NetworkPolicies, CoreDNS through the viewer role (read-only); on when the target group belongs to a connected cluster"),
       chip("IN-CLUSTER", from.includes("pod"), "a debug pod in the cluster: off (opt-in: network.pod.enabled and a context in kube.writeContexts)"),
     );
   }

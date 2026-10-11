@@ -28,7 +28,10 @@ export const RULES = [
     const health = c.get("A-ELB-02");
     const dead = health?.status === "FAIL" ? health : null;
     const why = dead ? `: ${dead.text}` : `: it has no healthy target to send ${t.host} to, or the target failed`;
-    return [{ statement: `the AWS load balancer${tgt?.kind === "alb" ? ` ${tgt.name}` : ""} answered ${status} itself (server: awselb, no app headers)${why}. The ALB 503 walkthrough asks why.`, supports: ["L-HTTP-01", ...app, ...lb, ...(dead ? ["A-ELB-02"] : [])], next: [dead?.command || health?.command || `aws elbv2 describe-target-health --target-group-arn <tg-arn>`], verify: "HTTP status < 500 and the target group has >= 1 healthy target", walkthrough: "alb-503" }];
+    // The cluster side (N6), when it explains the empty target group.
+    const kube = dead ? ["K-SVC-01", "K-SVC-02"].map((id) => c.get(id)).filter((x) => x?.status === "FAIL") : [];
+    const because = kube.length ? `, because ${kube[0].text.replace(/^Service /, "the Service ")}` : "";
+    return [{ statement: `the AWS load balancer${tgt?.kind === "alb" ? ` ${tgt.name}` : ""} answered ${status} itself (server: awselb, no app headers)${why}${because}. ${kube.length ? "The ALB 503 walkthrough checks the fix." : "The ALB 503 walkthrough asks why."}`, supports: ["L-HTTP-01", ...app, ...lb, ...(dead ? ["A-ELB-02"] : []), ...kube.map((x) => x.id)], next: [...kube.map((x) => x.command), dead?.command || health?.command || `aws elbv2 describe-target-health --target-group-arn <tg-arn>`], verify: "HTTP status < 500 and the target group has >= 1 healthy target", walkthrough: "alb-503" }];
   },
   (c) => {
     const http = c.get("L-HTTP-03");

@@ -795,6 +795,16 @@ When the origin is one of the account's load balancers, the run follows it into 
 
 Unlike the configuration verdicts, a REJECT is a fact. It raises the security-group or NACL finding to high confidence. The reads are `ec2:DescribeNetworkAcls`, `DescribeVpcEndpoints`, `DescribeSubnets`, `DescribeFlowLogs` and `logs:FilterLogEvents`. Turn them off with `network.aws.vpc` / `network.aws.flowLogs`. In SAMPLE mode, `api.sample.test` shows sample-sg-node-b dropping 8080, seen in the flow logs.
 
+**Kubernetes (N6):** when the target group belongs to the AWS Load Balancer Controller (tags `elbv2.k8s.aws/cluster` and `service.k8s.aws/stack` or `ingress.k8s.aws/*`), the run reads the Service through that cluster's kube context. The reads are GET only, with the viewer role. It reports:
+- K-SVC-01: the Service's selector against its pods, with near misses like `app=web` vs `app=shop-web`, and a named targetPort that the pods lack.
+- K-SVC-02: EndpointSlices, ready, not ready and terminating per zone.
+- K-NP-01: NetworkPolicies, evaluated for the load balancer's subnets on the target port, plus DNS egress.
+- K-NP-02: whether anything enforces policies (the VPC CNI policy agent, Calico or Cilium).
+- K-DNS-01 to K-DNS-04: CoreDNS replicas, spread and PDB, the Corefile, its metrics, NodeLocal DNSCache.
+- K-NET-01: kube-proxy and aws-node.
+
+A cluster with no context says "CONNECT it". CoreDNS metrics need one extra viewer rule, `services/proxy` on `kube-dns:metrics`. Without it they are UNKNOWN and name the rule. The DEBUG bar lights KUBE. In SAMPLE mode, `web.sample.test` traces the 503 to the Service selector.
+
 A refused read is UNKNOWN and names the permission to add. Turn the reads off with `network.aws.route53` / `network.aws.cloudfront`. These Route 53 and CloudFront calls cost nothing.
 
 When an AWS load balancer answered, the path diagram follows the same host. In SAMPLE mode the panel debugs fixture answers (try `web.sample.test`, an ALB answering 503; `api.sample.test`, a slow origin; and `google.com`), so nothing leaves the machine.
