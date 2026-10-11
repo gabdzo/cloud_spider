@@ -27,6 +27,7 @@ if (args[0] === "stack" && args[1] === "ls") done(0, process.env.FAKE_PULUMI_STA
 if (args[0] === "stack" && args[1] === "select") done(0, `Created stack '${stack}'\n`);
 if (args[0] === "install") done(0, "Installing dependencies...\nFinished installing dependencies\n");
 if (args[0] === "config" && args[1] === "set") done(0);
+if (args[0] === "destroy") done(0, `Destroying (${stack}):\nResources:\n    - 6 deleted\n`);
 if (args[0] === "preview" || args[0] === "up") {
   const verb = args[0] === "up" ? "Updating" : "Previewing update";
   setTimeout(() => {

@@ -39,6 +39,7 @@ export const SCHEMA = {
     context: { type: "string", pattern: CONTEXT, default: "cloudspider-viewer", env: "CLOUDSPIDER_KUBE_CONTEXT", doc: "the one context used when no contexts are listed" },
     contexts: { type: "contexts", default: [], doc: "contexts and namespace allowlists; merged with cloudspider.contexts.yaml (these first)" },
     contextsFile: { type: "string", default: "cloudspider.contexts.yaml", env: "CLOUDSPIDER_KUBE_CONTEXTS_FILE", doc: "the contexts file CONNECT writes (still read, merged after kube.contexts)" },
+    autoConnect: { type: "boolean", default: true, env: "CLOUDSPIDER_KUBE_AUTO_CONNECT", doc: "CONNECT a cluster after its EKS RUN on Stacks, DISCONNECT it after TAKE IT DOWN (the current context is never changed)" },
   },
   ui: {
     theme: { type: "enum", values: ["pip", "pro"], default: "pip", env: "CLOUDSPIDER_THEME", flag: "theme", doc: "pip (Pip-Boy) or pro (clean dark); a choice in the settings panel overrides it per browser" },

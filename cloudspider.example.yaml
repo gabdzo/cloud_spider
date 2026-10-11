@@ -23,6 +23,7 @@ aws:
 kube:
   context: cloudspider-viewer          # env CLOUDSPIDER_KUBE_CONTEXT: used when no contexts are listed
   contextsFile: cloudspider.contexts.yaml  # env CLOUDSPIDER_KUBE_CONTEXTS_FILE: the file CONNECT writes
+  autoConnect: true                    # env CLOUDSPIDER_KUBE_AUTO_CONNECT: CONNECT after an EKS RUN on Stacks, DISCONNECT after TAKE IT DOWN
   # Contexts and namespace allowlists. Listed here first; entries of the
   # contexts file are added after them (a name in both keeps this entry).
   # env CLOUDSPIDER_KUBE_CONTEXTS="ctxA:ns1,ns2;ctxB:*" replaces both.

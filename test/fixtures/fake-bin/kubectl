@@ -16,6 +16,9 @@ if (verb === "use-context") {
   }
   config["current-context"] = name;
   process.stdout.write(`Switched to context "${name}".\n`);
+} else if (verb === "unset" && name === "current-context") {
+  delete config["current-context"];
+  process.stdout.write("Property \"current-context\" unset.\n");
 } else if (verb === "delete-context") {
   config.contexts = (config.contexts || []).filter((c) => c.name !== name);
   process.stdout.write(`deleted context ${name} from ${file}\n`);
