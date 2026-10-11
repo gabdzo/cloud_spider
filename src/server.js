@@ -1793,7 +1793,7 @@ const page = `<!doctype html>
   <div class="body">
     <div class="mapwrap">
       <div id="map">
-        <canvas id="place"></canvas>
+        <canvas id="place" role="img" aria-label="survey map"></canvas>
         <select id="wall-grain" aria-label="camp grain" hidden>
           <option value="coarse">coarse</option>
           <option value="fine">fine</option>
