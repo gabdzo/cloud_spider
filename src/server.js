@@ -49,6 +49,7 @@ export const FILES = new Set([
   "sprites/kube.js",
   "metrics.js",
   "upgrade-rules.js",
+  "run-pane.js",
   "stack-costs.js",
   "theme.js",
   "draw-kit.js",
@@ -1545,6 +1546,40 @@ const page = `<!doctype html>
   #pip-watch.fail { color: var(--status-broken); }
   #pip pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pip-mid); font: inherit; font-size: 12px; }
   #pip pre:empty { display: none; }
+  /* The run pane: the card's terminal (live log, steps, clock) and the red
+     ERROR plate when a run fails or is refused. */
+  #pip:has(.runpane:not([hidden])) { width: min(600px, calc(100% - 24px)); }
+  #pip .runpane { display: flex; flex-direction: column; gap: 5px; padding: 6px; background: var(--pip-ink); border: 1px solid var(--pip-dark); box-shadow: inset 0 0 10px var(--pip-ink), 0 0 0 1px var(--pip-screen); }
+  #pip .runpane[hidden], #pip .runpane [hidden] { display: none; }
+  #pip .run-head { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.1em; color: var(--pip-bright); }
+  #pip .run-title { font-weight: normal; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #pip .run-word { color: var(--pip-dim); }
+  #pip .run-time { font-variant-numeric: tabular-nums; color: var(--pip-bright); text-shadow: 0 0 6px var(--glow-bright); }
+  #pip .run-lamp { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--pip-dim); }
+  #pip .run-lamp.run { background: var(--world-amber); box-shadow: 0 0 6px var(--world-amber); animation: run-blink 1s steps(2) infinite; }
+  #pip .run-lamp.ok { background: var(--pip-bright); box-shadow: 0 0 6px var(--glow-bright); }
+  #pip .run-lamp.fail { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
+  @keyframes run-blink { 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { #pip .run-lamp.run { animation: none; } }
+  #pip .runpane[data-state="failed"] .run-word, #pip .runpane[data-state="refused"] .run-word { color: var(--status-broken); }
+  #pip .run-steps { margin: 0; padding: 0; list-style: none; font-size: 11px; display: flex; flex-direction: column; gap: 1px; }
+  #pip .run-steps li { display: grid; grid-template-columns: 14px 1fr; gap: 4px; color: var(--pip-dim); }
+  #pip .run-steps li code { font: inherit; overflow-wrap: anywhere; }
+  #pip .run-steps li.done { color: var(--pip-mid); }
+  #pip .run-steps li.running { color: var(--world-amber); }
+  #pip .run-steps li.failed { color: var(--status-broken); }
+  #pip .runpane #pip-out { max-height: 260px; min-height: 3em; padding: 4px 6px; color: var(--pip-mid); background: repeating-linear-gradient(0deg, var(--pip-screen) 0 2px, var(--pip-ink) 2px 3px); border: 1px solid var(--pip-dark); font-size: 11px; }
+  #pip .run-plate { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; color: var(--status-broken); background: color-mix(in srgb, var(--status-broken) 16%, var(--pip-ink)); border: 2px solid var(--status-broken); box-shadow: 0 0 10px color-mix(in srgb, var(--status-broken) 40%, transparent); }
+  #pip .run-plate .plate-title { font-size: 12px; letter-spacing: 0.24em; font-weight: bold; }
+  #pip .run-plate .plate-step { font-size: 10px; letter-spacing: 0.06em; overflow-wrap: anywhere; }
+  #pip .run-plate .plate-lines { max-height: none; color: var(--status-broken); font-size: 12px; white-space: pre-wrap; }
+  #pip .run-plate .plate-hint { margin: 0; color: var(--pip-bright); font-size: 12px; line-height: 1.35; }
+  #pip .run-plate .plate-hint b { color: var(--world-amber); font-weight: normal; letter-spacing: 0.12em; font-size: 10px; }
+  #pip .run-plate .plate-cmd { border-color: var(--status-broken); }
+  #pip .run-plate .plate-cmd code { max-height: 4.4em; overflow: auto; scrollbar-width: thin; }
+  #pip .run-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--pip-dim); }
+  #pip .run-foot a { color: var(--pip-dim); overflow-wrap: anywhere; }
+  #pip .run-foot a:hover { color: var(--pip-bright); }
   /* Stacks cards: cost chip, engine plate, the bill readout, Terraform commands. */
   #pip .card-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #pip .cost-chip {
@@ -1989,8 +2024,10 @@ export function createServer(app) {
   return http.createServer(async (req, res) => {
     try {
       await route(app, req, res);
-    } catch {
-      send(res, 500, { status: "the page failed" });
+    } catch (failure) {
+      // Always JSON with an error the page can show, never an empty 500.
+      const error = `the server failed: ${failure?.message || "error"}`;
+      send(res, 500, { status: "the page failed", error, hint: "Check the terminal where you ran npm start for the full error." });
     }
   });
 }
@@ -2147,8 +2184,29 @@ async function route(app, req, res) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/upgrade") {
-    const body = await readJson(req);
+    const body = await readJson(req).catch(() => null);
+    if (!body || typeof body !== "object") {
+      send(res, 400, { error: "the run request was not JSON", hint: "Reload the page and press the button again." });
+      return;
+    }
     send(res, 200, await app.upgradeRun(req.headers.origin, body));
+    return;
+  }
+
+  // The whole log of a card's last run (.cloudspider/runs/<stack>/<ts>.log).
+  if (req.method === "GET" && url.pathname === "/api/upgrade/log") {
+    const values = {};
+    for (const key of ["clusterName", "name"]) {
+      const value = url.searchParams.get(key);
+      if (value) values[key] = value;
+    }
+    const found = app.upgradeLog ? await app.upgradeLog(url.searchParams.get("module") || "", values) : null;
+    if (!found?.text && !found?.log) {
+      send(res, 404, { error: "no run log for this stack yet", hint: "Press PREVIEW or RUN; every run is logged under .cloudspider/runs." });
+      return;
+    }
+    res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+    res.end(found.text || "");
     return;
   }
 

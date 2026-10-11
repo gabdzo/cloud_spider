@@ -256,7 +256,8 @@ test("a refused cluster list does not start pulumi", async () => {
     action: "up",
     params: { clusterName: "cloudspider-up" },
   });
-  assert.equal(result.error, "denied");
+  assert.match(result.error, /denied/);
+  assert.equal(typeof result.hint, "string");
   assert.equal(ran, false);
 });
 

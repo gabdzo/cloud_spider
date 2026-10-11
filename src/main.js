@@ -48,7 +48,7 @@ const app = createApp({
   metrics: aws.metrics,
   path: createPathAws(),
   cost: createCost(),
-  upgrade: createUpgrade(),
+  upgrade: createUpgrade({ runsDir: join(root, ".cloudspider", "runs") }),
   terraform: createTerraformReader(),
   learn: createLearn(),
   eks: aws.eks,
