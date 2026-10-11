@@ -502,6 +502,10 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       await Promise.all(due.map((ctx) => readContext(ctx, KUBE_VIEW_TTL)));
       return this.kubeHealth();
     },
+    contextNeedsAws(name = "") {
+      const ctx = contextFor(name) || primary;
+      return !ctx || ctx.primary;
+    },
     kubeHealth() {
       return { radio: health.radio(), contexts: contextList() };
     },

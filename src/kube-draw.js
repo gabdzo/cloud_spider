@@ -25,7 +25,7 @@ const KIND_TAG = { ingress: "ING", service: "SVC", pod: "POD", "pod-group": "POD
 const WORKLOAD_TAG = { Deployment: "DEPLOY", DaemonSet: "DAEMON", StatefulSet: "STATEFUL" };
 const COLUMN_TITLE = { ingress: "INGRESS", service: "SERVICES", workload: "WORKLOADS", pod: "PODS" };
 
-export function paintKube(ctx, { placed, selectedId, hoverId, animTime, width, height, reducedMotion }) {
+export function paintKube(ctx, { placed, selectedId, hoverId, animTime, width, height, reducedMotion, scrollTop = 0, stickyTop = scrollTop }) {
   ctx.imageSmoothingEnabled = false;
   ctx.textBaseline = "alphabetic";
   ctx.clearRect(0, 0, width, height);
@@ -55,6 +55,35 @@ export function paintKube(ctx, { placed, selectedId, hoverId, animTime, width, h
       ctx.fillRect(node.x - 2, node.y - 2, node.w + 4, node.h + 4);
     }
   }
+  // Sticky: a tall lane scrolled past its head keeps its name and column
+  // titles pinned to the top of the view until the lane ends.
+  for (const lane of placed.lanes) {
+    if (!lane.open || stickyTop <= lane.y + L.LANE_BAR) continue;
+    const pin = Math.min(stickyTop, lane.y + lane.h - L.LANE_BAR - L.LANE_HEAD - 8);
+    if (pin <= lane.y) continue;
+    drawStickyHead(ctx, lane, placed.columns, pin);
+  }
+}
+
+function drawStickyHead(ctx, lane, columns, y) {
+  const color = STATUS[lane.status] || PIP.mid;
+  const h = L.LANE_BAR + L.LANE_HEAD - 4;
+  ctx.fillStyle = rgba(PIP.ink, 0.96);
+  ctx.fillRect(lane.x, y, lane.w, h);
+  ctx.fillStyle = rgba(PIP.dark, 0.9);
+  ctx.fillRect(lane.x, y, lane.w, L.LANE_BAR - 6);
+  ctx.fillStyle = color;
+  ctx.fillRect(lane.x, y, 4, L.LANE_BAR - 6);
+  ctx.font = SMALL;
+  ctx.fillStyle = PIP.hot;
+  ctx.fillText(`${lane.ns}  ·  ${lane.caption || ""}`, lane.x + 14, y + 16);
+  ctx.font = TINY;
+  for (const col of columns || []) {
+    ctx.fillStyle = rgba(PIP.mid, 0.85);
+    ctx.fillText(COLUMN_TITLE[col.kind] || col.kind.toUpperCase(), col.x + 2, y + L.LANE_BAR + 8);
+  }
+  ctx.fillStyle = rgba(PIP.bright, 0.35);
+  ctx.fillRect(lane.x, y + h, lane.w, 1);
 }
 
 // ---- traces --------------------------------------------------------------
@@ -239,7 +268,61 @@ function nodeChip(ctx, x, y, index, w = 28) {
   ctx.fillText(`N${index + 1}`, x + 10, y + 12);
 }
 
-function drawCard(ctx, n, { selected, lit, hover, phase }) {
+// One-line card for crowded lanes: icon, name, short state on the right.
+function drawCompactCard(ctx, n, { selected, lit, hover, phase }) {
+  const color = STATUS[n.status] || PIP.mid;
+  frame(ctx, n, color, { selected, lit, hover });
+  drawSprite(ctx, icon(KIND_ICON[n.kind] || n.kind), n.x + 12, n.y + 9, 1);
+  if (n.kind === "pod-group") {
+    ctx.fillStyle = rgba(PIP.dim, 0.9);
+    ctx.fillRect(n.x + 4, n.y + n.h, n.w - 8, 2);
+  }
+  const { label, caption } = cardText(n);
+  const right = n.x + n.w - 8 - (n.chip != null ? 34 : 0) - (n.expandable ? 42 : 0) - (n.status === "broken" ? 20 : 0);
+  // The shortest state that still says something: ports, ready count, phase.
+  let cap = caption.replace(/^(deployment|daemonset|statefulset) /, "").split(" · ")[0];
+  if (n.kind === "service") cap = cap.replace(/^[A-Za-z]+ /, "");
+  cap = cap.replace(/ (ready|running)$/, "");
+  ctx.font = TINY;
+  // The state gets up to half the line; the name takes the rest.
+  const half = Math.max(0, (right - n.x - 34) / 2);
+  let capText = cap;
+  while (capText && ctx.measureText(capText).width > half) capText = capText.length > 2 ? `${capText.slice(0, -2)}…` : "";
+  // Narrow card: the name wins. A healthy card drops its state (the colour
+  // already says ok); a sick one keeps a short state.
+  ctx.font = SMALL;
+  const labelW = ctx.measureText(label).width;
+  ctx.font = TINY;
+  if (capText && labelW + ctx.measureText(capText).width + 10 > right - n.x - 34) {
+    if (n.status === "ok") capText = "";
+    else if (capText.length > 5) capText = `${capText.slice(0, 4)}…`;
+  }
+  ctx.fillStyle = n.status === "broken" ? STATUS.broken : n.status === "hang" ? STATUS.hang : PIP.mid;
+  if (capText) ctx.fillText(capText, right - ctx.measureText(capText).width, n.y + 21);
+  ctx.font = SMALL;
+  ctx.fillStyle = PIP.hot;
+  const room = right - (n.x + 34) - (capText ? ctx.measureText(capText).width + 10 : 0);
+  ctx.fillText(middle(label, Math.max(4, Math.floor(room / L.SMALL_CHAR))), n.x + 34, n.y + 21);
+  if (n.chip != null) nodeChip(ctx, n.x + n.w - 34, n.y + 9, n.chip);
+  if (n.status === "broken") drawSprite(ctx, campfireFrame(phase), n.x + n.w - (n.chip != null ? 54 : 24) - (n.expandable ? 42 : 0), n.y + 1, 1);
+  if (n.expandable) {
+    const c = expandChip(n);
+    ctx.fillStyle = rgba(PIP.dark, 0.95);
+    ctx.fillRect(c.x, c.y, c.w, c.h);
+    ctx.strokeStyle = PIP.mid;
+    ctx.strokeRect(c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1);
+    ctx.font = TINY;
+    ctx.fillStyle = PIP.bright;
+    ctx.fillText(n.expanded ? "FOLD" : "LIST", c.x + 4, c.y + 12);
+  }
+}
+
+function drawCard(ctx, n, opts) {
+  if (n.compact) {
+    drawCompactCard(ctx, n, opts);
+    return;
+  }
+  const { selected, lit, hover, phase } = opts;
   const color = STATUS[n.status] || PIP.mid;
   frame(ctx, n, color, { selected, lit, hover });
   drawSprite(ctx, icon(KIND_ICON[n.kind] || n.kind), n.x + 12, n.y + 8, 1);
@@ -305,6 +388,20 @@ function bar(ctx, x, y, w, label, pct) {
 function drawHost(ctx, n, { selected, lit }) {
   const color = STATUS[n.status] || PIP.mid;
   frame(ctx, n, color, { selected, lit, hover: false });
+  if (n.folded) {
+    // A short chip: index, name, pods, load when there is any.
+    nodeChip(ctx, n.x + 10, n.y + 9, n.chip ?? 0);
+    const load = n.host?.load || {};
+    const tail = `${n.host?.pods ?? 0}p${load.cpuPct != null ? ` ${load.cpuPct}%` : ""}`;
+    ctx.font = TINY;
+    ctx.fillStyle = load.hot ? STATUS.hang : PIP.mid;
+    const tw = Math.ceil(ctx.measureText(tail).width);
+    ctx.fillText(tail, n.x + n.w - 10 - tw, n.y + 21);
+    ctx.font = SMALL;
+    ctx.fillStyle = PIP.hot;
+    ctx.fillText(middle(n.label, Math.floor((n.w - 56 - tw) / L.SMALL_CHAR)), n.x + 44, n.y + 21);
+    return;
+  }
   drawSprite(ctx, icon("node"), n.x + 12, n.y + 9, 1);
   nodeChip(ctx, n.x + 34, n.y + 8, n.chip ?? 0);
   ctx.font = FONT;
@@ -321,7 +418,7 @@ function drawHost(ctx, n, { selected, lit }) {
     const bw = Math.min(150, n.w - 24);
     bar(ctx, n.x + 12, n.y + 48, Math.floor(bw), "CPU", load.cpuPct);
     bar(ctx, n.x + 12 + Math.floor(bw) + 8, n.y + 48, Math.min(150, n.w - 32 - Math.floor(bw)), "MEM", load.memPct);
-  } else {
+  } else if (!n.quietLoad) {
     ctx.font = TINY;
     ctx.fillStyle = PIP.dim;
     ctx.fillText("no metrics-server", n.x + 12, n.y + 58);
@@ -340,4 +437,9 @@ function drawControlPlane(ctx, n, selected) {
   ctx.font = SMALL;
   ctx.fillStyle = PIP.mid;
   ctx.fillText(clip(`CONTROL PLANE ${n.caption || ""}`, Math.floor((n.w - 66) / L.SMALL_CHAR)), n.x + 56, n.y + 45);
+  if (n.loadNote) {
+    ctx.font = TINY;
+    ctx.fillStyle = PIP.dim;
+    ctx.fillText(clip(n.loadNote, Math.floor((n.w - 66) / L.SMALL_CHAR)), n.x + 56, n.y + 58);
+  }
 }

@@ -2148,7 +2148,9 @@ async function route(app, req, res) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/cluster") {
-    await app.boot();
+    // A non-primary kube context reads no AWS at all: it must not wait for
+    // the account's first read (region, VPCs, instances) to finish.
+    if (!app.contextNeedsAws || app.contextNeedsAws(url.searchParams.get("context") || "")) await app.boot();
     send(res, 200, await app.clusterView({ context: url.searchParams.get("context") || "" }));
     return;
   }

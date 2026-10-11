@@ -109,11 +109,24 @@ function eventList(json) {
     .slice(-30);
 }
 
-function runExec(run, exec, env) {
+export const EXEC_TIMEOUT_MS = 20_000;
+
+function runExec(run, exec, env, timeout = EXEC_TIMEOUT_MS) {
   return new Promise((resolve) => {
     let out = "";
     let err = "";
     let child;
+    // A credential plugin that waits (an SSO login nobody answers) must not
+    // hold the Cluster view forever.
+    const timer = setTimeout(() => {
+      try {
+        child?.kill?.();
+      } catch {
+        // already gone
+      }
+      resolve({ error: `${exec.command} gave no token in ${Math.round(timeout / 1000)} s (is a login waiting?)` });
+    }, timeout);
+    timer.unref?.();
     try {
       const extra = Object.fromEntries((exec.env || []).filter((item) => item?.name).map((item) => [item.name, String(item.value ?? "")]));
       child = run(exec.command, exec.args, { env: { ...env, ...extra }, shell: false, stdio: ["ignore", "pipe", "pipe"] });
@@ -125,6 +138,7 @@ function runExec(run, exec, env) {
     child.stderr?.on("data", (chunk) => (err += chunk));
     child.on("error", (error) => resolve({ error: `${exec.command} did not start: ${error?.message || error}` }));
     child.on("close", (code) => {
+      clearTimeout(timer);
       if (code !== 0) return resolve({ error: `${exec.command} exited ${code}: ${err.trim().split("\n").pop() || ""}`.trim() });
       try {
         const status = JSON.parse(out)?.status || {};

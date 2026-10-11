@@ -33,9 +33,18 @@ export const KUBE_LAYOUT = {
   STRIP_GAP: 22,
   NODE_W: 300,
   CP_W: 270,
+  // Crowded lanes (real namespaces: dozens of services and workloads) use
+  // one-line cards; many nodes fold to a row of short chips.
+  COMPACT_ROWS: 14,
+  COMPACT_H: 34,
+  COMPACT_GAP: 6,
+  FOLD_NODES: 4,
+  NODE_CHIP_W: 196,
+  NODE_CHIP_H: 34,
 };
 
 const L = KUBE_LAYOUT;
+const MAX_CHANNELS = 10; // past this, trunks share channels instead of widening the gutter
 const LANE_KINDS = ["ingress", "service", "workload", "pod"];
 
 // Middle ellipsis: keeps the head and the tail, which for pod names is the
@@ -51,6 +60,7 @@ export function middle(text, max) {
 // The text a card shows on its two lines, before any squeeze.
 export function cardText(node) {
   if (node.kind === "pod-group") return { label: `${node.label} ×${node.count}`, caption: node.caption };
+  if (node.members) return { label: `${node.label} +${node.members.length - 1}`, caption: node.caption };
   return { label: node.label || "", caption: node.caption || "" };
 }
 
@@ -107,6 +117,40 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
     groups.push(group);
     for (const p of pods) groupOf.set(p.id, group);
   }
+  // Fold services that select exactly the same workloads (a chart's http,
+  // metrics and headless Services) into one card: "api +2".
+  const targetsOf = new Map();
+  const byIdAll = new Map(all.map((n) => [n.id, n]));
+  for (const e of edgesIn) {
+    if (byIdAll.get(e.from)?.kind !== "service" || byIdAll.get(e.to)?.kind !== "workload") continue;
+    if (!targetsOf.has(e.from)) targetsOf.set(e.from, []);
+    targetsOf.get(e.from).push(e.to);
+  }
+  const buckets = new Map();
+  for (const [id, targets] of targetsOf) {
+    const svc = byIdAll.get(id);
+    const key = `${svc.ns}|${[...new Set(targets)].sort().join(",")}`;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(svc);
+  }
+  for (const members of buckets.values()) {
+    if (members.length < 2) continue;
+    members.sort((a, b) => a.label.length - b.label.length || a.label.localeCompare(b.label));
+    const head = members[0];
+    const ports = [...new Set(members.flatMap((m) => String(m.caption || "").replace(/^.*:/, "").split(",")).filter(Boolean))];
+    const type = String(head.caption || "").split(" ")[0] || "ClusterIP";
+    const group = {
+      id: `svcs:${head.id}`,
+      kind: "service",
+      ns: head.ns,
+      label: head.label,
+      members: members.map((m) => m.label),
+      caption: `${type} :${ports.join(",")}`,
+      status: members.find((m) => m.status === "broken")?.status || head.status,
+    };
+    groups.push(group);
+    for (const m of members) groupOf.set(m.id, group);
+  }
   const shownId = (id) => groupOf.get(id)?.id || id;
 
   // Lane membership and the edges drawn inside lanes.
@@ -149,8 +193,17 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
     let most = 0;
     for (const lane of lanes.filter((l) => l.open)) {
       const ids = new Set(lane.items.map((n) => n.id));
-      const sources = new Set(laneEdges.filter((e) => ids.has(e.from) && colOf.get(kindOf(byId.get(e.from))) === g).map((e) => e.from));
-      most = Math.max(most, sources.size);
+      const crossing = laneEdges.filter((e) => ids.has(e.from) && colOf.get(kindOf(byId.get(e.from))) === g);
+      // A one-to-one pair (service -> its only workload) lines up and runs
+      // straight; only fan-outs and fan-ins need a channel of their own.
+      const outs = new Map();
+      const ins = new Map();
+      for (const e of crossing) {
+        outs.set(e.from, (outs.get(e.from) || 0) + 1);
+        ins.set(e.to, (ins.get(e.to) || 0) + 1);
+      }
+      const bending = new Set(crossing.filter((e) => outs.get(e.from) > 1 || ins.get(e.to) > 1).map((e) => e.from));
+      most = Math.max(most, Math.min(MAX_CHANNELS, bending.size));
     }
     return most;
   });
@@ -182,20 +235,30 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
   // Strip: control plane, then nodes (wrapping).
   let sx = L.PAD;
   let sy = top || L.PAD;
+  // No node reports load (no metrics-server, or a namespace-scoped context
+  // that never reads nodes): say it once on the control plane, not on
+  // every node card.
+  const noLoad = hosts.length > 0 && hosts.every((n) => n.host?.load?.cpuPct == null);
   if (cp) {
-    placed.push({ ...cp, x: sx, y: sy, w: L.CP_W, h: L.STRIP_H });
+    placed.push({ ...cp, x: sx, y: sy, w: L.CP_W, h: L.STRIP_H, ...(noLoad ? { loadNote: "no node load (metrics-server)" } : {}) });
     sx += L.CP_W + 14;
   }
-  const nodeW = Math.min(L.NODE_W, Math.max(220, contentWidth - L.PAD - sx));
+  // Many nodes: short chips (name, pods, load), several to a row.
+  const foldNodes = hosts.length > L.FOLD_NODES;
+  const nodeW = foldNodes ? L.NODE_CHIP_W : Math.min(L.NODE_W, Math.max(220, contentWidth - L.PAD - sx));
+  const nodeH = foldNodes ? L.NODE_CHIP_H : L.STRIP_H;
+  const rowStart = L.PAD + (cp ? L.CP_W + 14 : 0);
+  let rowBottom = sy + (cp ? L.STRIP_H : 0);
   hosts.forEach((n, i) => {
-    if (sx + nodeW > contentWidth - L.PAD + 1 && sx > L.PAD + (cp ? L.CP_W + 14 : 0)) {
-      sx = L.PAD + (cp ? L.CP_W + 14 : 0);
-      sy += L.STRIP_H + 10;
+    if (sx + nodeW > contentWidth - L.PAD + 1 && sx > rowStart) {
+      sx = rowStart;
+      sy += nodeH + (foldNodes ? 6 : 10);
     }
-    placed.push({ ...n, chip: i, x: sx, y: sy, w: nodeW, h: L.STRIP_H });
-    sx += nodeW + 14;
+    placed.push({ ...n, chip: i, x: sx, y: sy, w: nodeW, h: nodeH, quietLoad: noLoad, folded: foldNodes });
+    rowBottom = Math.max(rowBottom, sy + nodeH);
+    sx += nodeW + (foldNodes ? 8 : 14);
   });
-  let y = (cp || hosts.length ? sy + L.STRIP_H + L.STRIP_GAP : top || L.PAD);
+  let y = (cp || hosts.length ? rowBottom + L.STRIP_GAP : top || L.PAD);
 
   const laneW = contentWidth - L.PAD * 2;
   const outLanes = [];
@@ -213,15 +276,18 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
     const ids = new Set(lane.items.map((n) => n.id));
     const edges = laneEdges.filter((e) => ids.has(e.from) && ids.has(e.to));
     const cols = orderColumns(kinds.map((k) => lane.items.filter((n) => kindOf(n) === k)), edges);
-    const ys = placeRows(cols, edges, top);
+    const compact = Math.max(...cols.map((col) => col.length)) > L.COMPACT_ROWS;
+    const cardH = compact ? L.COMPACT_H : L.CARD_H;
+    const ys = placeRows(cols, edges, top, compact ? { cardH, gap: L.COMPACT_GAP } : undefined);
+    box.compact = compact;
     cols.forEach((col, c) => {
       for (const n of col) {
         const w = colW[c];
         const chip = n.kind === "pod" ? hostIndex.get(n.pod?.node) : n.kind === "pod-group" ? hostIndex.get(n.hosts[0]) : undefined;
-        placed.push({ ...n, x: colX[c], y: ys.get(n.id), w, h: L.CARD_H, ...(chip == null ? {} : { chip }), expandable: n.kind === "workload" && (podsOf.get(n.id)?.length || 0) >= 2, expanded: expanded.has(n.id) });
+        placed.push({ ...n, x: colX[c], y: ys.get(n.id), w, h: cardH, compact, ...(chip == null ? {} : { chip }), expandable: n.kind === "workload" && (podsOf.get(n.id)?.length || 0) >= 2, expanded: expanded.has(n.id) });
       }
     });
-    const bottom = Math.max(top + L.CARD_H, ...[...ys.values()].map((v) => v + L.CARD_H));
+    const bottom = Math.max(top + cardH, ...[...ys.values()].map((v) => v + cardH));
     box.h = bottom + L.LANE_PAD - y;
     outLanes.push(box);
     // Routing: each gutter gives every source its own channel, ordered by
@@ -231,9 +297,14 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
       const gx0 = colX[g] + colW[g];
       const gx1 = colX[g + 1];
       const crossing = edges.filter((e) => cols[g].some((n) => n.id === e.from) && cols[g + 1].some((n) => n.id === e.to));
+      const straight = (src) => crossing.filter((x) => x.from === src).every((e) => Math.abs(at.get(e.from).y + at.get(e.from).h / 2 - (at.get(e.to).y + at.get(e.to).h / 2)) < 1);
       const sources = [...new Set(crossing.map((e) => e.from))].sort((a, b) => at.get(a).y - at.get(b).y);
-      sources.forEach((src, i) => {
-        const chan = Math.round(gx0 + ((i + 1) * (gx1 - gx0)) / (sources.length + 1));
+      // Channels go to the sources that bend; straight runs need none.
+      const benders = sources.filter((src) => !straight(src));
+      const slots = Math.min(benders.length, MAX_CHANNELS * 2);
+      sources.forEach((src) => {
+        const i = Math.max(0, benders.indexOf(src)) % Math.max(1, slots);
+        const chan = Math.round(gx0 + ((i + 1) * (gx1 - gx0)) / (Math.max(1, slots) + 1));
         for (const e of crossing.filter((x) => x.from === src)) {
           const a = at.get(e.from);
           const b = at.get(e.to);
@@ -303,8 +374,8 @@ export function countCrossings(cols, edges) {
 // Rows: pods stacked, workloads centred on their pods, pods re-centred on
 // their workload, services centred on their workloads, ingresses on their
 // services. Every pass keeps the order and pushes down to clear overlaps.
-function placeRows(cols, edges, top) {
-  const pitch = L.CARD_H + L.ROW_GAP;
+function placeRows(cols, edges, top, { cardH = L.CARD_H, gap = L.ROW_GAP } = {}) {
+  const pitch = cardH + gap;
   const ys = new Map();
   const settle = (col, desired) => {
     let next = top;
@@ -315,7 +386,7 @@ function placeRows(cols, edges, top) {
       next = yv + pitch;
     }
   };
-  const centre = (id) => ys.get(id) + L.CARD_H / 2;
+  const centre = (id) => ys.get(id) + cardH / 2;
   const mean = (ids) => ids.reduce((a, id) => a + centre(id), 0) / ids.length;
   const near = (n, other) => {
     const ids = new Set(other.map((m) => m.id));
@@ -325,7 +396,7 @@ function placeRows(cols, edges, top) {
     const desired = new Map();
     for (const n of cols[c]) {
       const ids = near(n, cols[ref]).filter((id) => ys.has(id));
-      if (ids.length) desired.set(n.id, mean(ids) - L.CARD_H / 2);
+      if (ids.length) desired.set(n.id, mean(ids) - cardH / 2);
     }
     settle(cols[c], desired);
   };
@@ -344,12 +415,18 @@ function placeRows(cols, edges, top) {
       }
     }
     for (const [p, kids] of parents) {
-      const start = centre(p) - (kids.length * pitch - L.ROW_GAP) / 2;
+      const start = centre(p) - (kids.length * pitch - gap) / 2;
       kids.forEach((id, i) => desired.set(id, start + i * pitch));
     }
     settle(cols[c], desired);
   }
   for (let c = last - 1; c >= 0; c -= 1) fromNeighbours(c, c + 1);
+  // settle() only ever pushes cards down, so the passes above drift: a
+  // fan-out (one ingress over many services) centres far below the lane
+  // head and drags every column with it, leaving an empty band at the top
+  // of the lane. Lift the whole block back so the first card sits at top.
+  const lift = Math.min(...ys.values()) - top;
+  if (lift > 0) for (const [id, v] of ys) ys.set(id, v - lift);
   return ys;
 }
 
@@ -419,6 +496,7 @@ export function kubeHit(placed, x, y) {
 }
 
 export function expandChip(n) {
+  if (n.compact) return { x: n.x + n.w - 40 - (n.chip != null ? 34 : 0), y: n.y + Math.round((n.h - 16) / 2), w: 34, h: 16 };
   return { x: n.x + n.w - 40, y: n.y + n.h - 20, w: 34, h: 16 };
 }
 
@@ -428,6 +506,7 @@ export function hoverText(hit) {
   if (hit.type === "lane") return `${hit.lane.open ? "fold" : "open"} namespace ${hit.ns}`;
   if (hit.type === "expand") return hit.node.kind === "pod-group" ? `${hit.node.label} ×${hit.node.count}: click to list each pod` : `${hit.node.expanded ? "fold" : "list"} the pods of ${hit.node.label}`;
   const n = hit.node;
+  if (n.members) return `${n.ns}/${n.members.join(", ")}: ${n.members.length} Services on the same workloads`;
   if (n.kind === "pod") return `${n.pod?.ns}/${n.label}${n.pod?.node ? ` on ${n.pod.node}` : ""}`;
   if (n.kind === "node") return n.host?.name || n.label;
   return n.ns ? `${n.ns}/${n.label}` : n.label;
