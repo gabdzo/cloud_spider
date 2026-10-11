@@ -70,8 +70,10 @@ export function tooManyClusters(clusters, wanted, max = 2) {
 // What the card shows when a pulumi step fails: Pulumi's own words. Pulumi
 // prints its diagnostics ("error: ...") on stdout during up and on stderr
 // for everything else, so look at both, newest first.
-export function failureText(args, code, lines = [], errLines = [], stack = "") {
-  const head = `pulumi ${args[0]}${stack ? ` (stack ${stack})` : ""} failed, exit ${code}`
+export function failureText(args, code, lines = [], errLines = [], stack = "", cmd = "pulumi") {
+  const head = cmd === "pulumi"
+    ? `pulumi ${args[0]}${stack ? ` (stack ${stack})` : ""} failed, exit ${code}`
+    : `${cmd} ${args.slice(0, 2).join(" ")} failed, exit ${code}`
   const all = lines.flatMap((chunk) => String(chunk).split("\n"))
   const errors = all.filter((line) => /^\s*(error|Details):/i.test(line)).map((line) => line.trim())
   const unique = [...new Set(errors)].slice(-6)
@@ -211,6 +213,16 @@ export function addonCommands(spec, cluster) {
 // and the page (the ERROR plate).
 const HINTS = [
   {
+    kind: "aws-missing",
+    test: /spawn aws ENOENT|aws is not on PATH/i,
+    hint: "The AWS CLI is not on the PATH of the shell that started Cloud Spider. Install it (brew install awscli), check `aws --version` there, then restart the server from that terminal.",
+  },
+  {
+    kind: "kubectl-missing",
+    test: /spawn kubectl ENOENT|kubectl is not on PATH/i,
+    hint: "kubectl is not on the PATH of the shell that started Cloud Spider. Install it (brew install kubectl), then restart the server from that terminal.",
+  },
+  {
     kind: "pulumi-missing",
     test: /spawn pulumi ENOENT|pulumi: command not found|pulumi did not start|pulumi is not on PATH/i,
     hint: "Pulumi is not on the PATH of the shell that started Cloud Spider. Install it (brew install pulumi/tap/pulumi), check `pulumi version` in that terminal, then restart the server there with npm start.",
@@ -284,7 +296,7 @@ export function runHint(text = "") {
 export function errorHead(error = "", lines = [], max = 4) {
   const text = [String(error || ""), ...lines.map(String)].join("\n")
   const all = text.split("\n").map((line) => line.trim()).filter(Boolean)
-  const meaningful = all.filter((line) => /^(error|Details|Error|\S+Exception|panic)\b|failed, exit \d+|: error:|ENOENT|not on PATH|status code: \d{3}|api error/i.test(line))
+  const meaningful = all.filter((line) => /^(error|Details|Error|\S+Exception|panic)\b|An error occurred|Exception:|failed, exit \d+|: error:|ENOENT|not on PATH|status code: \d{3}|api error/i.test(line))
   const pick = meaningful.length ? meaningful : all
   return [...new Set(pick)].slice(0, max)
 }

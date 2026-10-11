@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+// Fake AWS CLI for the CONNECT tests: `eks update-kubeconfig` edits the
+// kubeconfig the way the real one does (cluster, user, context, and it
+// switches current-context); `eks get-token` prints an ExecCredential.
+// Never touches AWS. FAKE_AWS_FAIL=1 makes update-kubeconfig fail.
+import { createRequire } from "node:module";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+const yaml = createRequire(new URL("../../../package.json", import.meta.url))("yaml");
+const args = process.argv.slice(2);
+const arg = (flag) => args[args.indexOf(flag) + 1];
+const file = (process.env.KUBECONFIG || "").split(":")[0] || join(process.env.HOME, ".kube", "config");
+if (args[0] === "eks" && args[1] === "update-kubeconfig") {
+  if (process.env.FAKE_AWS_FAIL) {
+    process.stderr.write("An error occurred (ExpiredTokenException) when calling the DescribeCluster operation: The security token included in the request is expired\n");
+    process.exit(254);
+  }
+  const name = arg("--name");
+  const region = arg("--region");
+  const alias = arg("--alias") || `arn:aws:eks:${region}:550536272523:cluster/${name}`;
+  const userAlias = arg("--user-alias") || `arn:aws:eks:${region}:550536272523:cluster/${name}`;
+  const role = arg("--role-arn");
+  const config = existsSync(file) ? yaml.parse(readFileSync(file, "utf8")) || {} : { apiVersion: "v1", kind: "Config" };
+  const clusterName = `arn:aws:eks:${region}:550536272523:cluster/${name}`;
+  const upsert = (list, item) => [...(list || []).filter((x) => x.name !== item.name), item];
+  config.clusters = upsert(config.clusters, { name: clusterName, cluster: { server: `https://${name}.fake.eks.amazonaws.com`, "certificate-authority-data": "Zm9v" } });
+  config.users = upsert(config.users, { name: userAlias, user: { exec: { apiVersion: "client.authentication.k8s.io/v1beta1", command: "aws", args: ["--region", region, "eks", "get-token", "--cluster-name", name, "--output", "json", ...(role ? ["--role-arn", role] : [])] } } });
+  config.contexts = upsert(config.contexts, { name: alias, context: { cluster: clusterName, user: userAlias } });
+  config["current-context"] = alias;
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, yaml.stringify(config));
+  process.stdout.write(`Updated context ${alias} in ${file}\n`);
+  process.exit(0);
+}
+if (args.includes("get-token")) {
+  process.stdout.write(JSON.stringify({ kind: "ExecCredential", apiVersion: "client.authentication.k8s.io/v1beta1", status: { token: "k8s-aws-v1.fake" } }));
+  process.exit(0);
+}
+process.stderr.write(`fake aws: ${args.join(" ")} is not faked\n`);
+process.exit(2);

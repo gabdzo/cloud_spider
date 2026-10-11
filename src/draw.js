@@ -293,7 +293,7 @@ export function paint(ctx, scene) {
     plaque(ctx, placed.orphans.label, 36, placed.orphans.y + 22, FONT_PX, TEXT);
   }
   for (const building of buildings) drawBuildingLabel(ctx, building);
-  drawCompoundTop(ctx, placed, { animTime, reducedMotion, hover: scene.kube?.hover || null, selected: scene.kube?.selected || null });
+  drawCompoundTop(ctx, placed, { animTime, reducedMotion, hover: scene.kube?.hover || null, selected: scene.kube?.selected || null, kube: scene.kube?.chip || (() => null) });
   for (const fixture of allFixtures(placed)) drawFixtureLabel(ctx, fixture);
   drawVaultBadges(ctx, placed.badges, { animTime, reducedMotion });
 

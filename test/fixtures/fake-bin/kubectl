@@ -1,0 +1,26 @@
+#!/usr/bin/env node
+// Fake kubectl for the CONNECT tests: config use-context, delete-context,
+// delete-user, on the kubeconfig file only.
+import { createRequire } from "node:module";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const yaml = createRequire(new URL("../../../package.json", import.meta.url))("yaml");
+const [group, verb, name] = process.argv.slice(2);
+const file = (process.env.KUBECONFIG || "").split(":")[0] || join(process.env.HOME, ".kube", "config");
+const config = yaml.parse(readFileSync(file, "utf8"));
+if (group !== "config") process.exit(2);
+if (verb === "use-context") {
+  if (!(config.contexts || []).some((c) => c.name === name)) {
+    process.stderr.write(`error: no context exists with the name: "${name}"\n`);
+    process.exit(1);
+  }
+  config["current-context"] = name;
+  process.stdout.write(`Switched to context "${name}".\n`);
+} else if (verb === "delete-context") {
+  config.contexts = (config.contexts || []).filter((c) => c.name !== name);
+  process.stdout.write(`deleted context ${name} from ${file}\n`);
+} else if (verb === "delete-user") {
+  config.users = (config.users || []).filter((u) => u.name !== name);
+  process.stdout.write(`deleted user ${name} from ${file}\n`);
+} else process.exit(2);
+writeFileSync(file, yaml.stringify(config));

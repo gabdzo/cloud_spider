@@ -199,13 +199,23 @@ export function compoundsOf(placed) {
   return out;
 }
 
-// What is under the pointer: a LOD button, a pod, an app, or the compound.
+// The KUBE chip left of the LOD switch: the compound's kube connection
+// (CONNECTED / NO ACCESS), a click opens its EKS card.
+export const KUBE_CHIP_W = 52;
+export function kubeChip(compound) {
+  const first = compound.lod[0];
+  return { type: "kube", cluster: compound.cluster, x: first.x - KUBE_CHIP_W - 6, y: first.y, w: KUBE_CHIP_W, h: first.h };
+}
+
+// What is under the pointer: the KUBE chip, a LOD button, a pod, an app, or the compound.
 export function compoundHit(placed, x, y) {
   const inside = (item) => x >= item.x && x < item.x + item.w && y >= item.y && y < item.y + item.h;
   for (const compound of compoundsOf(placed)) {
     if (!inside(compound)) continue;
     const lod = compound.lod.find(inside);
     if (lod) return { ...lod };
+    const chip = kubeChip(compound);
+    if (inside(chip)) return chip;
     const pod = compound.figures.find(inside);
     if (pod) return { ...pod };
     const app = compound.stalls.find(inside);
@@ -222,6 +232,7 @@ export function compoundHover(hit) {
   if (hit.type === "pod") return `${hit.ns}/${hit.label}${hit.caption ? ` · ${hit.caption}` : ""} · click: deep-inspect in the Cluster view`;
   if (hit.type === "app") return `${hit.kind} ${hit.ns}/${hit.label}${hit.count ? ` · ${hit.count} ready` : ""}${hit.services.length ? ` · svc ${hit.services.join(", ")}` : ""} · click: open in the Cluster view`;
   if (hit.type === "compound") return `${hit.cluster}: open the Cluster view`;
+  if (hit.type === "kube") return hit.text || `${hit.cluster}: kube connection · click: CONNECT / DISCONNECT`;
   return "";
 }
 

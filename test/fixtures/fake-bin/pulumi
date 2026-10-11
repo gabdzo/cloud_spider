@@ -1,0 +1,17 @@
+#!/usr/bin/env node
+// Fake pulumi for the CONNECT tests: stack outputs for the stacks listed
+// in FAKE_PULUMI_OUTPUTS (JSON: { "<stack>": { outputs } }); every other
+// stack is missing. Nothing else is faked.
+const args = process.argv.slice(2);
+const stack = args[args.indexOf("--stack") + 1];
+const outputs = JSON.parse(process.env.FAKE_PULUMI_OUTPUTS || "{}");
+if (args[0] === "stack" && args[1] === "output") {
+  if (!outputs[stack]) {
+    process.stderr.write(`error: no stack named '${stack}' found\n`);
+    process.exit(255);
+  }
+  process.stdout.write(JSON.stringify(outputs[stack]));
+  process.exit(0);
+}
+process.stderr.write(`fake pulumi: ${args.join(" ")} is not faked\n`);
+process.exit(2);

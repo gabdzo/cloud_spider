@@ -268,6 +268,18 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
       const t = await resolveTarget();
       return t.error ? { error: t.error } : { server: t.server, clusterName: t.clusterName };
     },
+    // CONNECT's check: one GET the viewer role may do. ok, or why not:
+    // unauthorized (the role is not mapped), forbidden, or another error.
+    async probe() {
+      const t = await resolveTarget();
+      if (t.error) return { error: t.error, unset: true };
+      const path = scope === "*" ? PATHS.namespaces() : `/api/v1/namespaces/${scope[0]}/pods?limit=1`;
+      const res = await getPath(path);
+      if (res.forbidden) return { forbidden: true, error: res.error };
+      if (/401/.test(res.error || "")) return { unauthorized: true, error: res.error };
+      if (res.error) return { error: res.error };
+      return { ok: true, clusterName: t.clusterName };
+    },
     // Everything the Cluster view draws, in one go. Missing pieces (no
     // metrics-server, forbidden nodes) come back empty with a note.
     async snapshot() {
