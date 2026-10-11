@@ -45,7 +45,7 @@ function accountRead(error) {
 export const KUBE_VIEW_TTL = 5_000;
 export const KUBE_MAP_TTL = 30_000;
 
-export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, regionsAllow = [], costTtl = COST_TTL }) {
+export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -171,8 +171,10 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       steps.push({ text: `context ${st.context} already reads ${cluster} with its viewer role: nothing to write`, fn: async () => ({ skipped: true, lines: ["CONNECTED already; the kubeconfig is not touched"] }) });
     } else {
       steps.push({ cmd: "aws", args: connectCommand({ cluster, roleArn: st.roleArn }), text: `aws ${connectCommand({ cluster, roleArn: st.roleArn }).join(" ")}` });
-      // update-kubeconfig switches the current context; put it back.
+      // update-kubeconfig switches the current context; put it back (or
+      // unset it again when there was none).
       if (current) steps.push({ cmd: "kubectl", args: ["config", "use-context", current], text: `kubectl config use-context ${current}   (update-kubeconfig switched it; put it back)` });
+      else steps.push({ cmd: "kubectl", args: ["config", "unset", "current-context"], text: "kubectl config unset current-context   (there was none; update-kubeconfig set one)" });
     }
     const name = st.context || alias;
     steps.push({ text: `add ${name} to cloudspider.contexts.yaml`, fn: () => connector.addToList({ context: name, label: cluster.replace(/^cloudspider-/, "").toUpperCase().slice(0, 24) || cluster, namespaces: "*" }, contexts) });
@@ -283,6 +285,60 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       kubeFlights.set(ctx.name, flight);
     }
     return kubeFlights.get(ctx.name);
+  }
+  // kube.autoConnect (default on): after an EKS RUN on Stacks the cluster is
+  // CONNECTed, after TAKE IT DOWN it is DISCONNECTed. Each run has its own
+  // log (the cluster stack's run log); the outcome goes on the radio.
+  const autoConnectOn = autoConnect ?? settings?.config?.kube?.autoConnect ?? true;
+  const connectNotes = [];
+  function connectNote(status, text) {
+    connectNotes.unshift({ time: now(), status, text, issue: "", count: 1, key: `connect|${now()}|${text}` });
+    if (connectNotes.length > 6) connectNotes.length = 6;
+  }
+  async function autoConnectAfter(cluster, done) {
+    if (done?.error || done?.state !== "done") return;
+    const st = await api.connectStatus(cluster, { fresh: true }).catch((failure) => ({ state: "error", text: failure?.message || "no answer" }));
+    if (st.state === "connected") {
+      connectNote("ok", `EKS ${cluster}: ${st.text}`);
+      return;
+    }
+    const action = st.state === "clash-same" ? "adopt" : ["not-connected", "not-listed"].includes(st.state) ? "connect" : "";
+    if (!action) {
+      connectNote("warn", `EKS ${cluster} is up but not connected: ${st.text}${st.hint ? ` · ${st.hint}` : ""}`);
+      return;
+    }
+    const started = await api.connectRun(pageOrigin, { cluster, action, onDone: async (run) => {
+      const after = run?.state === "done" ? await api.connectStatus(cluster, { fresh: true }).catch(() => null) : null;
+      if (after?.state === "connected") connectNote("ok", `EKS ${cluster} connected by itself after its RUN: ${after.text} (current context unchanged)`);
+      else connectNote("fail", `EKS ${cluster}: auto CONNECT ${run?.state === "done" ? `ended ${after?.text || "not connected"}` : `failed: ${run?.error || "see its log"}`} · press CONNECT on Stacks › EKS`);
+    } }).catch((failure) => ({ error: failure?.message || "did not start" }));
+    if (started?.error) connectNote("warn", `EKS ${cluster}: auto CONNECT did not start (${started.error}) · press CONNECT on Stacks › EKS`);
+  }
+  // After TAKE IT DOWN: CONNECT's own context goes (kubeconfig and list);
+  // a context it did not make is only taken out of the contexts file.
+  async function autoDisconnectAfter(cluster, done) {
+    if (done?.error || done?.state !== "done") return;
+    const st = await api.connectStatus(cluster, { fresh: true }).catch(() => null);
+    endpoints.delete(cluster);
+    if (st?.context && st.ours) {
+      const started = await api.connectRun(pageOrigin, { cluster, action: "disconnect", onDone: (run) => {
+        connectNote(run?.state === "done" ? "ok" : "fail", run?.state === "done" ? `EKS ${cluster} is down: ${st.context} removed from the kubeconfig and the contexts (current context unchanged)` : `EKS ${cluster} is down; auto DISCONNECT failed: ${run?.error || "see its log"}`);
+      } }).catch((failure) => ({ error: failure?.message || "did not start" }));
+      if (started?.error) connectNote("warn", `EKS ${cluster} is down; auto DISCONNECT did not start (${started.error})`);
+      return;
+    }
+    const listed = contexts.filter((ctx) => ctx.origin !== "config" && (ctx.name === viewerAlias(cluster) || ctx.name === st?.context || sloClusters.get(ctx.name) === cluster));
+    if (!listed.length) return;
+    const steps = listed.flatMap((ctx) => [{ text: `remove ${ctx.name} from cloudspider.contexts.yaml (the kubeconfig is not touched: CONNECT did not make it)`, fn: () => connector.removeFromList(ctx.name, contexts) }]);
+    steps.push({ text: "reload Cloud Spider's kube contexts (no restart)", fn: async () => {
+      const got = await reloadContexts();
+      for (const ctx of listed) probes.delete(ctx.name);
+      return got.error ? { error: got.error } : { lines: [`contexts now: ${got.names.join(", ")}`] };
+    } });
+    const started = upgrade.runSteps({ module: "eks", action: "forget", stack: st?.stack || "", steps, onDone: (run) => {
+      connectNote(run?.state === "done" ? "ok" : "fail", `EKS ${cluster} is down: ${listed.map((ctx) => ctx.name).join(", ")} ${run?.state === "done" ? "taken out of the contexts file" : "not taken out of the contexts file"}`);
+    } });
+    if (started?.error) connectNote("warn", `EKS ${cluster} is down; its contexts were not taken out of the list (${started.error})`);
   }
   // cluster -> { items, stage, text }: add-ons queued behind a create.
   const bundleQueue = new Map();
@@ -749,7 +805,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       const no = (error, hint = "") => upgrade.refuse ? { ...upgrade.refuse({ module: "eks", action, stack, error }), ...(hint ? { hint } : {}) } : { error, hint };
       if (action === "adopt") {
         if (st.state !== "clash-same" || !st.adopt) return no(st.state === "connected" ? `${cluster} is already connected` : `nothing to adopt for ${cluster}`, st.hint || "");
-        return upgrade.runSteps({ module: "eks", action: "use it", stack, steps: adoptSteps(cluster, st.adopt), command: "", where: st.kubeconfig });
+        return upgrade.runSteps({ module: "eks", action: "use it", stack, steps: adoptSteps(cluster, st.adopt), command: "", where: st.kubeconfig, onDone: typeof body.onDone === "function" ? body.onDone : undefined });
       }
       if (action === "connect") {
         if (st.state === "no-cluster" || st.state === "error") return no(st.text, st.hint);
@@ -763,7 +819,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       if (!st.ours) return no(`${st.context} was not made by CONNECT`, `Cloud Spider only removes the context it made (${st.alias}). Remove ${st.context} yourself if you want it gone.`);
       const kc = await connector.readKubeconfig();
       const conn = connectionOf(kc.config, { cluster, roleArn: st.roleArn });
-      return upgrade.runSteps({ module: "eks", action: "disconnect", stack, steps: disconnectSteps(conn), command: `kubectl config delete-context ${conn.alias}`, where: st.kubeconfig });
+      return upgrade.runSteps({ module: "eks", action: "disconnect", stack, steps: disconnectSteps(conn), command: `kubectl config delete-context ${conn.alias}`, where: st.kubeconfig, onDone: typeof body.onDone === "function" ? body.onDone : undefined });
     },
     // ADD-ONS on the EKS card: the checklist for one cluster.
     async bundleStatus(cluster = "", { fresh = false, items = null } = {}) {
@@ -862,7 +918,11 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
           action: body.action,
           clusters,
           legacyName,
-          onDone: withAddons.length ? (done) => afterCreate(cluster, withAddons, done) : undefined,
+          onDone: withAddons.length
+            ? (done) => afterCreate(cluster, withAddons, done)
+            : autoConnectOn && connector && body.module === "eks" && validCluster(cluster || "cloudspider-up") && ["up", "destroy"].includes(body.action)
+              ? (done) => (body.action === "up" ? autoConnectAfter : autoDisconnectAfter)(cluster || "cloudspider-up", done)
+              : undefined,
         });
         if (withAddons.length && !started?.error && validCluster(cluster)) bundleQueue.set(cluster, { items: withAddons, stage: "cluster", text: `after the cluster: CONNECT, then ${withAddons.length} add-on${withAddons.length === 1 ? "" : "s"}` });
         return started?.error && !started.hint ? { ...started, ...runHint(started.error) } : started;
@@ -977,7 +1037,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       return !ctx || ctx.primary;
     },
     kubeHealth() {
-      return { radio: health.radio(), contexts: contextList() };
+      return { radio: [...connectNotes, ...health.radio()].sort((a, b) => b.time - a.time), contexts: contextList() };
     },
     async primaryClusterView() {
       const at = region;
