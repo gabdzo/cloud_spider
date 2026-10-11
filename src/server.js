@@ -1728,13 +1728,33 @@ const page = `<!doctype html>
   @media (prefers-reduced-motion: reduce) {
     .glass, #status::after { animation: none; }
   }
-  /* Wide: the readout and knobs fit on the top row; the gauges get a row. */
+  /* Wide (review R6): no row for the gauges alone. 1600-1839: two full rows,
+     plate / tabs / console, then tally / CAPS / readout / knobs (the readout
+     used to wrap onto a row of its own here, three rows in all). */
   @media (min-width: 1600px) {
-    .gauges { order: 10; flex-basis: 100%; }
-    /* The tally strip is one line of text: it need not span the whole row.
-       It grows with its text up to the bill; the bill keeps its own size. */
-    #tally { flex: 0 1 auto; min-width: min(520px, 40%); max-width: calc(100% - 290px); }
-    #corner { margin-left: auto; }
+    .gauges { display: contents; }
+    header::after { content: ""; order: 9; flex-basis: 100%; height: 0; }
+    #tally { order: 10; flex: 1 1 320px; }
+    #corner { order: 11; flex: 0 1 260px; }
+    .readout { order: 12; }
+    .knobs { order: 13; }
+  }
+  /* >=1840: one row. CAPS sits between the console and the readout; the
+     tally moves to the terminal line (browser.js placeTally), right side. */
+  @media (min-width: 1840px) {
+    header::after { display: none; }
+    header { gap: 10px 12px; }
+    .plate { padding-right: 10px; }
+    h1 { letter-spacing: 0.12em; }
+    .plate small { letter-spacing: 0.12em; }
+    .tabs { gap: 6px; padding-left: 7px; padding-right: 7px; }
+    .tab { gap: 5px; padding: 0 8px; letter-spacing: 0.06em; }
+    .console { gap: 10px; padding-left: 9px; padding-right: 9px; }
+    .keys { gap: 7px; }
+    #corner { order: 4; flex: 1 1 180px; min-width: 170px; max-width: 320px; margin-left: auto; }
+    .readout { order: 5; margin-left: 0; }
+    .knobs { order: 6; }
+    .terminal #tally { order: 20; flex: 0 1 auto; max-width: 52%; height: 30px; margin-left: auto; font-size: 12px; }
   }
   /* Laptop (1280-ish): with a Menlo-width font (the Mac fallback when Share
      Tech Mono and VT323 are not installed) the plate, the four view tabs and
