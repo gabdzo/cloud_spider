@@ -1,6 +1,8 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
+import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
 
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
@@ -173,12 +175,34 @@ const adminEntry = new aws.eks.AccessEntry("admin", {
   type: "STANDARD",
   tags,
 });
-new aws.eks.AccessPolicyAssociation("admin", {
+const adminAccess = new aws.eks.AccessPolicyAssociation("admin", {
   clusterName: cluster.name,
   principalArn: me.arn,
   policyArn: "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
   accessScope: { type: "cluster" },
 }, { dependsOn: [adminEntry] });
+
+// SCORE reads a fresh cluster without a manual kubectl apply: the scanner
+// ClusterRole (scanner-rbac.js) bound to the viewer group. The provider is
+// built from this cluster's outputs (not a lookup by name), so it works on
+// the first up, and authenticates as the deployer (admin entry above).
+const kubeconfig = pulumi.all([cluster.name, cluster.endpoint, cluster.certificateAuthority]).apply(([name, endpoint, ca]) =>
+  JSON.stringify({
+    apiVersion: "v1",
+    kind: "Config",
+    clusters: [{ name, cluster: { server: endpoint, "certificate-authority-data": ca.data } }],
+    contexts: [{ name, context: { cluster: name, user: name } }],
+    "current-context": name,
+    users: [{ name, user: { exec: { apiVersion: "client.authentication.k8s.io/v1beta1", command: "aws", args: ["--region", aws.config.region || "eu-north-1", "eks", "get-token", "--cluster-name", name, "--output", "json"] } } }],
+  }),
+);
+const kube = new k8s.Provider("scanner", { kubeconfig, enableServerSideApply: true }, { dependsOn: [adminAccess] });
+const scannerRole = new k8s.rbac.v1.ClusterRole("scanner", { metadata: { name: SCANNER_ROLE }, rules: SCANNER_RULES }, { provider: kube });
+new k8s.rbac.v1.ClusterRoleBinding("scanner", {
+  metadata: { name: SCANNER_ROLE },
+  roleRef: { apiGroup: "rbac.authorization.k8s.io", kind: "ClusterRole", name: SCANNER_ROLE },
+  subjects: [{ apiGroup: "rbac.authorization.k8s.io", kind: "Group", name: "cloudspider-viewers" }],
+}, { provider: kube, dependsOn: [scannerRole, viewerEntry] });
 
 export const name = cluster.name;
 export const viewerRoleArn = viewerRole.arn;
