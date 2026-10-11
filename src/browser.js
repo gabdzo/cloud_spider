@@ -23,6 +23,7 @@ import { CLUSTER_COLUMNS } from "./cluster.js";
 import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
 import { countText, matchOrder, searchKube } from "./kube-search.js";
+import { createK9s } from "./k9s.js";
 import { paintKube } from "./kube-draw.js";
 import { renderTelemetry } from "./tele-view.js";
 import { createPodInspector } from "./pod-inspect-view.js";
@@ -112,6 +113,8 @@ const kubeTabs = document.querySelector("#kube-tabs");
 const kubeCtxEl = document.querySelector("#kube-ctx");
 const kubeSearchEl = document.querySelector("#kube-search");
 const kubeSearchCount = document.querySelector("#kube-search-count");
+const k9sEl = document.querySelector("#k9s");
+const k9sBtn = document.querySelector("#k9s-btn");
 const kubeTele = document.querySelector("#kube-tele");
 const kubeOps = document.querySelector("#kube-ops");
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
@@ -1569,6 +1572,7 @@ function setClusterContext(name) {
   writePref(CLUSTER_CONTEXT_KEY, name);
   kubeSearchEl.value = kubeSearchText.get(name) || "";
   searchCursor = -1;
+  k9s.reset();
   clusterData = readingView(name);
   if (clusterData) renderContexts(clusterData);
   clusterSelected = null;
@@ -2408,6 +2412,37 @@ function showPod(node) {
   podInspector.open(node);
 }
 
+// ---- K9S window (k9s.js): a read-only, keyboard-driven resource table ----
+const k9s = createK9s({
+  root: k9sEl,
+  getJson: (url) => fetch(url).then(readBody),
+  context: () => clusterData?.context || clusterContext,
+  sample: () => sample,
+  onToggle: (on) => {
+    k9sBtn.setAttribute("aria-pressed", String(on));
+    if (!on) canvas.focus({ preventScroll: true });
+  },
+  // Enter: the pod's deep-inspect panel, as a click on its card would.
+  onInspect: (row) => {
+    const id = `pod:${row.ns}/${row.name}`;
+    const node = clusterData?.diagram?.nodes?.find((n) => n.id === id) || { id, kind: "pod", label: row.name, ns: row.ns, status: row.status, caption: "", pod: { ns: row.ns, name: row.name, containers: row.containers || [], node: "" } };
+    clusterSelected = node.id;
+    showPod(node);
+    draw();
+  },
+});
+k9sBtn.addEventListener("click", () => k9s.toggle());
+// ":" opens (or focuses) it from anywhere in the Cluster view, unless typing.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== ":" || event.ctrlKey || event.metaKey || event.altKey || k9sBtn.hidden) return;
+  const t = event.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  if (k9sEl.contains(t)) return;
+  event.preventDefault();
+  if (k9s.isOpen()) k9s.focus();
+  else k9s.open();
+});
+
 // ---- cluster search (kube-search.js): the prompt bar filters the lanes ----
 const kubeSearchText = new Map(); // per kube context
 let searchCursor = -1;
@@ -2426,6 +2461,10 @@ function currentSearch() {
 }
 
 function syncSearchBar() {
+  // The K9S window lives in the Cluster view, any context or screen.
+  const kubeView = mode === "cluster" && clusterData?.diagram?.layout === "kube";
+  k9sBtn.hidden = !kubeView;
+  if (!kubeView && k9s.isOpen()) k9s.close();
   const on = searchable();
   kubeSearchEl.hidden = !on;
   statusEl.hidden = on;

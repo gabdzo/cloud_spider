@@ -354,6 +354,18 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
         eventNote: events.error || "",
       };
     },
+    // Events for the K9S window's :events and describe: read only while
+    // that view is open (app.js caches 15 s). GET, namespaced when scoped.
+    async events(ns = "") {
+      const t = await resolveTarget();
+      if (t.error) return { error: t.error };
+      const list = scope === "*" ? (ns && ns !== "*" ? [checkName(ns)] : null) : (ns && ns !== "*" ? [ns] : scope);
+      if (list && list.some((n) => !inScope(n))) return { error: `namespace ${String(ns).slice(0, 63)} is not in kube context ${contextName}'s list` };
+      const results = await Promise.all((list ? list.map((n) => PATHS.nsEvents(n)) : [PATHS.events()]).map((path) => getPath(path)));
+      const items = results.flatMap((r) => r.json?.items || []);
+      const failed = results.find((r) => r.error);
+      return { items, ...(failed && !items.length ? { error: failed.forbidden ? "events: no access" : failed.error } : {}) };
+    },
     // Deep-inspect: the pod object, who owns it, its events and usage.
     // GETs only; the caller redacts (kube-inspect.js).
     async podInspect(ns, name) {
