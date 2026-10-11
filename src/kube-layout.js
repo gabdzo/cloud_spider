@@ -134,7 +134,7 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
     const items = inLane.filter((n) => n.ns === name);
     const open = laneOpen(name, ns.system, state) && items.length > 0;
     const workloads = items.filter((n) => n.kind === "workload").length;
-    return { id: ns.id, ns: name, system: !!ns.system, status: ns.status, caption: ns.caption, workloads, items, open };
+    return { id: ns.id, ns: name, system: !!ns.system, status: ns.status, caption: ns.caption, noAccess: ns.noAccess || [], workloads, items, open };
   });
 
   // Global columns: only the kinds some open lane has, so lanes line up.
@@ -201,7 +201,7 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
   const outLanes = [];
   const outEdges = [];
   for (const lane of lanes) {
-    const box = { id: lane.id, ns: lane.ns, system: lane.system, status: lane.status, caption: lane.caption, workloads: lane.workloads, open: lane.open, count: lane.items.length, x: L.PAD, y, w: laneW };
+    const box = { id: lane.id, ns: lane.ns, system: lane.system, status: lane.status, caption: lane.caption, noAccess: lane.noAccess, workloads: lane.workloads, open: lane.open, count: lane.items.length, x: L.PAD, y, w: laneW };
     box.toggle = { x: L.PAD, y, w: laneW, h: L.LANE_BAR };
     if (!lane.open) {
       box.h = L.LANE_BAR + 4;

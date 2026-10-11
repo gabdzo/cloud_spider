@@ -111,19 +111,26 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
   const namespaces = (snapshot.namespaces || []).map((n) => meta(n).name).filter(Boolean);
   for (const pod of pods) if (!namespaces.includes(meta(pod).namespace)) namespaces.push(meta(pod).namespace);
   const userNs = (ns) => !SYSTEM_NAMESPACE.test(ns);
+  // A context scoped to namespaces (kube-contexts.js): exactly those lanes,
+  // empty or not, each with what it could not read.
+  const scoped = Array.isArray(snapshot.scope) ? new Set(snapshot.scope) : null;
+  const access = snapshot.access || {};
 
   for (const ns of namespaces.sort((a, b) => Number(userNs(b)) - Number(userNs(a)) || a.localeCompare(b))) {
     const inside = pods.filter((p) => meta(p).namespace === ns);
-    if (!userNs(ns) && !inside.length) continue;
-    if (ns === "default" && !inside.length) continue;
+    if (scoped && !scoped.has(ns)) continue;
+    if (!scoped && !userNs(ns) && !inside.length) continue;
+    if (!scoped && ns === "default" && !inside.length) continue;
     const broken = inside.filter((p) => podState(p).health === "broken").length;
+    const blind = access[ns] || [];
     nodes.push({
       id: `ns:${ns}`,
       kind: "namespace",
       label: ns,
-      caption: `${inside.length} pod${inside.length === 1 ? "" : "s"}${userNs(ns) ? "" : " · system"}${broken ? ` · ${broken} failing` : ""}`,
-      status: broken ? "broken" : "ok",
-      system: !userNs(ns),
+      caption: `${blind.includes("pods") ? "pods unreadable" : `${inside.length} pod${inside.length === 1 ? "" : "s"}`}${userNs(ns) ? "" : " · system"}${broken ? ` · ${broken} failing` : ""}`,
+      status: broken ? "broken" : blind.includes("pods") ? "hang" : "ok",
+      system: !userNs(ns) && !scoped,
+      noAccess: blind,
     });
     edges.push({ from: cpId, to: `ns:${ns}`, status: broken ? "broken" : "ok" });
   }

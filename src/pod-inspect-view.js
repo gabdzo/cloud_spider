@@ -49,7 +49,7 @@ function meter(label, used, req, lim, unit) {
   return li;
 }
 
-export function createPodInspector(panel, { sample = () => false, onClose = () => {} } = {}) {
+export function createPodInspector(panel, { sample = () => false, context = () => "", onClose = () => {} } = {}) {
   let ticket = 0;
   let follow = 0;
   let data = null;
@@ -80,6 +80,7 @@ export function createPodInspector(panel, { sample = () => false, onClose = () =
   function query(extra) {
     const q = new URLSearchParams({ ns: data?.ns || "", name: data?.name || "", ...extra });
     if (sample()) q.set("sample", "1");
+    else if (context()) q.set("context", context());
     return q;
   }
 
@@ -314,6 +315,7 @@ export function createPodInspector(panel, { sample = () => false, onClose = () =
     renderTab();
     const q = new URLSearchParams({ ns, name });
     if (sample()) q.set("sample", "1");
+    else if (context()) q.set("context", context());
     fetch(`/api/cluster/pod/inspect?${q}`).then((r) => r.json()).catch(() => ({ error: "the pod did not answer" })).then((got) => {
       if (mine !== ticket) return;
       data = got;

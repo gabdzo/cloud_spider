@@ -476,3 +476,121 @@ Click a tent to open the Cluster view on that workload (its card and
 SLOs), a figure to open the pod's deep-inspect panel, the compound's
 name for the Cluster view itself. With no kube context the map stays as
 before: the nodes are plain buildings.
+
+## 19. More kube contexts, scoped to your namespaces (free; GET only)
+
+The Cluster view can read more than one kube context, for example the
+demo cluster plus a work cluster where you only have rights in a few
+namespaces. List them in `cloudspider.contexts.yaml` at the repo root. The
+file is gitignored; copy `cloudspider.contexts.example.yaml` to start one.
+For a quick try, use the env var instead:
+
+```sh
+CLOUDSPIDER_KUBE_CONTEXTS="cloudspider-viewer:*;my-work-context:team-a,team-b" npm start
+```
+
+Cloud Spider reads its contexts from the first of these it finds:
+
+1. `CLOUDSPIDER_KUBE_CONTEXTS`
+2. the file, or the path in `CLOUDSPIDER_KUBE_CONTEXTS_FILE`
+3. the single `CLOUDSPIDER_KUBE_CONTEXT` (§7)
+
+The first context listed is the **primary** one. The map compound (§18),
+TELEMETRY, OPS and the cluster SLOs read the primary only. Every context
+gets:
+
+- **A button in the Cluster view's context switcher.** The button's health
+  lamp is green when every pod is healthy, amber for warnings, and red for
+  crashloops, image pulls, OOMKills and failed Jobs. Its lanes are the
+  context's namespaces. Each context reads with its own kubeconfig
+  credentials, so one context failing never touches another.
+- **A health watch.** Each context is read on its own clock: `poll` in
+  seconds, default 60, at least 30. One namespaced snapshot is shared with
+  the Cluster view. The watch flags:
+  - CrashLoopBackOff
+  - ImagePullBackOff / ErrImagePull
+  - OOMKilled (current or last state)
+  - restart counts that rose since the last read (3 or more)
+  - Pending for over 5 minutes
+  - failed Jobs
+  - Deployments and StatefulSets with fewer ready replicas than wanted
+
+  Each new finding goes on the radio once, naming the context, the
+  namespace and the pod.
+- **A PODS line on the morning report** with the counts and the worst
+  three offenders.
+
+**Namespaced means namespaced.** When `namespaces` is a list, Cloud Spider
+calls only the namespaced endpoints in those namespaces, for each
+namespace:
+- pods
+- services
+- deployments, daemonsets and statefulsets
+- jobs
+- ingresses
+- pod metrics
+- events and HPAs (OPS)
+
+It never asks for cluster-wide lists, nodes or the namespace list. The
+nodes in the picture are only the names the pods report. A 403 on any of
+these lists shows as an amber `NO ACCESS · …` chip on that namespace's
+lane, never as an error. A pod outside the list is refused before any
+request is made. Everything is GET; nothing is written, exec'd or
+port-forwarded, and Secrets are never read.
+
+**The safer door: a read-only Role per namespace.** Ask your cluster
+admins to bind the built-in `view` ClusterRole in each of your namespaces.
+`view` reads workloads, pods, logs and events, but not Secrets. Add a
+second, tiny Role per namespace only if you want pod metrics. For example,
+for an IAM role or SSO group mapped to the user `ppf-readonly` (EKS access
+entries or aws-auth):
+
+```yaml
+# One RoleBinding per namespace (repeat for team-b, ...).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cloudspider-view
+  namespace: team-a
+subjects:
+  - kind: User            # or Group
+    name: ppf-readonly
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: view              # built in: read-only, no Secrets
+  apiGroup: rbac.authorization.k8s.io
+---
+# Optional: pod CPU/memory from metrics-server in this namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cloudspider-pod-metrics
+  namespace: team-a
+rules:
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cloudspider-pod-metrics
+  namespace: team-a
+subjects:
+  - kind: User
+    name: ppf-readonly
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: cloudspider-pod-metrics
+  apiGroup: rbac.authorization.k8s.io
+```
+
+Then make a kubeconfig context that uses that identity (for EKS:
+`aws eks update-kubeconfig --name <cluster> --role-arn <read-only role>
+--alias my-work-context`) and list it with its namespaces.
+
+Context names and namespaces come only from your config, and names that
+do not look like kube names are refused at start. Cloud Spider writes no
+tokens and no pod contents to its log; only config mistakes are printed.

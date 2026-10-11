@@ -19,3 +19,6 @@ labs/**/.state/
 # cloud-platform (labctl) run state, Pulumi state and its venv.
 labs/cloud-platform/.lab/
 labs/cloud-platform/.venv/
+
+# Kube contexts for the Cluster view (names of real clusters).
+cloudspider.contexts.yaml
