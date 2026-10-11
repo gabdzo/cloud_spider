@@ -130,7 +130,27 @@ export function cloudFrontChecks(aws, target) {
   return out;
 }
 
-const ELB = ["A-ELB-01", "A-ELB-02"];
+const ELB = ["A-ELB-01", "A-ELB-02", "A-ELB-04"];
+
+// A-ELB-04: who made the 5xx, from PATH's CloudWatch read of the load
+// balancer (HTTPCode_ELB_50x vs HTTPCode_Target_5XX over its window).
+export function albMetricsCheck(aws, lb) {
+  const m = aws.graph?.metrics?.[lb.arn];
+  const cmd = `aws cloudwatch get-metric-statistics --namespace AWS/ApplicationELB --metric-name HTTPCode_ELB_5XX_Count --dimensions Name=LoadBalancer,Value=${lb.arn.split(":loadbalancer/")[1] || lb.name} --statistics Sum --period 60 --start-time $(date -u -d '-15 min' +%FT%TZ) --end-time $(date -u +%FT%TZ)`;
+  if (!m) return row("A-ELB-04", "lb", "NOT_ASSESSED", { tool: "CloudWatch", reason: "PATH has not read this load balancer's metrics", command: cmd });
+  const elb = (m.elb502 || 0) + (m.elb503 || 0) + (m.elb504 || 0);
+  const app = m.target5xx || 0;
+  const parts = [m.elb502 && `502: ${m.elb502}`, m.elb503 && `503: ${m.elb503}`, m.elb504 && `504: ${m.elb504}`].filter(Boolean).join(", ");
+  // Load-balancer wide (every host on it), so it does not colour the hop.
+  return row("A-ELB-04", "lb", elb || app ? "FAIL" : "PASS", {
+    tool: "CloudWatch",
+    offPath: true,
+    severity: elb || app ? "high" : "info",
+    text: elb || app ? `of ${m.requests ?? "?"} requests, ${elb ? `${elb} got a 5xx from the load balancer itself (${parts})` : "none got a 5xx from the load balancer"}; the targets answered ${app || "no"} 5xx` : `no 5xx from the load balancer or its targets in ${m.requests ?? "?"} requests`,
+    observed: { elb, target: app, ...m },
+    command: cmd,
+  });
+}
 
 // The ALB the request reaches: the target itself, or CloudFront's origin.
 export function albChecks(aws, target) {
@@ -150,6 +170,7 @@ export function albChecks(aws, target) {
     const listener = graph.listeners.some((l) => l.lbArn === lb.arn && l.port === request.port);
     out.push(row("A-ELB-01", "lb", "FAIL", { tool: "routeOn", text: listener ? `${lb.name} ${where}: no rule serves ${request.host}${request.path} and there is no default action` : `${lb.name} has no listener on ${request.port}: connections are refused or time out`, observed: { lb: lb.name, request }, command: cmdRules }));
     out.push(row("A-ELB-02", "lb", "NOT_APPLICABLE", { tool: "DescribeTargetHealth", reason: "no rule, no target group" }));
+    out.push(albMetricsCheck(aws, lb));
     return out;
   }
   const ruleName = rule.isDefault ? "the default rule" : `rule ${rule.priority}${rule.hosts.length ? ` (host ${rule.hosts.join(", ")}${rule.paths.length ? ` path ${rule.paths.join(", ")}` : ""})` : rule.paths.length ? ` (path ${rule.paths.join(", ")})` : ""}`;
@@ -165,6 +186,7 @@ export function albChecks(aws, target) {
   }));
   if (!per.length) {
     out.push(row("A-ELB-02", "lb", "NOT_APPLICABLE", { tool: "DescribeTargetHealth", reason: action.type === "forward" ? "the target group is missing" : `the rule ${actionText}` }));
+    out.push(albMetricsCheck(aws, lb));
     return out;
   }
   const dead = per.filter((p) => p.healthy === 0);
@@ -177,5 +199,6 @@ export function albChecks(aws, target) {
     observed: { targetGroups: per },
     command: `aws elbv2 describe-target-health --target-group-arn ${per[0].arn}`,
   }));
+  out.push(albMetricsCheck(aws, lb));
   return out;
 }

@@ -4,7 +4,11 @@
 // ndModel turns a run (GET /api/netdebug/<id>) into what the panel shows
 // (pure, tested in node); createNetdebugView draws it with DOM nodes and
 // textContent only. A probe starts only from a press of RUN (or Enter in
-// the field): POST /api/netdebug.
+// the field): POST /api/netdebug. WHY? on an ALB 503 finding opens the
+// walkthrough (walkthrough.js) over the same report; its VERIFY re-runs
+// the debug (every 60 s, 10 times at most, while it is open).
+import { albWalkthrough, verifyState } from "./walkthrough.js";
+
 export const ORDER = { FAIL: 0, UNKNOWN: 1, PASS: 2, NOT_ASSESSED: 3, NOT_APPLICABLE: 4 };
 export const STATE_TEXT = { FAIL: "FAIL", PASS: "PASS", UNKNOWN: "UNKNOWN", NOT_ASSESSED: "NOT ASSESSED", NOT_APPLICABLE: "N/A" };
 const GLYPH = { FAIL: "✗", PASS: "✓", UNKNOWN: "?", NOT_ASSESSED: "○", NOT_APPLICABLE: "–" };
@@ -214,6 +218,12 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   let polling = 0;
   let open = true;
   let shown = false;
+  // The ALB 503 walkthrough: open, and the VERIFY re-checks left.
+  let why = false;
+  let rechecks = 0;
+  let recheckTimer = 0;
+  const RECHECK_MS = 60_000;
+  const RECHECKS = 10;
   const field = h("input", { className: "nd-url", type: "text", "aria-label": "URL to debug", placeholder: "https://… or a host: only what you type is probed", spellcheck: "false", autocomplete: "off" });
   const runBtn = h("button", { className: "nd-btn nd-primary", type: "button", text: "RUN" });
   const meta = h("span", { className: "nd-meta" });
@@ -224,7 +234,12 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   const bar = h("div", { className: "nd-bar" }, h("b", { className: "nd-title", text: "DEBUG" }), field, modes, runBtn, meta, exports, fold);
   root.replaceChildren(bar, body);
 
-  const start = async () => {
+  const start = async ({ keepWhy = false } = {}) => {
+    if (!keepWhy) {
+      why = false;
+      rechecks = 0;
+    }
+    clearTimeout(recheckTimer);
     const target = field.value.trim();
     if (!target) {
       field.focus();
@@ -251,6 +266,14 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
         draw();
         if (got.state !== "running") {
           if (got.report) onDone(got.report);
+          // VERIFY keeps going by itself while the walkthrough is open.
+          if (why && got.report && !verifyState(got.report).ok && rechecks < RECHECKS && !root.hidden) {
+            recheckTimer = setTimeout(() => {
+              if (!why || root.hidden) return;
+              rechecks += 1;
+              start({ keepWhy: true });
+            }, RECHECK_MS);
+          }
           break;
         }
       }
@@ -258,7 +281,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     }
     runBtn.disabled = false;
   };
-  runBtn.addEventListener("click", start);
+  runBtn.addEventListener("click", () => start());
   field.addEventListener("keydown", (event) => {
     if (event.key === "Enter") start();
   });
@@ -338,7 +361,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     }
     for (const f of model.findings) {
       const card = h("div", { className: "nd-finding", dataset: { confidence: f.confidence } },
-        h("div", { className: "nd-fhead" }, h("span", { className: "nd-conf", text: f.confidenceText }), h("span", { className: "nd-kind", text: "inference" })),
+        h("div", { className: "nd-fhead" }, h("span", { className: "nd-conf", text: f.confidenceText }), h("span", { className: "nd-kind", text: "inference" }), f.walkthrough === "alb-503" ? h("button", { type: "button", className: "nd-btn nd-whybtn", text: why ? "WHY? ▴" : "WHY?", title: "walk the ALB 503 decision tree over this run's evidence", "aria-expanded": String(why), onclick: () => ((why = !why), why || clearTimeout(recheckTimer), draw()) }) : null),
         h("p", { text: f.statement }),
         h("div", { className: "nd-supports" }, h("span", { className: "nd-label", text: "FACTS" }), ...f.supports.map((id) => h("code", { text: id })), f.contradicts.length ? h("span", { className: "nd-contra", text: `contradicts ${f.contradicts.join(", ")}` }) : null));
       for (const next of f.next || []) card.append(h("div", { className: "nd-next" }, h("span", { className: "nd-label", text: "NEXT" }), h("code", { text: next }), h("button", { type: "button", className: "nd-copy", text: "COPY", onclick: (e) => copyText(next, e.currentTarget) })));
@@ -346,6 +369,31 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       pane.append(card);
     }
     return pane;
+  }
+
+  function drawWhy() {
+    const w = albWalkthrough(run.report);
+    const v = verifyState(run.report);
+    return h("section", { className: "nd-why", "aria-label": "why is the load balancer answering 503" },
+      h("div", { className: "nd-whyhead" },
+        h("b", { text: `WHY IS ${String(w.lb).toUpperCase()} ANSWERING 503?` }),
+        h("span", { className: "nd-quiet", text: `${w.host} · ${w.steps.length} step${w.steps.length === 1 ? "" : "s"} · this run's evidence, no new calls` }),
+        h("button", { type: "button", className: "nd-fold", title: "close the walkthrough", text: "×", onclick: () => ((why = false), clearTimeout(recheckTimer), draw()) })),
+      h("ol", { className: "nd-wsteps" }, ...w.steps.map((st, i) => h("li", { className: "nd-wstep", dataset: { state: st.state, last: i === w.steps.length - 1 ? "1" : "0" } },
+        h("span", { className: "nd-wn", text: String(st.n) }),
+        h("div", { className: "nd-wbody" },
+          h("b", { text: st.question }),
+          h("p", { text: st.answer }),
+          h("div", { className: "nd-supports" }, ...st.evidence.map((e) => h("code", { dataset: { status: e.status }, title: e.text, text: e.id })), st.next ? h("span", { className: "nd-wnext", text: `→ step ${st.next}` }) : null))))),
+      h("div", { className: "nd-wverdict" },
+        h("span", { className: "nd-label", text: "VERDICT" }),
+        h("p", { text: w.verdict.text }),
+        ...w.verdict.fix.map((c) => h("div", { className: "nd-next" }, h("span", { className: "nd-label", text: "FIX" }), h("code", { text: c }), h("button", { type: "button", className: "nd-copy", text: "COPY", onclick: (e) => copyText(c, e.currentTarget) }))),
+        h("div", { className: "nd-wverify", dataset: { ok: v.ok ? "1" : "0" } },
+          h("span", { className: "nd-label", text: "VERIFY" }),
+          h("i", { className: "nd-lamp", "aria-hidden": "true" }),
+          h("span", { text: `${w.verify} · now: ${v.text}${!v.ok && rechecks < RECHECKS ? ` · re-checks every ${RECHECK_MS / 1000} s (${RECHECKS - rechecks} left)` : ""}` }),
+          h("button", { type: "button", className: "nd-btn", text: "RE-CHECK", onclick: () => ((rechecks = 0), start({ keepWhy: true })) }))));
   }
 
   function drawDrill(model) {
@@ -374,7 +422,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       body.replaceChildren(h("div", { className: "nd-empty" },
         h("p", { text: "Type a URL and RUN. Cloud Spider does the drill from this machine: DNS (yours and public DoH), TCP, TLS (chain, name, expiry) and one GET with the timing split. Every check has its command to COPY." }),
         h("p", { className: "nd-quiet", text: "Only the URL you type is probed: GET/HEAD, no cookies, rate-limited; metadata and link-local addresses are always refused." }),
-        h("div", { className: "nd-tries" }, h("span", { className: "nd-label", text: "TRY" }), ...(sample() ? ["web.sample.test", "api.sample.test", "https://google.com"] : ["https://google.com", ...(hostInput?.value?.trim() ? [hostInput.value.trim()] : [])]).map(try_))));
+        h("div", { className: "nd-tries" }, h("span", { className: "nd-label", text: "TRY" }), ...(sample() ? ["web.sample.test", "api.sample.test", "cdn.sample.test", "https://google.com"] : ["https://google.com", ...(hostInput?.value?.trim() ? [hostInput.value.trim()] : [])]).map(try_))));
       return;
     }
     if (model.state === "error") {
@@ -385,7 +433,9 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       body.replaceChildren(h("ol", { className: "nd-steps", "aria-live": "polite" }, ...model.steps.map((s) => h("li", { dataset: { state: s.state } }, h("span", { className: "nd-glyph", text: s.state === "done" ? "✓" : s.state === "failed" ? "✗" : "▶" }), s.text))));
       return;
     }
+    const hasWhy = why && run?.report?.findings?.some((f) => f.walkthrough === "alb-503");
     body.replaceChildren(
+      hasWhy ? drawWhy() : "",
       h("div", { className: "nd-verdict", dataset: { status: model.verdict } }, h("b", { text: STATE_TEXT[model.verdict] || model.verdict }), h("span", { text: `${model.summary.pass} pass · ${model.summary.fail} fail · ${model.summary.unknown} unknown · ${model.summary.notAssessed} not assessed` })),
       drawChain(model),
       drawTiming(model) || "",
@@ -413,10 +463,14 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       runBtn.disabled = false;
       if (!root.hidden) draw();
     },
-    setTarget(text, { go = false } = {}) {
+    setTarget(text, { go = false, whyOpen = false } = {}) {
       field.value = text;
-      if (go) start();
+      if (go) {
+        start();
+        why = whyOpen;
+      }
     },
+    whyOpen: () => why,
     isShown: () => !root.hidden,
     model: () => ndModel(run, { filter }),
   };

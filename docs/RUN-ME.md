@@ -809,6 +809,17 @@ Unlike the configuration verdicts, a REJECT is a fact. It raises the security-gr
 
 A cluster with no context says "CONNECT it". CoreDNS metrics need one extra viewer rule, `services/proxy` on `kube-dns:metrics`. Without it they are UNKNOWN and name the rule. The DEBUG bar lights KUBE. In SAMPLE mode, `web.sample.test` traces the 503 to the Service selector.
 
+**Why is my ALB 503? (N7):** an ALB 503 finding has a **WHY?** button. It walks the decision tree over the run's own evidence, one question per step, with no new calls:
+1. Who answered? The live answer, plus the load balancer's own 5xx vs the targets' (A-ELB-04).
+2. Are there healthy targets?
+3. Does the Service have ready endpoints?
+4. Why do the health checks fail?
+5. Can the load balancer reach the targets?
+6. Is the app answering 5xx?
+7. Does the listener send the request to the right place?
+
+The walkthrough ends with a VERDICT, the FIX commands to COPY, and VERIFY. While the walkthrough is open, VERIFY re-runs the same debug every 60 s, 10 times at most, and turns green when the answer is below 500 with a healthy target. `#path?debug=<url>&why=1` opens it from a link. In SAMPLE mode, `web.sample.test` ends at the Service selector and `api.sample.test` at the security group.
+
 A refused read is UNKNOWN and names the permission to add. Turn the reads off with `network.aws.route53` / `network.aws.cloudfront`. These Route 53 and CloudFront calls cost nothing.
 
 When an AWS load balancer answered, the path diagram follows the same host. In SAMPLE mode the panel debugs fixture answers (try `web.sample.test`, an ALB answering 503; `api.sample.test`, a slow origin; and `google.com`), so nothing leaves the machine.

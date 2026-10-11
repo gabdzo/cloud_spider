@@ -85,6 +85,7 @@ const hostInput = document.querySelector("#host");
 // (src/netdebug/view.js). SAMPLE mode debugs fixture answers.
 // When an AWS load balancer answered, the PATH diagram follows the same
 // host (its ALB route); other targets leave the diagram alone.
+let lastDebugLink = "";
 const netdebugView = createNetdebugView({
   root: document.querySelector("#netdebug"),
   hostInput,
@@ -1231,6 +1232,12 @@ async function applyUrl() {
       hostInput.value = want.host;
       pathSelected = null;
       pullPath();
+    }
+    // A WHY? link (#path?debug=<url>&why=1): DEBUG runs it once, as if
+    // typed and RUN pressed; the walkthrough opens with the report.
+    if (mode === "path" && want.debug && want.debug !== lastDebugLink) {
+      lastDebugLink = want.debug;
+      netdebugView.setTarget(want.debug, { go: true, whyOpen: want.why });
     }
     if (Boolean(want.stacks) !== pipOpen) {
       if (want.stacks && learnApi?.isOpen()) await learnApi.setOpen(false);
