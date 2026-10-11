@@ -339,8 +339,10 @@ It also lists the top pods by CPU and memory, with restarts and OOMKilled.
 
 **Where the numbers come from (best first)**
 1. **The OTel collector you already run** (upgrades/demo). Its DaemonSet now also runs:
-   - `kubeletstats`: node, pod and container CPU, memory, filesystem and network
-   - `hostmetrics`: node disk, filesystem, load and network
+   - `kubelet_stats` (kubeletstats): node, pod and container CPU, memory, filesystem and network
+   - `host_metrics` (hostmetrics): node disk, filesystem, load and network
+
+   Both collectors run the upstream contrib image `otel/opentelemetry-collector-contrib:0.162.0` (multi-arch, digest pinned): the ADOT image has no kubeletstats or hostmetrics receiver and crashed on start with `'receivers' unknown type: "kubeletstats"`. `scripts/otel-validate.sh` runs both rendered configs through that release's `otelcol-contrib validate`.
    
    It sends them over OTLP to a one-replica `otel-gateway`, which serves Prometheus text on the `otel-metrics` Service (port 8889, inside the cluster only). Cloud Spider reads it through the API server's service proxy (`/api/v1/namespaces/demo/services/otel-metrics/proxy/metrics`) with the viewer role. A Role grants the viewer `get` on `services/proxy` for **that one Service only**, and nothing else changes.
 2. **metrics-server** is the fallback when the gateway isn't there yet: CPU and memory only, so the disk gauge shows "needs OTel". The screen says which source it used.
@@ -354,6 +356,8 @@ Node conditions and requests come from the kube API in both cases.
 cd upgrades/demo && npm ci && pulumi preview --diff -s demo && pulumi up -s demo
 # then in Cloud Spider: Cluster → TELEMETRY. The lamp says OTEL COLLECTOR.
 kubectl -n demo get pods -l app=otel-gateway       # 1/1 Running
+kubectl -n demo get pods -l app=otel-collector     # one Running per node
+kubectl -n demo logs ds/otel-collector | grep -iE 'error|unknown type' || echo clean
 ```
 `CLOUDSPIDER_OTEL_METRICS=<ns>/<service>` points the app at another gateway (default `demo/otel-metrics`).
 

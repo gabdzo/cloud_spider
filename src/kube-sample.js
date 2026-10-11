@@ -144,7 +144,7 @@ export function samplePodObject(name) {
   pod.spec.containers[0] = {
     ...c,
     name: app,
-    image: podinfo ? "ghcr.io/stefanprodan/podinfo:6.7.1" : app === "loadgen" ? "busybox:1.36" : "public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0",
+    image: podinfo ? "ghcr.io/stefanprodan/podinfo:6.7.1" : app === "loadgen" ? "busybox:1.36" : "otel/opentelemetry-collector-contrib:0.162.0",
     ports: podinfo ? [{ containerPort: 9898, name: "http", protocol: "TCP" }] : [],
     resources: { requests: c.resources?.requests || {}, limits: { memory: podinfo ? "96Mi" : "32Mi" } },
     ...(podinfo ? { readinessProbe: { httpGet: { path: "/readyz", port: 9898 }, periodSeconds: 10 }, livenessProbe: { httpGet: { path: "/healthz", port: 9898 }, initialDelaySeconds: 5, periodSeconds: 15, failureThreshold: 3 } } : {}),
