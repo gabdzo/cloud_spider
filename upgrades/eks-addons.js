@@ -19,9 +19,9 @@ export async function readAddon(getAddon, clusterName, addonName) {
   try {
     const got = await getAddon({ clusterName, addonName });
     const tags = got?.tags && typeof got.tags === "object" ? { ...got.tags } : {};
-    return { exists: true, project: String(tags.project || ""), version: String(got?.addonVersion || ""), tags };
+    return { exists: true, project: String(tags.project || ""), version: String(got?.addonVersion || ""), tags, configurationValues: String(got?.configurationValues || "") };
   } catch (error) {
-    if (NOT_FOUND.test(String(error?.message || error))) return { exists: false, project: "", version: "", tags: {} };
+    if (NOT_FOUND.test(String(error?.message || error))) return { exists: false, project: "", version: "", tags: {}, configurationValues: "" };
     throw error;
   }
 }
@@ -50,6 +50,8 @@ export function ownerText(project, clusterName) {
 // install order: the Pod Identity agent before the EBS CSI driver, whose
 // credentials come through it.
 export const EKS_OWNED = [
+  // First, before the node group: new nodes come up with prefixes.
+  { key: "vpcCni", addonName: "vpc-cni", title: "the VPC CNI" },
   { key: "podIdentityAgent", addonName: "eks-pod-identity-agent", title: "the Pod Identity agent" },
   { key: "metricsServer", addonName: "metrics-server", title: "metrics-server" },
   { key: "ebsCsiDriver", addonName: "aws-ebs-csi-driver", title: "the EBS CSI driver" },
@@ -119,4 +121,58 @@ export function destroyRefusal(module, clusterName, answers = {}) {
   const held = (HELD_BY[module] || []).filter((name) => answers[name]?.found && answers[name].project === module);
   if (!held.length) return "";
   return `TAKE IT DOWN would delete ${held.join(" and ")} on ${clusterName}: this stack made ${held.length === 1 ? "it" : "them"} before the EKS stack owned ${held.length === 1 ? "it" : "them"}. Hand ${held.length === 1 ? "it" : "them"} over first: node scripts/migrate-eks-addons.mjs ${clusterName} (a dry run; --apply moves ${held.length === 1 ? "it" : "them"}, deleting nothing), then take this stack down.`;
+}
+
+// VPC CNI prefix delegation (docs/design/stack-dependencies.md, "Pod
+// capacity"): each ENI slot holds a /28 (16 IPs) instead of one IP, so a
+// t4g.small is no longer capped at 11 pods by its ENIs. One warm prefix per
+// node keeps the IP use of a small cluster low.
+export const PREFIX_DELEGATION = { env: { ENABLE_PREFIX_DELEGATION: "true", WARM_PREFIX_TARGET: "1" } };
+
+// Is prefix delegation on in an add-on's configurationValues (JSON)?
+export function prefixDelegationOn(configurationValues) {
+  try {
+    return String(JSON.parse(configurationValues || "{}")?.env?.ENABLE_PREFIX_DELEGATION).toLowerCase() === "true";
+  } catch {
+    return false;
+  }
+}
+
+// kubelet maxPods per node (EKS card maxPods, Karpenter's EC2NodeClass).
+// "auto" leaves it to EKS: with prefix delegation a managed node group then
+// picks 110, and kubelet reserves 11 MiB per pod + 255 MiB (1.4 GiB of a
+// t4g.small's 2 GiB). An explicit number caps that: 32 on a t4g.small
+// (607 MiB reserved), 58 on a t4g.medium (893 MiB of 4 GiB).
+export const MAX_PODS = { "t4g.small": ["32"], "t4g.medium": ["32", "58", "110"] };
+export const MAX_PODS_CHOICES = ["auto", "32", "58", "110"];
+
+export function maxPodsProblem(instanceType, maxPods, prefixDelegation = true) {
+  const value = String(maxPods ?? "auto");
+  if (!MAX_PODS_CHOICES.includes(value)) return `maxPods must be one of ${MAX_PODS_CHOICES.join(", ")}`;
+  if (value === "auto") return "";
+  if (!prefixDelegation) return `maxPods ${value} needs VPC CNI prefix delegation (prefixDelegation=on): without it a node has only its ENI IPs (11 on a t4g.small, 17 on a t4g.medium)`;
+  if (!(MAX_PODS[instanceType] || []).includes(value)) return `maxPods ${value} is too many for a ${instanceType}: kubelet would reserve ${11 * Number(value) + 255} MiB of its memory. Use ${(MAX_PODS[instanceType] || ["auto"]).join(" or ")}`;
+  return "";
+}
+
+// The node's user data (AL2023 nodeadm NodeConfig, MIME multipart, as a
+// managed node group launch template takes it).
+export function nodeConfigUserData(maxPods) {
+  return [
+    "MIME-Version: 1.0",
+    'Content-Type: multipart/mixed; boundary="//"',
+    "",
+    "--//",
+    "Content-Type: application/node.eks.aws",
+    "",
+    "apiVersion: node.eks.aws/v1alpha1",
+    "kind: NodeConfig",
+    "spec:",
+    "  kubelet:",
+    "    config:",
+    `      maxPods: ${Number(maxPods)}`,
+    "",
+    "--//--",
+    "",
+  ].join("\n");
 }

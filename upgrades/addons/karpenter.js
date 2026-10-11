@@ -1,3 +1,4 @@
+import { prefixDelegationOn } from "../eks-addons.js";
 import { REGION, fill, helmRelease, podIdentityRole, policyFile, setup, small, viewerAccess } from "./common.js";
 
 // Karpenter (Helm, OCI) for an EKS cluster from upgrades/eks:
@@ -14,6 +15,24 @@ export default function karpenter({ pulumi, aws, k8s, addon }) {
   const { config, clusterName, k, cluster, tags } = setup({ pulumi, aws, k8s, addon });
   const capacity = config.get("capacity") || "spot";
   if (!["spot", "on-demand"].includes(capacity)) throw new Error("capacity must be spot or on-demand");
+  // kubelet maxPods on Karpenter's nodes. Without it a t4g.small holds 11
+  // pods (its ENI IPs); with the EKS stack's VPC CNI prefix delegation it
+  // can hold more, and 32 keeps kubelet's memory reserve at 607 MiB of 2 GiB.
+  // Only when prefix delegation is on (read from the vpc-cni add-on): more
+  // pods than IPs would leave pods without an address. A change drifts the
+  // NodeClass, so Karpenter replaces its nodes (they are ephemeral anyway).
+  const maxPods = String(config.get("maxPods") || "32");
+  if (!["auto", "32", "58"].includes(maxPods)) throw new Error("maxPods must be auto, 32 or 58");
+  if (maxPods === "58") pulumi.log.warn("maxPods 58 on a t4g.small reserves 893 MiB of its 2 GiB for kubelet");
+  const prefixes = pulumi.output(aws.eks.getAddon({ clusterName, addonName: "vpc-cni" }).then((got) => prefixDelegationOn(got?.configurationValues), () => false));
+  const kubelet = prefixes.apply((on) => {
+    if (maxPods === "auto") return undefined;
+    if (!on) {
+      pulumi.log.info(`maxPods ${maxPods} skipped: VPC CNI prefix delegation is not on for ${clusterName} (RUN the EKS stack, prefixDelegation=on); nodes keep their ENI limit (11 on a t4g.small)`);
+      return undefined;
+    }
+    return { maxPods: Number(maxPods) };
+  });
   const account = aws.getCallerIdentityOutput({}).accountId;
 
   const nodeRole = new aws.iam.Role("node", {
@@ -98,6 +117,7 @@ export default function karpenter({ pulumi, aws, k8s, addon }) {
       securityGroupSelectorTerms: [{ id: cluster.vpcConfig.clusterSecurityGroupId }],
       blockDeviceMappings: [{ deviceName: "/dev/xvda", ebs: { volumeSize: "20Gi", volumeType: "gp3", encrypted: true, deleteOnTermination: true } }],
       metadataOptions: { httpEndpoint: "enabled", httpTokens: "required", httpPutResponseHopLimit: 1 },
+      kubelet,
       // The nodes and their volumes are claimed by the karpenter vault.
       tags: { project: addon.id, cluster: clusterName, "managed-by": "karpenter", cloudspider: "expendable" },
     },

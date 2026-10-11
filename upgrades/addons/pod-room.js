@@ -66,3 +66,32 @@ export async function readPodRoom({ endpoint, ca, clusterName, region, own = "",
   const [nodes, pods] = await Promise.all([get("/api/v1/nodes"), get("/api/v1/pods?fieldSelector=status.phase!%3DSucceeded,status.phase!%3DFailed")]);
   return podRoom({ nodes, pods, own });
 }
+
+// A DaemonSet needs one free pod slot on EVERY node (podRoom's total is not
+// enough: one full node leaves its pod Pending with "Too many pods"). Rows
+// for the ready nodes that do not run it yet; `evictable` counts the pods
+// there below system-node-critical, which a DaemonSet at that priority can
+// preempt. Pure, like podRoom.
+export const NODE_CRITICAL = 2000001000;
+export function daemonSetRoom({ nodes = [], pods = [] } = {}, { namespace, labels = {} } = {}) {
+  const live = (p) => !["Succeeded", "Failed"].includes(p?.status?.phase) && !p?.metadata?.deletionTimestamp;
+  const ready = (n) => (n?.status?.conditions || []).some((c) => c.type === "Ready" && c.status === "True") && !n?.spec?.unschedulable;
+  const ours = (p) => p?.metadata?.namespace === namespace && Object.entries(labels).every(([k, v]) => p?.metadata?.labels?.[k] === v);
+  return nodes.filter(ready).map((n) => {
+    const name = n.metadata?.name || "";
+    const on = pods.filter((p) => live(p) && p.spec?.nodeName === name);
+    const max = Number.parseInt(n.status?.allocatable?.pods ?? "0", 10) || 0;
+    return { name, type: n.metadata?.labels?.["node.kubernetes.io/instance-type"] || "", max, used: on.length, has: on.some(ours), evictable: on.filter((p) => (p.spec?.priority ?? 0) < NODE_CRITICAL).length };
+  }).filter((row) => !row.has).map(({ has, ...row }) => ({ ...row, free: Math.max(0, row.max - row.used) }));
+}
+
+// { refusal, notes } for a stack's DaemonSet on these rows.
+export function daemonSetCheck(stackTitle, ds, rows, cluster) {
+  const full = rows.filter((row) => row.free < 1);
+  if (!full.length) return { refusal: "", notes: [] };
+  const what = (row) => `${row.name}${row.type ? ` (${row.type})` : ""} has ${row.used}/${row.max} pods`;
+  const stuck = full.filter((row) => !row.evictable);
+  const fix = "Make room: EKS card maxPods (32 on t4g.small, 58 on t4g.medium, with prefix delegation; replaces the node group) or nodeCount +1, or take a stack down";
+  if (stuck.length) return { refusal: `${stackTitle}: DaemonSet ${ds.namespace}/${ds.name} needs 1 free pod slot on every node of ${cluster}, and ${stuck.map(what).join(", ")} with nothing it may preempt. ${fix}.`, notes: [] };
+  return { refusal: "", notes: [{ text: `check: room for DaemonSet ${ds.namespace}/${ds.name} on ${cluster}`, lines: [`${full.map(what).join(", ")}: full. ${ds.name} runs at system-node-critical, so the scheduler evicts one lower-priority pod there to place it. ${fix}.`] }] };
+}

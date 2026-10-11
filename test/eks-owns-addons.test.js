@@ -41,9 +41,9 @@ test("plans: EKS creates, manages its own, adopts only what the migration lists;
   assert.deepEqual(adoptList(" metrics-server, bogus,eks-pod-identity-agent "), ["metrics-server", "eks-pod-identity-agent"]);
 });
 
-test("eks on a fresh cluster installs the three add-ons, tagged project=eks, after the nodes; EBS CSI gets its role through Pod Identity", { skip: ready("upgrades/eks") }, async () => {
+test("eks on a fresh cluster installs its four add-ons, tagged project=eks; EBS CSI gets its role through Pod Identity", { skip: ready("upgrades/eks") }, async () => {
   const { resources } = await mock(...EKS, {});
-  assert.deepEqual(names(resources), ["aws-ebs-csi-driver", "eks-pod-identity-agent", "metrics-server"]);
+  assert.deepEqual(names(resources), ["aws-ebs-csi-driver", "eks-pod-identity-agent", "metrics-server", "vpc-cni"]);
   for (const addon of addonsOf(resources)) {
     assert.equal(addon.inputs.tags.project, "eks");
     assert.equal(addon.id, undefined, "created, not imported");
@@ -54,12 +54,12 @@ test("eks on a fresh cluster installs the three add-ons, tagged project=eks, aft
   assert.equal(role.inputs.name, "cloudspider-up-ebs-csi-driver");
   assert.match(role.inputs.assumeRolePolicy, /pods\.eks\.amazonaws\.com/);
   const off = await mock(EKS[0], EKS[1], EKS[2], { ...EKS[3], "cloudspider-upgrade:metricsServer": "off", "cloudspider-upgrade:ebsCsiDriver": "false" }, {});
-  assert.deepEqual(names(off.resources), ["eks-pod-identity-agent"]);
+  assert.deepEqual(names(off.resources), ["eks-pod-identity-agent", "vpc-cni"]);
 });
 
 test("eks leaves an add-on another stack still owns alone (a node-count RUN never 409s) and says how to hand it over", { skip: ready("upgrades/eks") }, async () => {
   const { log, resources } = await mock(...EKS, { "eks-pod-identity-agent": { project: "pod-identity" }, "metrics-server": { project: "demo" } });
-  assert.deepEqual(names(resources), ["aws-ebs-csi-driver"]);
+  assert.deepEqual(names(resources), ["aws-ebs-csi-driver", "vpc-cni"]);
   assert.match(log, /eks-pod-identity-agent is on cloudspider-up from the add-on stack pod-identity-cloudspider-up/);
   assert.match(log, /migrate-eks-addons\.mjs cloudspider-up/);
 });

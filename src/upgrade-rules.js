@@ -233,6 +233,11 @@ export function addonCommands(spec, cluster) {
 // and the page (the ERROR plate).
 const HINTS = [
   {
+    kind: "pods-full",
+    test: /free pod slot on every node|Too many pods/,
+    hint: "A node has no free pod slot: each EKS node caps its pods (11 on a t4g.small, 17 on a t4g.medium with one IP per pod). On the EKS card keep prefixDelegation=on and set maxPods (32 on a t4g.small, 58 on a t4g.medium; it replaces the node group once), or raise nodeCount, or take a stack down. Then RUN again: what did not start was not kept.",
+  },
+  {
     kind: "shop-missing",
     test: /namespaces "shop" not found|needs-pgcluster-namespace-shop|Shop API needs the Postgres cluster/i,
     hint: "The Shop API runs in namespace shop, which the Postgres cluster stack makes (Stacks → Postgres on EKS, pgcluster: CloudNativePG and the database shopdb). Deploy pgcluster on this cluster first, wait for it to finish, then RUN Shop API again: what failed was never created, so the same stack picks up from there.",
@@ -318,7 +323,7 @@ const HINTS = [
   {
     kind: "replace-nodegroup",
     test: /REPLACES the node group/,
-    hint: "Nothing ran. The card's INSTANCETYPE is not what the cluster's node group runs, and changing it replaces the node group. Set INSTANCETYPE back to the live one (the LIVE line on the card), or press RUN and confirm the replace.",
+    hint: "Nothing ran. The card's INSTANCETYPE or MAXPODS is not what the cluster's node group runs, and changing it replaces the node group. Set it back to the live one (the LIVE line on the card), or press RUN and confirm the replace.",
   },
   {
     kind: "preflight",
@@ -388,6 +393,10 @@ export function maskKubeconfig(text) {
 // node group (new nodes, every pod moved). Said before it runs.
 export function nodeGroupChange(live, values) {
   const was = live?.instanceType
-  if (!was || !values?.instanceType || was === values.instanceType) return ""
-  return `instanceType ${values.instanceType} is not the live node group's ${was}: this REPLACES the node group${live.nodeGroup ? ` ${live.nodeGroup}` : ""} (new nodes, every pod restarts). Set INSTANCETYPE to ${was} to keep it, or confirm the replace`
+  if (was && values?.instanceType && was !== values.instanceType) return `instanceType ${values.instanceType} is not the live node group's ${was}: this REPLACES the node group${live.nodeGroup ? ` ${live.nodeGroup}` : ""} (new nodes, every pod restarts). Set INSTANCETYPE to ${was} to keep it, or confirm the replace`
+  // maxPods: a live node group without the setting in its stack is "auto".
+  const pods = live?.maxPods || (live?.nodeGroup ? "auto" : "")
+  const want = String(values?.maxPods || "auto")
+  if (pods && pods !== want) return `maxPods ${want} is not the live node group's ${pods}: this REPLACES the node group${live.nodeGroup ? ` ${live.nodeGroup}` : ""} (a new one with kubelet maxPods ${want} comes up first, then the old one drains and goes; every pod restarts once). Set MAXPODS to ${pods} to keep it, or confirm the replace`
+  return ""
 }

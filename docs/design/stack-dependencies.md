@@ -81,3 +81,39 @@ keep two clusters apart; nothing else in the account is shared.
   - **Demo bundle**: demo → scaling-demo.
 - pod-identity and metrics-server rows say INCLUDED WITH EKS; the scorecard's
   FIX for their controls reruns the EKS stack with its current settings.
+
+## Pod capacity
+
+Field finding 2026-10-11 (cloudspider-up): demo RUN hung ~10 min on
+DaemonSet pod demo/otel-collector, Pending with "0/2 nodes are available:
+1 Too many pods, 1 node(s) didn't satisfy NodeAffinity". With one IP per pod
+the VPC CNI caps a t4g.medium at 17 pods and a t4g.small at 11.
+
+- The EKS stack owns **vpc-cni** too (managed add-on, takes over the
+  self-managed aws-node with OVERWRITE) with prefix delegation on
+  (`ENABLE_PREFIX_DELEGATION=true`, `WARM_PREFIX_TARGET=1`; card
+  `prefixDelegation`, default on). It is created before the node group.
+- EKS card `maxPods` (default `auto`): `auto` adds nothing, so an existing
+  node group is untouched (EKS itself picks 110 for nodes it launches with
+  prefix delegation on, and kubelet then reserves 11 MiB × 110 + 255 MiB).
+  `32` (t4g.small) / `32|58|110` (t4g.medium) adds a launch template with an
+  AL2023 nodeadm NodeConfig (`kubelet.config.maxPods`) and **replaces the
+  node group once** (a new one comes up first; the legacy stack keeps
+  Pulumi's auto-name, other clusters get `<cluster>-nodes-mp<N>`). RUN
+  refuses that unless the replace is confirmed; PREVIEW shows the replace.
+  Only new nodes get the new cap. After the RUN check:
+  `kubectl get nodes -o custom-columns=NAME:.metadata.name,PODS:.status.allocatable.pods`.
+- Karpenter's EC2NodeClass sets `kubelet.maxPods` (card `maxPods`, default
+  32) only when the vpc-cni add-on has prefix delegation on; a change drifts
+  the NodeClass, so Karpenter replaces its (ephemeral) nodes.
+- Every DaemonSet of ours runs at `system-node-critical`, so on a full node
+  it preempts a lower-priority pod instead of waiting.
+- Preflight (demo): a DaemonSet needs 1 free slot on every node. A full node
+  with nothing it may preempt refuses RUN/PREVIEW naming the node; a full
+  node with ordinary pods is a note in the run log (one is preempted).
+
+## Follow-ups
+
+- Kyverno 1.19 warns that `kyverno.io/v1` ClusterPolicy is deprecated; move
+  the six Audit policies (upgrades/addons/kyverno-policies.js) to
+  `policies.kyverno.io` ValidatingPolicy (CEL). Not done yet.
