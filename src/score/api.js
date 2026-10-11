@@ -13,6 +13,7 @@ import { EVALUATORS } from "./evaluators/index.js";
 import { createFixRunner } from "./fix.js";
 import { diffScans } from "./history.js";
 import { runScan } from "./scan.js";
+import { permissionReport } from "./permissions.js";
 
 export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac];
 const SHORT = (name) => String(name || "").split("/").pop();
@@ -59,13 +60,13 @@ export function createScoreApi({ app, kubeFor, history, catalog, profiles, setti
       const latest = cluster ? await history.latest("kubernetes", cluster) : null;
       const trend = cluster ? await history.trend("kubernetes", cluster) : [];
       const prev = trend.length > 1 ? await history.get(trend.at(-2).id) : null;
-      return { context: kube.context, cluster, scan: publicScan(latest), trend, diff: latest ? diffScans(prev, latest) : null, suggestions: suggestionsOf(latest), fix: fixes.state() };
+      return { context: kube.context, cluster, scan: publicScan(latest), trend, diff: latest ? diffScans(prev, latest) : null, suggestions: suggestionsOf(latest), permissions: latest ? permissionReport(latest) : null, fix: fixes.state() };
     },
     async scan(origin, { context = "" } = {}) {
       if (!originAllowed(origin, pageOrigin)) return { error: "the scan did not run", hint: "Open Cloud Spider at the address npm start printed." };
       try {
         const { scan, diff } = await scanNow(context);
-        return { scan: publicScan(scan), diff, suggestions: suggestionsOf(scan) };
+        return { scan: publicScan(scan), diff, suggestions: suggestionsOf(scan), permissions: permissionReport(scan) };
       } catch (failure) {
         return { error: `the scan failed: ${failure?.message || failure}` };
       }
