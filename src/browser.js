@@ -633,10 +633,13 @@ function applyClusterFocus() {
 function placedMap() {
   const width = map.clientWidth || 0;
   const rowLimit = width ? Math.min(ROW_LIMIT, width) : ROW_LIMIT;
+  // At >=1600px the VPCs flow side by side across the whole map; below
+  // that the map keeps its single column (760 and 1280 are unchanged).
+  const flowLimit = window.innerWidth >= 1600 && width > ROW_LIMIT ? width : 0;
   const vaults = vaultsData.vaults;
   const extra = {
-    key: `${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}|${mapView}|${mapTagKey}|${mapKube.sig}|${JSON.stringify(mapKube.choices)}`,
-    options: { vaults, vaultMode: "page", isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey, kube: mapKube.models.size ? { models: mapKube.models, choice: (cluster) => mapKube.choices[cluster] || "auto" } : null },
+    key: `${flowLimit}|${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}|${mapView}|${mapTagKey}|${mapKube.sig}|${JSON.stringify(mapKube.choices)}`,
+    options: { flowLimit, vaults, vaultMode: "page", isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey, kube: mapKube.models.size ? { models: mapKube.models, choice: (cluster) => mapKube.choices[cluster] || "auto" } : null },
   };
   const placed = layoutCache.get(place || EMPTY_PLACE, rowLimit, extra);
   // A reload with the same vaults keeps the layout but brings new check

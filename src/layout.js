@@ -313,7 +313,7 @@ export function foldAt(placed, x, y) {
 export const REGION_IN = 14;
 const GLOBAL_KIND = new Set(["cdn"]);
 
-export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false, isClosed = () => false, view = "arch", groupBy = "project", vaultMode = "doors", kube = null } = {}) {
+export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () => false, isClosed = () => false, view = "arch", groupBy = "project", vaultMode = "doors", kube = null, flowLimit = 0 } = {}) {
   const vpcs = [...(place.vpcs || [])].sort(byId);
   const subnets = [...(place.subnets || [])].sort(byId);
   const allInstances = [...(place.instances || [])].sort(byId);
@@ -363,7 +363,9 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
     // go last so the VPCs with machines, clusters and gates come first and
     // stay above the fold. Otherwise the order is by id, as before.
     const hollow = (vpc) => (!instances.some((item) => item.vpcId === vpc.id) && !fixtures.some((item) => item.vpcId === vpc.id) ? 1 : 0);
-    for (const vpc of [...vpcs].sort((a, b) => hollow(a) - hollow(b))) {
+    // One VPC at (left, cursorY). Pure: the same call places it the same way,
+    // so wide windows can measure a VPC first and place it again in a row.
+    const placeVpcAt = (vpc, left, cursorY) => {
       const vpcInstances = instances.filter((item) => item.vpcId === vpc.id);
       const gate = gateKind(place, vpc.id);
       if (isClosed(vpc.id) && (vpcInstances.length || fixtures.some((item) => item.vpcId === vpc.id))) {
@@ -389,9 +391,7 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
           gate,
           edges: [],
         };
-        settlements.push(settlement);
-        cursorY = settlement.y + settlement.h + GAP * 2;
-        continue;
+        return settlement;
       }
       // Empty means nothing at all: a VPC holding only a cluster control
       // plane, a balancer or a NAT is still drawn whole.
@@ -413,16 +413,12 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
           gate: "",
           edges: [],
         };
-        settlements.push(settlement);
-        cursorY = settlement.y + settlement.h + GAP * 2;
-        continue;
+        return settlement;
       }
       const owned = subnets.filter((item) => item.vpcId === vpc.id);
       if (owned.some((item) => item.zone)) {
         const settlement = placeArchVpc(vpc, { place, x: left, y: cursorY, rowLimit: settledRow, routes, instances, fixtures, gate, kube });
-        settlements.push(settlement);
-        cursorY = settlement.y + settlement.h + GAP * 2;
-        continue;
+        return settlement;
       }
       // No zone on any subnet (old reads, tests): plots flow in rows.
       const label = vpc.name ? joinLabel(vpc.name, vpc.cidr) : joinLabel(vpc.id, vpc.cidr);
@@ -477,8 +473,34 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
         empty: false,
         edges: settlementEdges({ fixtures: fixtureItems, plots, outsiders: labeled }, place.links),
       };
-      settlements.push(settlement);
-      cursorY = settlement.y + settlement.h + GAP * 2;
+      return settlement;
+    };
+    const order = [...vpcs].sort((a, b) => hollow(a) - hollow(b));
+    const flowRow = Math.max(settledRow, (flowLimit || 0) - REGION_IN * 2);
+    if (flowRow > settledRow) {
+      // Wide window (the page passes flowLimit at >=1600px): VPCs flow side
+      // by side in rows up to the map's width, in the same order.
+      let x = left;
+      let rowTop = cursorY;
+      let rowBottom = cursorY;
+      for (const vpc of order) {
+        const probe = placeVpcAt(vpc, 0, 0);
+        if (x > left && x + probe.w > left + flowRow) {
+          x = left;
+          rowTop = rowBottom + GAP * 2;
+        }
+        const settlement = placeVpcAt(vpc, x, rowTop);
+        settlements.push(settlement);
+        x = settlement.x + settlement.w + GAP * 3;
+        rowBottom = Math.max(rowBottom, settlement.y + settlement.h);
+      }
+      if (order.length) cursorY = rowBottom + GAP * 2;
+    } else {
+      for (const vpc of order) {
+        const settlement = placeVpcAt(vpc, left, cursorY);
+        settlements.push(settlement);
+        cursorY = settlement.y + settlement.h + GAP * 2;
+      }
     }
   }
 
