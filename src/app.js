@@ -16,6 +16,8 @@ import { inspectPod } from "./kube-inspect.js";
 import { opsView, sampleOps } from "./kube-ops.js";
 import { refuseUp, sampleAddons } from "./addons.js";
 import { podRoom } from "../upgrades/addons/pod-room.js";
+import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.js";
+import { sampleKubeSnapshot } from "./kube-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, watchLine } from "./upgrade-rules.js";
@@ -116,6 +118,31 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       kubeFlights.set(ctx.name, flight);
     }
     return kubeFlights.get(ctx.name);
+  }
+  const k9sEvents = new Map(); // context -> { at, items, note }
+  async function k9sRead(name, sample, wantEvents) {
+    if (sample) {
+      const snap = sampleKubeSnapshot();
+      return { ctx: { name: "sample", label: "SAMPLE" }, scope: "*", snap, events: snap.events || [], at: now() };
+    }
+    const ctx = contextFor(name);
+    if (!ctx) return { error: "the kube context is not set up" };
+    // The watch keeps this fresh; the window never adds a poll of its own.
+    const snap = await readContext(ctx, Math.max(15_000, ctx.pollMs || 0));
+    if (snap?.error) return { error: snap.error, ctx };
+    let events = [];
+    let eventNote = "";
+    if (wantEvents && ctx.kube.events) {
+      const hit = k9sEvents.get(ctx.name);
+      if (hit && now() - hit.at < 15_000) ({ items: events, note: eventNote } = hit);
+      else {
+        const got = await ctx.kube.events().catch((failure) => ({ error: failure?.message || "events did not answer" }));
+        events = got.items || [];
+        eventNote = got.error || "";
+        k9sEvents.set(ctx.name, { at: now(), items: events, note: eventNote });
+      }
+    }
+    return { ctx, scope: Array.isArray(ctx.namespaces) ? ctx.namespaces : "*", snap, events, eventNote, at: kubeCaches.get(ctx.name)?.at || now() };
   }
   async function readKube(maxAge) {
     return readContext(primary, maxAge);
@@ -612,6 +639,39 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       return client.podDetail(String(ns || ""), String(name || ""), String(container || ""), { previous: !!previous, tail: Number(tail) || 80 }).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
     },
     // Deep-inspect (read-only, redacted): kube-inspect.js.
+    // K9S window (kube-table.js): tables, describe and YAML from the shared
+    // per-context snapshot; events read only while asked for (15 s cache).
+    async kubeTable({ context = "", view = "pods", ns = "", filter = "", sample = false } = {}) {
+      const got = await k9sRead(context, sample, view === "events");
+      if (got.error) return { error: got.error, context: got.ctx?.name || context };
+      const clusterWide = got.scope === "*";
+      const choice = viewFor(view, { clusterWide });
+      if (choice.error) return { error: choice.error, context: got.ctx.name };
+      const nsList = clusterWide ? (got.snap.namespaces || []).map((n) => n.metadata?.name).filter(Boolean).sort() : got.scope;
+      const pickNs = ns && ns !== "*" && nsList.includes(ns) ? ns : clusterWide || nsList.length > 1 ? "*" : nsList[0] || "*";
+      const table = buildTable(choice.view.id, got.snap, { ns: pickNs, now: now(), events: got.events, filter: String(filter || "").slice(0, 80) });
+      return {
+        context: got.ctx.name,
+        label: got.ctx.label || got.ctx.name,
+        clusterWide,
+        namespaces: nsList,
+        ns: pickNs,
+        view: choice.view.id,
+        title: choice.view.title,
+        columns: table.columns,
+        total: table.total,
+        rows: table.rows.slice(0, 1000).map((r) => ({ id: r.id, ns: r.ns, name: r.name, status: r.status, containers: r.containers, cells: table.columns.map((c) => String(r.cells[c] ?? "")) })),
+        at: got.at,
+        note: got.eventNote || "",
+      };
+    },
+    async kubeDescribe({ context = "", view = "pods", ns = "", name = "", sample = false } = {}) {
+      const got = await k9sRead(context, sample, true);
+      if (got.error) return { error: got.error };
+      const obj = findObject(String(view), got.snap, String(ns), String(name));
+      if (!obj) return { error: `${view} ${ns ? `${ns}/` : ""}${name} is not in the last read` };
+      return { text: describe(String(view), obj, { events: got.events, now: now() }), yaml: yamlOf(String(view), obj) };
+    },
     async clusterPodInspect({ ns, name, context = "" } = {}) {
       const ctx = contextFor(context);
       if (!ctx?.kube?.podInspect) return { error: "the kube context is not set up" };

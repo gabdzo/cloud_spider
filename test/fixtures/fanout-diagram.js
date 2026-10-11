@@ -5,7 +5,8 @@
 // cannot list. Built as diagramFromKube input, so the whole read path runs.
 // apps/replicas/broken scale it up: apps 30 × replicas 5 = 150 pods.
 export function fanoutSnapshot({ ns = "team", nodes = 7, apps = 24, replicas = 1, broken = [] } = {}) {
-  const meta = (name, extra = {}) => ({ metadata: { namespace: ns, name, uid: `${ns}-${name}`, ...extra } });
+  const born = new Date(Date.now() - 26 * 3600_000).toISOString();
+  const meta = (name, extra = {}) => ({ metadata: { namespace: ns, name, uid: `${ns}-${name}`, creationTimestamp: born, ...extra } });
   const deployments = [];
   const statefulsets = [];
   const services = [];

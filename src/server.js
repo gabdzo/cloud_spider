@@ -35,6 +35,7 @@ export const FILES = new Set([
   "kube-diagram.js",
   "kube-layout.js",
   "kube-search.js",
+  "k9s.js",
   "kube-draw.js",
   "kube-telemetry.js",
   "tele-draw.js",
@@ -1240,6 +1241,54 @@ const page = `<!doctype html>
   .ko-events li.policy b, .ko-events li.warning b { color: var(--status-broken); }
   .ko-events li.node b { color: var(--world-amber); }
   /* ---- end cluster screens ---- */
+  /* ---- K9S window (k9s.js): a terminal docked over the cluster ---- */
+  #k9s-btn { position: absolute; z-index: 4; right: 14px; bottom: 12px; display: flex; align-items: center; gap: 7px; padding: 5px 11px 5px 9px; font: inherit; font-size: 12px; letter-spacing: 0.12em; color: var(--btn-off-label); background: linear-gradient(180deg, var(--btn-off-top), var(--btn-off-mid) 45%, var(--btn-off-low)); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-gloss), inset 0 -2px 0 var(--btn-shade), 0 2px 6px var(--btn-shade); cursor: pointer; }
+  #k9s-btn[hidden] { display: none; }
+  #k9s-btn i { width: 9px; height: 9px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim), 0 0 0 1px var(--lamp-off-hi); }
+  #k9s-btn small { color: var(--pip-dim); font-size: 10px; border: 1px solid var(--btn-rim); padding: 0 4px; }
+  #k9s-btn:hover { color: var(--pip-mid); }
+  #k9s-btn[aria-pressed="true"] { color: var(--btn-lit-label); background: linear-gradient(180deg, var(--btn-lit-top), var(--btn-lit-mid) 45%, var(--btn-lit-low)); box-shadow: inset 0 1px 0 var(--btn-gloss-lit), inset 0 2px 4px var(--btn-shade), 0 0 10px var(--btn-glow-far); }
+  #k9s-btn[aria-pressed="true"] i { background: var(--lamp-on); box-shadow: 0 0 6px var(--btn-glow), inset 0 0 0 1px var(--lamp-on-core); }
+  #k9s { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: 50px; height: min(56%, 520px); display: flex; flex-direction: column; background: var(--pip-ink); border: 1px solid var(--pip-dim); box-shadow: 0 0 0 3px var(--btn-skirt), 0 0 0 4px var(--btn-rim), 0 10px 30px var(--btn-shade); font-size: 12px; color: var(--pip-mid); outline: none; }
+  #k9s[hidden] { display: none; }
+  #k9s:focus-within, #k9s:focus { border-color: var(--pip-bright); }
+  .k9-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 10px; border-bottom: 1px solid var(--pip-dark); background: var(--pip-screen); }
+  .k9-plate { display: inline-flex; align-items: baseline; gap: 6px; padding: 1px 7px; background: var(--btn-lit-mid); color: var(--btn-lit-label); }
+  .k9-plate b { letter-spacing: 0.18em; }
+  .k9-plate i { font-style: normal; font-size: 9px; letter-spacing: 0.12em; opacity: 0.8; }
+  .k9-ctx { color: var(--pip-hot); }
+  .k9-nslabel { color: var(--pip-dim); font-size: 11px; }
+  .k9-ns { font: inherit; font-size: 11px; color: var(--pip-hot); background: var(--pip-ink); border: 1px solid var(--pip-dark); }
+  .k9-tabs { display: inline-flex; gap: 3px; }
+  .k9-tab { font: inherit; font-size: 11px; padding: 1px 6px; color: var(--pip-dim); background: transparent; border: 1px solid var(--pip-dark); cursor: pointer; }
+  .k9-tab[aria-pressed="true"] { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); }
+  .k9-prompt { display: inline-flex; align-items: center; gap: 2px; color: var(--pip-hot); }
+  .k9-input { width: 180px; font: inherit; color: var(--pip-hot); background: transparent; border: 0; border-bottom: 1px solid var(--pip-bright); outline: none; caret-color: var(--pip-hot); }
+  .k9-filter { color: var(--status-hang); }
+  .k9-count { margin-left: auto; color: var(--pip-bright); letter-spacing: 0.05em; }
+  .k9-close { font: inherit; font-size: 14px; line-height: 1; padding: 0 6px; color: var(--pip-dim); background: transparent; border: 1px solid var(--pip-dark); cursor: pointer; }
+  .k9-body { flex: 1; min-height: 0; overflow: auto; }
+  .k9-table { width: 100%; border-collapse: collapse; white-space: nowrap; }
+  .k9-table th { position: sticky; top: 0; z-index: 1; padding: 4px 10px; text-align: left; font-weight: normal; letter-spacing: 0.08em; color: var(--pip-bright); background: var(--pip-screen); border-bottom: 1px solid var(--pip-dark); }
+  .k9-table td { padding: 2px 10px; max-width: 520px; overflow: hidden; text-overflow: ellipsis; }
+  .k9-table tr.k9-ok td { color: var(--pip-mid); }
+  .k9-table tr.k9-hang td { color: var(--status-hang); }
+  .k9-table tr.k9-broken td { color: var(--status-broken); }
+  .k9-table tr.k9-unknown td { color: var(--pip-dim); }
+  .k9-table tbody tr { cursor: pointer; }
+  .k9-table tbody tr.k9-on td { color: var(--pip-ink); background: var(--pip-bright); }
+  .k9-table tbody tr.k9-on.k9-broken td { background: var(--status-broken); }
+  .k9-table tbody tr.k9-on.k9-hang td { background: var(--status-hang); }
+  .k9-sub { position: sticky; top: 0; padding: 4px 10px; color: var(--pip-bright); background: var(--pip-screen); border-bottom: 1px solid var(--pip-dark); letter-spacing: 0.06em; }
+  .k9-pre { margin: 0; padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--pip-mid); font: inherit; font-size: 12px; }
+  .k9-pre.k9-logs { color: var(--pip-hot); }
+  .k9-dim { margin: 10px 12px; color: var(--pip-dim); }
+  .k9-error { margin: 10px 12px; color: var(--status-broken); }
+  .k9-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 5px 10px; border-top: 1px solid var(--pip-dark); color: var(--pip-dim); font-size: 11px; background: var(--pip-screen); }
+  .k9-key kbd { margin-right: 4px; padding: 0 4px; font: inherit; color: var(--pip-bright); border: 1px solid var(--pip-dark); }
+  .k9-msg { margin-left: auto; color: var(--pip-mid); }
+  .k9-msg.k9-bad { color: var(--status-broken); }
+  @media (max-width: 899px) { #k9s { left: 6px; right: 6px; height: 62%; } .k9-input { width: 120px; } }
   #kube-panel { position: absolute; z-index: 5; right: 12px; top: 48px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 60px); background: var(--pip-screen); }
   .kp-title { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.12em; font-size: 11px; }
   .kp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1914,6 +1963,8 @@ const page = `<!doctype html>
       <section id="kube-tele" aria-label="cluster telemetry" hidden></section>
       <section id="kube-ops" aria-label="cluster add-ons" hidden></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
+      <button id="k9s-btn" type="button" aria-pressed="false" title="K9S window: a read-only resource table (:)" hidden><i></i><b>K9S</b><small>:</small></button>
+      <section id="k9s" aria-label="K9S window, read-only resource table" hidden></section>
       <form id="pip" hidden></form>
       <section id="term" hidden></section>
       <section id="learn" aria-label="learn" hidden></section>
@@ -2177,6 +2228,18 @@ async function route(app, req, res) {
       return;
     }
     send(res, 200, await app.clusterPod({ ns: url.searchParams.get("ns"), name: url.searchParams.get("name"), container: url.searchParams.get("container"), previous: url.searchParams.get("previous") === "1", tail: url.searchParams.get("tail"), context: url.searchParams.get("context") || "" }));
+    return;
+  }
+
+  // K9S window: read-only tables, describe and YAML (kube-table.js).
+  if (req.method === "GET" && url.pathname === "/api/kube/table") {
+    const q = url.searchParams;
+    send(res, 200, await app.kubeTable({ context: q.get("context") || "", view: q.get("view") || "pods", ns: q.get("ns") || "", filter: q.get("filter") || "", sample: q.get("sample") === "1" }));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/kube/describe") {
+    const q = url.searchParams;
+    send(res, 200, await app.kubeDescribe({ context: q.get("context") || "", view: q.get("view") || "pods", ns: q.get("ns") || "", name: q.get("name") || "", sample: q.get("sample") === "1" }));
     return;
   }
 
