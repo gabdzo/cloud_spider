@@ -2,7 +2,12 @@
 #   cd upgrades/addons && pulumi stack select --create lbc-cloudspider-up
 # When it is up: npm run vaults:new -- lbc lbc
 # upgrades/addons (Pulumi project cloudspider-addons, stack lbc-<cluster>):
-# the controller role and policy; every ALB/NLB it makes carries project=lbc (defaultTags). AWS resources carry project=lbc and cluster=<cluster>;
+# the controller role and policy (they carry project=lbc and cluster=<cluster>).
+# The ALBs/NLBs it makes are the apps', not this vault's: they carry
+# cluster, managed-by and cloudspider only (defaultTags, no project), so an
+# Ingress's `alb.ingress.kubernetes.io/tags: project=<app>` reaches the
+# ALB, and the app's vault owns it. Without that annotation, select the
+# controller's own tag instead:  resources: { tags: { ingress.k8s.aws/stack: <ns>/<ingress> } }
 # the pods are in the Cluster view, namespace kube-system.
 apiVersion: cloudspider/v1
 kind: Vault

@@ -390,6 +390,12 @@ pulumi destroy && pulumi stack rm kyverno-$CLUSTER    # take it away again
 | 3 | KEDA (`keda`), optional | A `jobs-worker` that scales 0→3 on its own SQS queue `<cluster>-keda-jobs`. | $0 at this volume (SQS free tier) |
 | – | ExternalDNS | Not built: needs a domain and a Route 53 zone ($0.50/month). | – |
 
+**Whose ALB is it?** The `lbc` add-on tags every ALB/NLB it makes with `cluster`, `managed-by` and `cloudspider`, and no `project`. The controller's default tags win over an Ingress's `alb.ingress.kubernetes.io/tags`, so before this change every app ALB read `project: lbc` and belonged to the lbc vault (drill 2026-10-11, finding 7). Now an app's vault owns its ALB in one of two ways:
+- annotate the Ingress with `alb.ingress.kubernetes.io/tags: project=<app>` and select `project: <app>`, or
+- select the controller's own tag, `ingress.k8s.aws/stack: <namespace>/<ingress>`, which needs no annotation.
+
+The change reaches a running cluster on the lbc stack's next RUN (Helm values only). The controller then re-tags its load balancers.
+
 **Room for pods** (read this before Kyverno on the demo cluster): every EKS node has a hard pod cap from the VPC CNI (one IP per pod). A **t4g.small holds 11 pods**, and the demo cluster's single node already runs 11 (4 demo + 7 kube-system). Kyverno needs 3 more, so its pods stay Pending, Helm's atomic install times out after 10 minutes, and its rollback hangs on a Pending hook. (That happened on 2026-10-11, and the leftovers were cleaned up.) Now both Cloud Spider's RUN and `pulumi preview`/`up` on the add-on stack count free slots first and refuse with a message like *"Kyverno needs 3 free pod slots on cloudspider-up, and its 1 node has 0 (11/11 in use; t4g.small holds 11 pods)"*. If Karpenter will add the node anyway, `pulumi config set skipRoomCheck true` skips the check.
 
 To make room, pick one:

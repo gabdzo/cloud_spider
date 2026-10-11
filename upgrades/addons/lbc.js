@@ -16,8 +16,13 @@ export default function lbc({ pulumi, aws, k8s, addon }) {
     serviceAccount: { create: true, name: "aws-load-balancer-controller" },
     resources: small("50m", "96Mi", "256Mi"),
     enableServiceMutatorWebhook: false,
-    // Everything it makes carries the stack's tags, so the lbc vault sees it.
-    defaultTags: { project: addon.id, cluster: clusterName, "managed-by": "aws-load-balancer-controller", cloudspider: "expendable" },
+    // Every ALB/NLB it makes carries these. No `project`: the controller's
+    // default tags win over an Ingress's `alb.ingress.kubernetes.io/tags`,
+    // so `project: lbc` here took every app's ALB away from the app's vault
+    // (drill 2026-10-11, finding 7). The app tags its own load balancer
+    // (`alb.ingress.kubernetes.io/tags: project=<app>`), or its vault
+    // selects the controller's own tag `ingress.k8s.aws/stack: <ns>/<name>`.
+    defaultTags: { cluster: clusterName, "managed-by": "aws-load-balancer-controller", cloudspider: "expendable" },
   }, { dependsOn: [role.association] });
   return { version: addon.appVersion };
 }

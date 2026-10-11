@@ -296,6 +296,10 @@ test("every add-on under mocks: tagged project=<id> and cluster=<name>, viewer R
   // LBC: no service mutator webhook (existing Services stay as they are).
   const lbc = by.lbc.find((r) => r.type === "kubernetes:helm.sh/v3:Release").inputs;
   assert.equal(lbc.values.enableServiceMutatorWebhook, false);
+  // Its default tags win over the Ingress's tags, so they carry no project:
+  // an app's ALB belongs to the app's vault (drill 2026-10-11, finding 7).
+  assert.equal("project" in lbc.values.defaultTags, false);
+  assert.deepEqual(Object.keys(lbc.values.defaultTags).sort(), ["cloudspider", "cluster", "managed-by"]);
   // KEDA: the worker starts at zero.
   const scaled = kind(by.keda, "ScaledObject")[0];
   assert.deepEqual([scaled.spec.minReplicaCount, scaled.spec.maxReplicaCount], [0, 3]);
