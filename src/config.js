@@ -62,6 +62,10 @@ export const SCHEMA = {
     path: { type: "string", default: ".cloudspider", env: "CLOUDSPIDER_STATE_DIR", doc: "state folder for the file backend (relative to the repo root)" },
     table: { type: "string", default: "", doc: "DynamoDB table name (reserved for the dynamodb backend)" },
   },
+  learn: {
+    context: { type: "string", pattern: CONTEXT, default: "", env: "CLOUDSPIDER_LAB_CONTEXT", doc: "the lab cluster's kube context LEARN checks are pinned to (kind-*, k3d-*, minikube, crc, or \"lab\" in the name); empty: checks do not run" },
+    deny: { type: "list", items: CONTEXT, default: [], env: "CLOUDSPIDER_LAB_DENY", doc: "more contexts that are never a lab (ppf-* always are)" },
+  },
   features: {
     ask: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_ASK", doc: "ASK: the local agent terminal" },
     stacksRun: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_STACKS_RUN", doc: "running Pulumi from STACKS (reading stacks stays on)" },
@@ -335,6 +339,26 @@ export function loadConfig({ argv = [], env = {}, root = process.cwd(), home = h
   if (!LOOPBACK.has(config.server.host)) warnings.push(`server.host is ${config.server.host}: Cloud Spider has no login, so anyone who can reach it can stop instances and run ASK`);
 
   return { config, sources, errors, warnings, file, help: Boolean(flags.values.help) };
+}
+
+// What main.js puts into process.env so modules that read env vars directly
+// (the AWS SDK, kube.js, vaults.js, learn.js, pulumi/terraform children) see
+// a value set in the file or by a flag. A value that came from the env is
+// already there, and a default is left unset, as before. Lists are joined
+// with commas; paths are made absolute against the repo root.
+const ABSOLUTE = new Set(["paths.vaults", "kube.contextsFile"]);
+export function envExports({ config, sources }, root) {
+  const out = {};
+  for (const { path, spec } of leaves()) {
+    const key = path.join(".");
+    const from = sources[key] || "default";
+    if (!spec.env || from === "default" || from.startsWith("env ")) continue;
+    let value = getIn(config, path);
+    if (Array.isArray(value)) value = value.join(",");
+    if (value === "" || value === null || typeof value === "object") continue;
+    out[spec.env] = String(ABSOLUTE.has(key) ? resolvePath(root, value) : value);
+  }
+  return out;
 }
 
 // Paths in the config are relative to the repo root.

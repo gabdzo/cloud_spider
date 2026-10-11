@@ -425,7 +425,7 @@ const CONTEXT_NAME = /^[A-Za-z0-9][A-Za-z0-9@:._/+-]{0,252}$/;
 
 export function labContextProblem(name, { deny = "" } = {}) {
   const value = String(name || "").trim();
-  if (!value) return `no lab context: set ${LAB_CONTEXT_ENV} to your lab cluster's kube context (kind-lab, minikube, crc-admin, …) and restart; a check never runs against the current context`;
+  if (!value) return `no lab context: set ${LAB_CONTEXT_ENV} (or learn.context in cloudspider.yaml) to your lab cluster's kube context (kind-lab, minikube, crc-admin, …) and restart; a check never runs against the current context`;
   if (!CONTEXT_NAME.test(value)) return `${LAB_CONTEXT_ENV} is not a kube context name`;
   const extra = String(deny || "").split(",").map((item) => item.trim()).filter(Boolean);
   if (NEVER_LAB.some((rule) => rule.test(value)) || extra.includes(value)) return `${value} is not a lab context (a work cluster): Cloud Spider never runs lab checks there`;
