@@ -1244,8 +1244,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       if (!ctx?.kube?.podInspect) return { error: "the kube context is not set up" };
       const raw = await ctx.kube.podInspect(String(ns || ""), String(name || "")).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
       if (raw.error) return { error: raw.error };
-      const sampler = ctx.primary ? tele : teles.get(ctx.name)?.kube === ctx.kube ? teles.get(ctx.name).tele : null;
-      const history = sampler?.podHistory ? sampler.podHistory(`${ns}/${name}`) : null;
+      const history = ctx.primary && tele?.podHistory ? tele.podHistory(`${ns}/${name}`) : null;
       return { ...inspectPod(raw.pod, { events: raw.events, chain: raw.chain, usage: raw.usage, history, now: now() }), eventNote: raw.eventNote || "" };
     },
     // netdebug: the PATH graph of the current region (load balancers,
