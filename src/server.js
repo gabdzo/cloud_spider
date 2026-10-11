@@ -15,6 +15,7 @@ import { sampleTelemetry } from "./kube-telemetry.js";
 const root = dirname(fileURLToPath(import.meta.url));
 export const FILES = new Set([
   "browser.js",
+  "spend-view.js",
   "draw.js",
   "sprites.js",
   "pixel-art.js",
@@ -804,14 +805,69 @@ const page = `<!doctype html>
   #spend:hover, #spend:focus-visible { outline: none; box-shadow: inset 0 0 0 2px #000, inset 0 0 0 3px var(--pip-dim), inset 0 0 10px rgba(0, 0, 0, 0.9), 0 0 10px var(--glow-soft); }
   #spend.issue b { background: var(--status-broken); }
   #spend.issue #spend-label { color: var(--status-broken); }
+  /* The CAPS bill panel: an opaque Pip-Boy bezel under the LCD (spend-view.js). */
+  #corner { z-index: 30; }
   #spend-lines {
-    position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; width: max(100%, 320px); max-width: calc(100vw - 24px);
-    margin: 0; padding: 8px 12px 10px; font: inherit; font-size: 12px; line-height: 1.5;
-    white-space: pre-wrap; overflow-wrap: anywhere; max-height: 50vh; overflow: auto;
-    color: var(--pip-mid); background: rgba(2, 10, 5, 0.96);
-    border: 1px solid var(--pip-mid); border-top: 3px solid var(--pip-bright);
-    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.7), 0 0 12px rgba(20, 255, 106, 0.15);
+    position: absolute; z-index: 40; top: calc(100% + 8px); right: 0;
+    width: min(460px, calc(100vw - 24px)); max-height: min(70vh, 560px); overflow: auto; overscroll-behavior: contain;
+    margin: 0; padding: 0 0 10px; font: inherit; font-size: 12px; line-height: 1.45; white-space: normal;
+    color: var(--pip-mid); text-shadow: none;
+    background: linear-gradient(180deg, var(--pip-glass), var(--pip-screen) 38%, var(--pip-ink));
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 2px #000, 0 0 0 4px var(--case-lo), 0 0 0 5px var(--case-seam),
+      inset 0 1px 0 var(--glow-soft), inset 0 0 18px rgba(0, 0, 0, 0.85),
+      0 14px 34px rgba(0, 0, 0, 0.8), 0 0 18px var(--glow-soft);
+    scrollbar-color: var(--pip-dim) var(--pip-ink); scrollbar-width: thin;
   }
+  #spend-lines .px { flex: none; image-rendering: pixelated; filter: drop-shadow(0 0 2px var(--glow-bright)); }
+  .sp-head {
+    position: sticky; top: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    padding: 10px 14px 9px; border-bottom: 1px solid var(--pip-dark);
+    background: linear-gradient(180deg, var(--pip-glass), var(--pip-screen));
+    box-shadow: inset 0 3px 0 var(--pip-bright), 0 4px 10px rgba(0, 0, 0, 0.6);
+    border-radius: 6px 6px 0 0;
+  }
+  .sp-total { display: grid; gap: 1px; min-width: 0; }
+  .sp-kicker { font-size: 10px; letter-spacing: 0.18em; color: var(--pip-dim); }
+  .sp-big { font-size: 28px; line-height: 1.05; letter-spacing: 0.04em; color: var(--pip-hot); text-shadow: 0 0 10px var(--glow-bright); font-variant-numeric: tabular-nums; }
+  .sp-cap { font-size: 10px; letter-spacing: 0.08em; color: var(--pip-dim); }
+  .sp-chip {
+    flex: none; margin-top: 2px; padding: 2px 7px; font-size: 10px; letter-spacing: 0.14em; color: var(--pip-ink);
+    background: var(--pip-mid); border-radius: 2px; box-shadow: 0 0 0 1px #000, 0 0 8px var(--glow-soft);
+  }
+  .sp-pace { margin: 0; padding: 7px 14px; font-size: 11px; color: var(--pip-bright); border-bottom: 1px dashed var(--pip-dark); font-variant-numeric: tabular-nums; }
+  .sp-sec { padding: 8px 14px 2px; }
+  .sp-sec h3 { margin: 0 0 6px; font-size: 10px; font-weight: normal; letter-spacing: 0.18em; color: var(--pip-dim); display: flex; align-items: center; gap: 8px; }
+  .sp-sec h3::after { content: ""; flex: 1; border-top: 1px solid var(--pip-dark); }
+  .sp-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  .sp-rows li { display: grid; grid-template-columns: 16px minmax(0, 1fr) 30% auto; align-items: center; gap: 8px; }
+  .sp-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pip-bright); }
+  .sp-share { height: 6px; background: var(--pip-ink); box-shadow: inset 0 0 0 1px var(--pip-dark); }
+  .sp-share i { display: block; height: 100%; background: linear-gradient(90deg, var(--pip-dim), var(--pip-bright)); box-shadow: 0 0 6px var(--glow-soft); }
+  .sp-amt { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--pip-hot); }
+  .sp-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .sp-table td { padding: 4px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.5); vertical-align: middle; }
+  .sp-table tr:last-child td { border-bottom: 0; }
+  .sp-who { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .sp-svc { flex: none; min-width: 30px; padding: 0 4px; font-size: 9px; letter-spacing: 0.1em; text-align: center; color: var(--pip-ink); background: var(--pip-dim); border-radius: 2px; }
+  .sp-chart { width: 84px; padding: 0 10px !important; }
+  .sp-table .sp-amt { width: 104px; }
+  .sp-spark { display: flex; align-items: flex-end; gap: 1px; height: 16px; }
+  .sp-spark i { flex: 1; min-width: 2px; background: var(--pip-mid); box-shadow: 0 0 3px var(--glow-soft); }
+  .sp-spark i.zero { background: var(--pip-dark); box-shadow: none; }
+  .sp-spark.credit i { background: var(--case-brass); }
+  #spend-lines .credit .sp-amt, #spend-lines .credit .sp-name, .sp-foot .credit { color: var(--case-brass); }
+  #spend-lines .credit .sp-svc { background: var(--case-brass-lo); color: var(--world-text); }
+  .sp-foot { display: flex; justify-content: flex-end; gap: 14px; margin: 6px 0 0; padding-top: 6px; border-top: 1px dashed var(--pip-dark); font-size: 11px; color: var(--pip-dim); font-variant-numeric: tabular-nums; }
+  .sp-empty { margin: 2px 0 6px; padding: 8px 10px; color: var(--pip-dim); border: 1px dashed var(--pip-dark); }
+  .sp-note { margin: 4px 14px; color: var(--pip-dim); }
+  .sp-warn { margin: 6px 0 0; color: var(--status-hang); font-size: 11px; overflow-wrap: anywhere; }
+  .sp-error { margin: 10px 14px 0; padding: 10px; border: 1px solid var(--status-broken); color: var(--status-broken); overflow-wrap: anywhere; }
+  .sp-error b { display: block; margin-bottom: 4px; letter-spacing: 0.14em; font-size: 11px; }
+  .sp-error p { margin: 0; color: var(--pip-mid); }
+  #spend-lines.sp-legacy { padding-top: 10px; }
+  @media (max-width: 520px) { .sp-chart { display: none; } .sp-rows li { grid-template-columns: 16px minmax(0, 1fr) auto; } .sp-share { display: none; } }
   .vpg-lamp {
     flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--pip-dim); opacity: 0.6;
     box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam);
@@ -1682,7 +1738,7 @@ const page = `<!doctype html>
     <p id="tally" class="lcd" hidden><img class="px" data-icon="map" alt=""><span id="tally-text"></span><span id="tally-issue"></span></p>
     <div id="corner">
       <button id="spend" class="lcd" type="button" aria-expanded="false" aria-controls="spend-lines" hidden><img class="px" data-icon="caps" alt=""><b>CAPS</b><span id="spend-label"></span><i class="caret" aria-hidden="true"></i></button>
-      <pre id="spend-lines" hidden></pre>
+      <div id="spend-lines" role="region" aria-label="the bill, month to date" tabindex="-1" hidden></div>
     </div>
   </div>
   <div class="readout">
