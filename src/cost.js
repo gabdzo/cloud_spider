@@ -324,13 +324,20 @@ export function sampleCost(now = new Date()) {
   };
 }
 
-export function createCost({ client, now = () => new Date(), cacheFile = "", ttl = COST_TTL } = {}) {
+// The bill is kept in storage (key cost/bill, storage.js) when one is given,
+// else in cacheFile, so a restart within ttl does not pay Cost Explorer again.
+export function createCost({ client, now = () => new Date(), cacheFile = "", storage = null, ttl = COST_TTL } = {}) {
   const ce = client || new CostExplorerClient({ region: REGION });
+  const cache = storage
+    ? { load: async () => fresh(await storage.get(COST_KEY).catch(() => null), now(), ttl), save: (bill) => storage.put(COST_KEY, bill).catch(() => {}) }
+    : cacheFile
+      ? { load: () => loadCache(cacheFile, now(), ttl), save: (bill) => saveCache(cacheFile, now(), bill) }
+      : null;
   return {
     sample: sampleCost,
     async read() {
-      if (cacheFile) {
-        const kept = await loadCache(cacheFile, now(), ttl);
+      if (cache) {
+        const kept = await cache.load();
         if (kept) return kept;
       }
       const window = monthWindow(now());
@@ -384,7 +391,7 @@ export function createCost({ client, now = () => new Date(), cacheFile = "", ttl
       const bill = shapeCost(pages, window, { dataThrough: lastDataDay(dailyPages) });
       bill.forecast = bill.unit === "USD" ? await readForecast(ce, now(), bill.totalValue) : null;
       const result = { ...bill, lines: [...bill.lines, ...resourceLines(blocks)], resources, resourceErrors, resourceStart: span.start, resourceEnd: span.end, readAt: now().toISOString() };
-      if (cacheFile) await saveCache(cacheFile, now(), result);
+      if (cache) await cache.save(result);
       return result;
     },
   };
@@ -412,12 +419,18 @@ async function readForecast(ce, at, monthToDate) {
   }
 }
 
+export const COST_KEY = "cost/bill";
+
+function fresh(kept, at, ttl) {
+  if (!kept || typeof kept !== "object") return null;
+  const age = at.getTime() - Date.parse(kept.readAt || "");
+  if (!(age >= 0 && age < ttl) || kept.error) return null;
+  return kept;
+}
+
 async function loadCache(file, at, ttl) {
   try {
-    const kept = JSON.parse(await readFile(file, "utf8"));
-    const age = at.getTime() - Date.parse(kept.readAt || "");
-    if (!(age >= 0 && age < ttl) || kept.error) return null;
-    return kept;
+    return fresh(JSON.parse(await readFile(file, "utf8")), at, ttl);
   } catch {
     return null;
   }
