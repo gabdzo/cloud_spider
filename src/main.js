@@ -30,6 +30,8 @@ import { loadProfiles } from "./score/profiles.js";
 import { createScanHistory } from "./score/history.js";
 import { createScanClients } from "./score/aws-clients.js";
 import { createNetdebug } from "./netdebug/api.js";
+import { createAwsCollector } from "./netdebug/aws.js";
+import { createCloudFrontReader, createRoute53Reader } from "./netdebug/aws-readers.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // cloudspider.yaml (config.js): defaults < file < env < flags. A bad value
@@ -130,6 +132,11 @@ app.score = createScoreApi({
 // Network debugging (PATH › DEBUG): local probes of a URL the user typed,
 // reports under storage.path/netdebug, probes in the audit log.
 app.netdebug = createNetdebug({ settings: config.network, pageOrigin, dir: join(stateDir, "netdebug"), auditFile: join(stateDir, "audit.jsonl") });
+app.netdebug.addCollector(createAwsCollector({
+  graph: () => app.pathGraph(),
+  route53: config.network.aws.route53 ? createRoute53Reader() : null,
+  cloudfront: config.network.aws.cloudfront ? createCloudFrontReader() : null,
+}));
 
 // SLO history survives a restart (.cloudspider/slo-ledger.json).
 const sloStore = createSloStore({ file: join(stateDir, "slo-ledger.json"), ledger: app.sloLedger() });

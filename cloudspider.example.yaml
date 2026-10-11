@@ -89,6 +89,9 @@ network:
       perHostPerMinute: 6
       perMinute: 30
       concurrent: 2
+  aws:                     # read-only: List/Get/Describe and TestDNSAnswer
+    route53: true          # zones, records, TestDNSAnswer, health checks, dangling records
+    cloudfront: true       # distributions: behaviour, origin, viewer policy, TLS, WAF
   reports:
     keep: 50               # reports kept under storage.path/netdebug
 

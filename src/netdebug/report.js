@@ -23,7 +23,9 @@ export const RULES = [
     const status = c.get("L-HTTP-01")?.observed?.status;
     if (http?.observed?.answeredBy !== "alb" || ![502, 503, 504].includes(status)) return [];
     const app = http.observed.headers?.["x-amzn-trace-id"] ? [] : ["L-HTTP-03"];
-    return [{ statement: `the AWS load balancer answered ${status} itself (server: awselb, no app headers): it has no healthy target to send ${t.host} to, or the target failed. The ALB 503 walkthrough asks why.`, supports: ["L-HTTP-01", ...app], next: [`aws elbv2 describe-target-health --target-group-arn <tg-arn>`], verify: "HTTP status < 500 and the target group has >= 1 healthy target", walkthrough: "alb-503" }];
+    const tgt = c.get("A-TGT-01")?.observed;
+    const lb = tgt?.kind === "alb" ? [`A-TGT-01`] : [];
+    return [{ statement: `the AWS load balancer${tgt?.kind === "alb" ? ` ${tgt.name}` : ""} answered ${status} itself (server: awselb, no app headers): it has no healthy target to send ${t.host} to, or the target failed. The ALB 503 walkthrough asks why.`, supports: ["L-HTTP-01", ...app, ...lb], next: [`aws elbv2 describe-target-health --target-group-arn <tg-arn>`], verify: "HTTP status < 500 and the target group has >= 1 healthy target", walkthrough: "alb-503" }];
   },
   (c) => {
     const http = c.get("L-HTTP-03");
