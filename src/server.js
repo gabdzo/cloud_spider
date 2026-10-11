@@ -63,6 +63,7 @@ export const FILES = new Set([
   "vault-draw.js",
   "vault-page.js",
   "url-state.js",
+  "map-focus.js",
   "agent-text.js",
   "terminal.js",
   "learn-view.js",
@@ -107,6 +108,8 @@ const page = `<!doctype html>
   img.px, canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   /* A block canvas: inline it would sit on the text baseline, overflow #map by a few pixels and summon both scrollbars. */
   #place { display: block; }
+  #place:focus { outline: none; }
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
   [hidden] { display: none !important; }
 
   /* ---- device casing ---- */
@@ -1839,7 +1842,8 @@ const page = `<!doctype html>
   <div class="body">
     <div class="mapwrap">
       <div id="map">
-        <canvas id="place" role="img" aria-label="survey map"></canvas>
+        <canvas id="place" tabindex="0" role="application" aria-roledescription="survey map" aria-label="survey map. Tab or the arrow keys move between resources, Enter opens one, Escape closes it."></canvas>
+        <p id="map-say" class="sr-only" aria-live="polite"></p>
         <select id="wall-grain" aria-label="camp grain" hidden>
           <option value="coarse">coarse</option>
           <option value="fine">fine</option>
