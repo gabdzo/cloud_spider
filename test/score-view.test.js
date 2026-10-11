@@ -131,3 +131,10 @@ test("a fix with no score to compare says so instead of 'Score ?'", () => {
   assert.equal(t.includes("?"), false);
   assert.match(t, /Kyverno installed and rescanned\. No score to compare: not enough evidence yet/);
 });
+
+test("the panel scans the cluster picked in the Cluster view, not always the default context", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/browser.js", import.meta.url), "utf8");
+  const call = src.split("\n").find((l) => l.includes("= createScoreView({")) || "";
+  assert.match(call, /context: \(\) => clusterData\?\.context \|\| clusterContext/);
+});
