@@ -4,7 +4,10 @@
 // EVERY boot, and with instanceInitiatedShutdownBehavior=stop that shutdown
 // stops the instance, it does not terminate it. It never holds the Red Hat
 // pull secret: Gabriel copies that in over SSM (docs/RUN-ME.md §12).
-export const CRC_URL = "https://developers.redhat.com/content-gateway/rest/mirror/pub/openshift-v4/clients/crc/latest/crc-linux-amd64.tar.xz";
+// The old developers.redhat.com/content-gateway/rest/mirror/... path answers
+// 404 since the CRC 2.6x releases (live test 2026-10-11); the mirror redirects
+// to the signed CDN copy of the latest release.
+export const CRC_URL = "https://mirror.openshift.com/pub/openshift-v4/clients/crc/latest/crc-linux-amd64.tar.xz";
 export const SSM_URL = "https://s3.eu-north-1.amazonaws.com/amazon-ssm-eu-north-1/latest/linux_amd64/amazon-ssm-agent.rpm";
 
 export function userData({ maxHours = 4 } = {}) {
@@ -33,6 +36,8 @@ systemctl enable --now libvirtd
 id crc >/dev/null 2>&1 || useradd -m -G wheel,libvirt crc
 echo 'crc ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/crc
 curl -fsSL ${CRC_URL} | tar -xJ --strip-components=1 -C /usr/local/bin --wildcards '*/crc'
+# sudo's secure_path (and so \`sudo -iu crc\`) has no /usr/local/bin on EL9
+ln -sf /usr/local/bin/crc /usr/bin/crc
 sudo -iu crc crc config set consent-telemetry no
 sudo -iu crc crc config set memory 24576
 sudo -iu crc crc config set cpus 7
