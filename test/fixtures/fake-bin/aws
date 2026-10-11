@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Fake AWS CLI for the CONNECT tests: `eks update-kubeconfig` edits the
 // kubeconfig the way the real one does (cluster, user, context, and it
-// switches current-context); `eks get-token` prints an ExecCredential.
+// switches current-context; the user runs `get-token … --role <arn>` as
+// aws-cli 2 writes it); `eks get-token` prints an ExecCredential.
 // Never touches AWS. FAKE_AWS_FAIL=1 makes update-kubeconfig fail.
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
@@ -24,7 +25,7 @@ if (args[0] === "eks" && args[1] === "update-kubeconfig") {
   const clusterName = `arn:aws:eks:${region}:550536272523:cluster/${name}`;
   const upsert = (list, item) => [...(list || []).filter((x) => x.name !== item.name), item];
   config.clusters = upsert(config.clusters, { name: clusterName, cluster: { server: `https://${name}.fake.eks.amazonaws.com`, "certificate-authority-data": "Zm9v" } });
-  config.users = upsert(config.users, { name: userAlias, user: { exec: { apiVersion: "client.authentication.k8s.io/v1beta1", command: "aws", args: ["--region", region, "eks", "get-token", "--cluster-name", name, "--output", "json", ...(role ? ["--role-arn", role] : [])] } } });
+  config.users = upsert(config.users, { name: userAlias, user: { exec: { apiVersion: "client.authentication.k8s.io/v1beta1", command: "aws", args: ["--region", region, "eks", "get-token", "--cluster-name", name, "--output", "json", ...(role ? ["--role", role] : [])], ...(process.env.AWS_PROFILE ? { env: [{ name: "AWS_PROFILE", value: process.env.AWS_PROFILE }] } : {}) } } });
   config.contexts = upsert(config.contexts, { name: alias, context: { cluster: clusterName, user: userAlias } });
   config["current-context"] = alias;
   mkdirSync(dirname(file), { recursive: true });

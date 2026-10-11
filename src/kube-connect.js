@@ -25,7 +25,8 @@ function argOf(args, flag) {
 }
 
 // Every context of a kubeconfig that reads this cluster, with the role it
-// assumes (exec `aws eks get-token --cluster-name … --role-arn …`).
+// assumes (exec `aws eks get-token --cluster-name … --role …`: the real
+// update-kubeconfig writes `--role`; a hand-made one may say `--role-arn`).
 export function contextsForCluster(config, cluster) {
   const out = [];
   for (const item of config?.contexts || []) {
@@ -34,7 +35,7 @@ export function contextsForCluster(config, cluster) {
     const args = user.exec?.args || [];
     const name = argOf(args, "--cluster-name") || (String(ctx.cluster || "").match(/:cluster\/(.+)$/) || [])[1] || "";
     if (name !== cluster) continue;
-    out.push({ name: String(item.name), user: String(ctx.user || ""), role: argOf(args, "--role-arn") });
+    out.push({ name: String(item.name), user: String(ctx.user || ""), role: argOf(args, "--role-arn") || argOf(args, "--role") });
   }
   return out;
 }
@@ -50,16 +51,28 @@ export function connectionOf(config, { cluster, roleArn = "" }) {
   const named = (config?.contexts || []).find((c) => c?.name === alias);
   // A context called <cluster>-viewer that is something else: never overwrite it.
   const clash = named && (!match || match.name !== alias) ? alias : "";
+  // What the clashing context reads: its server, user and role.
+  const clashRef = clash ? named.context || {} : {};
+  const clashUser = clash ? (config?.users || []).find((u) => u?.name === clashRef.user)?.user || {} : {};
+  const clashServer = clash ? String((config?.clusters || []).find((c) => c?.name === clashRef.cluster)?.cluster?.server || "") : "";
   const users = (config?.contexts || []).filter((c) => c?.context?.user === alias).length;
   return {
     alias,
     match: match?.name || "",
     ours: match?.name === alias,
     clash,
+    clashServer,
+    clashRole: clash ? argOf(clashUser.exec?.args, "--role-arn") || argOf(clashUser.exec?.args, "--role") : "",
     current: String(config?.["current-context"] || ""),
     userShared: users > 1,
     userIsOurs: Boolean((config?.users || []).find((u) => u?.name === alias)),
   };
+}
+
+// Two API server URLs for the same cluster? (case, scheme, trailing slash)
+export function sameEndpoint(a, b) {
+  const norm = (url) => String(url || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  return Boolean(norm(a)) && norm(a) === norm(b);
 }
 
 export function connectCommand({ cluster, roleArn, region = CONNECT_REGION }) {

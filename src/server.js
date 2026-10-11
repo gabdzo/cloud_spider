@@ -1105,13 +1105,34 @@ const page = `<!doctype html>
      one per context, each with its health lamp and scope. */
   #kube-ctx { position: absolute; z-index: 4; right: 14px; top: 8px; display: flex; align-items: stretch; gap: 0; padding: 3px; background: var(--btn-skirt); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-rim-hi), 0 2px 6px var(--btn-shade); max-width: calc(100% - 330px); overflow-x: auto; }
   #kube-ctx[hidden] { display: none; }
-  #kube-connect { position: absolute; z-index: 4; right: 14px; top: 8px; width: min(460px, calc(100% - 28px)); display: flex; flex-direction: column; gap: 4px; padding: 5px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-mid); box-shadow: 0 0 12px var(--btn-glow-far); font-size: 12px; max-height: calc(100% - 70px); overflow: auto; }
+  /* The EKS connection panel: a chip in the context switcher (or alone in
+     its place), and the panel it opens below it. */
+  #kube-connect-dock { position: absolute; z-index: 4; left: auto; right: 14px; top: 8px; display: flex; }
+  #kube-connect-dock[hidden] { display: none; }
+  .kc-chip { display: flex; align-items: center; gap: 7px; min-height: 28px; padding: 0 10px 0 9px; font: inherit; font-size: 11px; letter-spacing: 0.1em; color: var(--btn-off-label); background: linear-gradient(180deg, var(--btn-off-top), var(--btn-off-mid) 45%, var(--btn-off-low)); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-gloss), inset 0 -2px 0 var(--btn-shade); cursor: pointer; white-space: nowrap; }
+  .kc-chip:hover { color: var(--pip-mid); background: linear-gradient(180deg, var(--btn-hover), var(--btn-off-mid) 45%, var(--btn-off-low)); }
+  .kc-chip[aria-expanded="true"] { color: var(--btn-lit-label); background: linear-gradient(180deg, var(--btn-lit-top), var(--btn-lit-mid) 45%, var(--btn-lit-low)); }
+  .kc-chip i, #kube-connect .kc-lamp { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim); }
+  .kc-chip[data-tone="ok"] i, #kube-connect .kc-lamp.ok { background: var(--lamp-on); box-shadow: 0 0 6px var(--btn-glow); }
+  .kc-chip[data-tone="warn"] i, #kube-connect .kc-lamp.warn { background: var(--world-amber); box-shadow: 0 0 5px var(--world-amber); }
+  .kc-chip[data-tone="fail"] i, #kube-connect .kc-lamp.fail { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
+  .kc-chip b { font-weight: normal; letter-spacing: 0.2em; }
+  .kc-chip small { font-size: 9px; color: var(--pip-dim); }
+  #kube-connect { position: absolute; z-index: 5; right: 14px; top: 52px; width: min(460px, calc(100% - 28px)); display: flex; flex-direction: column; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-mid); box-shadow: 0 0 12px var(--btn-glow-far), 0 6px 18px var(--btn-shade); font-size: 12px; overflow: hidden; }
+  #kube-connect.narrow { left: 14px; width: auto; }
   #kube-connect[hidden] { display: none; }
-  #kube-connect .kc-head { display: flex; gap: 8px; align-items: center; width: 100%; padding: 0 2px; font: inherit; color: var(--pip-dim); background: transparent; border: 0; text-align: left; cursor: pointer; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+  #kube-connect .kc-head { flex: 0 0 auto; display: flex; gap: 8px; align-items: center; min-height: 40px; padding: 4px 4px 4px 9px; color: var(--pip-dim); background: var(--pip-screen); border-bottom: 1px solid var(--pip-dark); cursor: pointer; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+  #kube-connect .kc-head > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #kube-connect .kc-head b { color: var(--pip-bright); letter-spacing: 0.2em; }
-  #kube-connect .kc-head em { margin-left: auto; font-style: normal; }
-  #kube-connect[data-open="0"] .connect-row, #kube-connect[data-open="0"] .runpane { display: none; }
+  #kube-connect .kc-head em { margin-left: auto; font-style: normal; white-space: nowrap; }
+  #kube-connect .kc-fold { flex: 0 0 auto; min-width: 74px; min-height: 32px; padding: 0 10px; font: inherit; font-size: 11px; letter-spacing: 0.14em; color: var(--btn-off-label); background: linear-gradient(180deg, var(--btn-off-top), var(--btn-off-mid) 45%, var(--btn-off-low)); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-gloss), inset 0 -2px 0 var(--btn-shade); cursor: pointer; }
+  #kube-connect .kc-fold:hover, #kube-connect .kc-fold:focus-visible { color: var(--pip-bright); background: linear-gradient(180deg, var(--btn-hover), var(--btn-off-mid) 45%, var(--btn-off-low)); }
+  #kube-connect .kc-body { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 4px; padding: 5px; }
+  #kube-connect .kc-body > * { flex-shrink: 0; }
   #kube-connect .connect-row .act { display: flex; gap: 4px; }
+  #kube-connect .kc-logbar { width: 100%; min-height: 28px; padding: 0 8px; font: inherit; font-size: 10px; letter-spacing: 0.14em; text-align: left; color: var(--pip-mid); background: var(--pip-screen); border: 1px solid var(--pip-dark); cursor: pointer; }
+  #kube-connect .kc-logbar[data-state="failed"], #kube-connect .kc-logbar[data-state="refused"] { color: var(--status-broken); border-color: var(--status-broken); }
+  #kube-connect .kc-log .runpane[hidden] { display: none; }
   #kube-ctx > b { align-self: center; padding: 0 8px 0 6px; font-size: 9px; letter-spacing: 0.2em; color: var(--pip-dim); white-space: nowrap; }
   #kube-ctx button { position: relative; display: grid; grid-template-columns: 10px auto; grid-template-rows: auto auto; gap: 0 7px; align-items: center; min-width: 92px; padding: 4px 12px 4px 9px; font: inherit; text-align: left; color: var(--btn-off-label); background: linear-gradient(180deg, var(--btn-off-top), var(--btn-off-mid) 45%, var(--btn-off-low)); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-gloss), inset 0 -2px 0 var(--btn-shade); cursor: pointer; }
   #kube-ctx button + button { margin-left: 3px; }
@@ -1601,7 +1622,7 @@ const page = `<!doctype html>
   .connect-row { display: grid; grid-template-columns: 10px 1fr auto; gap: 4px 8px; align-items: center; padding: 5px 7px; border: 1px solid var(--pip-dark); background: var(--pip-ink); font-size: 12px; }
   .connect-row .lamp { width: 9px; height: 9px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim); }
   .connect-row[data-state="connected"] .lamp { background: var(--lamp-on); box-shadow: 0 0 6px var(--btn-glow); }
-  .connect-row[data-state="not-connected"] .lamp, .connect-row[data-state="not-listed"] .lamp { background: var(--world-amber); box-shadow: 0 0 5px var(--world-amber); }
+  .connect-row[data-state="not-connected"] .lamp, .connect-row[data-state="not-listed"] .lamp, .connect-row[data-state="clash-same"] .lamp { background: var(--world-amber); box-shadow: 0 0 5px var(--world-amber); }
   .connect-row[data-state="no-access"] .lamp, .connect-row[data-state="error"] .lamp { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
   .connect-row .what { color: var(--pip-bright); letter-spacing: 0.08em; overflow-wrap: anywhere; }
   .connect-row[data-state="no-access"] .what, .connect-row[data-state="error"] .what { color: var(--status-broken); }
@@ -2048,6 +2069,7 @@ const page = `<!doctype html>
       <section id="vault-page" aria-label="vaults page" hidden></section>
       <nav id="kube-tabs" aria-label="cluster screens" hidden></nav>
       <nav id="kube-ctx" aria-label="kube contexts" hidden></nav>
+      <div id="kube-connect-dock" hidden></div>
       <section id="kube-connect" aria-label="EKS clusters: kube connection" hidden></section>
       <section id="kube-tele" aria-label="cluster telemetry" hidden></section>
       <section id="kube-ops" aria-label="cluster add-ons" hidden></section>
