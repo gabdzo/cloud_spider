@@ -141,6 +141,8 @@ export const UPGRADES = [
     stack: "pgcluster",
     project: "cloudspider-pgcluster",
     vault: "pgcluster",
+    // Where its pods run: the run pane says what they wait on.
+    namespaces: ["shop", "cnpg-system"],
     needs: ["eks"],
     // EKS add-ons it uses (the EKS stack installs them): NEEDS chips + preflight.
     eksAddons: ["eks-pod-identity-agent", "aws-ebs-csi-driver"],
@@ -155,6 +157,8 @@ export const UPGRADES = [
     stack: "shopapi",
     project: "cloudspider-shopapi",
     vault: "shopapi",
+    // Where its pods run: the run pane says what they wait on.
+    namespaces: ["shop"],
     needs: ["eks", "pgcluster"],
     cost: [],
     parameters: [{ name: "clusterName", type: "string", default: "cloudspider-up" }],
@@ -167,6 +171,8 @@ export const UPGRADES = [
     stack: "demo",
     project: "cloudspider-demo",
     vault: "demo",
+    // Where its pods run: the run pane says what they wait on.
+    namespaces: ["demo"],
     needs: ["eks"],
     eksAddons: ["eks-pod-identity-agent", "metrics-server"],
     // One pod per node: the preflight checks every node has a slot.
@@ -230,6 +236,8 @@ function addonCards() {
     project: ADDON_PROJECT,
     vault: addon.id,
     needs: ["eks", ...addon.needs],
+    // Where its pods run (kube-system is shared: not watched).
+    namespaces: [addon.namespace, ...(addon.id === "keda" ? ["keda-demo"] : [])].filter((ns) => ns && ns !== "kube-system"),
     cost: addon.cost,
     nodeCost: addon.nodeCost,
     addon: true,
@@ -473,6 +481,18 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
     },
     status,
     children,
+    // A line from outside pulumi into a running stack's pane and log (what
+    // its pods wait on). false when that stack has no run going.
+    say(stack, text) {
+      const item = jobs.get(stack);
+      if (!item?.running || item.stack !== stack) return false;
+      const line = String(text || "").trimEnd();
+      if (!line) return true;
+      item.lines.push(line);
+      if (item.lines.length > KEEP_LINES) item.lines.splice(0, item.lines.length - KEEP_LINES);
+      item.logHandle?.append(line);
+      return true;
+    },
     // Shutdown, step 1: SIGINT to each running child (pulumi cancels, writes
     // its state and releases the stack lock); no further step or run starts.
     stop() {

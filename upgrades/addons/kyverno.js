@@ -1,5 +1,5 @@
 import { helmRelease, setup, small, viewerAccess } from "./common.js";
-import { ALL_POLICIES } from "./kyverno-policies.js";
+import { ALL_POLICIES, EXCEPTIONS } from "./kyverno-policies.js";
 
 // Kyverno (Helm) with the four baseline and two demo policies of
 // kyverno-policies.js, all in Audit mode. Reports land in PolicyReports (wgpolicyk8s.io), which Cloud
@@ -13,6 +13,9 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
     // One pod fewer on a small node. webhooksCleanup stays on: its
     // pre-delete hook removes the webhooks on destroy.
     cleanupController: { enabled: false },
+    // PolicyExceptions (kyverno-policies.js EXCEPTIONS) only in the kyverno
+    // namespace, where only this stack writes.
+    features: { policyExceptions: { enabled: true, namespace: addon.namespace } },
   });
   for (const item of ALL_POLICIES) {
     new k8s.apiextensions.CustomResource(`policy-${item.name}`, {
@@ -31,9 +34,17 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
       spec: item.spec,
     }, { ...k, dependsOn: [release] });
   }
+  for (const item of EXCEPTIONS) {
+    new k8s.apiextensions.CustomResource(`exception-${item.name}`, {
+      apiVersion: "kyverno.io/v2",
+      kind: "PolicyException",
+      metadata: { name: item.name, namespace: addon.namespace, labels: { "app.kubernetes.io/part-of": "cloudspider-addons" }, annotations: { "cloudspider/why": item.why } },
+      spec: item.spec,
+    }, { ...k, dependsOn: [release] });
+  }
   viewerAccess(k8s, k, addon.id, [
     { apiGroups: ["wgpolicyk8s.io"], resources: ["policyreports", "clusterpolicyreports"] },
-    { apiGroups: ["kyverno.io"], resources: ["clusterpolicies", "policies"] },
+    { apiGroups: ["kyverno.io"], resources: ["clusterpolicies", "policies", "policyexceptions"] },
   ], { dependsOn: [release] });
   return { version: addon.appVersion, details: { policies: ALL_POLICIES.map((item) => item.name), mode: "Audit" } };
 }

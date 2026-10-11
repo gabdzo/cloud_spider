@@ -59,3 +59,23 @@ export const DEMO_POLICIES = [
 ];
 
 export const ALL_POLICIES = [...BASELINE, ...DEMO_POLICIES];
+
+// Exceptions, each scoped to one workload of ours, never a namespace:
+// the demo's node collector reads /var/log/pods and the host's / through
+// hostPath (its job: pod logs and node metrics), so disallow-host-path does
+// not apply to DaemonSet demo/otel-collector and its pods.
+export const EXCEPTIONS = [
+  {
+    name: "demo-otel-collector-host-path",
+    why: "The demo's node collector (DaemonSet demo/otel-collector) reads pod logs and node metrics through read-only hostPath mounts.",
+    spec: {
+      exceptions: [{ policyName: "disallow-host-path", ruleNames: ["disallow-host-path", "autogen-disallow-host-path"] }],
+      match: {
+        any: [
+          { resources: { kinds: ["DaemonSet"], namespaces: ["demo"], names: ["otel-collector"] } },
+          { resources: { kinds: ["Pod"], namespaces: ["demo"], names: ["otel-collector-*"], selector: { matchLabels: { app: "otel-collector" } } } },
+        ],
+      },
+    },
+  },
+];

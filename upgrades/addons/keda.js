@@ -39,7 +39,7 @@ export default function keda({ pulumi, aws, k8s, addon }) {
       replicas: 0,
       selector: { matchLabels: labels },
       template: {
-        metadata: { labels },
+        metadata: { labels: { ...labels, "app.kubernetes.io/name": "jobs-worker", "app.kubernetes.io/part-of": "cloudspider-addons" } },
         spec: {
           serviceAccountName: account.metadata.name,
           securityContext: { runAsNonRoot: true, runAsUser: 1000, seccompProfile: { type: "RuntimeDefault" } },
@@ -48,13 +48,15 @@ export default function keda({ pulumi, aws, k8s, addon }) {
             image: "amazon/aws-cli:2.37.12",
             command: ["/bin/sh", "-c", script],
             env: [{ name: "QUEUE_URL", value: queue.url }, { name: "AWS_REGION", value: REGION }, { name: "HOME", value: "/tmp" }],
+            // Ready while its loop runs (Kyverno require-readiness-probe).
+            readinessProbe: { exec: { command: ["/bin/true"] }, periodSeconds: 30 },
             resources: small("20m", "64Mi", "128Mi"),
             securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } },
           }],
         },
       },
     },
-  }, { ...inNs, dependsOn: [ns, worker.association], ignoreChanges: ["spec.replicas"] });
+  }, { ...inNs, dependsOn: [ns, worker.association], ignoreChanges: ["spec.replicas"], customTimeouts: { create: "5m", update: "5m" } });
   const auth = new k8s.apiextensions.CustomResource("keda-aws", {
     apiVersion: "keda.sh/v1alpha1",
     kind: "TriggerAuthentication",

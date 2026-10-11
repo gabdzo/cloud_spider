@@ -37,6 +37,8 @@ export default function scalingDemo({ pulumi, aws, k8s, addon }) {
 
   const ns = new k8s.core.v1.Namespace("scaling-demo", { metadata: { name: addon.namespace } }, k);
   const inNs = { ...k, dependsOn: [ns] };
+  // Not ready in 5 minutes: the run fails and says why (run pane).
+  const workload = { ...inNs, customTimeouts: { create: "5m", update: "5m" } };
   const secure = { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } };
   const pod = { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: "RuntimeDefault" } };
   new k8s.apps.v1.Deployment("burst", {
@@ -45,35 +47,39 @@ export default function scalingDemo({ pulumi, aws, k8s, addon }) {
       replicas: burst === "on" ? 1 : 0,
       selector: { matchLabels: { app: "burst" } },
       template: {
-        metadata: { labels: { app: "burst" } },
+        metadata: { labels: { app: "burst", "app.kubernetes.io/name": "burst", "app.kubernetes.io/part-of": "cloudspider-addons" } },
         spec: {
           securityContext: pod,
           containers: [{
             name: "burst",
             image: "busybox:1.36",
             command: ["/bin/sh", "-c", "for i in 1 2 3 4 5 6 7 8; do (while true; do wget -q -O /dev/null http://web.demo:9898/ || sleep 1; done) & done; wait"],
+            // Ready while it runs (Kyverno require-readiness-probe): busybox's true.
+            readinessProbe: { exec: { command: ["/bin/true"] }, periodSeconds: 30 },
             resources: small("50m", "16Mi", "64Mi"),
             securityContext: secure,
           }],
         },
       },
     },
-  }, inNs);
+  }, workload);
   new k8s.apps.v1.Deployment("inflate", {
     metadata: { name: "inflate", namespace: addon.namespace },
     spec: {
       replicas: inflate,
       selector: { matchLabels: { app: "inflate" } },
       template: {
-        metadata: { labels: { app: "inflate" } },
+        metadata: { labels: { app: "inflate", "app.kubernetes.io/name": "inflate", "app.kubernetes.io/part-of": "cloudspider-addons" } },
         spec: {
           securityContext: pod,
           terminationGracePeriodSeconds: 0,
-          containers: [{ name: "pause", image: "registry.k8s.io/pause:3.10", resources: small("500m", "128Mi", "128Mi"), securityContext: secure }],
+          // pause has no shell and no port; "/pause -v" prints its version and
+          // exits 0, which is all a readiness probe of a placeholder needs.
+          containers: [{ name: "pause", image: "registry.k8s.io/pause:3.10", readinessProbe: { exec: { command: ["/pause", "-v"] }, periodSeconds: 30 }, resources: small("500m", "128Mi", "128Mi"), securityContext: secure }],
         },
       },
     },
-  }, inNs);
+  }, workload);
   viewerAccess(k8s, k, addon.id, [{ apiGroups: ["autoscaling"], resources: ["horizontalpodautoscalers"] }, { apiGroups: [""], resources: ["events"] }, { apiGroups: ["events.k8s.io"], resources: ["events"] }]);
   return { version: "", details: { burst, inflate, hpa: hpa === "on" && demoApp === "present" ? "on demo/web, demo/api" : "off" } };
 }
