@@ -3201,6 +3201,16 @@ drawScope(scope, 0, 0);
 
 setInterval(animate, FRAME_MS);
 
+// The bundled Share Tech Mono arrives after the first frames (font-display:
+// swap). Canvas text drawn before it used the fallback; redraw once it is in.
+document.fonts?.load?.('bold 14px "Share Tech Mono"').then(() => {
+  vaultPageShown = "";
+  renderVaultPage();
+  renderChrome();
+  draw();
+  if (!kubeTele.hidden) paintTelemetry();
+}).catch(() => {});
+
 window.addEventListener("resize", () => {
   draw();
   if (!kubeTele.hidden) paintTelemetry();

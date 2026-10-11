@@ -68,6 +68,10 @@ export const FILES = new Set([
   "sprites/holotape.js",
 ]);
 
+// Self-hosted fonts (SIL OFL 1.1, license in src/fonts/). Served by name
+// only; nothing else under src/fonts is reachable.
+export const FONT_FILES = new Map([["fonts/ShareTechMono-Regular.woff2", "font/woff2"]]);
+
 const page = `<!doctype html>
 <html lang="en">
 <head>
@@ -75,7 +79,18 @@ const page = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cloud Spider</title>
 <link rel="icon" href="data:,">
+<link rel="preload" href="/fonts/ShareTechMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+  /* Share Tech Mono ships with the app (src/fonts, SIL OFL 1.1), so the Mac,
+     the box and every screenshot draw the same face. Bold is synthesized.
+     If it fails to load, the stack falls to VT323, then Menlo. */
+  @font-face {
+    font-family: "Share Tech Mono";
+    src: url("/fonts/ShareTechMono-Regular.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+  }
   ${cssVars()}
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -1910,6 +1925,15 @@ async function route(app, req, res) {
 
   if (req.method === "GET" && url.pathname.startsWith("/")) {
     const name = url.pathname.slice(1);
+    if (FONT_FILES.has(name)) {
+      const body = await readFile(join(root, name));
+      res.writeHead(200, {
+        "content-type": FONT_FILES.get(name),
+        "cache-control": "public, max-age=604800, immutable",
+      });
+      res.end(body);
+      return;
+    }
     if (FILES.has(name)) {
       const body = await readFile(join(root, name));
       res.writeHead(200, {

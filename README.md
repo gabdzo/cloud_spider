@@ -14,6 +14,8 @@ PORT=<n> serves on another port. CLOUDSPIDER_LOG_GROUP names the CloudWatch log 
 
 No AWS account to hand? Flip SAMPLE in the header: it never touches AWS and draws a whole sample account (a camp, VPCs, an EKS cluster with pods, vaults, a request path, a bill). It stays on across MAP, PATH and CLUSTER until you flip it off.
 
+The page ships its own font: Share Tech Mono (src/fonts/ShareTechMono-Regular.woff2, SIL Open Font License 1.1, license in src/fonts/OFL-ShareTechMono.txt), so every machine and every screenshot draws the same face. If it cannot load, the stack falls back to VT323, then Menlo.
+
 ## What is on the screen
 
 - MAP: VPCs, subnets and machines as a walled camp; ARCH or BY TAG; FOLD a VPC; the EKS cluster as a compound with 1/2/3/AUTO detail. The morning report above it lists what hurts, what changed and what is idle but billed.
