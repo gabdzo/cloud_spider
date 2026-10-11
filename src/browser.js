@@ -46,7 +46,7 @@ import { snapshot } from "./agent-text.js";
 import { createTerminal } from "./terminal.js";
 import { createLearnView } from "./learn-view.js";
 import { createScoreView } from "./score/view.js";
-import { createNetdebugView } from "./netdebug/view.js";
+import { createNetdebugView, debugBarShown } from "./netdebug/view.js";
 import { metricAlerts, paintPlace } from "./metrics.js";
 import { sunrise } from "./sprites/landmarks.js";
 import { drawSprite } from "./draw-kit.js";
@@ -293,6 +293,10 @@ function renderChromeParts() {
   renderRadioPanel();
   showSpend();
   sampleButton.setAttribute("aria-checked", String(sample));
+  if (debugBarShown(mode) !== netdebugView.isShown()) {
+    if (debugBarShown(mode)) netdebugView.show();
+    else netdebugView.hide();
+  }
   tabMap.setAttribute("aria-pressed", String(mode === "map" && !vaultRoute));
   tabVaults.setAttribute("aria-pressed", String(vaultPageOpen()));
   pathButton.setAttribute("aria-pressed", String(mode === "path"));

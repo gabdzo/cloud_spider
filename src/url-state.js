@@ -4,6 +4,7 @@
 //   #path?debug=<url>&why=1  one-shot: DEBUG runs <url> (and opens the ALB
 //                            503 walkthrough); not written back
 // view is "" (the map), "path", "cluster", "vaults" or "vaults/<key>".
+// #sniff is read as #path (the tab's pip label); the hash is written as #path.
 // learn and stacks are "1" when the panel is open with nothing picked.
 const VIEWS = new Set(["", "path", "cluster", "vaults"]);
 
@@ -12,7 +13,7 @@ export function parseUrlState(hash) {
   const at = text.indexOf("?");
   const route = at < 0 ? text : text.slice(0, at);
   const params = new URLSearchParams(at < 0 ? "" : text.slice(at + 1));
-  let view = route;
+  let view = route === "sniff" ? "path" : route;
   let vault = null;
   if (route.startsWith("vaults/")) {
     view = "vaults";

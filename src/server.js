@@ -2117,7 +2117,7 @@ const page = `<!doctype html>
   </div>
   <nav class="tabs" aria-label="views">
     <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true">Map</button>
-    <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false">Path</button>
+    <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false" title="sniff: a request's path, and DEBUG for any URL" data-pro-title="network: a request's path, and DEBUG for any URL"><span data-pro-label="Network">Sniff</span></button>
     <button id="cluster" class="tab" type="button" data-icon="cluster" aria-pressed="false">Cluster</button>
     <button id="tab-vaults" class="tab" type="button" data-icon="vaults" aria-pressed="false" title="vaults: every project, its checks and what it owns">Vaults</button>
   </nav>

@@ -12,14 +12,14 @@ You need Node 20 or newer (22+ recommended; the AWS SDK drops Node 20 in 2027) a
 
 PORT=<n> serves on another port. CLOUDSPIDER_LOG_GROUP names the CloudWatch log group whose lines the page reads; leave it out and the page says it is unset. After a git pull, run npm ci again, restart, and reload the page. docs/RUN-ME.md is the step-by-step for the stacks, the cluster and the labs.
 
-No AWS account to hand? Flip SAMPLE in the header: it never touches AWS and draws a whole sample account (a camp, VPCs, an EKS cluster with pods, vaults, a request path, a bill). It stays on across MAP, PATH and CLUSTER until you flip it off.
+No AWS account to hand? Flip SAMPLE in the header: it never touches AWS and draws a whole sample account (a camp, VPCs, an EKS cluster with pods, vaults, a request path, a bill). It stays on across MAP, SNIFF and CLUSTER until you flip it off.
 
 The page ships its own font: Share Tech Mono (src/fonts/ShareTechMono-Regular.woff2, SIL Open Font License 1.1, license in src/fonts/OFL-ShareTechMono.txt), so every machine and every screenshot draws the same face. If it cannot load, the stack falls back to VT323, then Menlo.
 
 ## What is on the screen
 
 - MAP: VPCs, subnets and machines as a walled camp; ARCH or BY TAG; FOLD a VPC; the EKS cluster as a compound with 1/2/3/AUTO detail. The morning report above it lists what hurts, what changed and what is idle but billed.
-- PATH: one request through a load balancer (below).
+- SNIFF (Network in the pro theme; it used to be PATH, and `#path` links still work): one request through a load balancer (below), plus the DEBUG bar for any URL. The bar shows only in this tab.
 - CLUSTER: EKS from inside (below), with TOPOLOGY, TELEMETRY and OPS; click a pod for its deep-inspect panel.
 - VAULTS: your projects, one door each (below).
 - RADIO: the last actions and alarms. STACKS: the Pulumi and Terraform cards and the cluster add-ons. LEARN: the lab shelf. ASK: a question to your local Cursor agent (below).

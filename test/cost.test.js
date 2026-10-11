@@ -291,7 +291,9 @@ test("the overview has a home control and a spend box, and the map poll does not
     const html = await page.text();
     assert.match(html, /id="home"/);
     assert.match(html, /id="spend"/);
-    assert.match(html, />Path</);
+    // The path tab reads SNIFF in pip and Network in pro; its id stays "path".
+    // The label is a span so the theme swap keeps the tab's icon.
+    assert.match(html, /id="path"[^>]*><span data-pro-label="Network">Sniff<\/span><\/button>/);
     assert.match(html, />Cluster</);
     assert.doesNotMatch(html, /id="cost"/);
     assert.doesNotMatch(html, /id="bill"/);

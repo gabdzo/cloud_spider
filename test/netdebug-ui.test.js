@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { createNetdebug } from "../src/netdebug/api.js";
-import { CHAIN, ndModel, timingOf } from "../src/netdebug/view.js";
+import { CHAIN, debugBarShown, ndModel, timingOf } from "../src/netdebug/view.js";
 import { ND_CSS, ND_TOKENS } from "../src/netdebug/style.js";
 import { FILES } from "../src/server.js";
 
@@ -103,11 +103,21 @@ test("page wiring: the panel, its CSS and module are served; PATH shows and hide
   assert.match(server, /<section id="netdebug" aria-label="network debugging" hidden><\/section>/);
   assert.match(server, /\$\{ND_CSS\}/);
   assert.match(server, /netdebugRoute\(req, res, url, app\.netdebug/);
-  assert.match(browser, /import \{ createNetdebugView \} from "\.\/netdebug\/view\.js";/);
+  assert.match(browser, /import \{ createNetdebugView, debugBarShown \} from "\.\/netdebug\/view\.js";/);
   assert.match(browser, /clickGround\(ui\);\n {2}netdebugView\.show\(\);/);
   assert.match(browser, /hostInput\.hidden = true;\n {2}netdebugView\.hide\(\);/);
   assert.match(browser, /who !== "alb"/, "only an ALB answer moves the PATH diagram");
   const view = readFileSync(new URL("../src/netdebug/view.js", import.meta.url), "utf8");
   assert.doesNotMatch(view, /innerHTML/);
   assert.match(view, /sample: sample\(\) === true/);
+});
+
+test("the DEBUG bar belongs to the SNIFF (path) tab only", () => {
+  assert.equal(debugBarShown("path"), true);
+  for (const mode of ["map", "cluster", "vaults", "", undefined]) assert.equal(debugBarShown(mode), false, String(mode));
+  // Every tab change goes through renderChromeParts, which syncs the bar to
+  // the mode: leaving PATH for CLUSTER (and then MAP) used to keep it up.
+  const browser = readFileSync(new URL("../src/browser.js", import.meta.url), "utf8");
+  const parts = browser.slice(browser.indexOf("function renderChromeParts()"));
+  assert.match(parts.slice(0, parts.indexOf("\n}\n")), /debugBarShown\(mode\)/);
 });

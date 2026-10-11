@@ -39,3 +39,11 @@ test("vault routes keep working with a query behind them", () => {
   assert.deepEqual(parseVaultHash("#vaults?sample=1"), { key: null });
   assert.deepEqual(parseVaultHash("#vaults/shop%2Fapi?learn=1"), { key: "shop/api" });
 });
+
+test("#sniff is an alias of #path, written back as #path", () => {
+  const state = parseUrlState("#sniff?sample=1&debug=https%3A%2F%2Fgoogle.com&why=1");
+  assert.equal(state.view, "path");
+  assert.equal(state.debug, "https://google.com");
+  assert.equal(state.why, true);
+  assert.equal(formatUrlState(state), "#path?sample=1");
+});

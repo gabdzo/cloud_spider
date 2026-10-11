@@ -768,7 +768,7 @@ Safety:
 
 Config: `network.*` in cloudspider.yaml (see cloudspider.example.yaml).
 
-**In PATH (N2):** the DEBUG panel docks under the request path, in both themes.
+**In SNIFF (N2):** the DEBUG panel docks under the request path, in both themes, and only in this tab (MAP, CLUSTER and VAULTS never show it). The tab reads SNIFF in the pip theme and Network in the pro theme. Its route is still `#path`, and `#sniff` links open it too.
 - **Bar:** type a URL and press RUN (or Enter). The LOCAL / AWS / IN-CLUSTER lamps show where checks ran from; IN-CLUSTER stays off, since the debug pod is not built.
 - **Chain:** CLIENT → DNS → TCP → TLS → HTTP → who answered (ALB / CLOUDFRONT / ORIGIN). Each hop shows a glyph and one fact, the first broken edge is dashed, and a click on a hop filters the checks to it.
 - **TIMING strip:** dns / connect / tls / ttfb / transfer, as `curl -w` splits it.
