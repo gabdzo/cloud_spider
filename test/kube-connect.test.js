@@ -196,6 +196,7 @@ test("DISCONNECT removes only our context, its user and its list entry", async (
     assert.deepEqual(config.contexts.map((c) => c.name), ["work-ctx", "cloudspider-up", "cloudspider-viewer"]);
     assert.deepEqual(config.users.map((u) => u.name), ["work-user", "cloudspider-up", "cloudspider-viewer"]);
     assert.equal(config["current-context"], "work-ctx");
+    assert.ok(!(config.clusters || []).some((c) => c.name.endsWith(":cluster/cloudspider-medium")), "the cluster entry CONNECT wrote is gone too");
     assert.deepEqual(parse(readFileSync(r.contextsFile, "utf8")).contexts.map((c) => c.context), ["cloudspider-viewer"]);
     assert.deepEqual(r.app.contextNames(), ["cloudspider-viewer"]);
   } finally {
@@ -335,4 +336,21 @@ test("USE IT: a <cluster>-viewer context on the same API server with another rol
   } finally {
     denied.cleanup();
   }
+});
+
+test("DISCONNECT also removes the cluster entry CONNECT wrote, unless another context reads through it", () => {
+  const ARN = "arn:aws:eks:eu-north-1:550536272523:cluster/cs-drill";
+  const base = () => ({
+    contexts: [{ name: "cs-drill-viewer", context: { cluster: ARN, user: "cs-drill-viewer" } }],
+    clusters: [{ name: ARN, cluster: { server: "https://x" } }],
+    users: [{ name: "cs-drill-viewer", user: { exec: { args: ["--cluster-name", "cs-drill", "--role", "arn:aws:iam::550536272523:role/cs-drill-viewer"] } } }],
+  });
+  assert.equal(connectionOf(base(), { cluster: "cs-drill" }).clusterEntry, ARN);
+  const shared = base();
+  shared.contexts.push({ name: "admin", context: { cluster: ARN, user: "admin" } });
+  assert.equal(connectionOf(shared, { cluster: "cs-drill" }).clusterEntry, "");
+  const handNamed = base();
+  handNamed.contexts[0].context.cluster = "my-cluster";
+  handNamed.clusters[0].name = "my-cluster";
+  assert.equal(connectionOf(handNamed, { cluster: "cs-drill" }).clusterEntry, "", "only the ARN-named entry update-kubeconfig writes");
 });

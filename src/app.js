@@ -216,6 +216,9 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     const steps = [{ text: `back up ${connector.kubeconfigPath()} to ${connector.backupPath()}`, fn: () => connector.backupKubeconfig() }];
     steps.push({ cmd: "kubectl", args: ["config", "delete-context", conn.alias], text: `kubectl config delete-context ${conn.alias}` });
     if (conn.userIsOurs && !conn.userShared) steps.push({ cmd: "kubectl", args: ["config", "delete-user", conn.alias], text: `kubectl config delete-user ${conn.alias}` });
+    // update-kubeconfig also wrote the cluster entry; without this the
+    // kubeconfig kept it after DISCONNECT (live test 2026-10-11).
+    if (conn.clusterEntry) steps.push({ cmd: "kubectl", args: ["config", "delete-cluster", conn.clusterEntry], text: `kubectl config delete-cluster ${conn.clusterEntry}` });
     steps.push({ text: `remove ${conn.alias} from cloudspider.contexts.yaml`, fn: () => connector.removeFromList(conn.alias) });
     steps.push({ text: "reload Cloud Spider's kube contexts (no restart)", fn: async () => {
       const got = await reloadContexts();
