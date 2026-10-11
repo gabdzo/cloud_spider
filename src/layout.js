@@ -359,7 +359,11 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
     settlements.push(...tagged.camps);
     cursorY = tagged.bottom;
   } else {
-    for (const vpc of vpcs) {
+    // Empty VPCs (often just the default 172.31/16) are one-line strips; they
+    // go last so the VPCs with machines, clusters and gates come first and
+    // stay above the fold. Otherwise the order is by id, as before.
+    const hollow = (vpc) => (!instances.some((item) => item.vpcId === vpc.id) && !fixtures.some((item) => item.vpcId === vpc.id) ? 1 : 0);
+    for (const vpc of [...vpcs].sort((a, b) => hollow(a) - hollow(b))) {
       const vpcInstances = instances.filter((item) => item.vpcId === vpc.id);
       const gate = gateKind(place, vpc.id);
       if (isClosed(vpc.id) && (vpcInstances.length || fixtures.some((item) => item.vpcId === vpc.id))) {

@@ -100,7 +100,7 @@ export function costFailure(error, call = "GetCostAndUsage") {
   if (text.includes(call) && text.includes("us-east-1") && !text.includes("eu-north-1")) {
     return { error: text, label: text, lines: [text] };
   }
-  const sentence = `${text} Set AWS_PROFILE=default and AWS_REGION=us-east-1. ${call}.`;
+  const sentence = `${text.replace(/\.?\s*$/, ".")} The bill is read from Cost Explorer (${call}, us-east-1) with the AWS_PROFILE you started with; it needs ce:${call}. AWS_REGION can stay as it is.`;
   return { error: sentence, label: sentence, lines: [sentence] };
 }
 
