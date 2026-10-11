@@ -537,3 +537,29 @@ test("blast radius names what else the object touches", () => {
   assert.match(blastLine(place, "i-node"), /node of cluster cloudspider-up/);
   assert.equal(blastLine({ instances: [{ id: "i-lone" }], fixtures: [] }, "i-lone"), "touches nothing else on the map");
 });
+
+test("wide windows flow VPCs side by side; narrow keeps one column", () => {
+  const place = {
+    region: "eu-north-1",
+    vpcs: [{ id: "vpc-a", name: "a", cidr: "10.1.0.0/16" }, { id: "vpc-b", name: "b", cidr: "10.2.0.0/16" }],
+    subnets: [
+      { id: "s-a", vpcId: "vpc-a", zone: "eu-north-1a", cidr: "10.1.1.0/24" },
+      { id: "s-b", vpcId: "vpc-b", zone: "eu-north-1a", cidr: "10.2.1.0/24" },
+    ],
+    instances: [
+      { id: "i-a", vpcId: "vpc-a", subnetId: "s-a", state: "running" },
+      { id: "i-b", vpcId: "vpc-b", subnetId: "s-b", state: "running" },
+    ],
+    fixtures: [],
+  };
+  const narrow = layout(place, { rowLimit: 1100 });
+  const [na, nb] = narrow.settlements;
+  assert.equal(na.x, nb.x);
+  assert.ok(nb.y > na.y + na.h - 1);
+  const wide = layout(place, { rowLimit: 1100, flowLimit: 1700 });
+  const [wa, wb] = wide.settlements;
+  assert.equal(wa.y, wb.y);
+  assert.ok(wb.x >= wa.x + wa.w);
+  assert.deepEqual({ w: wa.w, h: wa.h }, { w: na.w, h: na.h });
+  assert.ok(wide.region.w >= wb.x + wb.w - wide.region.x);
+});
