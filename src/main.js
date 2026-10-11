@@ -21,6 +21,7 @@ import { createCheckRunner } from "./vault-checks.js";
 import { createVaultView } from "./vault-view.js";
 import { sampleFailures, sampleFetch, sampleLogs, samplePlace, sampleStacks } from "./sample.js";
 import { createStackReader } from "./vault-stacks.js";
+import { createSloStore } from "./slo-store.js";
 
 const port = Number(process.env.PORT || 9241);
 const pageOrigin = `http://127.0.0.1:${port}`;
@@ -77,6 +78,21 @@ const app = createApp({
     process.stdout.write(line);
   },
 });
+
+// SLO history survives a restart (.cloudspider/slo-ledger.json).
+const sloStore = createSloStore({ file: join(root, ".cloudspider", "slo-ledger.json"), ledger: app.sloLedger() });
+const sloLoaded = await sloStore.load();
+if (sloLoaded.keys) process.stdout.write(`SLO history: ${sloLoaded.keys} series from ${sloStore.file}\n`);
+else if (sloLoaded.note && !/no saved/.test(sloLoaded.note)) process.stdout.write(`SLO history: ${sloLoaded.note}\n`);
+setInterval(() => {
+  sloStore.save().then((out) => out.error && process.stdout.write(`SLO history: not saved (${out.error})\n`));
+}, 60_000);
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    sloStore.save().finally(() => process.exit(0));
+    setTimeout(() => process.exit(0), 2000).unref();
+  });
+}
 
 const pulumi = spawnSync("pulumi", ["version"], { shell: false });
 const pulumiLine = pulumiWarning(pulumi.status);

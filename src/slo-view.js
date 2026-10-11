@@ -124,7 +124,7 @@ export function sloHelp() {
   const dl = el("dl");
   for (const [term, text] of SLO_HELP) dl.append(el("dt", "", term), el("dd", "", text));
   help.append(dl);
-  help.append(el("p", "", "Read-only and free: measured from the checks, CloudWatch series and kube reads Cloud Spider already makes, kept in memory since the server started."));
+  help.append(el("p", "", "Read-only and free: measured from the checks, CloudWatch series and kube reads Cloud Spider already makes, kept in .cloudspider/slo-ledger.json so a restart keeps the history."));
   return help;
 }
 
