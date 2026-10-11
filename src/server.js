@@ -8,6 +8,7 @@ import { pathResult } from "./path-view.js";
 import { THEME_NAMES, cssVars } from "./theme.js";
 import { SCORE_CSS } from "./score/style.js";
 import { scoreRoute } from "./score/routes.js";
+import { netdebugRoute } from "./netdebug/routes.js";
 import { defaults, effectiveConfig } from "./config.js";
 import { sampleCost } from "./cost.js";
 import { sampleCluster } from "./cluster.js";
@@ -2308,6 +2309,7 @@ async function route(app, req, res) {
     return;
   }
   if (await scoreRoute(req, res, url, app.score, { send, readJson })) return;
+  if (await netdebugRoute(req, res, url, app.netdebug, { send, readJson })) return;
 
   if (req.method === "GET" && url.pathname === "/api/sample") {
     send(res, 200, { place: samplePlace(), trail: sampleTrail(), morning: sampleMorning() });

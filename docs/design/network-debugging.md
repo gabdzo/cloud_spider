@@ -269,7 +269,7 @@ Reachability Analyzer is the only AWS write. It is gated by `network.aws.reachab
 - **One host, one port.** The URL's host and port (default 443/80), plus the ports of redirect targets the server itself returns, which are followed only when they are 80/443 or the same port. There are no port lists, CIDR targets or IP ranges, and no **port scanning** in any form. Resolved IPs per name are capped at 8.
 - **Rate limits.** `network.local.rateLimit`: default 6 runs per minute per host, 30 per minute in total, at most 2 runs at once. Each run sends at most 1 HTTP request per resolved IP plus redirects (≤10).
 - **Polite requests.** `GET`/`HEAD` only, no body, no cookies, no credentials, no custom headers from the user. User-Agent `CloudSpider-netdebug/<version>`.
-- **Refused targets.** Link-local and metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`) are always refused. Loopback and RFC 1918 are refused unless `network.local.allowPrivateTargets: true`; a VPN user debugging an internal ALB turns it on.
+- **Refused targets.** Link-local and metadata addresses (`169.254.0.0/16`, `fd00:ec2::254`) are always refused. Loopback and RFC 1918 are refused unless `network.local.allowInternalTargets: true`; a VPN user debugging an internal ALB turns it on.
 - **Origin check.** The API is POST-only, origin-checked like every other write-ish endpoint, and listens on 127.0.0.1.
 
 ### 6.4 Audit log
@@ -403,7 +403,7 @@ network:
     trace: auto                # auto (use tracepath/traceroute if present) | off
     ping: auto                 # auto | off
     ipv6: auto                 # auto | off
-    allowPrivateTargets: false # RFC 1918 / loopback targets (VPN users); metadata/link-local always refused
+    allowInternalTargets: false # RFC 1918 / loopback targets (VPN users); metadata/link-local always refused
     rateLimit: { perHostPerMinute: 6, perMinute: 30, concurrent: 2 }
   aws:
     route53: true

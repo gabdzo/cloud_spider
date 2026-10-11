@@ -72,6 +72,24 @@ export const SCHEMA = {
     regions: { type: "list", items: REGION, default: [], doc: "regions the AWS scorecard scans (first is home, for CloudTrail); empty: aws.region" },
     packs: { type: "list", items: /^(kubernetes|aws)$/, default: ["kubernetes", "aws"], doc: "which control packs SCAN offers" },
   },
+  network: {
+    enabled: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_NETWORK", doc: "network debugging: the DEBUG bar in PATH (local probes of a URL you type)" },
+    local: {
+      timeoutSeconds: { type: "integer", min: 1, max: 60, default: 10, doc: "per step of a URL debug run" },
+      maxRedirects: { type: "integer", min: 0, max: 10, default: 10, doc: "redirects followed (80, 443 or the URL's own port only)" },
+      doh: { type: "list", items: /^https:\/\/[A-Za-z0-9.-]+(:\d+)?\/[^\s?#]*$/, default: ["https://cloudflare-dns.com/dns-query", "https://dns.google/resolve"], doc: "public DoH resolvers compared with this machine's answer; [] turns that check off" },
+      ipv6: { type: "enum", values: ["auto", "off"], default: "auto", doc: "connect to IPv6 addresses too" },
+      allowInternalTargets: { type: "boolean", default: false, env: "CLOUDSPIDER_NETWORK_INTERNAL", doc: "probe loopback and RFC 1918 addresses (VPN users); metadata and link-local are always refused" },
+      rateLimit: {
+        perHostPerMinute: { type: "integer", min: 1, max: 60, default: 6, doc: "runs a minute per host" },
+        perMinute: { type: "integer", min: 1, max: 120, default: 30, doc: "runs a minute in total" },
+        concurrent: { type: "integer", min: 1, max: 8, default: 2, doc: "runs at once" },
+      },
+    },
+    reports: {
+      keep: { type: "integer", min: 1, max: 500, default: 50, doc: "debug reports kept under storage.path/netdebug" },
+    },
+  },
   features: {
     ask: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_ASK", doc: "ASK: the local agent terminal" },
     stacksRun: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_STACKS_RUN", doc: "running Pulumi from STACKS (reading stacks stays on)" },
