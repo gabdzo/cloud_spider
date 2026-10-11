@@ -20,7 +20,9 @@ export function elapsedText(ms = 0) {
 // in the status (the server could not be reached). now: Date.now(), to tick
 // the clock of a running step between polls.
 export function runModel(status = {}, { local = null, polledAt = 0, now = 0 } = {}) {
-  const body = local?.error && (!status?.startedAt || (local.at || 0) >= status.startedAt) ? { ...status, ...local, state: "refused", running: false, lines: status?.lines || [] } : status || {};
+  // A refusal the page holds is its own answer: the last run's error lines,
+  // steps and command (maybe another stack's) stay out of its plate.
+  const body = local?.error && (!status?.startedAt || (local.at || 0) >= status.startedAt) ? { ...status, ...local, state: "refused", running: false, lines: status?.lines || [], head: [], steps: [], command: "" } : status || {};
   const error = String(body.error || "");
   const state = body.state || (body.running ? "running" : error ? "failed" : body.stack && body.lines?.length ? "done" : "idle");
   if (state === "idle" && !error) {
@@ -68,4 +70,12 @@ function busyText(body) {
 export function radioLine(model) {
   if (!model?.show || !model.plate) return null;
   return { key: model.id || `${model.title}|${model.plate.lines[0]}`, status: "fail", text: `${model.title}: ${model.plate.lines[0]}` };
+}
+
+// A number field outside its range, said while typing (the server refuses
+// it too, before pulumi): "" when fine or empty.
+export function numberProblem(parameter, value) {
+  if (parameter?.type !== "number" || value === "" || value == null) return "";
+  const n = Number(value);
+  return Number.isInteger(n) && n >= parameter.min && n <= parameter.max ? "" : `${parameter.name}: ${parameter.min} to ${parameter.max}`;
 }

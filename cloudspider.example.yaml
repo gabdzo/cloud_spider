@@ -92,6 +92,10 @@ network:
   reports:
     keep: 50               # reports kept under storage.path/netdebug
 
+stacks:
+  eks:
+    maxNodes: 3            # most nodes the EKS card's nodeCount takes (1-10; each node is billed).
+
 features:
   ask: true                # env CLOUDSPIDER_FEATURE_ASK. ASK, the local agent terminal.
   stacksRun: true          # env CLOUDSPIDER_FEATURE_STACKS_RUN. Running Pulumi from STACKS.

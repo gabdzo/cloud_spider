@@ -13,7 +13,9 @@ const version = "1.32";
 if (!["t4g.small", "t4g.medium"].includes(instanceType)) {
   throw new Error("instanceType must be t4g.small or t4g.medium");
 }
-if (nodeCount !== 1) throw new Error("nodeCount must be 1");
+// The Stacks card caps this at stacks.eks.maxNodes (default 3); this is the
+// program's own ceiling for a hand-run pulumi up.
+if (!Number.isInteger(nodeCount) || nodeCount < 1 || nodeCount > 10) throw new Error("nodeCount must be a whole number from 1 to 10");
 
 // One stack per cluster: eks-<clusterName>. The first cluster predates that
 // and lives in the stack "upgrade" with Pulumi's auto-generated role and node
@@ -121,6 +123,8 @@ const nodes = new aws.eks.NodeGroup(
     instanceTypes: [instanceType],
     amiType: "AL2023_ARM_64_STANDARD",
     capacityType: "ON_DEMAND",
+    // Changing nodeCount updates this node group in place (EKS
+    // UpdateNodegroupConfig): the cluster, VPC and subnets do not change.
     scalingConfig: { desiredSize: nodeCount, minSize: nodeCount, maxSize: nodeCount },
     tags,
   },

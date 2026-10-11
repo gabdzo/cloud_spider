@@ -692,7 +692,7 @@ Every PREVIEW, RUN and TAKE IT DOWN in a Stacks card now shows a terminal under 
 
 ### A second, medium cluster (about $0.14/h, $3.40/day while up)
 
-EKS control plane $0.10/h + one t4g.medium $0.0344/h + 20 GB gp3 + a public IPv4 (eu-north-1). The card's cost chip follows instanceType and nodeCount.
+EKS control plane $0.10/h + one t4g.medium $0.0344/h + 20 GB gp3 + a public IPv4 (eu-north-1). The card's cost chip follows instanceType and nodeCount. nodeCount takes 1 to 3 (`stacks.eks.maxNodes` in `cloudspider.yaml` changes the cap, up to 10); changing it on a running cluster updates the node group in place (the cluster and VPC stay), so a second node is also the answer when a t4g.small runs out of pod slots.
 
 1. Start the server from a terminal where `aws sts get-caller-identity --profile default` answers with account 550536272523 and `pulumi version` works: `AWS_PROFILE=default AWS_REGION=eu-north-1 PULUMI_CONFIG_PASSPHRASE= npm start`.
 2. Stacks → EKS: clusterName `cloudspider-medium` (or any short lowercase name), instanceType `t4g.medium`, nodeCount 1.

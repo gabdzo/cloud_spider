@@ -29,7 +29,7 @@ import { renderTelemetry } from "./tele-view.js";
 import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
 import { addonCommands, confirmPrompt, upgradeSpiderLine } from "./upgrade-rules.js";
-import { radioLine, runModel } from "./run-pane.js";
+import { numberProblem, radioLine, runModel } from "./run-pane.js";
 import { costFor, costLine, estimate } from "./stack-costs.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
@@ -3304,6 +3304,17 @@ function cardBody(spec, preset = {}) {
       field.addEventListener("input", () => repriceCard(spec));
     }
     body.append(el("label", {}, `${parameter.name} `, field));
+    if (parameter.type === "number") {
+      // The allowed range, said while typing (RUN would be refused anyway).
+      if (fixed === undefined) Object.assign(field, { type: "number", min: parameter.min, max: parameter.max, step: 1 });
+      const note = el("em", { className: "field-note", role: "status" });
+      const check = () => {
+        note.textContent = numberProblem(parameter, field.value);
+      };
+      field.addEventListener("input", check);
+      check();
+      body.append(note);
+    }
   }
   const confirm = el("input", { name: "confirmName", className: "confirm-name", autocomplete: "off" });
   const preview = el("button", { type: "button", className: "cmd", textContent: "preview", title: "pulumi preview --diff: shows what run would change, changes nothing" });
@@ -3737,6 +3748,14 @@ async function postUpgrade(action) {
     return;
   }
   runLocal = null;
+  const values = pipParams();
+  const problem = spec.parameters.map((parameter) => numberProblem(parameter, values[parameter.name])).find(Boolean);
+  if (problem && action !== "destroy") {
+    const where = spec.id === "eks" ? " (stacks.eks.maxNodes in cloudspider.yaml sets the most)" : "";
+    runLocal = { error: `${problem}${where}`, hint: "Fix the field; nothing ran.", action, at: Date.now(), card: runCardKey() };
+    paintUpgrade({ action, stack: "", lines: [] });
+    return;
+  }
   const body = await upgradeJson("/api/upgrade", {
     method: "POST",
     headers: { "content-type": "application/json" },

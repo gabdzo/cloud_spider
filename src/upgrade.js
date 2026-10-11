@@ -23,6 +23,19 @@ export { campFixtures, cardName, confirmMatches, confirmMismatch, confirmNames, 
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
+// Nodes in the EKS card's node group, unless cloudspider.yaml says otherwise
+// (stacks.eks.maxNodes). upgrades/eks refuses more than EKS_HARD_MAX_NODES.
+export const EKS_MAX_NODES = 3;
+
+// The card list with the EKS node cap of this server (a copy: UPGRADES itself
+// keeps the default).
+export function withEksMaxNodes(list, max = EKS_MAX_NODES) {
+  if (max === EKS_MAX_NODES) return list;
+  return list.map((spec) =>
+    spec.id === "eks" ? { ...spec, parameters: spec.parameters.map((p) => (p.name === "nodeCount" ? { ...p, max } : p)) } : spec,
+  );
+}
+
 const ADDON_PARAMETERS = {
   karpenter: [{ name: "capacity", type: "string", default: "spot", choices: ["spot", "on-demand"] }],
   "scaling-demo": [
@@ -50,7 +63,8 @@ export const UPGRADES = [
     parameters: [
       { name: "clusterName", type: "string", default: "cloudspider-up" },
       { name: "instanceType", type: "string", default: "t4g.small", choices: ["t4g.small", "t4g.medium"] },
-      { name: "nodeCount", type: "number", default: 1, min: 1, max: 1 },
+      // max: stacks.eks.maxNodes in cloudspider.yaml (createUpgrade eksMaxNodes).
+      { name: "nodeCount", type: "number", default: 1, min: 1, max: EKS_MAX_NODES },
     ],
   },
   {
@@ -252,7 +266,11 @@ function tailLines(lines, max = SHOW_CHARS) {
 
 // runsDir: where every run's log goes (.cloudspider/runs). Omitted, runs
 // are kept in memory only (the tests).
-export function createUpgrade({ run = spawn, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined } = {}) {
+const ALL_UPGRADES = UPGRADES;
+
+export function createUpgrade({ run = spawn, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES } = {}) {
+  // Every UPGRADES below is this server's list (stacks.eks.maxNodes applied).
+  const UPGRADES = withEksMaxNodes(ALL_UPGRADES, eksMaxNodes);
   // Runs go on side by side when they touch different stacks. One stack
   // runs one thing at a time (its lock), and a cluster and the stacks on it
   // never overlap (conflictFor). job / notice: the newest of each, for

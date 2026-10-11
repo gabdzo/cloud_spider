@@ -41,7 +41,7 @@ function fakeRun() {
 test("an EKS upgrade only accepts the listed parameters and never uses a shell", async () => {
   const spec = UPGRADES.find((item) => item.id === "eks");
   assert.match(checkParams(spec, { clusterName: "Bad Name" }).error, /clusterName/);
-  assert.match(checkParams(spec, { nodeCount: 2 }).error, /nodeCount/);
+  assert.match(checkParams(spec, { nodeCount: 4 }).error, /nodeCount/);
   assert.match(checkParams(spec, { instanceType: "t3.micro" }).error, /instanceType/);
   const fake = fakeRun();
   const children = [];
