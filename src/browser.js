@@ -1530,9 +1530,18 @@ try {
   // default screen
 }
 let clusterTabsShown = false;
+let screensFor = ""; // the context TELEMETRY / OPS last read for
 
 function clusterHasScreens() {
-  return mode === "cluster" && clusterData?.diagram?.layout === "kube" && isPrimaryContext();
+  return mode === "cluster" && clusterData?.diagram?.layout === "kube";
+}
+
+// TELEMETRY and OPS read the context picked in the Cluster view; the
+// primary one is asked without a name (it also feeds the radio).
+function screenQuery() {
+  if (sample) return "?sample=1";
+  const name = clusterData?.context || clusterContext;
+  return name && !isPrimaryContext() ? `?context=${encodeURIComponent(name)}` : "";
 }
 
 // ---- kube contexts (kube-contexts.js): one lit button per context ----
@@ -1635,6 +1644,13 @@ function setClusterContext(name) {
   kubeSearchEl.value = kubeSearchText.get(name) || "";
   searchCursor = -1;
   k9s.reset();
+  // TELEMETRY / OPS: the old context's answer goes; the open one re-reads
+  // once the new context's view lands (pullCluster → syncClusterScreens).
+  teleData = null;
+  opsData = null;
+  ++teleTicket;
+  ++opsTicket;
+  screensFor = "";
   clusterData = readingView(name);
   if (clusterData) renderContexts(clusterData);
   clusterSelected = null;
@@ -1658,6 +1674,19 @@ function syncClusterScreens() {
     }
   }
   for (const button of kubeTabs.children) button.setAttribute("aria-pressed", String(button.dataset.screen === clusterScreen));
+  // Another context picked while a screen is open: read it for that one.
+  const ctxNow = clusterData?.context || clusterContext || "";
+  if (on && clusterTabsShown && screensFor !== ctxNow && clusterData && !clusterData.placeholder) {
+    screensFor = ctxNow;
+    if (clusterScreen === "telemetry") {
+      paintTelemetry();
+      pullTelemetry();
+    } else if (clusterScreen === "ops") {
+      renderOps(kubeOps, null);
+      pullOps();
+    }
+  }
+  if (on) screensFor = ctxNow;
   if (on === clusterTabsShown) return;
   clusterTabsShown = on;
   kubeTabs.hidden = !on;
@@ -1706,7 +1735,7 @@ function paintTelemetry() {
 }
 async function pullTelemetry() {
   const ticket = ++teleTicket;
-  const body = await fetch(`/api/cluster/telemetry${sample ? "?sample=1" : ""}`).then((r) => r.json()).catch(() => ({ error: "the telemetry did not answer" }));
+  const body = await fetch(`/api/cluster/telemetry${screenQuery()}`).then((r) => r.json()).catch(() => ({ error: "the telemetry did not answer" }));
   if (ticket !== teleTicket || kubeTele.hidden) return;
   teleData = body;
   paintTelemetry();
@@ -1734,9 +1763,10 @@ function hideOps() {
 }
 async function pullOps() {
   const ticket = ++opsTicket;
-  const body = await fetch(`/api/cluster/ops${sample ? "?sample=1" : ""}`).then((r) => r.json()).catch(() => ({ error: "the add-ons did not answer" }));
+  const query = screenQuery();
+  const body = await fetch(`/api/cluster/ops${query}`).then((r) => r.json()).catch(() => ({ error: "the add-ons did not answer" }));
   if (ticket !== opsTicket) return;
-  takeKubeRadio(body);
+  if (!query.includes("context=")) takeKubeRadio(body);
   if (kubeOps.hidden) return;
   opsData = body;
   renderOps(kubeOps, opsData);

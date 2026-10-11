@@ -362,6 +362,8 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     otelService: env.CLOUDSPIDER_OTEL_METRICS || DEFAULT_OTEL_METRICS,
     async otelMetrics() {
       const [ns, name] = String(env.CLOUDSPIDER_OTEL_METRICS || DEFAULT_OTEL_METRICS).split("/");
+      // A namespaced context reads only its namespaces (see the top).
+      if (!inScope(ns)) return { outOfScope: true, error: `the OTel Service's namespace ${String(ns).slice(0, 63)} is not in kube context ${contextName}'s list` };
       let path;
       try {
         path = PATHS.otelMetrics(ns, name);

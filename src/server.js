@@ -1190,6 +1190,7 @@ const page = `<!doctype html>
   .kt-hist { color: var(--pip-dim); letter-spacing: 0.1em; }
   .kt-note { margin: 6px 0; color: var(--pip-dim); }
   .kt-note.err { color: var(--status-broken); }
+  .kt-note.kt-limit { color: var(--warn); border-left: 2px solid var(--warn); padding-left: 8px; }
   .kt-lamp { display: inline-flex; align-items: center; gap: 6px; letter-spacing: 0.12em; font-size: 10px; color: var(--pip-dim); }
   .kt-lamp i { width: 10px; height: 10px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim); }
   .kt-lamp.on i { background: var(--lamp-on); box-shadow: 0 0 6px var(--btn-glow), inset 0 0 0 1px var(--lamp-on-core); }
@@ -2527,12 +2528,12 @@ async function route(app, req, res) {
       return;
     }
     await app.boot();
-    send(res, 200, await app.clusterTelemetry());
+    send(res, 200, await app.clusterTelemetry({ context: url.searchParams.get("context") || "" }));
     return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/cluster/ops") {
-    send(res, 200, app.clusterOps ? await app.clusterOps({ sample: url.searchParams.get("sample") === "1" }) : { error: "not set up" });
+    send(res, 200, app.clusterOps ? await app.clusterOps({ sample: url.searchParams.get("sample") === "1", context: url.searchParams.get("context") || "" }) : { error: "not set up" });
     return;
   }
 
