@@ -1712,6 +1712,10 @@ const page = `<!doctype html>
   /* Wide: the readout and knobs fit on the top row; the gauges get a row. */
   @media (min-width: 1600px) {
     .gauges { order: 10; flex-basis: 100%; }
+    /* The tally strip is one line of text: it need not span the whole row.
+       It grows with its text up to the bill; the bill keeps its own size. */
+    #tally { flex: 0 1 auto; min-width: min(520px, 40%); max-width: calc(100% - 290px); }
+    #corner { margin-left: auto; }
   }
   /* Laptop (1280-ish): with a Menlo-width font (the Mac fallback when Share
      Tech Mono and VT323 are not installed) the plate, the four view tabs and
