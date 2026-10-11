@@ -428,7 +428,7 @@ aws ec2 describe-instances --region eu-north-1 --filters Name=tag:project,Values
 ```
 Take the add-ons down before the cluster itself (section 9). A destroyed cluster leaves add-on stacks that can no longer reach it; `pulumi stack rm --force -s <addon>-<cluster>` drops them.
 
-## 17. SLOs: SLA, SLO and SLI on the cards (free: no new reads)
+## 17. SLOs: SLA, SLO and SLI on the cards (free, except about $1.7/month per ALB an `alb` SLO watches)
 
 A vault can list its objectives under `spec.slos`. The cluster gets three by default:
 - API availability
@@ -449,6 +449,12 @@ spec:
       source: check:camp page
       threshold: 800             # ms; latency only
       target: 99%
+    - name: alb-latency
+      sli: latency
+      source: alb
+      threshold: 300
+      percentile: p95            # alb latency only: p50 | p90 | p95 (default) | p99
+      target: 99%
 ```
 
 - **SLI** is what was measured: good ÷ all. **SLO** is your target for it over the window. **SLA** is a promise to someone else with a penalty. There is none here, so keep each SLO stricter than any SLA you might give.
@@ -462,7 +468,10 @@ spec:
   - **SLA · SLO · SLI ?** on any of these opens the short explanation
 - **Where the numbers come from:**
   - `checks` uses the vault's own HTTP checks, as the page already runs them (one reading per result).
-  - `alb`, `lambda` and `ec2` use the 3 h CloudWatch series the map already asks for.
+  - `alb` is read by the server itself, in the background, whether a page is open or not (every 30 s it evaluates every vault; that also keeps the vaults' HTTP checks running). For each ALB that a vault's `alb` SLO needs, it asks CloudWatch for one-minute points: RequestCount, both 5XX counts and `TargetResponseTime` at the SLO's percentile (p95 by default; an average hid the drill's slow tail, see `docs/disaster-drill-2026-10-11.md` fault c). Each minute is one reading: availability counts requests without a 5XX, the ALB's own 503s included; latency counts the minute good when its percentile is under the threshold. The points go into the ledger, so the window reaches past CloudWatch's 3 h answer, and a minute CloudWatch fills in late is replaced, not counted twice.
+    - **The floor.** ALB metrics exist per minute, so 60 s is the shortest period CloudWatch has for them, and they arrive about 1–2 minutes late. With the 60 s read, an ALB breach shows on the card about **2–3 minutes** after it starts (it was 5–10 minutes with the map's 5-minute series behind a 5-minute cache). Faster than that needs something in the request path (access logs, a load balancer that pushes), which is not part of this.
+    - **The cost.** 4 metrics per read, one read a minute: about 5,760 metrics a day, about **$0.06/day ($1.7/month) per watched ALB** at $0.01 per 1,000. Nothing is read for an ALB no `alb` SLO names.
+  - `lambda` and `ec2` use the 3 h, 5-minute CloudWatch series the map already asks for.
   - `resources` uses the owned pieces' status on each map read.
   - `kube:*` uses the Cluster view's read-only snapshot. Restarts count from the second read on.
 
