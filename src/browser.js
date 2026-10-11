@@ -150,6 +150,7 @@ async function pullKubeHealth() {
     healthRows = rows;
     renderRadioPanel();
   }
+  if (Array.isArray(body.contexts) && body.contexts.length) knownContexts = body.contexts;
   if (mode === "cluster" && clusterData) renderContexts({ ...clusterData, contexts: body.contexts });
 }
 let spiderRegion = "";
@@ -1481,7 +1482,35 @@ function contextScope(item) {
   return `${item.scope.length} NS · ${item.scope.join(" ")}`;
 }
 
+// The last list of contexts the server named (cluster answers and the
+// health watch): enough to draw a context's lanes before its read lands.
+let knownContexts = [];
+
+// Progressive: a context's own namespaces as "reading…" lanes, drawn at
+// once on a switch, replaced by the real answer when it arrives.
+function readingView(name) {
+  const item = knownContexts.find((c) => c.context === name);
+  if (!item || item.primary) return null;
+  const cp = `cluster:${item.label}`;
+  const lanes = item.scope === "*" ? [] : item.scope;
+  return {
+    placeholder: true,
+    context: name,
+    contexts: knownContexts,
+    error: "",
+    headline: "",
+    note: `reading ${item.label}…`,
+    diagram: {
+      layout: "kube",
+      columns: { "control-plane": 0, namespace: 1 },
+      nodes: [{ id: cp, kind: "control-plane", label: item.label, caption: "reading…", status: "unknown" }, ...lanes.map((ns) => ({ id: `ns:${ns}`, kind: "namespace", label: ns, caption: "reading…", status: "unknown", system: false, noAccess: [] }))],
+      edges: lanes.map((ns) => ({ from: cp, to: `ns:${ns}`, status: "ok" })),
+    },
+  };
+}
+
 function renderContexts(body) {
+  if (Array.isArray(body?.contexts) && body.contexts.length) knownContexts = body.contexts;
   const list = mode === "cluster" && !sample && Array.isArray(body?.contexts) ? body.contexts : [];
   kubeCtxEl.hidden = list.length < 2;
   if (list.length < 2) {
@@ -1511,7 +1540,8 @@ function setClusterContext(name) {
   if (name === (clusterData?.context || clusterContext)) return;
   clusterContext = name;
   writePref(CLUSTER_CONTEXT_KEY, name);
-  clusterData = null;
+  clusterData = readingView(name);
+  if (clusterData) renderContexts(clusterData);
   clusterSelected = null;
   showPod(null);
   contextsShown = "";
@@ -1656,7 +1686,7 @@ function drawCluster() {
   const placed = placedCluster();
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
   if (placed.kind === "kube") {
-    paintKube(ctx, { placed, selectedId: clusterSelected, hoverId: clusterHover, animTime, width, height, reducedMotion });
+    paintKube(ctx, { placed, selectedId: clusterSelected, hoverId: clusterHover, animTime, width, height, reducedMotion, scrollTop: map.scrollTop || 0, stickyTop: (map.scrollTop || 0) + stickyOffset() });
     return;
   }
   paintDiagram(ctx, {
@@ -2102,7 +2132,8 @@ function enterCluster() {
   mapKube.keepSample = false;
   showRadioFor("cluster");
   mode = "cluster";
-  clusterData = null;
+  clusterData = (!sample && clusterContext && readingView(clusterContext)) || null;
+  if (clusterData) renderContexts(clusterData);
   clusterSelected = null;
   showPod(null);
   pathData = null;
@@ -2338,6 +2369,19 @@ function showPod(node) {
   }
   podInspector.open(node);
 }
+
+// Pinned lane heads sit under the floating context switcher, not behind it.
+function stickyOffset() {
+  if (!kubeCtxEl || kubeCtxEl.hidden || !map.scrollTop) return 0;
+  const r = kubeCtxEl.getBoundingClientRect();
+  const m = map.getBoundingClientRect();
+  return Math.max(0, Math.round(r.bottom - m.top + 4));
+}
+
+// Sticky lane heads follow the scroll (kube-draw.js).
+map.addEventListener("scroll", () => {
+  if (mode === "cluster" && clusterData?.diagram?.layout === "kube") draw();
+}, { passive: true });
 
 canvas.addEventListener("mouseleave", () => {
   if (mapKube.hover !== null) {
