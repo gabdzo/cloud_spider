@@ -16,6 +16,9 @@ import { inspectPod } from "./kube-inspect.js";
 import { opsView, sampleOps } from "./kube-ops.js";
 import { demoAppSeen, detectAddons, refuseUp, sampleAddons } from "./addons.js";
 import { HELD_BY, destroyRefusal } from "../upgrades/eks-addons.js";
+import { needRefusal, needStates, needsOf } from "./stack-needs.js";
+import { shopReadiness } from "./shop-check.js";
+import { UPGRADES } from "./upgrade.js";
 import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./addon-bundle.js";
 import { podRoom } from "../upgrades/addons/pod-room.js";
 import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.js";
@@ -48,6 +51,8 @@ export const KUBE_MAP_TTL = 30_000;
 
 // How long RUN waits for the EKS card's live read (instance type check).
 const LIVE_MS = 20_000;
+// The NEEDS check before a run: bounded, no answer is no refusal.
+const NEEDS_MS = 40_000;
 
 export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL }) {
   const stdout = [];
@@ -492,6 +497,56 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       ? `the EKS demo app (namespace demo, web and api) is not on ${cluster}`
       : `could not check ${cluster} for the EKS demo app (CONNECT it so Cloud Spider can read it)`;
     return { params: next, notes: [{ text: `check: the EKS demo app on ${cluster}`, lines: [`HPA on demo/web+api skipped: ${why}. Deploy the EKS demo app first (Stacks → EKS demo app), then run scaling-demo again for its HPAs. burst and inflate run as asked.`] }] };
+  }
+
+  // What a card's needs look like on its cluster (src/stack-needs.js):
+  // true there, false not there, null could not tell. Read-only: EKS
+  // ListClusters / DescribeAddon, the kube read through the connected
+  // context, the add-on tree, the stacks' outputs.
+  async function needProbes(needs, cluster, params = {}) {
+    const probes = { eksAddons: {}, cards: {}, addons: {} };
+    const listed = eks?.listClusters ? await eks.listClusters().catch(() => null) : null;
+    probes.cluster = listed && !listed.error && Array.isArray(listed.names) ? listed.names.includes(cluster) : null;
+    if (probes.cluster === false) return probes;
+    for (const need of needs.filter((item) => item.kind === "eks-addon")) {
+      const got = eks?.describeAddon ? await eks.describeAddon(cluster, need.id).catch(() => null) : null;
+      probes.eksAddons[need.id] = got && !got.error && typeof got.found === "boolean" ? got.found : null;
+    }
+    const kube = needs.some((item) => item.kind === "card" || item.kind === "addon");
+    const snap = kube ? await clusterSnapshot(cluster) : null;
+    const whole = snap && !snap.error && !Array.isArray(snap.scope);
+    for (const need of needs.filter((item) => item.kind === "card")) {
+      let seen = need.id === "pgcluster" ? shopReadiness(snap, { dbSecret: params.dbSecret }) : need.id === "demo" ? demoAppSeen(snap) : null;
+      // Not seen in the kube read: a stack with resources on this cluster still counts.
+      if (seen !== true && upgrade?.dependentsOf) {
+        const stacks = await upgrade.dependentsOf(cluster).catch(() => null);
+        if (stacks?.includes(need.id)) seen = true;
+      }
+      probes.cards[need.id] = seen;
+    }
+    const addonNeeds = needs.filter((item) => item.kind === "addon");
+    if (addonNeeds.length) {
+      const tree = addons?.view ? await addons.view({ fresh: true }).catch(() => null) : null;
+      const node = tree?.tree?.find((item) => item.cluster === cluster);
+      const found = whole ? detectAddons(snap) : {};
+      for (const need of addonNeeds) {
+        const row = node?.addons?.find((item) => item.id === need.id);
+        if (row && ["installed", "present"].includes(row.state)) probes.addons[need.id] = true;
+        else if (whole) probes.addons[need.id] = Boolean(found[need.id]);
+        else probes.addons[need.id] = row && node.seen ? false : null;
+      }
+    }
+    return probes;
+  }
+
+  async function stackNeeds(module, params = {}) {
+    const spec = UPGRADES.find((item) => item.id === module);
+    if (!spec) return { error: "no such stack", needs: [], refusal: "" };
+    const cluster = String(params.clusterName || "cloudspider-up");
+    const needs = needsOf(spec, params);
+    if (!needs.length) return { module, cluster, needs: [], refusal: "" };
+    const states = needStates(needs, await needProbes(needs, cluster, params));
+    return { module, cluster, needs: states, refusal: needRefusal(spec, states, cluster) };
   }
 
   async function stacksOn(cluster) {
@@ -951,6 +1006,10 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     // The EKS card's fields as the stack has them: its config, and for a
     // cluster that is up the live node group (instance type, desired size),
     // which wins. Read-only.
+    // NEEDS chips: each need of a card and its state on the cluster.
+    async upgradeNeeds(module = "", values = {}) {
+      return stackNeeds(String(module), values);
+    },
     async upgradeLive(module = "", values = {}) {
       if (!upgrade?.liveParams) return { values: {} };
       const got = await upgrade.liveParams(module, values).catch((error) => ({ error: error?.message || "the stack did not answer" }));
@@ -1006,6 +1065,17 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
           ]);
           const change = nodeGroupChange({ instanceType: live?.values?.instanceType, nodeGroup: live?.nodeGroup }, body.params || {});
           if (change) return no(change);
+        }
+        // NEEDS (src/stack-needs.js): a stack on the cluster refuses before
+        // pulumi when something it needs is missing there (Shop API without
+        // pgcluster, pgcluster without the EBS CSI driver). Add-on cards
+        // have refuseUp above; an unknown never refuses.
+        if (["up", "preview"].includes(body.action) && body.module !== "eks" && !addonById(body.module) && UPGRADES.find((item) => item.id === body.module)?.needs?.includes("eks")) {
+          const checked = await Promise.race([
+            stackNeeds(String(body.module), body.params || {}).catch(() => null),
+            new Promise((done) => setTimeout(done, NEEDS_MS, null).unref?.()),
+          ]);
+          if (checked?.refusal) return no(checked.refusal);
         }
         let clusters;
         if (body.module === "eks" && body.action === "up" && eks?.listClusters) {
