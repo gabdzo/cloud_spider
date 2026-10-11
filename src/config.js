@@ -90,6 +90,11 @@ export const SCHEMA = {
       keep: { type: "integer", min: 1, max: 500, default: 50, doc: "debug reports kept under storage.path/netdebug" },
     },
   },
+  stacks: {
+    eks: {
+      maxNodes: { type: "integer", min: 1, max: 10, default: 3, doc: "most nodes the EKS card's nodeCount takes (each node is billed)" },
+    },
+  },
   features: {
     ask: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_ASK", doc: "ASK: the local agent terminal" },
     stacksRun: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_STACKS_RUN", doc: "running Pulumi from STACKS (reading stacks stays on)" },

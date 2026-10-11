@@ -1597,6 +1597,8 @@ const page = `<!doctype html>
   #pip .card-body { padding: 6px 10px 10px; display: flex; flex-direction: column; gap: 6px; color: var(--pip-mid); }
   #pip label { display: flex; gap: 8px; align-items: center; justify-content: space-between; color: var(--pip-dim); letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; }
   #pip label select, #pip label input { flex: 0 1 200px; }
+  #pip .field-note { color: var(--status-broken); font-size: 11px; font-style: normal; text-align: right; }
+  #pip .field-note:empty { display: none; }
   #pip .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   #pip .actions input { flex: 1 1 140px; }
   #pip .danger { border-color: var(--status-broken); color: var(--status-broken); }
