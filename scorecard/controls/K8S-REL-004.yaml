@@ -11,5 +11,5 @@ evaluator: nodes-multi-zone
 aggregation: all-or-nothing
 requires: [kube-cluster, kube-nodes]
 whyItMatters: "All nodes in one zone means one zone outage is a full outage."
-remediation: { summary: "Spread the node group (or the Karpenter NodePool) over at least two subnets in different zones.", effort: M, addon: karpenter }
+remediation: { summary: "Set NODE COUNT to 2 or more on the Stacks EKS card (the node group spans eu-north-1a and 1b; its Auto Scaling group balances zones). With Karpenter, give replicated workloads a topologySpreadConstraint on topology.kubernetes.io/zone so it launches in both.", effort: S, addon: karpenter }
 verification: "Ready nodes carry at least two distinct topology.kubernetes.io/zone labels."

@@ -3,6 +3,7 @@
 // add-on binds cloudspider-viewers to nodes.
 import { evidence } from "../evidence.js";
 import { kubeStatus } from "./kube-workloads.js";
+import { nodeFacts } from "../../node-labels.js";
 
 export const kubeNodes = {
   key: "kube-nodes",
@@ -15,6 +16,10 @@ export const kubeNodes = {
       name: n?.metadata?.name || "",
       zone: n?.metadata?.labels?.["topology.kubernetes.io/zone"] || "",
       capacityType: n?.metadata?.labels?.["karpenter.sh/capacity-type"] || n?.metadata?.labels?.["eks.amazonaws.com/capacityType"] || "",
+      // Where it came from (node group or Karpenter NodePool) and its type,
+      // for an actionable nodes-multi-zone detail.
+      source: nodeFacts(n?.metadata?.labels).source,
+      instanceType: nodeFacts(n?.metadata?.labels).instanceType,
       kubelet: n?.status?.nodeInfo?.kubeletVersion || "",
       ready: (n?.status?.conditions || []).some((c) => c.type === "Ready" && c.status === "True"),
     }));

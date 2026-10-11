@@ -44,3 +44,21 @@ test("HPA without metrics API fails; :latest and untagged images fail; digests p
   const items = [dep("shop", "a", { containers: [{ image: "nginx" }] }), dep("shop", "b", { containers: [{ image: "r/x:latest" }] }), dep("shop", "c", { containers: [{ image: "r/x@sha256:ab" }] }), dep("shop", "d", { containers: [{ image: "reg:5000/x:1.0" }] })];
   assert.deepEqual(E["no-latest-tag"]({ data: { "kube-deployments": { items } } }).items.map((i) => i.pass), [false, false, true, true]);
 });
+
+test("zones FAIL names each node's zone and source, and says what to do for each source", () => {
+  const run = (items) => E["nodes-multi-zone"]({ data: { "kube-cluster": { clusterName: "cloudspider-up" }, "kube-nodes": { items } } });
+  // cloudspider-up on 2026-10-11: node group and Karpenter node, both in 1b.
+  const got = run([
+    { name: "ip-10-43-2-10", ready: true, zone: "eu-north-1b", capacityType: "ON_DEMAND", instanceType: "t4g.medium", source: { kind: "nodegroup", name: "nodes-1e07ff9" } },
+    { name: "ip-10-43-2-191", ready: true, zone: "eu-north-1b", capacityType: "on-demand", instanceType: "t4g.small", source: { kind: "karpenter", name: "default" } },
+  ]).items[0];
+  assert.equal(got.pass, false);
+  assert.match(got.detail, /eu-north-1b: ip-10-43-2-10 \(t4g\.medium, node group nodes-1e07ff9, on-demand\); ip-10-43-2-191 \(t4g\.small, Karpenter nodepool default, on-demand\)/);
+  assert.match(got.detail, /set NODE COUNT to 2 or more on the Stacks EKS card \(node group nodes-1e07ff9\)/);
+  assert.match(got.detail, /subnets a and b \(eu-north-1a, eu-north-1b\)/);
+  assert.match(got.detail, /Karpenter \(nodepool default\).*topologySpreadConstraint on topology\.kubernetes\.io\/zone/);
+  // Only Karpenter nodes: no node-group advice.
+  assert.doesNotMatch(run([{ name: "k", ready: true, zone: "a", source: { kind: "karpenter", name: "default" } }]).items[0].detail, /NODE COUNT/);
+  // Two zones pass with the short line.
+  assert.equal(run([{ name: "x", ready: true, zone: "a" }, { name: "y", ready: true, zone: "b" }]).items[0].detail, "Ready nodes in 2 zone(s): a, b");
+});

@@ -1,6 +1,7 @@
 // Evaluators for Kubernetes controls. Each takes { data, params, now } and
 // returns { items: [{ id, pass, detail }], unknown, notApplicable }. Pure.
 import { ADDONS } from "../../../upgrades/addons/catalog.js";
+import { sourceText } from "../../node-labels.js";
 
 // Namespaces whose workloads are the platform's, not the app's: workload
 // controls skip them (spec §5: app namespaces only).
@@ -57,6 +58,27 @@ export const kubeEvaluators = {
 const systemSubject = (s) => s.name.startsWith("system:") || s.name === "eks:" || s.name.startsWith("eks:") || (s.kind === "ServiceAccount" && SYSTEM_NAMESPACES.has(s.namespace));
 const appNamespacesWithPods = (pods) => [...new Set(pods.filter(isApp).map((p) => p.namespace))].sort();
 
+// nodes-multi-zone FAIL, actionable: nodes per zone with where each came
+// from, then what to do for each source that is there.
+export function multiZoneDetail(nodes, zones) {
+  const byZone = new Map();
+  for (const n of nodes) {
+    const zone = n.zone || "no zone label";
+    byZone.set(zone, [...(byZone.get(zone) || []), n]);
+  }
+  const nodeText = (n) => {
+    const facts = [n.instanceType, sourceText(n.source), String(n.capacityType || "").toLowerCase().replace("_", "-")].filter(Boolean);
+    return facts.length ? `${n.name} (${facts.join(", ")})` : n.name;
+  };
+  const per = [...byZone.entries()].map(([zone, list]) => `${zone}: ${list.map(nodeText).join("; ")}`).join(" | ");
+  const groups = [...new Set(nodes.filter((n) => n.source?.kind === "nodegroup").map((n) => n.source.name))];
+  const pools = [...new Set(nodes.filter((n) => n.source?.kind === "karpenter").map((n) => n.source.name))];
+  const fixes = [];
+  if (groups.length || !pools.length) fixes.push(`set NODE COUNT to 2 or more on the Stacks EKS card${groups.length ? ` (node group ${groups.join(", ")})` : ""}: the Cloud Spider node group spans subnets a and b (eu-north-1a, eu-north-1b) and its Auto Scaling group balances nodes across them; keep INSTANCETYPE as it is`);
+  if (pools.length) fixes.push(`Karpenter (nodepool ${pools.join(", ")}) may launch in either zone but only spreads when pods ask: give replicated workloads a topologySpreadConstraint on topology.kubernetes.io/zone (whenUnsatisfiable: ScheduleAnyway or DoNotSchedule)`);
+  return `Ready nodes in ${zones.length} zone(s). ${per}. To fix: ${fixes.join("; and/or ")}.`;
+}
+
 export const kubeEvaluatorsMore = {
   "no-cluster-admin-for-humans"({ data }) {
     const admin = data["kube-clusterRoleBindings"].items.filter((b) => b.role === "cluster-admin");
@@ -84,7 +106,10 @@ export const kubeEvaluatorsMore = {
     const nodes = data["kube-nodes"].items.filter((n) => n.ready);
     if (!nodes.length) return { unknown: [{ id: "nodes", reason: "no Ready node listed" }] };
     const zones = [...new Set(nodes.map((n) => n.zone).filter(Boolean))];
-    return { items: [{ id: data["kube-cluster"].clusterName || "cluster", pass: zones.length >= 2, detail: `Ready nodes in ${zones.length} zone(s): ${zones.join(", ") || "unlabelled"}` }] };
+    const pass = zones.length >= 2;
+    const head = `Ready nodes in ${zones.length} zone(s): ${zones.join(", ") || "unlabelled"}`;
+    if (pass) return { items: [{ id: data["kube-cluster"].clusterName || "cluster", pass, detail: head }] };
+    return { items: [{ id: data["kube-cluster"].clusterName || "cluster", pass, detail: multiZoneDetail(nodes, zones) }] };
   },
   "hpa-has-metrics"({ data }) {
     const hpas = data["kube-hpas"].items.filter(isApp);
