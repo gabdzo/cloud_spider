@@ -52,3 +52,28 @@ test("the HPA demo can run without the demo app (hpa=off), and its failure says 
   const program = readFileSync(new URL("../upgrades/addons/scaling-demo.js", import.meta.url), "utf8");
   assert.match(program, /hpa === "on" \? \["web", "api"\] : \[\]/);
 });
+
+test("metrics-server lets the viewer group read nodes and metrics on a fresh cluster", async () => {
+  const made = [];
+  const { default: metricsServer } = await import("../upgrades/addons/metrics-server.js");
+  const common = await import("../upgrades/addons/common.js");
+  assert.equal(typeof common.viewerAccess, "function");
+  const k8s = { rbac: { v1: {
+    ClusterRole: class { constructor(name, args, opts) { made.push({ kind: "ClusterRole", name, args, opts }); } },
+    ClusterRoleBinding: class { constructor(name, args, opts) { made.push({ kind: "ClusterRoleBinding", name, args, opts }); } },
+  } } };
+  common.viewerAccess(k8s, { provider: "p" }, "metrics-server", [
+    { apiGroups: [""], resources: ["nodes"] },
+    { apiGroups: ["metrics.k8s.io"], resources: ["pods", "nodes"] },
+  ]);
+  const role = made.find((item) => item.kind === "ClusterRole");
+  const binding = made.find((item) => item.kind === "ClusterRoleBinding");
+  assert.equal(role.args.metadata.name, "cloudspider-viewer-metrics-server");
+  assert.notEqual(role.args.metadata.name, "cloudspider-viewer-extra");
+  assert.deepEqual(role.args.rules[0].verbs, ["get", "list", "watch"]);
+  assert.equal(binding.args.subjects[0].name, common.VIEWERS);
+  assert.equal(typeof metricsServer, "function");
+  const source = readFileSync(new URL("../upgrades/addons/metrics-server.js", import.meta.url), "utf8");
+  assert.match(source, /viewerAccess\(k8s, k, addon\.id/);
+  assert.match(source, /resources: \["nodes"\]/);
+});
