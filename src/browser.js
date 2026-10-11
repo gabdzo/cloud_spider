@@ -3204,7 +3204,14 @@ learnApi = learnView;
 // SCORE: the scorecard panel over the map (src/score/view.js).
 // SCAN reads the cluster picked in the Cluster view (an auto-CONNECTed EKS
 // cluster is listed there; the current kubeconfig context is not changed).
-const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key"), context: () => clusterData?.context || clusterContext });
+// OPEN EKS CARD (K8S-REL-004): the card on this cluster, its live instance
+// type, and the control's params (nodeCount 2) on top.
+function openScoreCard(card, cluster) {
+  if (card?.id !== "eks") return;
+  liveWant = { cluster, values: Object.fromEntries(Object.entries(card.params || {}).map(([k, v]) => [k, String(v)])) };
+  openEksCard(cluster);
+}
+const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key"), context: () => clusterData?.context || clusterContext, openCard: openScoreCard });
 document.querySelector("#score-key").addEventListener("click", () => {
   if (!scoreView.isOpen() && learnView.isOpen()) learnView.setOpen(false);
   scoreView.toggle();
@@ -4032,12 +4039,32 @@ function paintConnect(row, status, { onPress } = {}) {
 // node count by accident. Filled once per cluster; typing wins after that.
 const liveState = new Map();
 let liveSeq = 0;
+// Values a SCORE suggestion asks for, set after the live fill (once).
+let liveWant = null;
+
+function applyLiveWant() {
+  const cluster = pipParams().clusterName || "";
+  const card = pipEl.querySelector(".card.open");
+  if (!liveWant || liveWant.cluster !== cluster || !card) return;
+  for (const [name, value] of Object.entries(liveWant.values)) {
+    const field = card.querySelector(`[name="${name}"]`);
+    if (!field) continue;
+    field.value = value;
+    pipKept.eks = { ...(pipKept.eks || {}), [name]: value };
+    field.dispatchEvent(new Event("input"));
+  }
+  liveWant = null;
+  repriceCard(openSpec());
+}
 
 async function refreshLive(force = false) {
   if (!pipOpen || openModule() !== "eks" || sample) return;
   const cluster = pipParams().clusterName || "";
   if (!cluster) return;
-  if (!force && liveState.has(cluster)) return paintLive();
+  if (!force && liveState.has(cluster)) {
+    applyLiveWant();
+    return paintLive();
+  }
   const seq = ++liveSeq;
   const live = await upgradeJson(`/api/upgrade/live?${new URLSearchParams({ module: "eks", clusterName: cluster })}`);
   if (seq !== liveSeq || (pipParams().clusterName || "") !== cluster) return;
@@ -4055,6 +4082,7 @@ async function refreshLive(force = false) {
     }
     repriceCard(openSpec());
   }
+  applyLiveWant();
   paintLive();
 }
 

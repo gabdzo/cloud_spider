@@ -47,6 +47,9 @@ export function validateControl(doc) {
   need(typeof doc.remediation?.summary === "string", `${where}remediation.summary is required`);
   need(EFFORTS.includes(doc.remediation?.effort), `${where}remediation.effort must be S, M or L`);
   need(doc.remediation?.addon === undefined || /^[a-z][a-z0-9-]*$/.test(String(doc.remediation.addon)), `${where}remediation.addon must be an add-on id`);
+  // A control fixed on a Stacks card, not by an add-on (REL-004: the EKS
+  // card's node count): OPEN <CARD> instead of FIX.
+  need(doc.remediation?.card === undefined || (/^[a-z][a-z0-9-]*$/.test(String(doc.remediation.card?.id)) && (doc.remediation.card.params === undefined || typeof doc.remediation.card.params === "object")), `${where}remediation.card must be { id, params }`);
   need(doc.params === undefined || (doc.params && typeof doc.params === "object" && !Array.isArray(doc.params)), `${where}params must be a mapping`);
   need(typeof doc.verification === "string" && doc.verification.length > 0, `${where}verification is required`);
   for (const ref of doc.references || []) {

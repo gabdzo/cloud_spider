@@ -33,8 +33,20 @@ export function publicScan(scan) {
   return rest;
 }
 
-export function suggestionsOf(scan) {
-  return (scan?.results || []).filter((r) => r.status === "FAIL" && r.addon).map((r) => ({ control: r.id, title: r.title, addon: r.addon, severity: r.severity }));
+// What to do next about each FAIL: an add-on FIX, a Stacks card to open
+// (card), or, when its add-on is already on the cluster (tree: the add-on
+// tree, src/addons.js), no FIX but the reason it still fails (already).
+export function suggestionsOf(scan, tree = null) {
+  const node = (tree || []).find((item) => item.cluster === scan?.clusterName);
+  return (scan?.results || []).filter((r) => r.status === "FAIL" && (r.addon || r.card)).map((r) => {
+    const base = { control: r.id, title: r.title, severity: r.severity };
+    if (r.card) return { ...base, card: r.card };
+    const have = node?.addons?.find((a) => a.id === r.addon && ["installed", "present"].includes(a.state));
+    if (!have) return { ...base, addon: r.addon };
+    const bad = (r.resources || []).find((x) => !x.pass);
+    const why = bad ? `${bad.id}${bad.detail ? `: ${bad.detail}` : ""}` : r.reason || "";
+    return { ...base, addon: r.addon, already: `${have.title} is already on ${scan.clusterName} (${have.source || have.state}); installing it again does not fix this.${why ? ` Still failing: ${why}` : ""}` };
+  });
 }
 
 export function createScoreApi({ app, kubeFor, aws = null, history, catalog, profiles, settings = {}, pageOrigin, collectors = KUBE_COLLECTORS, clock = () => new Date(), runner = null, fixOptions = {} }) {
@@ -69,6 +81,8 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
   }
   // Rescan after a fix: the context that holds this cluster.
   const fixes = runner || createFixRunner({ app, rescan: (cluster) => scanNow(contextOf.get(cluster) ?? ""), ...fixOptions });
+  // The add-on tree (cached in the app) for "already installed" next fixes.
+  const addonTree = async () => (app?.addonsView ? (await app.addonsView().catch(() => null))?.tree || null : null);
   const controlOf = async (scanId, id) => (await history.get(scanId))?.results.find((r) => r.id === id) || null;
 
   return {
@@ -86,7 +100,7 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
       const latest = cluster ? await history.latest("kubernetes", cluster) : null;
       const trend = cluster ? await history.trend("kubernetes", cluster) : [];
       const prev = trend.length > 1 ? await history.get(trend.at(-2).id) : null;
-      return { context: kube.context, cluster, scan: publicScan(latest), trend, diff: latest ? diffScans(prev, latest) : null, suggestions: suggestionsOf(latest), permissions: latest ? permissionReport(latest) : null, fix: fixes.state() };
+      return { context: kube.context, cluster, scan: publicScan(latest), trend, diff: latest ? diffScans(prev, latest) : null, suggestions: suggestionsOf(latest, await addonTree()), permissions: latest ? permissionReport(latest) : null, fix: fixes.state() };
     },
     async scan(origin, { context = "", target = "kubernetes" } = {}) {
       if (!originAllowed(origin, pageOrigin)) return { error: "the scan did not run", hint: "Open Cloud Spider at the address npm start printed." };
@@ -94,7 +108,7 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
         if (target !== "aws" && target !== "kubernetes") return { error: "target must be kubernetes or aws" };
         if (!packOn(target)) return { error: `the ${target} pack is off`, hint: "scorecard.packs in cloudspider.yaml lists the packs SCAN offers." };
         const { scan, diff } = target === "aws" ? await scanAws() : await scanNow(context);
-        return { scan: publicScan(scan), diff, suggestions: suggestionsOf(scan), permissions: permissionReport(scan) };
+        return { scan: publicScan(scan), diff, suggestions: suggestionsOf(scan, await addonTree()), permissions: permissionReport(scan) };
       } catch (failure) {
         return { error: `the scan failed: ${failure?.message || failure}` };
       }
