@@ -1,0 +1,63 @@
+# Cloud Spider config. Copy to cloudspider.yaml (gitignored) and edit, or
+# point $CLOUDSPIDER_CONFIG at a file anywhere. Also read when nothing else
+# is: ~/.config/cloudspider/config.yaml.
+#
+# Every key is optional; the value shown is the default.
+# Precedence, lowest to highest: defaults < this file < env vars < flags.
+#   npm start -- --port 9300 --theme pro --set cost.enabled=false
+#   npm start -- --help        (every key, its env var and its flag)
+# The effective config (with where each value came from) is at
+# http://127.0.0.1:9241/api/config. A bad key or value stops the start with
+# file:line and what is wrong.
+
+server:
+  host: 127.0.0.1          # env CLOUDSPIDER_HOST, --host. Keep loopback: there is no login.
+  port: 9241               # env PORT, --port
+
+aws:
+  profile: ""              # env AWS_PROFILE, --profile. Empty: the SDK default chain.
+  region: ""               # env AWS_REGION, --region. The region the map opens on.
+  regions: []              # only these in the region picker, e.g. [eu-north-1, eu-west-1]
+  logGroup: ""             # env CLOUDSPIDER_LOG_GROUP, e.g. /cloudspider/test
+
+kube:
+  context: cloudspider-viewer          # env CLOUDSPIDER_KUBE_CONTEXT: used when no contexts are listed
+  contextsFile: cloudspider.contexts.yaml  # env CLOUDSPIDER_KUBE_CONTEXTS_FILE: the file CONNECT writes
+  # Contexts and namespace allowlists. Listed here first; entries of the
+  # contexts file are added after them (a name in both keeps this entry).
+  # env CLOUDSPIDER_KUBE_CONTEXTS="ctxA:ns1,ns2;ctxB:*" replaces both.
+  contexts: []
+  # contexts:
+  #   - context: cloudspider-viewer
+  #     label: DEMO
+  #     namespaces: "*"            # every namespace (needs cluster-wide list rights)
+  #   - context: my-work-context
+  #     label: WORK
+  #     namespaces: [team-a, team-b]
+  #     poll: 60                   # seconds between health reads (>= 30)
+
+ui:
+  theme: pip               # pip | pro. env CLOUDSPIDER_THEME, --theme. The settings panel overrides it per browser.
+  defaultView: map         # map | path | cluster | vaults. env CLOUDSPIDER_VIEW, --view
+  refresh:
+    mapSeconds: 1          # instance state poll
+    radioSeconds: 30       # CloudTrail read
+    kubeSeconds: 15        # pod health watch tick (each context keeps its own poll)
+    sloSeconds: 30         # background SLO evaluation
+
+paths:
+  vaults: vaults           # env CLOUDSPIDER_VAULTS_DIR. Vault files (and their SLOs).
+
+cost:
+  enabled: true            # env CLOUDSPIDER_COST=0 turns CAPS' Cost Explorer reads off
+  cacheTtlMinutes: 360     # env CLOUDSPIDER_COST_TTL_MINUTES. At least 60: each read is ~5 billed calls ($0.05).
+
+storage:
+  backend: file            # file. dynamodb is designed, not built (docs/storage.md).
+  path: .cloudspider       # env CLOUDSPIDER_STATE_DIR. Bill cache, SLO history, run logs.
+  table: ""                # reserved for the dynamodb backend
+
+features:
+  ask: true                # env CLOUDSPIDER_FEATURE_ASK. ASK, the local agent terminal.
+  stacksRun: true          # env CLOUDSPIDER_FEATURE_STACKS_RUN. Running Pulumi from STACKS.
+  learn: true              # env CLOUDSPIDER_FEATURE_LEARN. LEARN labs.

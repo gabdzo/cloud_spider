@@ -22,14 +22,40 @@ import { createVaultView } from "./vault-view.js";
 import { sampleFailures, sampleFetch, sampleLogs, samplePlace, sampleStacks } from "./sample.js";
 import { createStackReader } from "./vault-stacks.js";
 import { createSloStore } from "./slo-store.js";
+import { effectiveConfig, leaves, loadConfig, resolvePath, usage } from "./config.js";
 import { createStorage } from "./storage.js";
 
-const port = Number(process.env.PORT || 9241);
-const pageOrigin = `http://127.0.0.1:${port}`;
-const aws = createAws();
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-// Cloud Spider's own state (bill cache, ...): storage.js, file backend.
-const storage = createStorage({ backend: "file", dir: join(root, ".cloudspider") });
+// cloudspider.yaml (config.js): defaults < file < env < flags. A bad value
+// stops the start with every problem listed, not a half-configured page.
+const loaded = loadConfig({ argv: process.argv.slice(2), env: process.env, root });
+if (loaded.help) {
+  process.stdout.write(`${usage()}\n`);
+  process.exit(0);
+}
+if (loaded.errors.length) {
+  process.stdout.write(`cloud spider: the config has ${loaded.errors.length} problem${loaded.errors.length === 1 ? "" : "s"}:\n${loaded.errors.map((line) => `  - ${line}\n`).join("")}See cloudspider.example.yaml, or npm start -- --help.\n`);
+  process.exit(1);
+}
+const config = loaded.config;
+for (const line of loaded.warnings) process.stdout.write(`config: ${line}\n`);
+process.stdout.write(`config: ${loaded.file || "no cloudspider.yaml (defaults + env)"}\n`);
+// Modules that read env vars directly (the AWS SDK, kube.js, vaults.js,
+// pulumi/terraform children) see what the file or a flag set. A value that
+// came from the env is already there; a default is left unset as before.
+for (const { path, spec } of leaves()) {
+  const from = loaded.sources[path.join(".")];
+  if (!spec.env || from === "default" || from.startsWith("env ")) continue;
+  const value = path.reduce((at, key) => at[key], config);
+  if (value === "" || typeof value === "object") continue;
+  process.env[spec.env] = String(path.join(".") === "paths.vaults" || path.join(".") === "kube.contextsFile" ? resolvePath(root, value) : value);
+}
+const port = config.server.port;
+const host = config.server.host;
+const pageOrigin = `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
+const stateDir = resolvePath(root, config.storage.path);
+const storage = createStorage({ backend: config.storage.backend, dir: stateDir });
+const aws = createAws();
 const vaults = {
   live: createVaultView({ store: createVaultStore({ dir: vaultsDir() }), checker: createCheckRunner(), stacks: createStackReader() }),
   sample: createVaultView({
@@ -43,14 +69,14 @@ const vaults = {
 };
 // Kube contexts (kube-contexts.js): env, cloudspider.contexts.yaml, or the
 // one CLOUDSPIDER_KUBE_CONTEXT. The first is the primary one.
-const kubeConfig = await loadContexts({ env: process.env, read: readFile, cwd: root });
+const kubeConfig = await loadContexts({ env: process.env, read: readFile, cwd: root, configured: config.kube.contexts });
 for (const line of kubeConfig.errors) process.stdout.write(`kube contexts: ${line}\n`);
 const kubeContexts = kubeConfig.contexts.map((ctx) => ({ ...ctx, kube: createKube({ context: ctx.name, namespaces: ctx.namespaces }) }));
 // Hot reload: the same reading, new clients only for new contexts (the app
 // keeps the ones it has).
 const contextsFile = process.env.CLOUDSPIDER_KUBE_CONTEXTS_FILE || join(root, "cloudspider.contexts.yaml");
 async function loadKubeContexts() {
-  const got = await loadContexts({ env: process.env, read: readFile, cwd: root });
+  const got = await loadContexts({ env: process.env, read: readFile, cwd: root, configured: config.kube.contexts });
   for (const line of got.errors) process.stdout.write(`kube contexts: ${line}\n`);
   return { ...got, contexts: got.contexts.map((ctx) => ({ ...ctx, kube: createKube({ context: ctx.name, namespaces: ctx.namespaces }) })) };
 }
@@ -62,8 +88,9 @@ const app = createApp({
   logs: aws.logs,
   metrics: aws.metrics,
   path: createPathAws(),
-  cost: createCost({ storage }),
-  upgrade: createUpgrade({ runsDir: join(root, ".cloudspider", "runs") }),
+  cost: config.cost.enabled ? createCost({ storage, ttl: config.cost.cacheTtlMinutes * 60_000 }) : costOff(),
+  costTtl: config.cost.cacheTtlMinutes * 60_000,
+  upgrade: createUpgrade({ runsDir: join(stateDir, "runs") }),
   connector,
   loadKubeContexts,
   terraform: createTerraformReader(),
@@ -74,7 +101,9 @@ const app = createApp({
   kube,
   kubeContexts,
   addons: createAddons({ eks: aws.eks, kube }),
-  logGroup: process.env.CLOUDSPIDER_LOG_GROUP || "",
+  logGroup: config.aws.logGroup,
+  regionsAllow: config.aws.regions,
+  settings: effectiveConfig(loaded),
   pageOrigin,
   clock: () => Date.now(),
   write(line) {
@@ -83,7 +112,7 @@ const app = createApp({
 });
 
 // SLO history survives a restart (.cloudspider/slo-ledger.json).
-const sloStore = createSloStore({ file: join(root, ".cloudspider", "slo-ledger.json"), ledger: app.sloLedger() });
+const sloStore = createSloStore({ file: join(stateDir, "slo-ledger.json"), ledger: app.sloLedger() });
 const sloLoaded = await sloStore.load();
 if (sloLoaded.keys) process.stdout.write(`SLO history: ${sloLoaded.keys} series from ${sloStore.file}\n`);
 else if (sloLoaded.note && !/no saved/.test(sloLoaded.note)) process.stdout.write(`SLO history: ${sloLoaded.note}\n`);
@@ -103,7 +132,7 @@ if (pulumiLine) process.stdout.write(pulumiLine);
 
 let server;
 try {
-  server = await listen(app, port);
+  server = await listen(app, port, host);
 } catch (error) {
   const failure = listenExit(error, port);
   process.stdout.write(`${failure.line}\n`);
@@ -119,23 +148,30 @@ watchFile(contextsFile, { interval: 2000 }, (now, before) => {
   });
 });
 
+const refresh = config.ui.refresh;
 setInterval(() => {
   app.poll().catch((error) => app.fail("DescribeInstances", error));
-}, 1000);
+}, refresh.mapSeconds * 1000);
 
 // The pod health watch: each context on its own clock (default 60 s).
 setInterval(() => {
   app.watchKube().catch(() => {});
-}, 15_000);
+}, refresh.kubeSeconds * 1000);
 setTimeout(() => app.watchKube().catch(() => {}), 3000);
 
 // SLOs without an open page: checks, ledgers and 1-minute ALB points.
 setInterval(() => {
   app.watchSlos().catch(() => {});
-}, 30_000);
+}, refresh.sloSeconds * 1000);
 
 setInterval(() => {
   app.refreshRadio(false).catch((error) => app.fail("LookupEvents", error));
-}, 30_000);
+}, refresh.radioSeconds * 1000);
+
+// cost.enabled: false. CAPS says so instead of calling Cost Explorer.
+function costOff() {
+  const bill = { label: "Cost off", total: "", rows: [], lines: ["cost is turned off in cloudspider.yaml (cost.enabled)."], off: true };
+  return { sample: () => createCost().sample(), read: async () => bill };
+}
 
 server.on("error", (error) => app.fail("listen", error));

@@ -21,6 +21,28 @@ npm ci && AWS_PROFILE=default AWS_REGION=eu-north-1 CLOUDSPIDER_LOG_GROUP=/cloud
 
 `PORT=<n>` serves on another port. After every pull: `npm ci`, restart, reload the page (PATH and CLUSTER come back to the same view).
 
+### Config file: cloudspider.yaml (optional)
+
+The env vars above keep working. To stop typing them, put them in one file:
+
+```sh
+cp cloudspider.example.yaml cloudspider.yaml     # gitignored; every key optional, defaults shown
+$EDITOR cloudspider.yaml                         # e.g. aws.profile: default, aws.region: eu-north-1, aws.logGroup: /cloudspider/test
+npm start                                        # prints "config: <file>" on start
+npm start -- --help                              # every key, its env var and its flag
+npm start -- --port 9300 --theme pro --set cost.enabled=false
+```
+
+- **Where it is read from:** `--config <file>`, else `$CLOUDSPIDER_CONFIG`, else `cloudspider.yaml` in the repo root, else `~/.config/cloudspider/config.yaml`.
+- **Precedence:** defaults < file < env vars < flags. Your shell's `AWS_PROFILE=finshape` therefore still beats `aws.profile: default` in the file. Use `--profile default`, or `unset AWS_PROFILE`, when starting.
+- **Bad config:** a bad key or value stops the start and lists every problem as `file:line:col: key …` (with "did you mean …").
+- **Effective config:** `curl http://127.0.0.1:9241/api/config` shows each value and where it came from (`default`, `file`, `env AWS_PROFILE`, `--port`). Secret-looking keys are redacted.
+- **Kube contexts:** `kube.contexts` in the file are listed first, and `cloudspider.contexts.yaml` (which CONNECT writes) is merged after them. `CLOUDSPIDER_KUBE_CONTEXTS` still replaces both.
+- **Features:** `features.ask`, `features.stacksRun` and `features.learn` set to `false` hide the panel and the server refuses it (403).
+- **Cost:** `cost.enabled: false` makes CAPS say "Cost off" with no Cost Explorer calls. `cost.cacheTtlMinutes` (at least 60) sets how long a bill is reused, across restarts.
+- **State:** `storage.path` (default `.cloudspider/`) holds the bill cache, SLO history and run logs. There is no database: see docs/storage.md, which also covers how a DynamoDB backend would map.
+- **Host:** `server.host` other than 127.0.0.1 prints a warning, since there is no login. Cross-origin POSTs are still refused unless the page is opened at that exact host.
+
 ## 3. New vaults from templates (PR 20, free, no AWS)
 
 Templates are in vaults/templates/ and show under TEMPLATES on the VAULTS page. To make a living vault:

@@ -1,6 +1,6 @@
 # Storage: Cloud Spider's own state
 
-Cloud Spider keeps a little state of its own: the Cost Explorer bill cache, SLO history, and Stacks run logs. It goes through one small interface (`src/storage.js`), picked by `storage.backend` in `cloudspider.yaml` (the config file lands in the next PR; until then the file backend under `.cloudspider/`).
+Cloud Spider keeps a little state of its own: the Cost Explorer bill cache, SLO history, and Stacks run logs. It goes through one small interface (`src/storage.js`), picked by `storage.backend` in `cloudspider.yaml`.
 
 ## The interface
 

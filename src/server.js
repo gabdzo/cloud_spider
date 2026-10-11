@@ -6,6 +6,7 @@ import { sampleMorning, samplePlace, sampleTrail } from "./sample.js";
 import { samplePathGraph } from "./path-sample.js";
 import { pathResult } from "./path-view.js";
 import { cssVars } from "./theme.js";
+import { defaults, effectiveConfig } from "./config.js";
 import { sampleCost } from "./cost.js";
 import { sampleCluster } from "./cluster.js";
 import { sampleMapSnapshot, samplePodDetail, samplePodInspect } from "./kube-sample.js";
@@ -461,6 +462,7 @@ const page = `<!doctype html>
       0 1px 0 var(--btn-rim-hi);
   }
   .keys { display: flex; gap: 10px; }
+  .key[hidden] { display: none !important; }
   .key {
     display: grid;
     justify-items: center;
@@ -2118,12 +2120,22 @@ export function listenExit(error, port = 9241) {
   return { code: 1, line: `listen: ${error?.message || "the page failed"}` };
 }
 
-export function listen(app, port = 9241) {
+// features in cloudspider.yaml switch whole surfaces off at the server, not
+// only in the page: ASK (the agent), running STACKS, LEARN.
+export function featureOff(features, method, path) {
+  if (!features) return "";
+  if (features.ask === false && path.startsWith("/api/agent")) return "ask";
+  if (features.stacksRun === false && method === "POST" && path === "/api/upgrade") return "stacksRun";
+  if (features.learn === false && path.startsWith("/api/learn")) return "learn";
+  return "";
+}
+
+export function listen(app, port = 9241, host = "127.0.0.1") {
   const server = createServer(app);
   return new Promise((resolve, reject) => {
     const fail = (error) => reject(error);
     server.once("error", fail);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, host, () => {
       server.off("error", fail);
       resolve(server);
     });
@@ -2161,6 +2173,17 @@ async function route(app, req, res) {
       res.end(body);
       return;
     }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/config") {
+    send(res, 200, app.settings?.() || effectiveConfig({ config: defaults(), sources: {}, file: "" }));
+    return;
+  }
+
+  const off = featureOff(app.settings?.()?.config?.features, req.method, url.pathname);
+  if (off) {
+    send(res, 403, { error: `turned off in cloudspider.yaml (features.${off})` });
+    return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/sample") {
