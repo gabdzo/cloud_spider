@@ -8,7 +8,8 @@ import { pathResult } from "./path-view.js";
 import { cssVars } from "./theme.js";
 import { sampleCost } from "./cost.js";
 import { sampleCluster } from "./cluster.js";
-import { samplePodDetail, samplePodInspect } from "./kube-sample.js";
+import { sampleMapSnapshot, samplePodDetail, samplePodInspect } from "./kube-sample.js";
+import { diagramFromKube } from "./kube-diagram.js";
 import { inspectPod } from "./kube-inspect.js";
 import { sampleTelemetry } from "./kube-telemetry.js";
 
@@ -41,6 +42,9 @@ export const FILES = new Set([
   "ops-view.js",
   "slo.js",
   "slo-view.js",
+  "map-kube.js",
+  "map-kube-draw.js",
+  "sprites/kube.js",
   "metrics.js",
   "upgrade-rules.js",
   "stack-costs.js",
@@ -2008,6 +2012,18 @@ async function route(app, req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/cluster-sample") {
     send(res, 200, sampleCluster());
+    return;
+  }
+
+  // The map's cluster compound (map-kube.js): the kube diagram, shared
+  // with the Cluster view and cached 30 s on the server.
+  if (req.method === "GET" && url.pathname === "/api/map/kube") {
+    if (url.searchParams.get("sample") === "1") {
+      send(res, 200, { clusters: [{ name: "sample-cluster", diagram: diagramFromKube(sampleMapSnapshot(), {}), at: Date.now() }], sample: true });
+      return;
+    }
+    await app.boot();
+    send(res, 200, app.mapKube ? await app.mapKube() : { clusters: [] });
     return;
   }
 

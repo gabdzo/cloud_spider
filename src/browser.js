@@ -44,6 +44,7 @@ import { sunrise } from "./sprites/landmarks.js";
 import { drawSprite } from "./draw-kit.js";
 import { sloBlock, sloFacts } from "./slo-view.js";
 import { renderSpend } from "./spend-view.js";
+import { KUBE_MAP_KEY, compoundHit, compoundHover, kubeModel, readKubeChoices } from "./map-kube.js";
 
 const ui = createUi();
 // The morning report (SRE overview): three sentences from the server's
@@ -485,13 +486,90 @@ function vaultKeys() {
   return vaultsData.vaults.map((vault) => vault.key);
 }
 
+// ---- the cluster on the map (map-kube.js) ----
+// The kube diagram the Cluster view reads (viewer role), cached 30 s by
+// the server; drawn as a compound in the nodes' subnets at the level
+// chosen per cluster (1 nodes, 2 apps, 3 pods, AUTO by room), kept in
+// localStorage.
+const mapKube = { models: new Map(), sig: "", choices: {}, hover: null, focus: null, ticket: 0, sample: false, keepSample: false };
+try {
+  mapKube.choices = readKubeChoices(window.localStorage);
+} catch {
+  // AUTO everywhere
+}
+
+function mapKubeSignature(models) {
+  const out = [];
+  for (const [name, model] of models) {
+    out.push(name, model.nodes.map((n) => `${n.instanceId}:${n.status}`).join(","));
+    for (const app of model.apps) out.push(`${app.id}:${app.have}/${app.want}:${app.status}:${app.pods.map((p) => `${p.id}@${p.instanceId}:${p.status}`).join(",")}`);
+  }
+  return out.join("|");
+}
+
+async function pullMapKube() {
+  if (mode !== "map" || !tabVisible) return;
+  const ticket = ++mapKube.ticket;
+  const wasSample = sample;
+  const body = await fetch(`/api/map/kube${wasSample ? "?sample=1" : ""}`)
+    .then((response) => response.json())
+    .catch(() => null);
+  if (!body || ticket !== mapKube.ticket || wasSample !== sample) return;
+  const models = new Map();
+  for (const item of body.clusters || []) if (item?.name && item.diagram) models.set(item.name, kubeModel(item.diagram, item.name));
+  const sig = mapKubeSignature(models);
+  mapKube.sample = wasSample;
+  if (sig === mapKube.sig) return;
+  mapKube.models = models;
+  mapKube.sig = sig;
+  if (mode === "map") draw();
+}
+
+function setKubeLevel(cluster, value) {
+  mapKube.choices = { ...mapKube.choices, [cluster]: value };
+  try {
+    window.localStorage.setItem(KUBE_MAP_KEY, JSON.stringify(mapKube.choices));
+  } catch {
+    // kept for this page only
+  }
+  draw();
+}
+
+// Opens the Cluster view on an app or pod clicked on the map; the focus is
+// applied when the cluster's diagram arrives.
+function openInCluster(hit) {
+  mapKube.focus = hit.type === "compound" ? null : { id: hit.id, type: hit.type, ns: hit.ns, app: hit.app || null };
+  mapKube.hover = null;
+  setClusterScreen("topology");
+  mapKube.keepSample = sample;
+  enterCluster();
+}
+
+function applyClusterFocus() {
+  const focus = mapKube.focus;
+  if (!focus || !clusterData?.diagram) return;
+  mapKube.focus = null;
+  const nodes = clusterData.diagram.nodes || [];
+  const node = nodes.find((item) => item.id === focus.id);
+  if (!node) {
+    setStatus(ui, `${focus.id.replace(/^[^:]+:/, "")} is no longer in the cluster`);
+    return;
+  }
+  if (focus.ns && clusterLanes.open[focus.ns] === false) clusterLanes.open = { ...clusterLanes.open, [focus.ns]: true };
+  if (node.owner && !clusterLanes.expanded.includes(node.owner)) clusterLanes.expanded = [...clusterLanes.expanded, node.owner];
+  saveClusterLanes();
+  clusterSelected = node.id;
+  if (node.kind === "workload") showWorkload(node);
+  else if (node.pod) showPod(node);
+}
+
 function placedMap() {
   const width = map.clientWidth || 0;
   const rowLimit = width ? Math.min(ROW_LIMIT, width) : ROW_LIMIT;
   const vaults = vaultsData.vaults;
   const extra = {
-    key: `${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}|${mapView}|${mapTagKey}`,
-    options: { vaults, vaultMode: "page", isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey },
+    key: `${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}|${mapView}|${mapTagKey}|${mapKube.sig}|${JSON.stringify(mapKube.choices)}`,
+    options: { vaults, vaultMode: "page", isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey, kube: mapKube.models.size ? { models: mapKube.models, choice: (cluster) => mapKube.choices[cluster] || "auto" } : null },
   };
   const placed = layoutCache.get(place || EMPTY_PLACE, rowLimit, extra);
   // A reload with the same vaults keeps the layout but brings new check
@@ -1388,6 +1466,7 @@ function draw() {
     height,
     reducedMotion,
     vaultDoor: (key) => vaultState.door(key, reducedMotion),
+    kube: { hover: mapKube.hover, selected: null },
   });
   placeGrain(placed);
   placeVaultChrome(placed);
@@ -1542,9 +1621,13 @@ async function pull() {
 
 function showSample(next) {
   sample = true;
+  mapKube.models = new Map();
+  mapKube.sig = "";
+  ++mapKube.ticket;
   ui.sample = true;
   kubeRows = [];
   setTimeout(pullKubeRadio, 0);
+  setTimeout(pullMapKube, 0);
   if (pipOpen) setTimeout(() => pullAddons(true), 0);
   place = next;
   metricsData = null;
@@ -1558,6 +1641,9 @@ function showSample(next) {
 
 function leaveSample() {
   sample = false;
+  mapKube.models = new Map();
+  mapKube.sig = "";
+  ++mapKube.ticket;
   ui.sample = false;
   regionSelect.disabled = false;
   clickGround(ui);
@@ -1569,6 +1655,7 @@ function leaveSample() {
   kubeRows = [];
   kubeRadioOff = false;
   setTimeout(pullKubeRadio, 0);
+  setTimeout(pullMapKube, 0);
   if (pipOpen) pullAddons(true);
   if (pipOpen && openCard) refreshUpgrade(true);
 }
@@ -1644,6 +1731,9 @@ function dropSample() {
   setRadio(ui, "");
   setTrail(ui, []);
   kubeRows = [];
+  mapKube.models = new Map();
+  mapKube.sig = "";
+  ++mapKube.ticket;
 }
 
 // The radio panel remembers whether it is open per view; the path needs the
@@ -1701,6 +1791,7 @@ async function pullCluster() {
     if (body.stale || mode !== "cluster" || wasSample !== sample) return;
     clusterData = body;
     if (clusterSelected && !body.diagram?.nodes?.some((node) => node.id === clusterSelected)) clusterSelected = null;
+    applyClusterFocus();
     setStatus(ui, body.error ? "" : body.headline || (wasSample ? "sample, not the account" : ""));
     errorEl.hidden = !body.error;
     errorEl.textContent = body.error || "";
@@ -1720,7 +1811,9 @@ async function pullCluster() {
 
 function enterCluster() {
   dropVaultRoute();
-  dropSample();
+  // From a map compound in sample mode the Cluster view stays a sample.
+  if (!mapKube.keepSample) dropSample();
+  mapKube.keepSample = false;
   showRadioFor("cluster");
   mode = "cluster";
   clusterData = null;
@@ -1748,6 +1841,8 @@ function leaveCluster() {
   renderChrome();
   pull();
   queueSpend();
+  mapKube.focus = null;
+  setTimeout(pullMapKube, 0);
 }
 
 // The mascot porthole is "home": back to the map from Path or Cluster.
@@ -1944,6 +2039,10 @@ function showPod(node) {
 }
 
 canvas.addEventListener("mouseleave", () => {
+  if (mapKube.hover !== null) {
+    mapKube.hover = null;
+    if (mode === "map") draw();
+  }
   if (clusterHover === null) return;
   clusterHover = null;
   if (mode === "cluster") draw();
@@ -1983,6 +2082,17 @@ canvas.addEventListener("click", async (event) => {
     draw();
     if (hit?.sentence) revealPanel(sentenceRect(hit, canvas.clientWidth, canvas.clientHeight));
     return;
+  }
+  if (mapKube.models.size) {
+    const kubeHitNow = compoundHit(placedMap(), event.offsetX, event.offsetY);
+    if (kubeHitNow?.type === "lod") {
+      setKubeLevel(kubeHitNow.cluster, kubeHitNow.value);
+      return;
+    }
+    if (kubeHitNow) {
+      openInCluster(kubeHitNow);
+      return;
+    }
   }
   if (vaultsData.vaults.length) {
     const badge = badgeAt(placedMap().badges, event.offsetX, event.offsetY);
@@ -2047,6 +2157,20 @@ canvas.addEventListener("mousemove", (event) => {
       draw();
     }
     return;
+  }
+  if (mode === "map" && mapKube.models.size) {
+    const hit = compoundHit(placedMap(), event.offsetX, event.offsetY);
+    const id = hit ? (hit.type === "lod" ? `lod:${hit.cluster}:${hit.value}` : hit.id || `compound:${hit.cluster}`) : null;
+    if (id !== mapKube.hover) {
+      mapKube.hover = id;
+      draw();
+    }
+    if (hit) {
+      const title = compoundHover(hit);
+      if (canvas.title !== title) canvas.title = title;
+      if (canvas.style.cursor !== "pointer") canvas.style.cursor = "pointer";
+      return;
+    }
   }
   if (canvas.title) canvas.title = "";
   if (mode !== "map" || !vaultsData.vaults.length) {
@@ -2792,7 +2916,9 @@ setInterval(() => {
 
 setInterval(() => {
   pullKubeRadio();
+  pullMapKube();
 }, 30_000);
+setTimeout(pullMapKube, 1500);
 setTimeout(pullKubeRadio, 4000);
 
 window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", (e) => {

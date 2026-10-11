@@ -35,6 +35,9 @@ function accountRead(error) {
   return `${ACCOUNT_HINT} ${error}`;
 }
 
+export const KUBE_VIEW_TTL = 5_000;
+export const KUBE_MAP_TTL = 30_000;
+
 export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
@@ -74,6 +77,29 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   const ledger = sloLedger || createSloLedger({ clock: now });
   const clusterSlo = createClusterSlo({ ledger, clock: now });
   let sloCluster = null;
+  // One kube snapshot shared by the Cluster view and the map's compound
+  // (map-kube.js): one read in flight, reused for maxAge. Each fresh read
+  // also feeds the cluster SLOs.
+  let kubeCached = null;
+  let kubeFlight = null;
+  async function readKube(maxAge) {
+    if (kubeCached && now() - kubeCached.at < maxAge) return kubeCached.snap;
+    if (!kubeFlight) {
+      kubeFlight = kube
+        .snapshot()
+        .catch((failure) => ({ error: failure?.message || "the cluster did not answer" }))
+        .then((snap) => {
+          if (snap.clusterName) sloCluster = snap.clusterName;
+          if (!snap.unset && sloCluster) clusterSlo.record(sloCluster, snap);
+          kubeCached = { at: now(), snap };
+          return snap;
+        })
+        .finally(() => {
+          kubeFlight = null;
+        });
+    }
+    return kubeFlight;
+  }
   const linkCache = createLinkCache({
     read: (name, balancers) => path.targetLines(name, balancers),
     clock: now,
@@ -438,9 +464,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       const diagram = diagramFromClusters(result?.items || []);
       // Inside the cluster (read-only kube context): namespaces to nodes.
       if (kube && diagram.nodes.length) {
-        const snap = await kube.snapshot().catch((failure) => ({ error: failure?.message || "the cluster did not answer" }));
-        if (snap.clusterName) sloCluster = snap.clusterName;
-        if (!snap.unset && sloCluster) clusterSlo.record(sloCluster, snap);
+        const snap = await readKube(KUBE_VIEW_TTL);
         if (!snap.error) {
           const cluster = (result?.items || []).find((item) => item.name === snap.clusterName) || {};
           return {
@@ -467,6 +491,14 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         headline: diagram.nodes.length ? "" : "no cluster in this region",
         note: "EKS in this region. An OpenShift reader fills the same picture.",
       };
+    },
+    // The map's cluster compound: the same kube diagram the Cluster view
+    // draws, from the shared snapshot (30 s). Read-only, viewer role.
+    async mapKube() {
+      if (!kube) return { clusters: [], unset: true, note: "no kube context: the map shows the cluster without its apps" };
+      const snap = await readKube(KUBE_MAP_TTL);
+      if (snap.error) return { clusters: [], unset: !!snap.unset, error: snap.error };
+      return { clusters: [{ name: snap.clusterName || sloCluster || "cluster", diagram: diagramFromKube(snap, {}), at: kubeCached?.at || now() }], nextAt: (kubeCached?.at || now()) + KUBE_MAP_TTL };
     },
     // The telemetry screen: node gauges, pressure lamps, top pods, 1 h of
     // history kept in memory (kube-telemetry.js). Read-only kube reads.

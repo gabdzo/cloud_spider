@@ -450,3 +450,29 @@ spec:
   - `kube:*` uses the Cluster view's read-only snapshot. Restarts count from the second read on.
 
   Readings are kept **in memory** in 5-minute buckets for at most 30 days, so a server restart starts the count over. Nothing is written anywhere and no AWS or kube call is added, so this costs nothing extra. A real 30-day view would need a store (for example CloudWatch metric math or Prometheus recording rules); that is not part of this.
+
+## 18. The cluster on the map (free: the Cluster view's read, shared)
+
+With the kube context from §7 set, the MAP draws the EKS cluster inside
+the subnets its nodes run in: a fenced compound per subnet, the nodes as
+its buildings, the apps as tents and the pods as little figures. Nothing
+new is read: the map and the Cluster view share one viewer-role snapshot
+(the map reuses it for 30 s, the Cluster view for 5 s; one read in
+flight at a time). `GET /api/map/kube` serves it; `?sample=1` is the
+sample cluster.
+
+The `1 2 3 AUTO` switch on the compound's top right picks how much to
+draw, per cluster, and the choice is kept in this browser
+(`cloudspider.map.kube` in localStorage):
+
+| level | draws |
+| --- | --- |
+| 1 | the cluster and its nodes |
+| 2 | nodes and apps: Deployments, StatefulSets and DaemonSets per namespace, with ready/wanted replicas and a sign post when a Service selects them; system namespaces fold to one line |
+| 3 | every pod, under its app, in the subnet of the node it runs on |
+| AUTO | 3 when the yard has room, 2 when it is narrow or there are more than 40 pods, 1 when even the tents would not fit (the map has no zoom, so AUTO goes by room) |
+
+Click a tent to open the Cluster view on that workload (its card and
+SLOs), a figure to open the pod's deep-inspect panel, the compound's
+name for the Cluster view itself. With no kube context the map stays as
+before: the nodes are plain buildings.
