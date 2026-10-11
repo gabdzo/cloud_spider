@@ -1066,6 +1066,16 @@ function enterVaults() {
   openVaultPage(null);
 }
 
+// PATH and CLUSTER keep their name in the hash (#path, #cluster), so a reload
+// (RUN-ME's after-pull routine) comes back to the same view. replaceState:
+// switching views adds no history entries; the vault routes keep theirs.
+function setViewHash(view) {
+  if (parseVaultHash(location.hash)) return;
+  const want = view ? `#${view}` : "";
+  if (location.hash === want || (!want && !/^#(path|cluster)$/.test(location.hash))) return;
+  history.replaceState(null, "", `${location.pathname}${location.search}${want}`);
+}
+
 // Path and Cluster drop the vaults route, so MAP later means the map.
 function dropVaultRoute() {
   if (!vaultRoute) return;
@@ -1897,6 +1907,7 @@ function showRadioFor(next) {
 
 function enterPath() {
   dropVaultRoute();
+  setViewHash("path");
   kubeCtxEl.hidden = true;
   contextsShown = "";
   showRadioFor("path");
@@ -1916,6 +1927,7 @@ function enterPath() {
 }
 
 function leavePath() {
+  setViewHash("");
   showRadioFor("map");
   mode = "map";
   pathData = null;
@@ -1973,6 +1985,7 @@ async function pullCluster() {
 
 function enterCluster() {
   dropVaultRoute();
+  setViewHash("cluster");
   // Sample stays on across views (from a map compound as from the tab).
   mapKube.keepSample = false;
   showRadioFor("cluster");
@@ -1992,6 +2005,7 @@ function enterCluster() {
 }
 
 function leaveCluster() {
+  setViewHash("");
   kubeCtxEl.hidden = true;
   contextsShown = "";
   showRadioFor("map");
@@ -3187,3 +3201,7 @@ setInterval(() => {
 pull().then(() => {
   if (place && !sample) queueSpend();
 });
+
+// A reload on #path or #cluster comes back to that view.
+if (location.hash === "#path") enterPath();
+else if (location.hash === "#cluster") enterCluster();
