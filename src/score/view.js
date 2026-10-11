@@ -1,21 +1,26 @@
 // SCORE panel (browser). scoreModel/fixModel turn /api/score answers into
 // what the panel shows (pure, tested in node); createScoreView draws them
 // with DOM nodes and textContent only. Requests: GET /api/score, GET
-// /api/score/fix, and POST /api/score/scan|fix from a button press.
+// /api/score/fix, GET /api/score/report (EXPORT links) and POST
+// /api/score/scan|fix from a button press.
 const LABEL = { INSUFFICIENT_EVIDENCE: "INSUFFICIENT EVIDENCE", BLOCKED: "BLOCKED", AT_RISK: "AT RISK", CONDITIONAL: "CONDITIONAL", NO_KNOWN_BLOCKERS: "NO KNOWN BLOCKERS" };
 const TONE = { INSUFFICIENT_EVIDENCE: "warn", BLOCKED: "bad", AT_RISK: "bad", CONDITIONAL: "warn", NO_KNOWN_BLOCKERS: "ok" };
 const ORDER = { FAIL: 0, UNKNOWN: 1, NOT_ASSESSED: 2, PASS: 3, NOT_APPLICABLE: 4 };
 const STATUS_TEXT = { FAIL: "FAIL", PASS: "PASS", UNKNOWN: "UNKNOWN", NOT_ASSESSED: "NOT ASSESSED", NOT_APPLICABLE: "N/A" };
 export const STAGES = ["Plan", "Preview", "Approve", "Install", "Rescan"];
 const BUSY = ["previewing", "running", "rescanning"];
+const CHANGE_ORDER = { fixed: 0, regressed: 1, changed: 2, new: 3 };
+const CHANGE_LABEL = { fixed: "FIXED", regressed: "REGRESSED", changed: "CHANGED", new: "NEW" };
+export const REPORT_FORMATS = ["md", "html", "json"];
 const toneOf = (score) => (score >= 80 ? "ok" : score >= 60 ? "warn" : "bad");
 
 // The first screen, in the spec's order: verdict, then number (never the
 // number alone), coverage and confidence, categories, then what to fix first.
 export function scoreModel(view) {
-  if (!view || view.error) return { state: "error", text: view?.error || "the scorecard did not load", hint: view?.hint || "" };
+  const target = view?.target === "aws" ? "aws" : "kubernetes";
+  if (!view || view.error) return { state: "error", target, text: view?.error || "the scorecard did not load", hint: view?.hint || "" };
   const scan = view.scan;
-  if (!scan) return { state: "empty", cluster: view.cluster, text: `No scan of ${view.cluster || "this cluster"} yet. Press SCAN: it only reads.` };
+  if (!scan) return { state: "empty", target, cluster: view.cluster, text: target === "aws" ? "No scan of this AWS account yet. Press SCAN: it only reads (Describe/List/Get)." : `No scan of ${view.cluster || "this cluster"} yet. Press SCAN: it only reads.` };
   const card = scan.card;
   const fixable = new Map((view.suggestions || []).map((s) => [s.control, s]));
   const rows = [...scan.results]
@@ -34,8 +39,15 @@ export function scoreModel(view) {
       tone: c.insufficient || c.score == null ? "muted" : toneOf(c.score),
       coverage: Math.round(c.coverage),
     }));
+  // A first scan has nothing to compare with: every control would be "new".
+  const changes = (view.diff?.from ? view.diff.changes || [] : [])
+    .filter((c) => c.kind !== "new")
+    .sort((a, b) => (CHANGE_ORDER[a.kind] ?? 9) - (CHANGE_ORDER[b.kind] ?? 9) || a.id.localeCompare(b.id))
+    .map((c) => ({ kind: c.kind, label: CHANGE_LABEL[c.kind] || "CHANGED", id: c.id, title: c.title || "", move: `${STATUS_TEXT[c.from] || c.from} → ${STATUS_TEXT[c.to] || c.to}` }));
   return {
     state: "scored",
+    target,
+    where: target === "aws" ? "AWS account" : view.cluster,
     cluster: view.cluster,
     scanId: scan.id,
     verdict: card.verdict,
@@ -55,6 +67,10 @@ export function scoreModel(view) {
     when: scan.finishedAt,
     profile: `${card.profile}${scan.profileDefaulted ? " (no environment set: production assumed)" : ""}`,
     disclaimer: card.disclaimer,
+    changes,
+    catalogChanged: Boolean(view.diff?.catalogChanged),
+    grants: view.permissions?.ok === false ? view.permissions.grants || [] : [],
+    reports: REPORT_FORMATS.map((format) => ({ format, href: `/api/score/report?id=${encodeURIComponent(scan.id)}&format=${format}` })),
   };
 }
 
@@ -76,12 +92,13 @@ export function fixModel(state, plan = null) {
   if (state.phase === "previewed") return { step: "previewed", stage: 2, title, text: `${state.confirm}\n\nPreview finished: nothing changed yet.`, log, buttons: ["APPROVE", "CANCEL"], previewId: state.id };
   if (state.phase === "running") return { step: "running", stage: 3, title, text: `Running ${state.running?.module || ""}…`, log, buttons: [] };
   if (state.phase === "rescanning") return { step: "rescanning", stage: 4, title, text: "Installed. Rescanning…", log, buttons: [] };
-  if (state.phase === "done") return { step: "done", stage: 5, title, text: `${title} installed. Score ${state.diff?.delta > 0 ? "+" : ""}${state.diff?.delta ?? "?"}.`, log, buttons: [] };
+  if (state.phase === "done") return { step: "done", stage: 5, title, text: state.diff?.delta == null ? `${title} installed and rescanned. No score to compare: ${state.diff?.verdictTo === "INSUFFICIENT_EVIDENCE" ? "not enough evidence yet" : "the last scan had none"}.` : `${title} installed. Score ${state.diff.delta > 0 ? "+" : ""}${state.diff.delta}.`, log, buttons: [] };
   return { step: "failed", stage: -1, title, text: state.error || "the fix failed", log, buttons: [] };
 }
 
 export function createScoreView({ root, toggleButton, context = () => "", onChange = () => {} }) {
   let open = false;
+  let target = "kubernetes";
   let model = null;
   let plan = null;
   let fixState = null;
@@ -99,7 +116,7 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
   };
   const getJson = (path) => fetch(path).then((r) => r.json()).catch(() => ({ error: "the page failed" }));
   const post = (path, body) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()).catch(() => ({ error: "the page failed" }));
-  const q = () => (context() ? `?context=${encodeURIComponent(context())}` : "");
+  const q = () => `?target=${target}${target === "kubernetes" && context() ? `&context=${encodeURIComponent(context())}` : ""}`;
 
   async function load() {
     model = scoreModel(await getJson(`/api/score${q()}`));
@@ -130,11 +147,11 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
   }
   function scanButton() {
     const b = button("SCAN", "sc-btn sc-primary");
-    b.title = "Read the cluster again (GET requests only)";
+    b.title = target === "aws" ? "Read the AWS account (Describe/List/Get only)" : "Read the cluster again (GET requests only)";
     b.addEventListener("click", async () => {
       b.disabled = true;
       b.textContent = "SCANNING…";
-      const out = await post("/api/score/scan", { context: context() });
+      const out = await post("/api/score/scan", { context: context(), target });
       if (out.error) {
         model = scoreModel(out);
         draw();
@@ -143,6 +160,57 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
       await load();
     });
     return b;
+  }
+  // CLUSTER | AWS ACCOUNT: which target the panel shows and SCAN reads.
+  function targets() {
+    const bar = el("div", "sc-targets");
+    bar.setAttribute("role", "group");
+    bar.setAttribute("aria-label", "scan target");
+    for (const [value, label] of [["kubernetes", "CLUSTER"], ["aws", "AWS ACCOUNT"]]) {
+      const b = button(label, "sc-target");
+      b.setAttribute("aria-pressed", String(target === value));
+      b.addEventListener("click", () => {
+        if (target === value) return;
+        target = value;
+        plan = null;
+        load();
+      });
+      bar.append(b);
+    }
+    return bar;
+  }
+  function exports() {
+    const wrap = el("div", "sc-exports");
+    wrap.append(el("span", "sc-label", "Export"));
+    for (const r of model.reports) {
+      const a = el("a", "sc-export", r.format.toUpperCase());
+      a.href = r.href;
+      a.download = "";
+      a.title = `download this scan as ${r.format.toUpperCase()} (no evidence fields)`;
+      wrap.append(a);
+    }
+    return wrap;
+  }
+  function changes() {
+    const wrap = el("section", "sc-changes");
+    wrap.append(el("div", "sc-label", `Since the last scan · ${model.changes.length} change${model.changes.length === 1 ? "" : "s"}`));
+    if (model.catalogChanged) wrap.append(el("p", "sc-muted sc-small", "The catalog changed between these scans: some moves are new rules, not changes in your cluster."));
+    const list = el("ul", "sc-changelist");
+    for (const c of model.changes.slice(0, 8)) {
+      const li = el("li");
+      li.dataset.kind = c.kind;
+      li.append(el("span", "sc-chip", c.label), el("span", "sc-id", c.id), el("span", "", c.title), el("span", "sc-muted", c.move));
+      list.append(li);
+    }
+    if (model.changes.length > 8) list.append(el("li", "sc-muted sc-small", `+${model.changes.length - 8} more in the table below`));
+    wrap.append(list);
+    return wrap;
+  }
+  function grants() {
+    const pane = el("section", "sc-grant");
+    pane.append(el("div", "sc-label", "Some reads were refused"), el("p", "sc-small", "Their controls are UNKNOWN, so coverage is lower. To grant them (read-only):"));
+    for (const g of model.grants) pane.append(el("code", "sc-code", g));
+    return pane;
   }
   function spark(values) {
     const box = el("div", "sc-spark");
@@ -186,7 +254,7 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
       item.dataset.part = k;
       legend.append(item);
     }
-    meta.append(legend, el("div", "sc-muted sc-small", `${model.cluster} · ${model.profile}`));
+    meta.append(legend, el("div", "sc-muted sc-small", `${model.where} · ${model.profile}`));
     const side = el("div", "sc-side");
     side.append(el("div", "sc-label", "Trend"), spark(model.spark));
     if (model.delta) {
@@ -194,7 +262,7 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
       d.dataset.up = model.delta.up ? "1" : "0";
       side.append(d);
     }
-    side.append(scanButton());
+    side.append(scanButton(), exports());
     head.append(gauge, meta, side);
     return head;
   }
@@ -300,14 +368,17 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
       empty.append(el("div", "sc-label", "Production readiness"), el("p", "", model.text));
       if (model.hint) empty.append(el("p", "sc-muted", model.hint));
       empty.append(scanButton());
-      root.append(empty);
+      root.append(targets(), empty);
       return;
     }
     const busy = BUSY.includes(fixState?.phase);
-    root.append(top());
+    root.append(targets(), top());
+    if (model.grants.length) root.append(grants());
     if (model.reasons.length) root.append(el("p", "sc-reasons", model.reasons.join(" · ")));
     root.append(categories());
-    const f = fixModel(fixState, plan);
+    if (model.changes.length) root.append(changes());
+    // FIX installs add-on stacks on the cluster; the AWS view has none.
+    const f = model.target === "aws" ? fixModel(null) : fixModel(fixState, plan);
     if (f.step !== "idle") root.append(fixPane(f));
     // After a fix ends (or is refused) the next suggestions come back.
     if (["idle", "done", "failed", "refused"].includes(f.step) && model.next.length) root.append(nextUp(busy));
