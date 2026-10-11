@@ -728,3 +728,11 @@ Under the EKS card's run pane (for the cluster named in its fields) is the ADD-O
 - Ticking an add-on whose need is missing (Karpenter, LBC or KEDA without the Pod Identity agent) adds the need, and the confirm says so.
 - INSTALL SELECTED asks once, listing each stack it will create (`<addon>-<cluster>`), the pods and the hourly cost. It then runs one job in the EKS card's pane: for each add-on, `pulumi preview`, then `pulumi up`, one after the other. It stops at the first failure with the ERROR plate (what failed, why, BY HAND). The add-ons before it stay installed; press it again after fixing, and they are skipped.
 - **with add-ons**: tick it before RUN on a new cluster. When the cluster run is DONE, CONNECT runs, then INSTALL SELECTED for the ticked add-ons. The card shows `QUEUED · …` while it waits. If any stage fails, the queue stops there and says why.
+
+## 23. SCORE: production readiness of the connected cluster (free; reads only, FIX runs add-on stacks)
+
+- Press the **SCORE** key, then **SCAN**. The scan only reads (named GETs as the viewer role); it shows a verdict first (AT RISK, CONDITIONAL, …), then the number, its range and the coverage. "No environment set: production assumed" means the production profile judged it.
+- Each failing platform control has **FIX: <add-on>** (Kyverno, metrics-server, LBC, cert-manager, Karpenter, Pod Identity, KEDA). FIX shows the plan (stack `<addon>-<cluster>`, needs, pod slots, cost) → **PREVIEW** (`pulumi preview`, nothing changes) → **APPROVE** (`pulumi up`) → automatic rescan with the score change. An add-on that is already on the cluster, or no free pod slots, is refused before any Pulumi call. One fix at a time.
+- `features.stacksRun: false` in `cloudspider.yaml` turns FIX off (403); SCAN still works.
+- Scans and their history live under `storage.path` (default `.cloudspider/scorecard/`); evidence stays there and never reaches the page.
+- The live acceptance run (fresh EKS cluster → low score → three fixes → higher score, about $0.30): [docs/scorecard/acceptance.md](scorecard/acceptance.md).
