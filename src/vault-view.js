@@ -125,6 +125,7 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
               owned: mine.map((id) => raw.get(id)).filter(Boolean),
               hits: mine.map((id) => metrics?.targets?.[id]).filter(Boolean),
               cluster: slo.cluster || null,
+              clusters: slo.clusters || [],
               now: clock(),
             });
         return shape({ ...entry, logGroups: vaultLogGroups(entry.logGroups, functions) }, mine, checks, trouble, slos);

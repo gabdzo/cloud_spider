@@ -84,12 +84,18 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   const ledger = sloLedger || createSloLedger({ clock: now });
   const clusterSlo = createClusterSlo({ ledger, clock: now });
   let sloCluster = null;
+  // context name -> its cluster's name, for every context read so far.
+  const sloClusters = new Map();
+  function sloClusterList() {
+    return contexts.filter((ctx) => sloClusters.has(ctx.name)).map((ctx) => ({ context: ctx.name, cluster: sloClusters.get(ctx.name), primary: ctx.primary }));
+  }
   // One kube snapshot shared by the Cluster view and the map's compound
   // (map-kube.js): one read in flight, reused for maxAge. Each fresh read
   // also feeds the cluster SLOs.
   // Every kube context (kube-contexts.js) keeps its own client and its own
-  // snapshot cache; the first is the primary one (`kube`), the only one that
-  // feeds the SLOs, the map, TELEMETRY and OPS.
+  // snapshot cache, and feeds the cluster SLOs (within its namespaces). The
+  // first is the primary one (`kube`), the only one behind the map,
+  // TELEMETRY and OPS.
   const contexts = (kubeContexts?.length ? kubeContexts : kube ? [{ name: kube.context, label: kube.context, namespaces: kube.scope || "*", pollMs: DEFAULT_POLL_MS, kube }] : []).map((ctx, index) => ({ ...ctx, primary: index === 0 }));
   let primary = contexts[0] || null;
   if (primary && !kube) kube = primary.kube;
@@ -235,10 +241,12 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         .then(() => ctx.kube.snapshot())
         .catch((failure) => ({ error: failure?.message || "the cluster did not answer" }))
         .then((snap) => {
-          if (ctx.primary) {
-            if (snap.clusterName) sloCluster = snap.clusterName;
-            if (!snap.unset && sloCluster) clusterSlo.record(sloCluster, snap);
+          const name = snap.clusterName || sloClusters.get(ctx.name) || (ctx.primary ? sloCluster : null) || ctx.name;
+          if (!snap.unset) {
+            sloClusters.set(ctx.name, name);
+            clusterSlo.record(name, snap, { from: ctx.name, namespaces: ctx.namespaces });
           }
+          if (ctx.primary && snap.clusterName) sloCluster = snap.clusterName;
           kubeCaches.set(ctx.name, { at: now(), snap });
           polledAt.set(ctx.name, now());
           health.take(ctx, snap);
@@ -321,6 +329,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       context: ctx.name,
       error: "",
       diagram: diagramFromKube(snap, { cluster: { name: snap.clusterName } }),
+      slos: clusterSlo.view(sloClusters.get(ctx.name) || snap.clusterName || ctx.name),
       headline: "",
       note: [`inside ${snap.clusterName} via kube context ${ctx.name} (read-only, ${scopeText(ctx.namespaces)})`, ...(snap.notes || [])].join(" · "),
     };
@@ -803,7 +812,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       if (!viewer) return { dir: "", note: "vaults are not set up", vaults: [] };
       try {
         if (sample) return await viewer.view(vaults.samplePlace?.(), { failures: vaults.sampleFailures?.() || [], slo: { metrics: sampleMetrics(vaults.samplePlace?.(), { now: now() }) } });
-        const view = await viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: sloMetrics(), cluster: sloCluster } });
+        const view = await viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: sloMetrics(), cluster: sloCluster, clusters: sloClusterList() } });
         sloAlbIds = albIdsOf(view);
         return view;
       } catch (failure) {
@@ -839,7 +848,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     async watchSlos() {
       const viewer = vaults?.live;
       if (!viewer || !place) return { ...sloWatch, skipped: place ? "vaults are not set up" : "the map has not loaded yet" };
-      const evaluate = () => viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: sloMetrics(), cluster: sloCluster } });
+      const evaluate = () => viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: sloMetrics(), cluster: sloCluster, clusters: sloClusterList() } });
       const fetchAlbs = async () => {
         if (!sloAlbIds.size) return "";
         const got = await sloMetricsCache.get(region, place, { ids: sloAlbIds, specs: sloSpecs(sloPercentiles) }).catch((failure) => ({ error: failure?.message || "the metrics did not load" }));
