@@ -1,0 +1,17 @@
+kind: Control
+id: NET-VPC-001
+revision: 1
+title: "VPCs with internet-facing load balancers keep flow logs"
+category: networking
+target: aws
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: vpc-flow-logs
+aggregation: proportional
+requires: [aws-lb-edge, aws-vpc-net]
+whyItMatters: "Flow logs are the only record of a packet a security group or NACL rejected; without them a network outage or an attack leaves no trace, and SNIFF's REJECT lookup has nothing to read."
+remediation: { summary: "Create a VPC flow log to CloudWatch Logs or S3 (REJECT only is enough for debugging, ALL for security).", effort: S }
+verification: "aws ec2 describe-flow-logs --filter Name=resource-id,Values=<vpc-id> shows one ACTIVE."
+references:
+  - { source: "docs/design/network-debugging.md §8 (A-VPC-05)", url: "https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs.html" }

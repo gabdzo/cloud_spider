@@ -1,0 +1,17 @@
+kind: Control
+id: NET-TLS-002
+revision: 1
+title: "Only TLS 1.2+ on CloudFront and HTTPS listeners"
+category: networking
+target: aws
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: tls-modern
+aggregation: proportional
+requires: [aws-cloudfront, aws-lb-edge]
+whyItMatters: "TLS 1.0 and 1.1 are deprecated (RFC 8996) and fail PCI DSS; the old default ELB policy still accepts them."
+remediation: { summary: "Set CloudFront's minimum protocol to TLSv1.2_2021 and HTTPS/TLS listeners to ELBSecurityPolicy-TLS13-1-2-2021-06.", effort: S }
+verification: "aws cloudfront get-distribution-config shows MinimumProtocolVersion TLSv1.2_2021 (distributions on the default *.cloudfront.net certificate are skipped); aws elbv2 describe-listeners shows a TLS13-1-2 / TLS-1-2 / FS-1-2 policy on every HTTPS or TLS listener."
+references:
+  - { source: "docs/design/network-debugging.md §8 (A-CF-03)", url: "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/describe-ssl-policies.html" }

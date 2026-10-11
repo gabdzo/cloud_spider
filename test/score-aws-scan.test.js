@@ -28,6 +28,12 @@ const ACCOUNT = {
   GetEventSelectorsCommand: () => ({ EventSelectors: [{ IncludeManagementEvents: true, ReadWriteType: "All" }] }),
   DescribeAlarmsCommand: () => ({ MetricAlarms: [] }),
   DescribeLogGroupsCommand: () => ({ logGroups: [{ logGroupName: "/aws/eks/prod", retentionInDays: 7 }] }),
+  // Network reads (NET-*): no zones, no distributions, one subnet, flow logs off.
+  ListHostedZonesCommand: () => ({ HostedZones: [] }),
+  ListDistributionsCommand: () => ({ DistributionList: { Items: [] } }),
+  DescribeSubnetsCommand: () => ({ Subnets: [] }),
+  DescribeNetworkAclsCommand: () => ({ NetworkAcls: [] }),
+  DescribeFlowLogsCommand: () => ({ FlowLogs: [] }),
 };
 
 test("an AWS scan: a public open database is a failed gate → BLOCKED, the number still shown with it", async () => {
