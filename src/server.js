@@ -1786,12 +1786,15 @@ const page = `<!doctype html>
     header { gap: 6px 10px; padding: 6px 8px; }
     .plate small { display: none; }
     .readout { margin-left: 0; }
-    /* Narrow: the bill sits beside the readout, the tally takes its own row. */
+    /* Narrow (review R3): the tally and the bill share one row under the
+       readout, instead of a row each. */
     .gauges { display: contents; }
     .readout { order: 8; }
-    #corner { order: 9; }
-    #corner { flex: 1 1 180px; }
-    #tally { order: 10; flex: 1 1 100%; }
+    #tally { order: 9; flex: 1 1 240px; }
+    #corner { order: 10; flex: 0 1 230px; min-width: 150px; margin-left: auto; }
+    /* An open LEARN, STACKS or ASK panel covers the morning report: the
+       report gives its row to the panel. */
+    .screen:has(#learn:not([hidden]), #pip:not([hidden]), #term:not([hidden])) #morning { display: none; }
     .body { flex-direction: column; }
     #radio-panel { flex: 0 0 180px; border-left: 0; border-top: 2px solid var(--pip-dark); }
     .scope, .dial { display: none; }
