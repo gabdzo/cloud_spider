@@ -36,7 +36,6 @@ The narrow wedge that could work: **an evidence-backed production-readiness asse
 6. [Pricing unit and unit-cost model (hypotheses)](#6-pricing-unit-and-unit-cost-model-hypotheses)
 7. [What exists, what is reusable, what is missing, what is long-term](#7-what-exists-what-is-reusable-what-is-missing-what-is-long-term)
 8. [MVP definition (deliverable 16) and the smallest recurring-revenue feature set](#8-mvp-definition-deliverable-16-and-the-smallest-recurring-revenue-feature-set)
-9. `monetization-strategy.md` and `scalable-business-options.md` are on `main` via #85: keep them as history with a "superseded by cloud-spider-platform-strategy.md" note, or remove them?
 9. [Free vs paid matrix (deliverable 13)](#9-free-vs-paid-matrix-deliverable-13)
 10. [30/60/90-day roadmap (deliverable 17)](#10-306090-day-roadmap-deliverable-17)
 11. [Monetization and validation experiments, kill criteria (deliverable 14)](#11-monetization-and-validation-experiments-kill-criteria-deliverable-14)
@@ -549,6 +548,7 @@ Net: the two strategies differed mainly in emphasis. #85 was more disciplined ab
 6. Is a fixed-fee assessment something you can contract as a Czech sole trader (liability cap, NDA/DPA templates)? (Not legal advice; ask your accountant/lawyer.)
 7. Do you accept the verdict semantics in §15 (UNKNOWN vs NOT_ASSESSED, no READY label, 70 %/40 % coverage floors plus the 8-control floor adopted from #85)?
 8. Should drill findings 4-9 (ALB latency percentile, metrics refresh for vaults, multi-context SLOs, LBC tag override, persisted ledger, HURTING with no targets) be fixed before any pilot? I recommend 4, 6 and the persisted ledger.
+9. `monetization-strategy.md` and `scalable-business-options.md` are on `main` via #85: keep them as history with a "superseded by cloud-spider-platform-strategy.md" note, or remove them?
 
 ---
 
