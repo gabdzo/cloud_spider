@@ -90,7 +90,7 @@ const app = createApp({
   path: createPathAws(),
   cost: config.cost.enabled ? createCost({ storage, ttl: config.cost.cacheTtlMinutes * 60_000 }) : costOff(),
   costTtl: config.cost.cacheTtlMinutes * 60_000,
-  upgrade: createUpgrade({ runsDir: join(stateDir, "runs") }),
+  upgrade: createUpgrade({ runsDir: join(stateDir, "runs"), volumes: aws.volumes }),
   connector,
   loadKubeContexts,
   terraform: createTerraformReader(),

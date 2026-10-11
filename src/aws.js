@@ -8,6 +8,8 @@ import {
   DescribeNatGatewaysCommand,
   StopInstancesCommand,
   StartInstancesCommand,
+  DescribeVolumesCommand,
+  DeleteVolumeCommand,
 } from "@aws-sdk/client-ec2";
 import { EKSClient, ListClustersCommand, DescribeClusterCommand, ListNodegroupsCommand, DescribeNodegroupCommand } from "@aws-sdk/client-eks";
 import { RDSClient, DescribeDBInstancesCommand } from "@aws-sdk/client-rds";
@@ -44,7 +46,37 @@ export function createAws() {
     logs: { filter: readLogStream, search: searchLogGroup },
     eks: { listClusters: listUpgradeClusters, describeCluster: describeUpgradeCluster },
     metrics: { read: readMetricData },
+    volumes: { list: listVolumes, remove: deleteVolume },
   };
+}
+
+// pgcluster's take it down (volume-sweep.js): its tagged EBS volumes.
+// ec2:DescribeVolumes, and ec2:DeleteVolume only for a leftover the sweep
+// has checked (available, the stack's tags and the CSI driver's).
+export async function listVolumes(region, filters, client = new EC2Client({ region })) {
+  try {
+    const items = [];
+    let token;
+    let pages = 5;
+    do {
+      const out = await client.send(new DescribeVolumesCommand({ Filters: filters, NextToken: token, MaxResults: 100 }));
+      for (const v of out.Volumes || []) items.push({ id: v.VolumeId, state: v.State, size: v.Size, tags: Object.fromEntries((v.Tags || []).map((t) => [t.Key, t.Value])) });
+      token = out.NextToken;
+    } while (token && --pages > 0);
+    return { items };
+  } catch (error) {
+    return { error: error?.name || error?.message || "DescribeVolumes failed" };
+  }
+}
+
+export async function deleteVolume(region, id, client = new EC2Client({ region })) {
+  if (!/^vol-[0-9a-f]{8,17}$/.test(String(id))) return { error: "not a volume id" };
+  try {
+    await client.send(new DeleteVolumeCommand({ VolumeId: id }));
+    return {};
+  } catch (error) {
+    return { error: error?.name || error?.message || "DeleteVolume failed" };
+  }
 }
 
 // One batched GetMetricData call (paged by NextToken). Read-only:
