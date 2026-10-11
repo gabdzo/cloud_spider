@@ -34,6 +34,7 @@ const ACCOUNT = {
   DescribeSubnetsCommand: () => ({ Subnets: [] }),
   DescribeNetworkAclsCommand: () => ({ NetworkAcls: [] }),
   DescribeFlowLogsCommand: () => ({ FlowLogs: [] }),
+  ListCertificatesCommand: () => ({ CertificateSummaryList: [] }),
 };
 
 test("an AWS scan: a public open database is a failed gate → BLOCKED, the number still shown with it", async () => {

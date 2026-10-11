@@ -7,6 +7,7 @@ import { ListHostedZonesCommand, ListResourceRecordSetsCommand } from "@aws-sdk/
 import { ListDistributionsCommand } from "@aws-sdk/client-cloudfront";
 import { DescribeListenersCommand, DescribeLoadBalancersCommand, DescribeTargetGroupsCommand, DescribeTargetHealthCommand } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { DescribeFlowLogsCommand, DescribeNetworkAclsCommand, DescribeSubnetsCommand } from "@aws-sdk/client-ec2";
+import { DescribeCertificateCommand, ListCertificatesCommand } from "@aws-sdk/client-acm";
 import { distributionFrom, flowLogFrom, naclFrom, recordFrom } from "../../netdebug/aws-readers.js";
 import { awsFailure, evidence, pageAll, worst } from "../evidence.js";
 
@@ -163,5 +164,44 @@ export const awsVpcNet = {
       for (const x of f.items) flowLogs.push({ region, ...flowLogFrom(x) });
     }
     return t.done("aws-vpc-net", "aws-vpc-net", { subnets, nacls, flowLogs });
+  },
+};
+
+// NET-TLS-001: ACM certificates in the scanned regions plus us-east-1 (where
+// CloudFront's live). ListCertificates without Includes only returns RSA
+// 1024/2048, so every key type is asked for. Only certificates in use are
+// described (InUseBy, NotAfter), at most MAX_DESCRIBE.
+const KEY_TYPES = ["RSA_1024", "RSA_2048", "RSA_3072", "RSA_4096", "EC_prime256v1", "EC_secp384r1", "EC_secp521r1"];
+const MAX_DESCRIBE = 300;
+export const awsAcm = {
+  key: "aws-acm",
+  target: "aws",
+  reads: ["acm:ListCertificates", "acm:DescribeCertificate"],
+  async collect({ regions, clients }) {
+    const t = tracker("acm:ListCertificates");
+    const certificates = [];
+    let described = 0;
+    for (const region of [...new Set([...regions, "us-east-1"])]) {
+      const acm = clients.acm(region);
+      const list = await pageAll(async (NextToken) => {
+        const out = await acm.send(new ListCertificatesCommand({ NextToken, MaxItems: 100, Includes: { keyTypes: KEY_TYPES } }));
+        return { items: out.CertificateSummaryList || [], next: out.NextToken };
+      }, { maxPages: 10 });
+      t.note(list, "acm:ListCertificates");
+      for (const summary of list.items.filter((c) => c.InUse !== false)) {
+        if (described >= MAX_DESCRIBE) {
+          t.note({ status: "truncated" }, "acm:DescribeCertificate");
+          break;
+        }
+        described += 1;
+        try {
+          const c = (await acm.send(new DescribeCertificateCommand({ CertificateArn: summary.CertificateArn }))).Certificate || {};
+          certificates.push({ region, arn: c.CertificateArn || summary.CertificateArn, domain: c.DomainName || summary.DomainName || "", type: c.Type || "", notAfter: c.NotAfter ? new Date(c.NotAfter).toISOString() : null, inUseBy: c.InUseBy || [] });
+        } catch (failure) {
+          t.note(awsFailure(failure), "acm:DescribeCertificate");
+        }
+      }
+    }
+    return t.done("aws-acm", "aws-acm", { certificates });
   },
 };

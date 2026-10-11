@@ -1,0 +1,18 @@
+kind: Control
+id: NET-TLS-001
+revision: 1
+title: "Certificates on load balancers and CloudFront expire in 14 days or more"
+category: networking
+target: aws
+evidenceType: runtime
+severity: { default: high }
+confidence: high
+evaluator: cert-expiry
+aggregation: proportional
+requires: [aws-acm]
+params: { failDays: 14, warnDays: 30 }
+whyItMatters: "An expired certificate takes the site down for every client at once, and imported certificates never renew themselves."
+remediation: { summary: "Renew or re-import the certificate. Prefer ACM-issued certificates with DNS validation, which renew automatically (keep the validation CNAME in place).", effort: S }
+verification: "aws acm describe-certificate --certificate-arn <arn> shows NotAfter at least 14 days away for every certificate whose InUseBy lists a load balancer or CloudFront distribution (under 30 days the scan marks it WARN; under 7 days it counts double). Certificates in us-east-1 are read too, for CloudFront."
+references:
+  - { source: "docs/design/network-debugging.md §8 (L-TLS-03, A-ELB-03, A-CF-03)", url: "https://docs.aws.amazon.com/acm/latest/userguide/managed-renewal.html" }

@@ -76,8 +76,11 @@ export function scoreModel(view) {
   };
 }
 
+// The first failing resource; on a pass, the first one marked warn (a
+// certificate under 30 days, NET-TLS-001), so a WARN is not hidden.
 function failingLine(r) {
-  const bad = (r.resources || []).filter((x) => !x.pass);
+  const fails = (r.resources || []).filter((x) => !x.pass);
+  const bad = fails.length ? fails : (r.resources || []).filter((x) => x.warn);
   return bad.length ? `${bad[0].id}${bad[0].detail ? `: ${bad[0].detail}` : ""}${bad.length > 1 ? ` (+${bad.length - 1})` : ""}` : "";
 }
 
