@@ -27,7 +27,7 @@ import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
 import { createMetricsCache, sampleMetrics, SLO_PERIOD, SLO_TTL, SLO_WINDOW, sloSpecs } from "./metrics.js";
 import { idleCandidates, morningReport, nextIdleStreak } from "./layout.js";
-import { createHealthWatch, morningLine } from "./kube-health.js";
+import { createHealthWatch, morningLine, stuckPending } from "./kube-health.js";
 import { DEFAULT_POLL_MS, scopeText } from "./kube-contexts.js";
 
 const CALL = { stop: "StopInstances", start: "StartInstances" };
@@ -233,6 +233,30 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     } });
     return steps;
   }
+  // Pods stuck in Pending: their namespaces' events (GET, cached 60 s,
+  // at most 3 namespaces a read) so the radio can say why, e.g.
+  // FailedAttachVolume / Multi-Attach (drill 2026-10-11, finding 11).
+  const pendingEvents = new Map();
+  async function withPendingEvents(ctx, snap) {
+    if (!snap || snap.error || !ctx.kube?.events) return snap;
+    const stuck = stuckPending(snap, now());
+    if (!stuck.length) return snap;
+    const namespaces = [...new Set(stuck.map((pod) => pod.metadata?.namespace).filter(Boolean))].slice(0, 3);
+    const items = [];
+    for (const ns of namespaces) {
+      const key = `${ctx.name}|${ns}`;
+      const hit = pendingEvents.get(key);
+      if (hit && now() - hit.at < 60_000) {
+        items.push(...hit.items);
+        continue;
+      }
+      const got = await ctx.kube.events(ns).catch(() => ({ items: [] }));
+      const list = (got?.items || []).filter((e) => e?.type === "Warning" && e.involvedObject?.kind === "Pod");
+      pendingEvents.set(key, { at: now(), items: list });
+      items.push(...list);
+    }
+    return { ...snap, podEvents: items };
+  }
   async function readContext(ctx, maxAge) {
     const cached = kubeCaches.get(ctx.name);
     if (cached && now() - cached.at < maxAge) return cached.snap;
@@ -240,6 +264,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       const flight = Promise.resolve()
         .then(() => ctx.kube.snapshot())
         .catch((failure) => ({ error: failure?.message || "the cluster did not answer" }))
+        .then((snap) => withPendingEvents(ctx, snap))
         .then((snap) => {
           const name = snap.clusterName || sloClusters.get(ctx.name) || (ctx.primary ? sloCluster : null) || ctx.name;
           if (!snap.unset) {
@@ -354,6 +379,11 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     kinds: ["alb"],
   });
   let sloAlbIds = new Set();
+  // The last vault evaluation's SLO answers, for the morning's HURTING.
+  let lastSlos = [];
+  function keepSlos(view) {
+    lastSlos = (view?.vaults || []).flatMap((vault) => (vault.slos || []).map((slo) => ({ vault: vault.name || vault.key, name: slo.name, flag: slo.flag, fast: slo.fast, burn: slo.burn, owned: vault.owned || [] })));
+  }
   let sloPercentiles = ["p95"];
   let sloWatch = { at: 0, albs: 0, error: "" };
   // The map's 5-minute answer with the SLO reader's ALB points on top.
@@ -395,6 +425,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     if (!place) return null;
     const report = morningReport({
       place,
+      metrics: sloMetrics(),
+      slos: lastSlos,
       events: radio.changes(),
       trail: radio.trailState(),
       bill: costCache?.bill || null,
@@ -814,6 +846,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         if (sample) return await viewer.view(vaults.samplePlace?.(), { failures: vaults.sampleFailures?.() || [], slo: { metrics: sampleMetrics(vaults.samplePlace?.(), { now: now() }) } });
         const view = await viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: sloMetrics(), cluster: sloCluster, clusters: sloClusterList() } });
         sloAlbIds = albIdsOf(view);
+        keepSlos(view);
         return view;
       } catch (failure) {
         return { dir: "", note: `the vaults did not load: ${failure?.message || "error"}`, vaults: [] };
@@ -864,6 +897,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         failed = await fetchAlbs();
         view = await evaluate();
       }
+      keepSlos(view);
       sloWatch = { at: now(), albs: ids.size, vaults: (view?.vaults || []).filter((v) => v.slos?.length).length, error: failed };
       return sloWatch;
     },

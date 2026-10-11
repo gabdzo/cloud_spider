@@ -20,7 +20,34 @@ export const HEALTH_KINDS = {
 const meta = (item) => item?.metadata || {};
 const restartsOf = (pod) => (pod?.status?.containerStatuses || []).reduce((sum, c) => sum + (c.restartCount || 0), 0);
 
+// Pods Pending longer than PENDING_MS (the ones worth asking events for).
+export function stuckPending(snap, now = Date.now()) {
+  return (snap?.pods || []).filter((pod) => pod.status?.phase === "Pending" && now - (Date.parse(meta(pod).creationTimestamp || "") || now) > PENDING_MS);
+}
+
+function short(text, max = 140) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+// Why a pod is stuck: its newest Warning event (FailedAttachVolume /
+// Multi-Attach, FailedScheduling, FailedMount...), else an unschedulable
+// PodScheduled condition. events are raw core/v1 Events (app.js reads them
+// only for stuck pods, drill 2026-10-11 finding 11).
+export function pendingCause(pod, events = []) {
+  const { namespace: ns, name } = meta(pod);
+  const mine = (events || [])
+    .filter((e) => e?.type === "Warning" && e.involvedObject?.kind === "Pod" && e.involvedObject?.name === name && (e.involvedObject?.namespace || e.metadata?.namespace) === ns)
+    .map((e) => ({ reason: e.reason || "", message: e.message || "", time: Date.parse(e.lastTimestamp || e.eventTime || e.firstTimestamp || "") || 0 }))
+    .sort((a, b) => b.time - a.time);
+  if (mine.length) return `${mine[0].reason}${mine[0].message ? `: ${short(mine[0].message)}` : ""}`;
+  const unscheduled = (pod.status?.conditions || []).find((c) => c.type === "PodScheduled" && c.status === "False");
+  if (unscheduled) return `${unscheduled.reason || "Unschedulable"}${unscheduled.message ? `: ${short(unscheduled.message)}` : ""}`;
+  return "";
+}
+
 // One read's findings. prev: { "ns/pod": restarts } from the read before.
+// snap.podEvents (optional): Warning events for the stuck pods.
 export function findIssues(snap, { now = Date.now(), prev = null } = {}) {
   const out = [];
   const add = (kind, ns, name, detail, extra = {}) => out.push({ kind, ns, name, detail, ...extra });
@@ -40,7 +67,8 @@ export function findIssues(snap, { now = Date.now(), prev = null } = {}) {
     // Pending only when nothing above already explains it.
     if (status.phase === "Pending" && out.length === flagged) {
       const since = Date.parse(meta(pod).creationTimestamp || "") || now;
-      if (now - since > PENDING_MS) add("pending", ns, name, `${Math.round((now - since) / 60_000)} min${waiting[0] ? `, ${waiting[0]}` : ""}`);
+      const cause = now - since > PENDING_MS ? pendingCause(pod, snap?.podEvents) : "";
+      if (now - since > PENDING_MS) add("pending", ns, name, `${Math.round((now - since) / 60_000)} min${waiting[0] ? `, ${waiting[0]}` : ""}${cause ? `; ${cause}` : ""}`, cause ? { cause } : {});
     }
   }
   for (const job of snap?.jobs || []) {
@@ -88,9 +116,11 @@ export function createHealthWatch({ clock = Date.now, keep = 12 } = {}) {
     }
     const issues = findIssues(snap, { now, prev: was?.restarts || null });
     const seen = new Set((was?.issues || []).map((i) => `${i.ns}/${i.name}/${i.kind}`));
+    // A Pending finding speaks again once, when its cause is first known.
+    const causeless = new Set((was?.issues || []).filter((i) => i.kind === "pending" && !i.cause).map((i) => `${i.ns}/${i.name}`));
     // New (or changed kind) findings speak; a rise in restarts speaks on
     // every rise, since that is the news.
-    const fresh = issues.filter((i) => i.kind === "restarts" || !seen.has(`${i.ns}/${i.name}/${i.kind}`));
+    const fresh = issues.filter((i) => i.kind === "restarts" || !seen.has(`${i.ns}/${i.name}/${i.kind}`) || (i.kind === "pending" && i.cause && causeless.has(`${i.ns}/${i.name}`)));
     const rows = fresh.map((issue) => ({ time: now, status: HEALTH_KINDS[issue.kind].rank <= 3 ? "fail" : "warn", text: issueLine(context, issue), issue: "", key: `${context.name}|${issue.ns}|${issue.name}|${issue.kind}`, count: 1, context: context.name }));
     for (const row of [...rows].reverse()) radio.unshift(row);
     if (radio.length > keep) radio.length = keep;
