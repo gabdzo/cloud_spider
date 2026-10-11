@@ -118,7 +118,7 @@ export function drawHolotape(canvas, { track, status, frame = 0, scale = 2 }) {
   rasterise(ctx, holotapeSprite(frame), 0, 0, scale, holotapePalette(track, status));
 }
 
-export function createLearnView({ root, toggleButton, iconURL, isSample, storage, onNote = () => {}, onChange = () => {}, reducedMotion = () => false }) {
+export function createLearnView({ root, toggleButton, iconURL, isSample, storage, onNote = () => {}, onChange = () => {}, onPick = () => {}, reducedMotion = () => false }) {
   let open = false;
   let data = { tracks: [], labs: [], progress: {} };
   let loadedFor = null;
@@ -216,6 +216,7 @@ export function createLearnView({ root, toggleButton, iconURL, isSample, storage
       pick.addEventListener("click", () => {
         selected = lab.key;
         paint();
+        onPick();
         root.querySelector(".lx-player")?.scrollTo?.({ top: 0 });
       });
       item.append(pick);
@@ -278,6 +279,7 @@ export function createLearnView({ root, toggleButton, iconURL, isSample, storage
         selected = lab.twin;
         storage?.setItem(TRACK_KEY, track);
         paint();
+        onPick();
       }));
     }
     player.append(head);
@@ -379,6 +381,7 @@ export function createLearnView({ root, toggleButton, iconURL, isSample, storage
         storage?.setItem(TRACK_KEY, track);
         if (!labsOf(track).some((lab) => lab.key === selected)) selected = labsOf(track)[0]?.key || "";
         paint();
+        onPick();
       }, item.note);
       pick.setAttribute("aria-pressed", String(item.id === track));
       pick.append(el("i", "lx-band"), el("b", "", item.title), el("small", "", tally.text));
@@ -426,11 +429,13 @@ export function createLearnView({ root, toggleButton, iconURL, isSample, storage
     if (!open) return;
     await load();
     paint();
+    onChange();
   }
 
   root.hidden = true;
   return {
     toggle: () => setOpen(!open),
+    current: () => selected,
     setOpen,
     isOpen: () => open,
     // SAMPLE flipped: progress comes from a different store.

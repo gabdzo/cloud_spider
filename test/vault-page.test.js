@@ -121,13 +121,14 @@ test("VAULTS is the fourth view tab (a push-button with a lamp and a vault-door 
   assert.match(server, /"vault-page\.js",/);
   const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
   assert.match(browser, /vaultMode: "page"/);
-  assert.match(browser, /window\.addEventListener\("hashchange", routeVaults\)/);
+  assert.match(browser, /window\.addEventListener\("hashchange", queueUrl\)/);
+  assert.match(browser, /window\.addEventListener\("popstate", queueUrl\)/);
   assert.match(browser, /tabVaults\.setAttribute\("aria-pressed", String\(vaultPageOpen\(\)\)\)/);
   assert.match(browser, /tabMap\.setAttribute\("aria-pressed", String\(mode === "map" && !vaultRoute\)\)/);
   // Path and Cluster drop the route; MAP and the porthole close the view.
   assert.match(browser, /function enterPath\(\) \{\n  dropVaultRoute\(\);/);
   assert.match(browser, /function enterCluster\(\) \{\n  dropVaultRoute\(\);/);
-  assert.match(browser, /function goOverview\(\) \{\n  if \(vaultRoute\) closeVaultPage\(\);/);
+  assert.match(browser, /function goOverview\(\) \{\n  markHistory\(\);\n  if \(vaultRoute\) closeVaultPage\(\);/);
 });
 
 test("the vault-door tab icon is a 16x16 cog door: symmetric teeth, lit top-left, a hub in the middle", async () => {

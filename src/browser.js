@@ -33,7 +33,8 @@ import {
 import { FRAME_MS } from "./theme.js";
 import { createVaultState, VPC_FOLD_KEY } from "./vault-state.js";
 import { VAULT, placeVaults, vaultAt } from "./vault-layout.js";
-import { badgeAt, ownedRows, parseVaultHash, vaultHash, vaultSummary, vaultTally } from "./vault-page.js";
+import { badgeAt, ownedRows, parseVaultHash, vaultSummary, vaultTally } from "./vault-page.js";
+import { formatUrlState, parseUrlState } from "./url-state.js";
 import { paintVaultCard } from "./vault-draw.js";
 import { plateText } from "./vault-schema.js";
 import { snapshot } from "./agent-text.js";
@@ -229,6 +230,11 @@ const EMPTY_PLACE = { region: "", vpcs: [], subnets: [], instances: [], fixtures
 const layoutCache = createLayoutCache(layout);
 
 function renderChrome() {
+  renderChromeParts();
+  syncUrl();
+}
+
+function renderChromeParts() {
   renderTally();
   renderMorning();
   const names = troubleNames().filter((name) => !(ui.status || "").includes(name));
@@ -1066,14 +1072,14 @@ function vaultPageOpen() {
 
 function openVaultPage(key) {
   vaultPageFrom = document.activeElement;
-  const hash = vaultHash(key);
-  if (location.hash !== hash) location.hash = hash;
-  else routeVaults();
+  const hash = formatUrlState({ ...urlState(), view: "vaults", vault: key, lb: "", host: "" });
+  if (location.hash !== hash) history.pushState(null, "", `${location.pathname}${location.search}${hash}`);
+  routeVaults();
 }
 
 function closeVaultPage() {
   if (!vaultRoute) return;
-  history.pushState(null, "", `${location.pathname}${location.search}`);
+  history.pushState(null, "", `${location.pathname}${location.search}${formatUrlState({ ...urlState(), view: "", vault: null })}`);
   routeVaults();
 }
 
@@ -1085,20 +1091,106 @@ function enterVaults() {
   openVaultPage(null);
 }
 
-// PATH and CLUSTER keep their name in the hash (#path, #cluster), so a reload
-// (RUN-ME's after-pull routine) comes back to the same view. replaceState:
-// switching views adds no history entries; the vault routes keep theirs.
-function setViewHash(view) {
-  if (parseVaultHash(location.hash)) return;
-  const want = view ? `#${view}` : "";
-  if (location.hash === want || (!want && !/^#(path|cluster)$/.test(location.hash))) return;
-  history.replaceState(null, "", `${location.pathname}${location.search}${want}`);
+// The URL hash carries the view, SAMPLE, the open Learn lab, the open
+// Stacks card and Path's load balancer and host (src/url-state.js), so a
+// reload (RUN-ME's after-pull routine), a pasted link and back/forward all
+// land on the same screen. Every render replaces the hash; a user's own
+// step (a tab, a panel, SAMPLE, a pick) marks it first so it pushes a
+// history entry instead. Applying a URL never pushes.
+let urlPush = false;
+let applyingUrl = false;
+let urlLb = "";
+let learnApi = null;
+let urlQueue = Promise.resolve();
+// Nothing writes the hash until the first URL has been applied, so the
+// boot renders cannot wipe a reloaded or pasted link.
+let urlReady = false;
+let urlPushTimer = 0;
+
+function urlState() {
+  const path = mode === "path";
+  return {
+    view: path ? "path" : mode === "cluster" ? "cluster" : vaultRoute ? "vaults" : "",
+    vault: vaultRoute?.key || null,
+    sample,
+    learn: learnApi?.isOpen() ? learnApi.current() || "1" : "",
+    stacks: pipOpen ? openCard || "1" : "",
+    lb: path ? lbSelect.value || urlLb : "",
+    host: path ? hostInput.value.trim() : "",
+  };
+}
+
+function markHistory() {
+  if (applyingUrl) return;
+  urlPush = true;
+  clearTimeout(urlPushTimer);
+  urlPushTimer = setTimeout(() => {
+    urlPush = false;
+  }, 2000);
+}
+
+function syncUrl() {
+  if (applyingUrl || !urlReady) return;
+  const want = formatUrlState(urlState());
+  if (location.hash === want) return;
+  history[urlPush ? "pushState" : "replaceState"](null, "", `${location.pathname}${location.search}${want}`);
+  urlPush = false;
+}
+
+function setViewHash() {
+  syncUrl();
+}
+
+async function applyUrl() {
+  const want = parseUrlState(location.hash);
+  applyingUrl = true;
+  try {
+    if (want.sample !== sample) await toggleSample();
+    if (want.view === "path") {
+      if (mode !== "path") enterPath();
+    } else if (want.view === "cluster") {
+      if (mode !== "cluster") enterCluster();
+    } else if (mode === "path") leavePath();
+    else if (mode === "cluster") leaveCluster();
+    const route = want.view === "vaults" ? want.vault || "" : null;
+    const shown = vaultRoute ? vaultRoute.key || "" : null;
+    if (route !== shown) routeVaults();
+    if (mode === "path" && (want.lb !== (lbSelect.value || urlLb) || want.host !== hostInput.value.trim())) {
+      urlLb = want.lb;
+      if ([...lbSelect.options].some((option) => option.value === want.lb)) lbSelect.value = want.lb;
+      hostInput.value = want.host;
+      pathSelected = null;
+      pullPath();
+    }
+    if (Boolean(want.stacks) !== pipOpen) {
+      if (want.stacks && learnApi?.isOpen()) await learnApi.setOpen(false);
+      await toggleUpgrade();
+    }
+    if (pipOpen) {
+      const card = want.stacks === "1" ? null : want.stacks;
+      if (card !== openCard) {
+        openCard = card;
+        drawPipForm();
+        if (openCard) refreshUpgrade(true);
+      }
+    }
+    if (learnApi && Boolean(want.learn) !== learnApi.isOpen()) await learnApi.setOpen(Boolean(want.learn));
+    if (learnApi?.isOpen() && want.learn !== "1" && want.learn !== learnApi.current()) learnApi.select(want.learn);
+  } finally {
+    applyingUrl = false;
+    urlReady = true;
+    syncUrl();
+  }
+}
+
+function queueUrl() {
+  urlQueue = urlQueue.then(applyUrl, applyUrl);
+  return urlQueue;
 }
 
 // Path and Cluster drop the vaults route, so MAP later means the map.
 function dropVaultRoute() {
   if (!vaultRoute) return;
-  history.replaceState(null, "", `${location.pathname}${location.search}`);
   vaultRoute = null;
   vaultPageShown = "";
   renderVaultPage();
@@ -1123,7 +1215,8 @@ function routeVaults() {
   }
 }
 
-window.addEventListener("hashchange", routeVaults);
+window.addEventListener("hashchange", queueUrl);
+window.addEventListener("popstate", queueUrl);
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || !vaultPageOpen()) return;
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
@@ -1831,7 +1924,7 @@ function syncLoadBalancers(list, selected) {
 }
 
 function pathQuery() {
-  return new URLSearchParams({ lb: lbSelect.value || "", host: hostInput.value.trim() }).toString();
+  return new URLSearchParams({ lb: lbSelect.value || urlLb, host: hostInput.value.trim() }).toString();
 }
 
 async function pullPath() {
@@ -2046,6 +2139,7 @@ function leaveCluster() {
 
 // The mascot porthole is "home": back to the map from Path or Cluster.
 function goOverview() {
+  markHistory();
   if (vaultRoute) closeVaultPage();
   if (mode === "path") leavePath();
   else if (mode === "cluster") leaveCluster();
@@ -2506,7 +2600,9 @@ async function act(action) {
 }
 
 sampleButton.addEventListener("click", async () => {
+  markHistory();
   await toggleSample();
+  syncUrl();
   learnView.refresh();
 });
 
@@ -2537,6 +2633,7 @@ regionSelect.addEventListener("change", async () => {
 });
 
 pathButton.addEventListener("click", () => {
+  markHistory();
   if (mode !== "path") enterPath();
 });
 
@@ -2639,12 +2736,19 @@ const learnView = createLearnView({
     }
   })(),
   reducedMotion: () => reducedMotion,
+  onChange: () => syncUrl(),
+  onPick: () => {
+    markHistory();
+    syncUrl();
+  },
   onNote(text, status) {
     noteSpider(text, status);
     renderRadioPanel();
   },
 });
+learnApi = learnView;
 document.querySelector("#learn-key").addEventListener("click", () => {
+  markHistory();
   if (!learnView.isOpen()) {
     if (terminal.isOpen()) terminal.setOpen(false);
     if (pipOpen) toggleUpgrade();
@@ -2690,6 +2794,8 @@ function cardHead(spec) {
   head.setAttribute("aria-expanded", String(openCard === spec.id));
   head.addEventListener("click", () => {
     openCard = openCard === spec.id ? null : spec.id;
+    markHistory();
+    syncUrl();
     drawPipForm();
     if (openCard) refreshUpgrade(true);
   });
@@ -2832,6 +2938,8 @@ function addonRow(spec, item, cluster) {
   head.setAttribute("aria-expanded", String(openCard === key));
   head.addEventListener("click", () => {
     openCard = openCard === key ? null : key;
+    markHistory();
+    syncUrl();
     drawPipForm();
     if (openCard) refreshUpgrade(true);
   });
@@ -3058,6 +3166,7 @@ tabVaults.addEventListener("click", () => {
 });
 
 clusterButton.addEventListener("click", () => {
+  markHistory();
   if (mode !== "cluster") enterCluster();
 });
 
@@ -3112,6 +3221,9 @@ document.addEventListener("keydown", (event) => {
 });
 
 upgradeButton.addEventListener("click", () => {
+  markHistory();
+  // One side panel at a time, as the LEARN key already does for Stacks.
+  if (!pipOpen && learnView.isOpen()) learnView.setOpen(false);
   toggleUpgrade();
 });
 pipEl.addEventListener("submit", (event) => event.preventDefault());
@@ -3131,12 +3243,17 @@ radioEl.addEventListener("click", (event) => {
 });
 
 lbSelect.addEventListener("change", () => {
+  urlLb = "";
+  markHistory();
   hostInput.value = "";
+  syncUrl();
   pathSelected = null;
   pullPath();
 });
 
 hostInput.addEventListener("change", () => {
+  markHistory();
+  syncUrl();
   pathSelected = null;
   pullPath();
 });
@@ -3231,6 +3348,5 @@ pull().then(() => {
   if (place && !sample) queueSpend();
 });
 
-// A reload on #path or #cluster comes back to that view.
-if (location.hash === "#path") enterPath();
-else if (location.hash === "#cluster") enterCluster();
+// A reload (or a pasted link) comes back to the view and panels in the hash.
+queueUrl();

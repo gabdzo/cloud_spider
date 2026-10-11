@@ -8,7 +8,7 @@ export const VAULT_HASH = "#vaults";
 
 // #vaults is the list, #vaults/<key> one vault. Anything else: the map.
 export function parseVaultHash(hash) {
-  const match = /^#vaults(?:\/(.*))?$/.exec(String(hash || ""));
+  const match = /^#vaults(?:\/([^?]*))?(?:\?.*)?$/.exec(String(hash || ""));
   if (!match) return null;
   let key = null;
   try {
