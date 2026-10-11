@@ -24,7 +24,7 @@ test("pod room: a full t4g.small has no slot for Kyverno, and says why", () => {
   const kyverno = addonById("kyverno");
   assert.equal(kyverno.podSlots, 3);
   const why = roomRefusal(kyverno, room, "cloudspider-up");
-  assert.match(why, /^Kyverno needs 3 free pod slots on cloudspider-up, and its 1 node have 0 \(11\/11 in use; t4g\.small holds 11 pods\)\. Add a node first/);
+  assert.match(why, /^Kyverno needs 3 free pod slots on cloudspider-up, and its 1 node has 0 \(11\/11 in use; t4g\.small holds 11 pods\)\. Add a node first/);
   // A second node is room; pods already waiting take theirs first.
   const two = podRoom({ ...fullCluster(), nodes: [node("ip-10-43-1-178"), node("ip-10-43-2-9")] });
   assert.equal(two.free, 11);
