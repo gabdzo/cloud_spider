@@ -264,6 +264,13 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
   return {
     context: contextName,
     scope,
+    // One named GET from PATHS, answered raw: { json } | { forbidden } |
+    // { missing } | { error } | { unset }. For the scorecard's collectors,
+    // which need 403 and 404 kept apart (src/score/collectors/kube-*.js).
+    async read(name, ...args) {
+      if (!Object.hasOwn(PATHS, name) || typeof PATHS[name] !== "function") return { error: `no such read: ${String(name).slice(0, 60)}` };
+      return getPath(PATHS[name](...args));
+    },
     async target() {
       const t = await resolveTarget();
       return t.error ? { error: t.error } : { server: t.server, clusterName: t.clusterName };
