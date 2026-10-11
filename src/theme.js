@@ -177,6 +177,126 @@ export function hardwareVars() {
   };
 }
 
+// Themes (theme phase 1). Every theme fills the same roles; new page CSS
+// reads the role tokens (--bg, --surface, --text, --accent, ...). "pip" is
+// the Pip-Boy device, "pro" a clean dark dashboard. The pro theme also
+// remaps the Pip ramp vars (--pip-*, --case-*, --status-*, hardware) onto
+// its roles, so the existing CSS follows it without a rewrite; canvases
+// keep the Pip palette until the canvas phases.
+export const THEME_NAMES = ["pip", "pro"];
+export const PRO = {
+  bg: "#0b0d10",
+  raised: "#111418",
+  surface: "#15191e",
+  surface2: "#1b2026",
+  hover: "#20262d",
+  border: "#242a31",
+  borderStrong: "#2f363e",
+  text: "#e6e8eb",
+  text2: "#9ba3ad",
+  text3: "#6b737d",
+  accent: "#6e8bff",
+  ok: "#3ccf91",
+  warn: "#f5b84a",
+  err: "#f2555a",
+  info: "#56b6f7",
+};
+export const ROLES = {
+  pip: {
+    bg: PIP.ink,
+    raised: PIP.screen,
+    surface: PIP.glass,
+    surface2: PIP.glass,
+    hover: rgba(PIP.bright, 0.08),
+    border: PIP.dark,
+    borderStrong: PIP.dim,
+    text: PIP.bright,
+    text2: PIP.mid,
+    text3: PIP.dim,
+    accent: PIP.bright,
+    ok: STATUS.ok,
+    warn: STATUS.hang,
+    err: STATUS.broken,
+    info: PALETTE[11],
+  },
+  pro: PRO,
+};
+export const FONT_UI = '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif';
+export const FONT_MONO = '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
+
+function roleLines(roles) {
+  return Object.entries(roles).map(([name, value]) => `--${kebab(name)}: ${value};`);
+}
+
+// The pro theme's values for the Pip ramp vars the page CSS already uses.
+export function proRemap() {
+  const p = PRO;
+  return {
+    "pip-hot": p.text,
+    "pip-bright": p.text,
+    "pip-mid": p.text2,
+    "pip-dim": p.text3,
+    "pip-dark": p.border,
+    "pip-ink": p.bg,
+    "pip-screen": p.raised,
+    "pip-glass": p.surface,
+    "world-text": p.text,
+    "world-muted": p.text2,
+    "world-amber": p.warn,
+    "world-warning": p.err,
+    "case-hi": p.surface2,
+    "case-mid": p.surface,
+    "case-lo": p.raised,
+    "case-seam": p.border,
+    "case-brass": p.accent,
+    "case-brass-lo": p.borderStrong,
+    "case-screw": p.text3,
+    "status-ok": p.ok,
+    "status-broken": p.err,
+    "status-hang": p.warn,
+    "status-unknown": p.text3,
+    "glow-bright": "transparent",
+    "glow-soft": "transparent",
+    "btn-off-top": p.surface,
+    "btn-off-mid": p.surface,
+    "btn-off-low": p.surface,
+    "btn-off-label": p.text2,
+    "btn-gloss": "transparent",
+    "btn-gloss-lit": "transparent",
+    "btn-shade": "transparent",
+    "btn-rim": p.border,
+    "btn-rim-hi": "transparent",
+    "btn-skirt": "transparent",
+    "btn-lit-top": rgba(p.accent, 0.16),
+    "btn-lit-mid": rgba(p.accent, 0.16),
+    "btn-lit-low": rgba(p.accent, 0.16),
+    "btn-lit-label": p.text,
+    "btn-glow": "transparent",
+    "btn-glow-far": "transparent",
+    "btn-hover": p.hover,
+    "lamp-off": p.text3,
+    "lamp-off-hi": "transparent",
+    "lamp-on": p.ok,
+    "lamp-on-core": p.ok,
+    "plate-paint-hi": p.surface,
+    "plate-paint": p.surface,
+    "plate-paint-lo": p.surface,
+    "plate-seam": p.border,
+    "plate-steel": p.borderStrong,
+    "plate-steel-dim": p.border,
+    "plate-brush": "transparent",
+    "plate-scratch": "transparent",
+    "plate-grime": "transparent",
+    "plate-rust": "transparent",
+    "plate-stencil": p.text2,
+    "plate-stencil-dim": p.text3,
+    "lever-hi": p.text2,
+    "lever-mid": p.text3,
+    "lever-lo": p.border,
+    "lever-tip": p.accent,
+  };
+}
+
 // CSS custom properties for the page chrome, generated from the same values
 // the canvas uses.
 export function cssVars() {
@@ -189,5 +309,7 @@ export function cssVars() {
   // Hardware buttons and the SAMPLE toggle (server.js header CSS).
   for (const [name, value] of Object.entries(hardwareVars())) lines.push(`--${name}: ${value};`);
   lines.push(`--font: ${FONT_STACK};`);
-  return `:root { ${lines.join(" ")} }`;
+  lines.push(`--font-ui: ${FONT_STACK};`, `--font-mono: ${FONT_STACK};`, ...roleLines(ROLES.pip));
+  const pro = [...roleLines(ROLES.pro), ...Object.entries(proRemap()).map(([name, value]) => `--${name}: ${value};`), `--font: ${FONT_UI};`, `--font-ui: ${FONT_UI};`, `--font-mono: ${FONT_MONO};`];
+  return `:root { ${lines.join(" ")} }\n  :root[data-theme="pro"] { ${pro.join(" ")} }`;
 }

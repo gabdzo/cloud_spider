@@ -49,6 +49,7 @@ import { sunrise } from "./sprites/landmarks.js";
 import { drawSprite } from "./draw-kit.js";
 import { sloBlock, sloFacts } from "./slo-view.js";
 import { renderSpend } from "./spend-view.js";
+import { createSettings } from "./settings-view.js";
 import { KUBE_MAP_KEY, compoundHit, compoundHover, kubeModel, readKubeChoices } from "./map-kube.js";
 
 const ui = createUi();
@@ -4426,6 +4427,21 @@ pull().then(() => {
 // surface switched off under features is not offered (the server refuses it
 // too). Then a reload (or a pasted link) comes back to the view and panels
 // in the hash.
+// Theme and the effective config: the gear opens settings (settings-view.js).
+// Canvases keep the Pip palette in phase 1; a switch repaints them once the
+// page's colours around them have changed.
+createSettings({
+  root: document.querySelector("#settings"),
+  button: document.querySelector("#settings-key"),
+  storage: (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })(),
+  onTheme: () => requestAnimationFrame(() => draw()),
+});
 let pageConfig = null;
 fetch("/api/config")
   .then((response) => response.json())
