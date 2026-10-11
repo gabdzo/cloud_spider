@@ -68,8 +68,9 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   let costFlight = null;
   let watchCache = null;
   let sawRunning = false;
-  let opsCache = null;
-  let opsFlight = null;
+  // OPS per kube context: context name -> { at, value } and the read in flight.
+  const opsCaches = new Map();
+  const opsFlights = new Map();
   // The idle-fire guard: per object, how many target reads in a row it
   // looked idle on (layout.js nextIdleStreak).
   let idleStreak = {};
@@ -79,6 +80,31 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
 
   const now = typeof clock === "function" ? clock : Date.now;
   const tele = telemetry || (kube ? createTelemetry({ kube, clock: now }) : null);
+  // TELEMETRY per kube context: the primary one keeps `tele` (and its hour
+  // of history); any other gets its own sampler the first time it is shown.
+  const teles = new Map();
+  function teleFor(ctx) {
+    if (!ctx) return null;
+    if (tele && (ctx.kube === kube || !ctx.kube)) return tele;
+    const had = teles.get(ctx.name);
+    if (had && had.kube === ctx.kube) return had.tele;
+    const made = { kube: ctx.kube, tele: createTelemetry({ kube: ctx.kube, clock: now }) };
+    teles.set(ctx.name, made);
+    return made.tele;
+  }
+  // The context a screen asked for: "" is the primary one; an unknown name is
+  // refused (never read, never another context instead).
+  function screenContext(name) {
+    const wanted = String(name || "");
+    if (!wanted) return { ctx: primary || (kube ? { name: kube.context, namespaces: kube.scope || "*", kube, primary: true } : null) };
+    const ctx = contexts.find((c) => c.name === wanted);
+    return ctx ? { ctx } : { error: `no kube context named ${wanted.slice(0, 80)} (cloudspider.yaml kube.contexts or cloudspider.contexts.yaml lists them)` };
+  }
+  function scopeFacts(ctx) {
+    const list = Array.isArray(ctx?.namespaces) ? ctx.namespaces : Array.isArray(ctx?.kube?.scope) ? ctx.kube.scope : null;
+    return { context: ctx?.name || "", clusterWide: !list, namespaces: list || [] };
+  }
+
   // SLOs (slo.js): one ledger for vaults and the cluster, filled from reads
   // the app makes anyway (main.js keeps it on disk across restarts).
   const ledger = sloLedger || createSloLedger({ clock: now });
@@ -1125,9 +1151,17 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     },
     // The telemetry screen: node gauges, pressure lamps, top pods, 1 h of
     // history kept in memory (kube-telemetry.js). Read-only kube reads.
-    async clusterTelemetry() {
-      if (!tele) return { error: "the kube context is not set up", unset: true };
-      return tele.get().catch((failure) => ({ error: failure?.message || "the cluster did not answer" }));
+    // context: any listed kube context ("" = the primary one). A
+    // namespace-scoped context has no nodes to show: `limits` says so.
+    async clusterTelemetry({ context = "" } = {}) {
+      const pick = screenContext(context);
+      if (pick.error) return { error: pick.error };
+      const sampler = teleFor(pick.ctx);
+      if (!sampler) return { error: "the kube context is not set up", unset: true };
+      const facts = scopeFacts(pick.ctx);
+      const limits = facts.clusterWide ? [] : [`Node gauges, pressure lamps and the OTel collector need a cluster-wide context: ${facts.context} shows its pods' CPU and memory (metrics-server) in ${facts.namespaces.join(", ")} only.`];
+      const got = await sampler.get().catch((failure) => ({ error: failure?.message || "the cluster did not answer" }));
+      return got.error ? { ...got, ...facts } : { ...got, ...facts, limits };
     },
     // Cluster add-ons per cluster (Stacks view): Pulumi stacks + in-cluster.
     async addonsView({ sample = false, fresh = false } = {}) {
@@ -1136,24 +1170,34 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       return addons.view({ fresh }).catch((failure) => ({ tree: [], notes: [failure?.message || "the add-ons did not load"] }));
     },
     // OPS screen and radio: policy reports, scaling, events (read-only).
-    async clusterOps({ sample = false } = {}) {
+    // context: any listed kube context ("" = the primary one, which also
+    // feeds the radio). A namespace-scoped context reads its namespaces only
+    // and `limits` names what needs a cluster-wide one.
+    async clusterOps({ sample = false, context = "" } = {}) {
       if (sample) return opsView(sampleOps(now()), { now: now() });
-      if (!kube?.ops) return { error: "the kube context is not set up", unset: true };
+      const pick = screenContext(context);
+      if (pick.error) return { error: pick.error };
+      const client = pick.ctx?.kube;
+      if (!client?.ops) return { error: "the kube context is not set up", unset: true };
+      const facts = scopeFacts(pick.ctx);
+      const limits = facts.clusterWide ? [] : [`Kyverno policy reports, cluster policies, Karpenter node pools and KEDA need a cluster-wide context: ${facts.context} reads only ${facts.namespaces.join(", ")} (events, HPAs, deployments).`];
+      const key = facts.context;
       const at = now();
-      if (opsCache && at - opsCache.at < 10_000) return opsCache.value;
-      if (!opsFlight) {
-        opsFlight = kube.ops()
+      const cached = opsCaches.get(key);
+      if (cached && cached.client === client && at - cached.at < 10_000) return cached.value;
+      if (!opsFlights.has(key)) {
+        opsFlights.set(key, client.ops()
           .then((ops) => {
-            const value = opsView(ops, { now: at });
-            opsCache = { at, value };
+            const value = { ...opsView(ops, { now: at }), ...facts, limits };
+            if (!value.error) opsCaches.set(key, { at, client, value });
             return value;
           })
-          .catch((failure) => ({ error: failure?.message || "the cluster did not answer" }))
+          .catch((failure) => ({ error: failure?.message || "the cluster did not answer", ...facts }))
           .finally(() => {
-            opsFlight = null;
-          });
+            opsFlights.delete(key);
+          }));
       }
-      return opsFlight;
+      return opsFlights.get(key);
     },
     // One pod's last log lines and events (Cluster view, on click).
     async clusterPod({ ns, name, container, previous = false, tail = 80, context = "" } = {}) {
@@ -1200,7 +1244,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       if (!ctx?.kube?.podInspect) return { error: "the kube context is not set up" };
       const raw = await ctx.kube.podInspect(String(ns || ""), String(name || "")).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
       if (raw.error) return { error: raw.error };
-      const history = ctx.primary && tele?.podHistory ? tele.podHistory(`${ns}/${name}`) : null;
+      const sampler = ctx.primary ? tele : teles.get(ctx.name)?.kube === ctx.kube ? teles.get(ctx.name).tele : null;
+      const history = sampler?.podHistory ? sampler.podHistory(`${ns}/${name}`) : null;
       return { ...inspectPod(raw.pod, { events: raw.events, chain: raw.chain, usage: raw.usage, history, now: now() }), eventNote: raw.eventNote || "" };
     },
     // netdebug: the PATH graph of the current region (load balancers,

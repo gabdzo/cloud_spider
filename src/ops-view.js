@@ -70,7 +70,15 @@ export function rack({ max, current, desired, ready }) {
   return slots;
 }
 
-function policyPanel(policy) {
+// A namespace-scoped context cannot see cluster-wide parts: say so instead
+// of "not on this cluster".
+const SCOPED_HINT = "Pick a context with ALL NAMESPACES in the switcher to see it.";
+function policyPanel(policy, scoped = false) {
+  if (scoped) {
+    const box = panel("policy", "policy", "POLICY · KYVERNO", { text: "CLUSTER-WIDE ONLY", kind: "off" });
+    box.append(empty("Kyverno's policy reports and cluster policies are cluster-wide: this context reads only its namespaces.", SCOPED_HINT));
+    return box;
+  }
   const box = panel("policy", "policy", "POLICY · KYVERNO", policy?.installed ? { text: (policy.policies || []).some((p) => p.mode === "Enforce") ? "ENFORCE" : "AUDIT", kind: "audit" } : { text: "NOT INSTALLED", kind: "off" });
   if (!policy?.installed) {
     box.append(empty("Kyverno is not on this cluster.", "STACKS → CLUSTER ADD-ONS → Kyverno: four baseline policies in Audit mode."));
@@ -134,15 +142,17 @@ function hpaRow(hpa) {
   return row;
 }
 
-function scalingPanel(scaling) {
+function scalingPanel(scaling, scoped = false) {
   const box = panel("scaling", "scale", "SCALING · HPA + KARPENTER", { text: `${scaling?.nodes?.total ?? 0} NODES` });
   const hpas = scaling?.hpas || [];
   box.append(el("h4", "", "HORIZONTAL POD AUTOSCALERS"));
-  if (!hpas.length) box.append(empty("No HPA on this cluster.", "STACKS → CLUSTER ADD-ONS → HPA scaling demo puts two on the demo app."));
+  if (!hpas.length && scoped) box.append(empty("No HPA in this context's namespaces.", "HPAs in other namespaces need a context that lists them."));
+  else if (!hpas.length) box.append(empty("No HPA on this cluster.", "STACKS → CLUSTER ADD-ONS → HPA scaling demo puts two on the demo app."));
   for (const hpa of hpas) box.append(hpaRow(hpa));
   const kp = scaling?.karpenter || {};
   box.append(el("h4", "", `NODES · ${scaling?.nodes?.group ?? 0} NODE GROUP · ${scaling?.nodes?.karpenter ?? 0} KARPENTER`));
-  if (!kp.installed) box.append(empty("Karpenter is not on this cluster.", "STACKS → CLUSTER ADD-ONS → Karpenter adds a t4g node when pods do not fit."));
+  if (scoped) box.append(empty("Karpenter node pools and node claims are cluster-wide: this context reads only its namespaces.", SCOPED_HINT));
+  else if (!kp.installed) box.append(empty("Karpenter is not on this cluster.", "STACKS → CLUSTER ADD-ONS → Karpenter adds a t4g node when pods do not fit."));
   for (const pool of kp.pools || []) {
     const row = el("div", "ko-pool");
     const used = parseFloat(pool.usedCpu) || 0;
@@ -214,10 +224,13 @@ export function renderOps(root, data) {
     root.append(head);
     return;
   }
-  head.append(el("span", "kt-why", `${data.clusterName || "the cluster"} · Kyverno, HPA, Karpenter and KEDA as they report themselves · read-only`));
+  head.append(el("span", "kt-why", `${data.clusterName || "the cluster"}${data.context ? ` via ${data.context}` : ""} · Kyverno, HPA, Karpenter and KEDA as they report themselves · read-only`));
   if (data.notes?.length) head.append(el("span", "kt-hist", data.notes.join(" · ")));
   root.append(head);
+  // A namespace-scoped context: what it cannot show, instead of no screen.
+  for (const limit of data.limits || []) root.append(el("p", "kt-note kt-limit", limit));
   const grid = el("div", "ko-grid");
-  grid.append(policyPanel(data.policy), scalingPanel(data.scaling), eventsPanel(data.events));
+  const scoped = data.clusterWide === false;
+  grid.append(policyPanel(data.policy, scoped), scalingPanel(data.scaling, scoped), eventsPanel(data.events));
   root.append(grid);
 }

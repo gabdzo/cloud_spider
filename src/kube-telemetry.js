@@ -201,7 +201,8 @@ export function createTelemetry({ kube, clock = Date.now } = {}) {
       if (got.text) {
         otel = otelReadings(parseProm(got.text));
         source = "otel";
-      } else note = got.forbidden ? "otel-metrics: forbidden for the viewer role (pulumi up on upgrades/demo adds the services/proxy rule)" : got.missing ? "no otel-metrics Service (pulumi up on upgrades/demo adds it)" : `otel-metrics: ${got.error || "no answer"}`;
+      } else if (got.outOfScope) note = "";
+      else note = got.forbidden ? "otel-metrics: forbidden for the viewer role (pulumi up on upgrades/demo adds the services/proxy rule)" : got.missing ? "no otel-metrics Service (pulumi up on upgrades/demo adds it)" : `otel-metrics: ${got.error || "no answer"}`;
     }
     if (source === "metrics-server" && !(snap.nodeMetrics || []).length) source = "none";
     return { reading: telemetryFrom(snap, otel), source, note, notes: snap.notes || [], clusterName: snap.clusterName };

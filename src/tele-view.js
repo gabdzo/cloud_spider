@@ -55,6 +55,7 @@ export function renderTelemetry(root, data, { width = 1200, cloudwatch = {}, met
   head.append(el("span", "kt-hist", `HISTORY ${Math.round((filled * (data.sampleMs || 30000)) / 60000)}/60 MIN · 30 S SAMPLES · IN MEMORY`));
   root.append(head);
   for (const note of [data.note, ...(data.notes || [])].filter(Boolean)) root.append(el("p", "kt-note", note));
+  for (const limit of data.limits || []) root.append(el("p", "kt-note kt-limit", limit));
 
   const narrow = width < 900;
   const chartW = Math.max(220, Math.min(560, narrow ? width - 60 : Math.floor((width - 420) / 2)));
