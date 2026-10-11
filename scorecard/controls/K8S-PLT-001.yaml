@@ -1,0 +1,17 @@
+kind: Control
+id: K8S-PLT-001
+revision: 1
+title: "An admission policy engine runs"
+category: platform
+target: kubernetes
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: workload-present
+aggregation: all-or-nothing
+requires: [kube-cluster, kube-deployments, kube-daemonsets]
+params:
+  deployments: [kyverno-admission-controller, gatekeeper-controller-manager]
+whyItMatters: "Without an admission policy engine nothing stops a privileged pod, a hostPath mount or a :latest image from landing; every other control becomes a hope."
+remediation: { summary: "Install Kyverno from the Stacks add-ons (baseline policies in Audit mode).", effort: M, addon: kyverno }
+verification: "A kyverno-admission-controller or gatekeeper-controller-manager deployment is ready."

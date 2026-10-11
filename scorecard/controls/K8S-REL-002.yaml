@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-REL-002
+revision: 1
+title: "App deployments have readiness probes"
+category: reliability
+target: kubernetes
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: readiness-probes
+aggregation: proportional
+requires: [kube-deployments]
+whyItMatters: "Without a readiness probe, traffic reaches a pod before it can answer: every rollout is a small outage."
+remediation: { summary: "Add a readinessProbe to every container that serves traffic.", effort: S }
+verification: "Every container of every Deployment outside the system namespaces has a readinessProbe."

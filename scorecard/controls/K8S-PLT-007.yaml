@@ -1,0 +1,17 @@
+kind: Control
+id: K8S-PLT-007
+revision: 1
+title: "Event-driven autoscaling (KEDA) runs"
+category: platform
+target: kubernetes
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: workload-present
+aggregation: all-or-nothing
+requires: [kube-cluster, kube-deployments, kube-daemonsets]
+params:
+  deployments: [keda-operator]
+whyItMatters: "Queue-driven workers without KEDA either run all the time or lag behind their queue."
+remediation: { summary: "Install KEDA from the Stacks add-ons (optional; needs the Pod Identity agent).", effort: S, addon: keda }
+verification: "A keda-operator deployment is ready."

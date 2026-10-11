@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-SEC-001
+revision: 1
+title: "No privileged containers in app namespaces"
+category: security
+target: kubernetes
+evidenceType: config
+severity: { default: critical }
+confidence: high
+evaluator: no-privileged
+aggregation: all-or-nothing
+requires: [kube-pods]
+whyItMatters: "A privileged container is root on the node: one compromised pod owns the node and every pod on it."
+remediation: { summary: "Drop securityContext.privileged; if a tool truly needs it, run it in a system namespace with its own review.", effort: M }
+verification: "No container in a pod outside the system namespaces sets securityContext.privileged: true."

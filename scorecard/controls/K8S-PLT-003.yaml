@@ -1,0 +1,17 @@
+kind: Control
+id: K8S-PLT-003
+revision: 1
+title: "A load balancer controller runs"
+category: platform
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: workload-present
+aggregation: all-or-nothing
+requires: [kube-cluster, kube-deployments, kube-daemonsets]
+params:
+  deployments: [aws-load-balancer-controller, ingress-nginx-controller]
+whyItMatters: "Without a controller, Ingress objects do nothing and Services of type LoadBalancer get the legacy in-tree CLB."
+remediation: { summary: "Install the AWS Load Balancer Controller from the Stacks add-ons (needs the Pod Identity agent).", effort: S, addon: lbc }
+verification: "An aws-load-balancer-controller or ingress-nginx-controller deployment is ready."
