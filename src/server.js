@@ -34,6 +34,7 @@ export const FILES = new Set([
   "cluster.js",
   "kube-diagram.js",
   "kube-layout.js",
+  "kube-search.js",
   "kube-draw.js",
   "kube-telemetry.js",
   "tele-draw.js",
@@ -682,6 +683,26 @@ const page = `<!doctype html>
   .line { display: flex; gap: 8px; flex: 1 1 320px; min-width: 0; }
   .prompt { color: var(--pip-mid); }
   #status { min-width: 0; overflow-wrap: anywhere; }
+  /* Cluster view: the prompt is a search line; the context note shrinks. */
+  #kube-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 1px 4px;
+    border: 0;
+    border-bottom: 1px dashed var(--pip-dim);
+    background: transparent;
+    color: var(--pip-hot);
+    font: inherit;
+    text-shadow: inherit;
+    caret-color: var(--pip-hot);
+    outline: none;
+  }
+  #kube-search::placeholder { color: var(--pip-dim); opacity: 1; }
+  #kube-search:focus { border-bottom: 1px solid var(--pip-bright); background: rgba(20, 255, 106, 0.05); }
+  #kube-search::-webkit-search-cancel-button { filter: grayscale(1) brightness(1.6); }
+  #kube-search-count { flex: none; color: var(--pip-mid); font-size: 12px; white-space: nowrap; }
+  #kube-search-count.none { color: var(--status-hang); }
+  #confirm.caption { flex-basis: 100%; font-size: 11px; color: var(--pip-mid); opacity: 0.85; padding-left: 18px; }
   #status::after { content: "_"; margin-left: 2px; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
   #confirm { flex: 1 1 420px; min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--status-hang); text-shadow: none; }
@@ -1846,7 +1867,7 @@ const page = `<!doctype html>
 </header>
 <main class="screen">
   <div class="terminal">
-    <span class="line"><span class="prompt">&gt;</span><span id="status"></span></span>
+    <span class="line"><span class="prompt">&gt;</span><span id="status"></span><input id="kube-search" type="search" aria-label="search the cluster" placeholder="search: name, ns:team, crash, pending, app=web   ( / )" autocomplete="off" spellcheck="false" hidden><output id="kube-search-count" aria-live="polite" hidden></output></span>
     <select id="lb" aria-label="load balancer" hidden></select>
     <input id="host" type="text" aria-label="URL or host" placeholder="paste a URL or host" hidden>
     <p id="confirm"></p>
