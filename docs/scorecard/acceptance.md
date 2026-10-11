@@ -11,7 +11,7 @@ gp3 volume and public IPv4, roughly $0.15 an hour; the EKS card shows the
 exact bill line before you run it. The run takes about 1.5 hours including
 the ~15 min cluster create and ~10 min take-down, so about $0.25–0.30.
 Metrics-server, Kyverno and cert-manager add pods only, no AWS resources.
-Take everything down at the end (step 8).
+Take everything down at the end (step 9).
 
 ## Before you start
 
@@ -22,6 +22,8 @@ Take everything down at the end (step 8).
   add-on stacks (the same rights STACKS already needs).
 - `features.stacksRun` is on in `cloudspider.yaml` (the default).
 - Nothing else is running on the cluster name you pick.
+- `kube.autoConnect` is on (the default): RUN on the EKS card CONNECTs the
+  new cluster by itself and TAKE IT DOWN DISCONNECTs it (RUN-ME §21).
 
 ## Steps
 
@@ -30,8 +32,18 @@ Take everything down at the end (step 8).
    t4g.medium has room for 17 pods. On t4g.small (11 pods) the third fix
    below is refused for pod room before any Pulumi call, which is the
    preflight working: record that, then use t4g.medium for the full flow.
-2. **Connect.** On the EKS card press CONNECT (adds the kube context, as the
-   viewer role).
+   The EKS PREVIEW should list the scanner's read-only access with the rest
+   (Task 18: the `scanner` Kubernetes provider, the `cloudspider-scanner`
+   ClusterRole and its ClusterRoleBinding, 3 creates; RUN-ME §23). This is
+   the one live preview that change still needs: note it in the PR or issue.
+   Without it, SCAN on a fresh cluster with only the viewer role shows some
+   reads refused (UNKNOWN) and may say INSUFFICIENT EVIDENCE instead of a
+   number; the panel shows the read-only grant to fix that.
+2. **Connect.** When the RUN is DONE, CONNECT runs by itself (the run log
+   and the radio say "connected by itself"). If `kube.autoConnect` is off or
+   that step failed, press CONNECT NOW on the EKS card. Then pick
+   `score-demo-viewer` in the Cluster view's context switcher: SCORE scans the
+   cluster picked there (the kubeconfig's current context is not changed).
 3. **Low score.** Press the SCORE key → SCAN. Expect:
    - verdict `AT RISK` and a score under 30 (the fake cluster scores 0);
    - the verdict before the number, coverage next to it, and "no environment
@@ -53,17 +65,24 @@ Take everything down at the end (step 8).
    rescanning (e.g. Pod Identity), then press its `FIX` in the panel: the plan
    says it "is already on score-demo" and offers no PREVIEW. SCAN again: the
    control passes and the FIX is gone.
-7. **Refusals.**
+7. **Export and AWS account (read-only).** EXPORT → MD, HTML and JSON each
+   download the latest scan (file `cloudspider-scorecard-score-demo-<date>.*`):
+   verdict before number, the disclaimer, no evidence fields. Then press
+   AWS ACCOUNT → SCAN: it reads the account in `scorecard.regions` with
+   Describe/List/Get calls only; refused reads show as UNKNOWN with the IAM
+   grant to add. Press CLUSTER to go back.
+8. **Refusals.**
    - Another origin:
      `curl -s -X POST -H 'origin: http://evil.test' -H 'content-type: application/json' -d '{}' http://127.0.0.1:9241/api/score/fix`
      answers "nothing was changed" (same for `/api/score/scan`: "the scan did
      not run").
    - With `features: { stacksRun: false }` in `cloudspider.yaml` (restart),
      the FIX POST answers 403 and SCAN still works.
-8. **Take it down.** Take down the add-on stacks from their STACKS cards
+9. **Take it down.** Take down the add-on stacks from their STACKS cards
    (cert-manager, Kyverno, metrics-server, and any other you installed), then
-   the EKS stack (TAKE IT DOWN, type the cluster name). Check the EKS card
-   shows no cluster and the bill line is gone.
+   the EKS stack (TAKE IT DOWN, type the cluster name). DISCONNECT runs by
+   itself: `score-demo-viewer` leaves the kubeconfig and the contexts file.
+   Check the EKS card shows no cluster and the bill line is gone.
 
 ## Pass criteria
 
