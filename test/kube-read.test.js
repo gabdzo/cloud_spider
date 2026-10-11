@@ -44,3 +44,9 @@ test("read() refuses names that are not in PATHS and never builds a URL", async 
   assert.equal(urls.length, 0);
 });
 
+test("the scorecard's extra paths are fixed GETs", async () => {
+  const { PATHS } = await import("../src/kube.js");
+  assert.equal(PATHS.networkPolicies(), "/apis/networking.k8s.io/v1/networkpolicies");
+  assert.equal(PATHS.pdbs(), "/apis/policy/v1/poddisruptionbudgets");
+  assert.equal(PATHS.clusterRoleBindings(), "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings");
+});
