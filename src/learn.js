@@ -8,8 +8,9 @@
 // when a static scan finds no cluster write, exec or install in the script
 // and the helpers it calls; otherwise the card says "run it yourself".
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 
@@ -407,6 +408,63 @@ export function sampleCheck(lab, attempt = 0) {
   return { ok: failed === 0, passed: lines.length - failed, failed, lines, note: "sample run: no cluster was touched", sample: true };
 }
 
+// ---- the lab's kube context ------------------------------------------------
+// A check never runs against whatever context is current (on Gabriel's
+// machine that was ppf-helm, his work cluster: live test 2026-10-11). It
+// needs CLOUDSPIDER_LAB_CONTEXT, a context whose name says it is a lab
+// cluster, and it is pinned there: every kubectl / oc the script calls goes
+// through a wrapper that adds --context <lab context>.
+export const LAB_CONTEXT_ENV = "CLOUDSPIDER_LAB_CONTEXT";
+// Never a lab, whatever the name: work contexts. CLOUDSPIDER_LAB_DENY adds
+// more (comma-separated).
+export const NEVER_LAB = [/^ppf(-|$)/i];
+// What a lab cluster is called: kind, k3d, minikube, Docker / Rancher
+// Desktop, OpenShift Local (crc), or a name with "lab" in it.
+export const LAB_NAME = /^(kind-.+|k3d-.+|minikube|docker-desktop|rancher-desktop|crc(-.+)?|.*\/api-crc-testing(:\d+)?(\/.*)?|(.*[-_.:/@])?labs?([-_.:/@].*)?)$/i;
+const CONTEXT_NAME = /^[A-Za-z0-9][A-Za-z0-9@:._/+-]{0,252}$/;
+
+export function labContextProblem(name, { deny = "" } = {}) {
+  const value = String(name || "").trim();
+  if (!value) return `no lab context: set ${LAB_CONTEXT_ENV} to your lab cluster's kube context (kind-lab, minikube, crc-admin, …) and restart; a check never runs against the current context`;
+  if (!CONTEXT_NAME.test(value)) return `${LAB_CONTEXT_ENV} is not a kube context name`;
+  const extra = String(deny || "").split(",").map((item) => item.trim()).filter(Boolean);
+  if (NEVER_LAB.some((rule) => rule.test(value)) || extra.includes(value)) return `${value} is not a lab context (a work cluster): Cloud Spider never runs lab checks there`;
+  if (!LAB_NAME.test(value)) return `${value} does not look like a lab cluster: use a kind-*, k3d-*, minikube, docker-desktop, crc context or one with "lab" in its name (kubectl config rename-context ${value} ${value}-lab if it really is one)`;
+  return "";
+}
+
+function findTool(name, path) {
+  for (const dir of String(path || "").split(delimiter).filter(Boolean)) {
+    const file = join(dir, name);
+    try {
+      accessSync(file, constants.X_OK);
+      return file;
+    } catch {
+      // not here
+    }
+  }
+  return "";
+}
+
+// A folder with kubectl and oc wrappers pinned to the context, to put first
+// on PATH. `config current-context` answers the lab context.
+export function pinnedTools(context, path) {
+  const dir = mkdtempSync(join(tmpdir(), "cs-lab-"));
+  const tools = [];
+  for (const tool of ["kubectl", "oc"]) {
+    const real = findTool(tool, path);
+    if (!real) continue;
+    const quoted = (text) => `'${String(text).replace(/'/g, "'\\''")}'`;
+    writeFileSync(
+      join(dir, tool),
+      `#!/bin/sh\n# Cloud Spider LEARN: pinned to the lab context.\nif [ "$1" = config ] && [ "$2" = current-context ]; then echo ${quoted(context)}; exit 0; fi\nexec ${quoted(real)} --context ${quoted(context)} "$@"\n`,
+      { mode: 0o755 },
+    );
+    tools.push(tool);
+  }
+  return { dir, tools, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
 export function createLearn({ root = repoRoot, progress = createProgressStore(), run = runScript, env = process.env, extraTracks = () => [] } = {}) {
   let busy = false;
   const catalog = () => loadLabs({ root, extraTracks: extraTracks() });
@@ -414,7 +472,8 @@ export function createLearn({ root = repoRoot, progress = createProgressStore(),
   return {
     list() {
       const { tracks, labs } = catalog();
-      return { tracks, labs, progress: progress.all() };
+      const context = String(env[LAB_CONTEXT_ENV] || "").trim();
+      return { tracks, labs, progress: progress.all(), labContext: { name: context, problem: labContextProblem(context, { deny: env.CLOUDSPIDER_LAB_DENY }) } };
     },
     lab: find,
     progress(key, change = {}) {
@@ -426,15 +485,21 @@ export function createLearn({ root = repoRoot, progress = createProgressStore(),
       if (!lab) return { error: "no such lab" };
       if (sample) return { key, result: sampleCheck(lab, attempt) };
       if (!lab.check.runnable) return { key, error: "this check changes the cluster or runs inside a pod, so Cloud Spider does not run it: copy the command and run it yourself", reasons: lab.check.reasons };
+      const context = String(env[LAB_CONTEXT_ENV] || "").trim();
+      const problem = labContextProblem(context, { deny: env.CLOUDSPIDER_LAB_DENY });
+      if (problem) return { key, error: problem, context: context || "" };
       if (busy) return { key, error: "another check is running" };
       busy = true;
+      let pinned = null;
       try {
         const script = join(root, lab.check.path);
-        const ran = await run("bash", [script], { cwd: dirname(script), timeout: CHECK_TIMEOUT[lab.track] || 120_000, env: { ...env, LANG: "C.UTF-8" } });
+        pinned = pinnedTools(context, env.PATH);
+        const ran = await run("bash", [script], { cwd: dirname(script), timeout: CHECK_TIMEOUT[lab.track] || 120_000, env: { ...env, LANG: "C.UTF-8", PATH: [pinned.dir, env.PATH].filter(Boolean).join(delimiter), [LAB_CONTEXT_ENV]: context } });
         const result = parseCheckOutput(ran.out, ran);
         const entry = progress.update(key, { check: result });
-        return { key, result, entry, script: relative(root, script) };
+        return { key, result, entry, context, script: relative(root, script) };
       } finally {
+        pinned?.cleanup();
         busy = false;
       }
     },

@@ -226,6 +226,7 @@ test("createLearn runs only safe scripts, one at a time, with bash and no shell"
   let release;
   const learn = createLearn({
     root,
+    env: { CLOUDSPIDER_LAB_CONTEXT: "kind-lab", PATH: "/usr/bin:/bin" },
     progress: createProgressStore({ file: join(dir, "p.json") }),
     run: (command, args, options) => {
       calls.push({ command, args, options });
@@ -258,7 +259,7 @@ test("createLearn runs only safe scripts, one at a time, with bash and no shell"
 test("LEARN routes: listing is open, checks and progress need the page's origin", async () => {
   const dir = mkdtempSync(join(tmpdir(), "learn-route-"));
   let ran = 0;
-  const learn = createLearn({ root, progress: createProgressStore({ file: join(dir, "p.json") }), run: async () => { ran += 1; return { code: 1, out: "FAIL: x\n", timedOut: false }; } });
+  const learn = createLearn({ root, env: { CLOUDSPIDER_LAB_CONTEXT: "kind-lab" }, progress: createProgressStore({ file: join(dir, "p.json") }), run: async () => { ran += 1; return { code: 1, out: "FAIL: x\n", timedOut: false }; } });
   const app = createApp({
     ec2: { async describeRegions() { return { regions: [] }; }, async defaultRegion() { return ""; } },
     trail: { async lookupEvents() { return { event: null }; } },

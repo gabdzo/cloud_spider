@@ -314,6 +314,8 @@ The LEARN key on the console opens the holotape shelf. It has three tracks:
 
 Each tape shows the task, the setup commands (COPY), hints one at a time and the check. Cloud Spider runs a check only when a scan of the script and every helper it calls finds no write, exec or install. All 15 Kubernetes checks qualify, and so do 14 of the 18 OpenShift ones. The OpenShift lab03, lab06, lab15 and mock02 checks exec into pods or rotate a secret, so their RUN CHECK stays off; copy the command instead. Progress is kept in `.learn/progress.json` (gitignored); with SAMPLE on it is kept in the browser instead, and nothing runs. FORGET PROGRESS clears a lab.
 
+**Which cluster a check talks to.** A check never runs against your current kube context. Start Cloud Spider with `CLOUDSPIDER_LAB_CONTEXT=<your lab context>` (for example `kind-lab`, `minikube`, `crc-admin`); without it RUN CHECK answers "no lab context". The name has to look like a lab cluster (kind-*, k3d-*, minikube, docker-desktop, rancher-desktop, crc, or "lab" somewhere in it; `kubectl config rename-context <ctx> <ctx>-lab` if yours really is one), and `ppf-helm` / `ppf-*` work contexts are always refused (add more with `CLOUDSPIDER_LAB_DENY=a,b`). While a check runs, every `kubectl` and `oc` it calls is pinned with `--context <lab context>`, so switching contexts in another terminal cannot redirect it.
+
 Clean up a Kubernetes lab with its CLEAN command (`kubectl delete namespace k8s-labNN…`). For OpenShift, use `labs/ex280/common/cleanup-all.sh`.
 
 ## 14. Cluster telemetry: Cluster → TELEMETRY (no AWS cost beyond the cluster)
