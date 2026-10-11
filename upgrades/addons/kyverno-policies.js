@@ -9,12 +9,13 @@ const containers = (inner) => ({
   containers: [inner],
 });
 
-function policy(name, title, severity, description, validate) {
+function policy(name, title, severity, description, validate, category = "Pod Security (baseline), Cloud Spider") {
   return {
     name,
     title,
     severity,
     description,
+    category,
     spec: {
       background: true,
       rules: [
@@ -43,3 +44,18 @@ export const BASELINE = [
     "A floating tag makes a rollback guesswork.",
     { message: "Pin an image tag; :latest and untagged images are not allowed.", pattern: { spec: containers({ image: "*:* & !*:latest" }) } }),
 ];
+
+// Two easy-to-read demo policies, also Audit only, to see how Kyverno
+// reports: a missing app name label and a container without a readiness
+// probe. (":latest" is already in the baseline above.)
+const DEMO = "Best practices (demo), Cloud Spider";
+export const DEMO_POLICIES = [
+  policy("require-app-name-label", "Require the app.kubernetes.io/name label", "low",
+    "Every Pod says which app it belongs to, so dashboards and policies can group it.",
+    { message: "Add the label app.kubernetes.io/name to the Pod template.", pattern: { metadata: { labels: { "app.kubernetes.io/name": "?*" } } } }, DEMO),
+  policy("require-readiness-probe", "Require a readiness probe", "low",
+    "Without a readiness probe a Service sends traffic to a container before it can answer.",
+    { message: "Add a readinessProbe to every container.", pattern: { spec: { containers: [{ readinessProbe: { periodSeconds: ">0" } }] } } }, DEMO),
+];
+
+export const ALL_POLICIES = [...BASELINE, ...DEMO_POLICIES];

@@ -1,8 +1,8 @@
 import { helmRelease, setup, small, viewerAccess } from "./common.js";
-import { BASELINE } from "./kyverno-policies.js";
+import { ALL_POLICIES } from "./kyverno-policies.js";
 
-// Kyverno (Helm) with the four baseline policies of kyverno-policies.js in
-// Audit mode. Reports land in PolicyReports (wgpolicyk8s.io), which Cloud
+// Kyverno (Helm) with the four baseline and two demo policies of
+// kyverno-policies.js, all in Audit mode. Reports land in PolicyReports (wgpolicyk8s.io), which Cloud
 // Spider's viewer may read. One replica per controller; cleanup off.
 export default function kyverno({ pulumi, aws, k8s, addon }) {
   const { k } = setup({ pulumi, aws, k8s, addon });
@@ -14,7 +14,7 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
     // pre-delete hook removes the webhooks on destroy.
     cleanupController: { enabled: false },
   });
-  for (const item of BASELINE) {
+  for (const item of ALL_POLICIES) {
     new k8s.apiextensions.CustomResource(`policy-${item.name}`, {
       apiVersion: "kyverno.io/v1",
       kind: "ClusterPolicy",
@@ -23,7 +23,7 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
         labels: { "app.kubernetes.io/part-of": "cloudspider-addons" },
         annotations: {
           "policies.kyverno.io/title": item.title,
-          "policies.kyverno.io/category": "Pod Security (baseline), Cloud Spider",
+          "policies.kyverno.io/category": item.category,
           "policies.kyverno.io/severity": item.severity,
           "policies.kyverno.io/description": item.description,
         },
@@ -35,5 +35,5 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
     { apiGroups: ["wgpolicyk8s.io"], resources: ["policyreports", "clusterpolicyreports"] },
     { apiGroups: ["kyverno.io"], resources: ["clusterpolicies", "policies"] },
   ], { dependsOn: [release] });
-  return { version: addon.appVersion, details: { policies: BASELINE.map((item) => item.name), mode: "Audit" } };
+  return { version: addon.appVersion, details: { policies: ALL_POLICIES.map((item) => item.name), mode: "Audit" } };
 }
