@@ -56,6 +56,11 @@ export function connectionOf(config, { cluster, roleArn = "" }) {
   const clashUser = clash ? (config?.users || []).find((u) => u?.name === clashRef.user)?.user || {} : {};
   const clashServer = clash ? String((config?.clusters || []).find((c) => c?.name === clashRef.cluster)?.cluster?.server || "") : "";
   const users = (config?.contexts || []).filter((c) => c?.context?.user === alias).length;
+  // The cluster entry update-kubeconfig wrote (named by the EKS ARN). It
+  // goes with DISCONNECT only when no other context reads through it.
+  const entry = String((config?.contexts || []).find((c) => c?.name === alias)?.context?.cluster || "");
+  const entryIsEks = new RegExp(`^arn:aws[a-z-]*:eks:[a-z0-9-]+:\\d{12}:cluster/${cluster}$`).test(entry);
+  const entryUsers = (config?.contexts || []).filter((c) => c?.context?.cluster === entry).length;
   return {
     alias,
     match: match?.name || "",
@@ -66,6 +71,7 @@ export function connectionOf(config, { cluster, roleArn = "" }) {
     current: String(config?.["current-context"] || ""),
     userShared: users > 1,
     userIsOurs: Boolean((config?.users || []).find((u) => u?.name === alias)),
+    clusterEntry: entryIsEks && entryUsers === 1 && Boolean((config?.clusters || []).find((c) => c?.name === entry)) ? entry : "",
   };
 }
 

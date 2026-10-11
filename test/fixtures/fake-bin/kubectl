@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Fake kubectl for the CONNECT tests: config use-context, delete-context,
-// delete-user, on the kubeconfig file only.
+// delete-user, delete-cluster, on the kubeconfig file only.
 import { createRequire } from "node:module";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -22,5 +22,8 @@ if (verb === "use-context") {
 } else if (verb === "delete-user") {
   config.users = (config.users || []).filter((u) => u.name !== name);
   process.stdout.write(`deleted user ${name} from ${file}\n`);
+} else if (verb === "delete-cluster") {
+  config.clusters = (config.clusters || []).filter((c) => c.name !== name);
+  process.stdout.write(`deleted cluster ${name} from ${file}\n`);
 } else process.exit(2);
 writeFileSync(file, yaml.stringify(config));
