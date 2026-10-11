@@ -96,3 +96,38 @@ test("fix pane stages: plan 0, preview 1, approve 2, install 3, rescan 4, done 5
   assert.equal(fixModel({ phase: "done", title: "K", diff: { delta: 1 }, steps: [] }).stage, 5);
   assert.deepEqual(fixModel(null, null).buttons, []);
 });
+
+test("changes since the last scan: fixed and regressed first; a catalog change is flagged; a first scan lists none", () => {
+  const m = scoreModel({ ...view, diff: { from: "s0", delta: 30.6, catalogChanged: true, changes: [
+    { id: "K8S-REL-010", title: "probes", kind: "changed", from: "UNKNOWN", to: "PASS" },
+    { id: "K8S-PLT-002", title: "metrics", kind: "fixed", from: "FAIL", to: "PASS" },
+    { id: "K8S-SEC-009", title: "rbac", kind: "regressed", from: "PASS", to: "FAIL" },
+  ] } });
+  assert.deepEqual(m.changes.map((c) => [c.kind, c.label, c.id, c.move]), [
+    ["fixed", "FIXED", "K8S-PLT-002", "FAIL → PASS"], ["regressed", "REGRESSED", "K8S-SEC-009", "PASS → FAIL"], ["changed", "CHANGED", "K8S-REL-010", "UNKNOWN → PASS"],
+  ]);
+  assert.equal(m.catalogChanged, true);
+  assert.deepEqual(scoreModel({ ...view, diff: { from: null, changes: [{ id: "A", kind: "new", from: "NEW", to: "FAIL" }] } }).changes, []);
+});
+
+test("refused reads show their grant; exports link to the saved scan in three formats", () => {
+  assert.deepEqual(scoreModel(view).grants, []);
+  const m = scoreModel({ ...view, permissions: { ok: false, grants: ["kubectl apply -f scorecard/rbac/cloudspider-scanner.yaml"] } });
+  assert.deepEqual(m.grants, ["kubectl apply -f scorecard/rbac/cloudspider-scanner.yaml"]);
+  assert.deepEqual(m.reports.map((r) => r.href), ["md", "html", "json"].map((f) => `/api/score/report?id=s1&format=${f}`));
+  assert.equal(scoreModel({ ...view, scan: { ...view.scan, id: "a&b" } }).reports[0].href, "/api/score/report?id=a%26b&format=md");
+});
+
+test("the AWS account view: its own empty text, no kube wording", () => {
+  const m = scoreModel({ target: "aws", cluster: "account", scan: null });
+  assert.equal(m.target, "aws");
+  assert.match(m.text, /No scan of this AWS account yet\. Press SCAN: it only reads \(Describe\/List\/Get\)/);
+  assert.equal(scoreModel({ ...view, target: "aws", cluster: "account" }).where, "AWS account");
+  assert.equal(scoreModel(view).where, "fresh");
+});
+
+test("a fix with no score to compare says so instead of 'Score ?'", () => {
+  const t = fixModel({ phase: "done", title: "Kyverno", diff: { delta: null, verdictTo: "INSUFFICIENT_EVIDENCE" } }).text;
+  assert.equal(t.includes("?"), false);
+  assert.match(t, /Kyverno installed and rescanned\. No score to compare: not enough evidence yet/);
+});
