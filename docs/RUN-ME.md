@@ -458,7 +458,7 @@ spec:
 ```
 
 - **SLI** is what was measured: good ÷ all. **SLO** is your target for it over the window. **SLA** is a promise to someone else with a penalty. There is none here, so keep each SLO stricter than any SLA you might give.
-- **Error budget** is 100 % − SLO. The segmented bar shows how much of it is left in what Cloud Spider has seen. The card says how much that is, for example `3d of 30d seen`.
+- **Error budget** is 100 % − SLO, counted in readings over the **whole window**: a 99 % SLO over 24 h with one check a minute may hold 14.4 bad checks. Until a full window has been seen, the window's count is the rate seen so far times the window, so one failed check in the first ten minutes spends 1/14.4 of the budget, not all of it. The card says how much has been seen, for example `3d of 30d seen`. A fresh failure still lights BURNING through the burn rate.
 - **Burn rate** is how fast the last hour spends the budget. 1× lasts exactly the window. At 2× or more the **BUDGET BURNING** lamp lights; at 14.4× or more it says FAST. When nothing is left, the lamp reads **BUDGET SPENT**.
 - **Where it shows:**
   - each vault's panel and page (dial, bar and lamp)
@@ -475,7 +475,7 @@ spec:
   - `resources` uses the owned pieces' status on each map read.
   - `kube:*` uses the Cluster view's read-only snapshot. Restarts count from the second read on.
 
-  Readings are kept **in memory** in 5-minute buckets for at most 30 days, so a server restart starts the count over. Nothing is written anywhere and no AWS or kube call is added, so this costs nothing extra. A real 30-day view would need a store (for example CloudWatch metric math or Prometheus recording rules); that is not part of this.
+  Readings are kept in 5-minute buckets for at most 30 days, in memory and in **`.cloudspider/slo-ledger.json`** (saved every minute when something changed, and on Ctrl-C; read back on start, so a restart keeps the history). The file holds counts only. Delete it to start the budgets over. Apart from the `alb` reader above, no AWS or kube call is added.
 
 ## 18. The cluster on the map (free: the Cluster view's read, shared)
 

@@ -33,19 +33,21 @@ test("spec.slos: valid entries are cleaned, bad ones name their path", () => {
 
 test("SLI, error budget and burn rate", () => {
   const slo = { name: "up", sli: "availability", source: "checks", target: 99, window: "30d" };
-  // 1000 readings, 5 bad: SLI 99.5 %, half the 1 % budget used.
-  const half = evaluateSlo(slo, { good: 995, total: 1000, span: 3 * 3600_000, recent: { good: 100, total: 100 } });
+  const month = 30 * 86_400_000;
+  // A whole window seen, 1000 readings, 5 bad: SLI 99.5 %, half the 1 % budget used.
+  const half = evaluateSlo(slo, { good: 995, total: 1000, span: month, recent: { good: 100, total: 100 } });
   assert.equal(half.sliPct, 99.5);
   assert.equal(half.budgetPct, 50);
+  assert.equal(half.allowedBad, 10);
   assert.equal(half.burn, 0);
   assert.equal(half.flag, "ok");
-  assert.equal(half.observed, "3h of 30d seen");
+  assert.equal(half.observed, "30d of 30d seen");
   // Last hour: 3 bad of 100 = 3 % against a 1 % budget: burn 3x.
-  const burning = evaluateSlo(slo, { good: 995, total: 1000, span: 3600_000, recent: { good: 97, total: 100 } });
+  const burning = evaluateSlo(slo, { good: 995, total: 1000, span: month, recent: { good: 97, total: 100 } });
   assert.equal(burning.burn, 3);
   assert.equal(burning.flag, "burning");
   assert.match(sloLine(burning), /BUDGET BURNING/);
-  const spent = evaluateSlo(slo, { good: 970, total: 1000, span: 3600_000, recent: { good: 80, total: 100 } });
+  const spent = evaluateSlo(slo, { good: 970, total: 1000, span: month, recent: { good: 80, total: 100 } });
   assert.equal(spent.flag, "spent");
   assert.ok(spent.fast);
   assert.equal(evaluateSlo(slo, { good: 0, total: 0 }).flag, "nodata");
@@ -182,4 +184,27 @@ test("ledger.put sets a CloudWatch point (a re-read replaces it) and folds it in
   assert.equal(ledger.put("k", at, 0, 100), false, "too old to change");
   const c = ledger.counts("k");
   assert.deepEqual([c.good, c.total], [90, 100], "folded, still counted once");
+});
+
+test("the budget counts readings over the whole window: one failed check does not spend a 24 h budget", () => {
+  const slo = { name: "items-availability", sli: "availability", source: "check:items", target: 99, window: "24h" };
+  // Ten minutes seen, one check a minute, one failed (drill finding 8 read
+  // "bud=-999, SPENT" here). At this rate the day holds 1440 checks, 14.4 may fail.
+  const one = evaluateSlo(slo, { good: 9, total: 10, span: 10 * 60_000, recent: { good: 9, total: 10 } });
+  assert.equal(one.allowedBad, 14.4);
+  assert.equal(one.bad, 1);
+  assert.equal(one.budgetPct, 93);
+  assert.equal(one.flag, "burning", "10 % bad in the last hour is a 10x burn, still worth a lamp");
+  assert.equal(one.fast, false);
+  assert.equal(one.observed, "10m of 24h seen");
+  // Drill fault (a): 10 minutes down in the first 90 seen: 10 of 14.4 spent.
+  const outage = evaluateSlo(slo, { good: 80, total: 90, span: 90 * 60_000, recent: { good: 50, total: 60 } });
+  assert.equal(outage.budgetPct, 31);
+  // A whole day seen with 20 failures: spent.
+  const day = evaluateSlo(slo, { good: 1420, total: 1440, span: 86_400_000, recent: { good: 60, total: 60 } });
+  assert.equal(day.flag, "spent");
+  // Less than a bucket seen counts as a bucket (no 1-reading blow-up).
+  const first = evaluateSlo(slo, { good: 0, total: 1, span: 0, recent: { good: 0, total: 1 } });
+  assert.equal(first.allowedBad, 2.9);
+  assert.equal(first.budgetPct, 65);
 });

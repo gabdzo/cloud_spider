@@ -34,7 +34,7 @@ export const SLO_HELP = [
   ["SLI", "service level indicator: what was measured, good ÷ all (checks that passed, requests without a 5XX, nodes Ready)."],
   ["SLO", "service level objective: the target for the SLI over a window, e.g. 99.5 % over 30 d. Yours, internal."],
   ["SLA", "service level agreement: a promise to a customer with a penalty. None here; keep the SLO stricter than any SLA."],
-  ["BUDGET", "100 % − SLO: the bad you may spend in the window. The bar is what is left of it in what Cloud Spider has seen."],
+  ["BUDGET", "100 % − SLO: the bad readings the whole window may hold (at the rate seen so far, until a full window is seen). The bar is what is left."],
   ["BURN", "how fast the last hour spends the budget. 1× lasts exactly the window; ≥2× lights BUDGET BURNING; ≥14.4× is a page-someone burn."],
 ];
 
@@ -100,8 +100,9 @@ export function validateSlos(list, path = "spec.slos") {
   return { slos, errors, warnings };
 }
 
-// ---- the ledger: good/total per 5-minute bucket, in memory ----
-// Kept since the server started (at most the longest window).
+// ---- the ledger: good/total per 5-minute bucket ----
+// Kept for keepMs; main.js saves it to .cloudspider/slo-ledger.json and
+// reads it back on start (slo-store.js), so a restart keeps the history.
 //
 // Two ways in: record() adds a reading (a check result, a kube read) to its
 // bucket; put() sets one CloudWatch point (key, the point's start, good,
@@ -113,6 +114,7 @@ export function createSloLedger({ clock = Date.now, keepMs = 30 * 86_400_000 } =
   const books = new Map();
   const marks = new Map();
   const points = new Map(); // key -> Map(at -> { good, total })
+  let version = 0;
   function fold(key, now) {
     const list = points.get(key);
     if (!list) return;
@@ -151,6 +153,7 @@ export function createSloLedger({ clock = Date.now, keepMs = 30 * 86_400_000 } =
       cell.total += total;
       buckets.set(slot, cell);
       trim(buckets, clock());
+      version += 1;
       return true;
     },
     // One CloudWatch point: set, not added (a re-read replaces it).
@@ -159,10 +162,48 @@ export function createSloLedger({ clock = Date.now, keepMs = 30 * 86_400_000 } =
       const now = clock();
       if (at < now - FOLD_MS) return false; // already folded or too old to change
       if (!points.has(key)) points.set(key, new Map());
-      points.get(key).set(at, { good: Math.max(0, Math.min(good, total)), total });
+      const before = points.get(key).get(at);
+      const cell = { good: Math.max(0, Math.min(good, total)), total };
+      points.get(key).set(at, cell);
       book(key);
       fold(key, now);
+      if (!before || before.good !== cell.good || before.total !== cell.total) version += 1;
       return true;
+    },
+    // Changes since start; the store saves only when this moved.
+    version() {
+      return version;
+    },
+    // A plain copy for .cloudspider/slo-ledger.json (slo-store.js).
+    dump() {
+      const out = { v: 1, buckets: {}, points: {}, marks: {} };
+      for (const [key, buckets] of books) if (buckets.size) out.buckets[key] = [...buckets].map(([slot, c]) => [slot, c.good, c.total]);
+      for (const [key, list] of points) if (list.size) out.points[key] = [...list].map(([at, c]) => [at, c.good, c.total]);
+      for (const [key, stamp] of marks) if (typeof stamp === "number" || typeof stamp === "string") out.marks[key] = stamp;
+      return out;
+    },
+    // Takes a dump back (at start). Anything malformed is skipped; anything
+    // past keepMs is dropped. Returns how many keys came back.
+    load(data) {
+      if (!data || data.v !== 1) return 0;
+      const now = clock();
+      const keys = new Set();
+      const cells = (list) => (Array.isArray(list) ? list.filter((c) => Array.isArray(c) && c.length === 3 && c.every(Number.isFinite) && c[2] > 0 && c[1] >= 0 && c[1] <= c[2]) : []);
+      for (const [key, list] of Object.entries(data.buckets || {})) {
+        const buckets = book(key);
+        for (const [slot, good, total] of cells(list)) buckets.set(slot, { good, total });
+        trim(buckets, now);
+        keys.add(key);
+      }
+      for (const [key, list] of Object.entries(data.points || {})) {
+        if (!points.has(key)) points.set(key, new Map());
+        for (const [at, good, total] of cells(list)) points.get(key).set(at, { good, total });
+        book(key);
+        fold(key, now);
+        keys.add(key);
+      }
+      for (const [key, stamp] of Object.entries(data.marks || {})) marks.set(key, stamp);
+      return keys.size;
     },
     counts(key, window = 30 * 86_400_000) {
       const now = clock();
@@ -290,6 +331,13 @@ function spanText(ms) {
 
 // One SLO's answer: SLI %, budget left %, burn rate and a flag.
 //   ok | burning (≥2× in the last hour) | spent (no budget left) | nodata
+//
+// The budget is counted in readings, over the whole window: a 99 % SLO
+// over 24 h with one check a minute may hold 1 % of 1440 = 14.4 bad ones.
+// While less than the window has been seen, the window's count is the rate
+// seen so far times the window, so one failed check in the first ten
+// minutes spends 1/14.4 of the budget, not all of it (drill 2026-10-11,
+// finding 8). The burn rate still says how fast the last hour went.
 export function evaluateSlo(slo, counts, { from = "" } = {}) {
   const base = {
     name: slo.name,
@@ -304,14 +352,17 @@ export function evaluateSlo(slo, counts, { from = "" } = {}) {
   };
   if (!counts || !(counts.total > 0)) return { ...base, flag: "nodata", sliPct: null, budgetPct: null, burn: null, observed: "", note: "no readings yet" };
   const budget = 1 - slo.target / 100;
-  const bad = 1 - counts.good / counts.total;
-  const used = budget > 0 ? bad / budget : bad > 0 ? Infinity : 0;
+  const windowAll = windowMs(slo.window);
+  const seen = Math.min(Math.max(counts.span || 0, BUCKET_MS), windowAll || Infinity);
+  const expected = windowAll ? counts.total * Math.max(1, windowAll / seen) : counts.total;
+  const allowed = budget * expected;
+  const bad = Math.max(0, counts.total - counts.good);
+  const used = allowed > 0 ? bad / allowed : bad > 0 ? Infinity : 0;
   const recentBad = counts.recent?.total ? 1 - counts.recent.good / counts.recent.total : null;
   const burn = recentBad === null ? null : Math.round((budget > 0 ? recentBad / budget : 0) * 10) / 10;
   const budgetPct = Math.round(Math.max(-999, (1 - used) * 100));
   const flag = budgetPct <= 0 ? "spent" : burn !== null && burn >= BURN.warn ? "burning" : "ok";
-  const windowAll = windowMs(slo.window);
-  const observed = `${spanText(Math.min(counts.span || 0, windowAll) || BUCKET_MS)} of ${slo.window} seen`;
+  const observed = `${spanText(seen)} of ${slo.window} seen`;
   return {
     ...base,
     flag,
@@ -321,6 +372,9 @@ export function evaluateSlo(slo, counts, { from = "" } = {}) {
     fast: burn !== null && burn >= BURN.fast,
     good: counts.good,
     total: counts.total,
+    bad,
+    // bad readings the window may hold (to one decimal), at the rate seen
+    allowedBad: Math.round(allowed * 10) / 10,
     observed,
     note: "",
   };

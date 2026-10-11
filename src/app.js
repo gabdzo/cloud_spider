@@ -79,8 +79,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
 
   const now = typeof clock === "function" ? clock : Date.now;
   const tele = telemetry || (kube ? createTelemetry({ kube, clock: now }) : null);
-  // SLOs (slo.js): one in-memory ledger for vaults and the cluster, filled
-  // from reads the app makes anyway. No extra AWS or kube calls.
+  // SLOs (slo.js): one ledger for vaults and the cluster, filled from reads
+  // the app makes anyway (main.js keeps it on disk across restarts).
   const ledger = sloLedger || createSloLedger({ clock: now });
   const clusterSlo = createClusterSlo({ ledger, clock: now });
   let sloCluster = null;
@@ -833,6 +833,9 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     // evaluated with no page open, so their checks keep running and their
     // ledgers keep filling; ALBs that an alb SLO needs are read at 1-minute
     // points (CloudWatch's floor for ALB metrics).
+    sloLedger() {
+      return ledger;
+    },
     async watchSlos() {
       const viewer = vaults?.live;
       if (!viewer || !place) return { ...sloWatch, skipped: place ? "vaults are not set up" : "the map has not loaded yet" };
