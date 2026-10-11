@@ -11,6 +11,7 @@ import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ADDONS, DIR, displayVersion, parseStack, stackName } from "../upgrades/addons/catalog.js";
+import { roomRefusal } from "../upgrades/addons/pod-room.js";
 import { childEnvFor, capture } from "./upgrade.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -126,11 +127,16 @@ export function addonTree({ clusters = [], stacks = [], outputs = {}, detected =
 
 // Why an `up` should not run: the add-on is already there from elsewhere
 // (the demo's metrics-server), or what it needs is missing.
-export function refuseUp(tree, addonId, cluster) {
+// room: podRoom() of that cluster when the viewer read it (pod-room.js).
+export function refuseUp(tree, addonId, cluster, room = null) {
   const node = (tree || []).find((item) => item.cluster === cluster);
   const addon = node?.addons.find((item) => item.id === addonId);
   if (!addon) return "";
   if (addon.state === "present") return `${addon.title} is already on ${cluster} (${addon.source}); nothing to add`;
+  if (addon.state !== "installed") {
+    const tight = roomRefusal(ADDONS.find((item) => item.id === addonId), room, cluster);
+    if (tight) return tight;
+  }
   // Missing needs only count when the viewer context could look inside this
   // cluster; otherwise "not seen" is not "not there".
   if (addon.missing?.length && node.seen) return `${addon.title} needs ${addon.missing.join(", ")} on ${cluster} first`;

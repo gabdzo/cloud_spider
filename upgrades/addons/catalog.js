@@ -47,9 +47,12 @@ export const ADDONS = [
     namespace: "kyverno",
     detect: { deployment: ["kyverno-admission-controller"] },
     needs: [],
+    // Pods it runs for good (admission, background, reports controllers);
+    // checked against the nodes' free slots before an up (pod-room.js).
+    podSlots: 3,
     recommended: true,
     cost: [],
-    note: "Policy engine with four baseline policies in Audit mode (no privileged containers, no hostPath, CPU/memory requests set, no :latest images). Nothing is blocked: violations land in PolicyReports, which the Cluster view's OPS screen and the radio show. One replica per controller, about 200m CPU and 600 Mi in all.",
+    note: "Policy engine with four baseline and two demo policies in Audit mode (no privileged containers, no hostPath, CPU/memory requests set, no :latest images; app name label, readiness probe). Needs 3 free pod slots: a lone t4g.small (11 pods) running the demo is full, so add a node first. Nothing is blocked: violations land in PolicyReports, which the Cluster view's OPS screen and the radio show. One replica per controller, about 200m CPU and 600 Mi in all.",
   },
   {
     id: "karpenter",
