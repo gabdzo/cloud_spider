@@ -1166,6 +1166,7 @@ const page = `<!doctype html>
   #kube-ctx button i { grid-row: 1 / 3; width: 9px; height: 9px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim), 0 0 0 1px var(--lamp-off-hi); }
   #kube-ctx button.ok i { background: var(--lamp-on); box-shadow: 0 0 6px var(--btn-glow), inset 0 0 0 1px var(--lamp-on-core); }
   #kube-ctx button.warn i { background: var(--status-hang); box-shadow: 0 0 6px var(--status-hang); }
+  #kube-ctx button.unconnected { border-style: dashed; opacity: 0.78; }
   #kube-ctx button.fail i { background: var(--status-broken); box-shadow: 0 0 7px var(--status-broken); animation: blink 1.2s steps(1) infinite; }
   #kube-ctx button.error i { background: var(--status-broken); opacity: 0.6; }
   #kube-ctx button span { font-size: 11px; letter-spacing: 0.14em; white-space: nowrap; }

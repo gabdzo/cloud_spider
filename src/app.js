@@ -22,7 +22,7 @@ import { sampleKubeSnapshot } from "./kube-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, runHint, watchLine } from "./upgrade-rules.js";
-import { CONNECT_REGION, connectCommand, connectionOf, sameEndpoint, validCluster, viewerAlias } from "./kube-connect.js";
+import { CONNECT_REGION, connectCommand, connectionOf, contextsForCluster, sameEndpoint, validCluster, viewerAlias } from "./kube-connect.js";
 import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
 import { createMetricsCache, sampleMetrics, SLO_PERIOD, SLO_TTL, SLO_WINDOW, sloSpecs } from "./metrics.js";
@@ -749,7 +749,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     // ---- CONNECT: a viewer kube context per EKS cluster (kube-connect.js) ----
     contextNames,
     reloadContexts,
-    async connectStatus(cluster = "", { fresh = false } = {}) {
+    async connectStatus(cluster = "", { fresh = false, inAccount = false } = {}) {
       if (!validCluster(cluster)) return { cluster, state: "error", text: "not a cluster name", hint: "" };
       if (!connector || !upgrade?.outputs) return { cluster, state: "error", text: "CONNECT is not set up", hint: "" };
       const out = await upgrade.outputs("eks", { clusterName: cluster }, { fresh }).catch((failure) => ({ error: failure?.message || "pulumi did not answer" }));
@@ -760,6 +760,25 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       if (kc.error) return { ...base, state: "error", text: kc.error, hint: "Fix or restore the kubeconfig (a backup is ~/.kube/config.cloudspider.bak after a CONNECT)." };
       if (!conn.match) {
         if (!roleArn) {
+          // A cluster made outside Stacks (or one whose stack has no viewer
+          // role): any kube context that reads it counts. Listed: it is
+          // connected; in the kubeconfig only: FOUND, USE IT lists it.
+          const found = contextsForCluster(kc.config, cluster);
+          const pick = found.find((c) => contexts.some((item) => item.name === c.name)) || found[0];
+          if (pick) {
+            const listed = contexts.find((item) => item.name === pick.name);
+            const other = pick.role ? `role ${pick.role.split("/").pop()}` : "your own user";
+            if (listed) {
+              const access = await probeContext(listed);
+              if (access.noAccess) return { ...base, context: pick.name, state: "no-access", text: "NO ACCESS", hint: `${pick.name} reads ${cluster} with ${other}, and the cluster refuses it.`, detail: access.error };
+              return { ...base, context: pick.name, adopted: true, state: "connected", text: `CONNECTED as ${pick.name} (${other})`, hint: access.ok ? "" : access.error || "" };
+            }
+            return { ...base, state: "clash-same", adopt: pick.name, text: `kube context ${pick.name} already reads ${cluster} (${other})`, hint: `USE IT checks with one GET that ${pick.name} can read ${cluster} and adds it to Cloud Spider; the kubeconfig is not touched.` };
+          }
+          // inAccount: connectAll saw it in eks list-clusters, so it is up.
+          if (out?.missing && inAccount) {
+            return { ...base, state: "outside", text: "NOT CONNECTED", hint: `${cluster} was made outside Stacks, so there is no viewer role to CONNECT with. On this Mac: aws eks update-kubeconfig --region ${CONNECT_REGION} --name ${cluster} --alias ${cluster} (it switches kubectl to that context; add && kubectl config use-context <yours> to switch back). The lamp then says FOUND and USE IT adds it.` };
+          }
           return { ...base, state: "no-cluster", text: out?.missing ? `no stack ${out.stack} yet` : `stack ${out?.stack || "?"} has no viewer role output${out?.error ? ` (${String(out.error).split("\n").pop()})` : ""}`, hint: out?.error && !out.missing ? runHint(out.error).hint || "pulumi could not read the cluster's stack; see the error." : "RUN the cluster on the Stacks EKS card first; CONNECT needs its viewer role." };
         }
         if (conn.clash) {
@@ -791,7 +810,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     async connectAll() {
       const listed = eks?.listClusters ? await eks.listClusters().catch((failure) => ({ error: failure?.message })) : { names: [] };
       if (listed.error) return { clusters: [], error: listed.error, hint: runHint(listed.error).hint };
-      const clusters = await Promise.all((listed.names || []).filter(validCluster).map((name) => this.connectStatus(name)));
+      const clusters = await Promise.all((listed.names || []).filter(validCluster).map((name) => this.connectStatus(name, { inAccount: true })));
       return { clusters };
     },
     async connectRun(requestOrigin, body = {}) {
@@ -808,7 +827,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         return upgrade.runSteps({ module: "eks", action: "use it", stack, steps: adoptSteps(cluster, st.adopt), command: "", where: st.kubeconfig, onDone: typeof body.onDone === "function" ? body.onDone : undefined });
       }
       if (action === "connect") {
-        if (st.state === "no-cluster" || st.state === "error") return no(st.text, st.hint);
+        if (["no-cluster", "outside", "error"].includes(st.state)) return no(st.state === "outside" ? `${cluster} was made outside Stacks: no viewer role to CONNECT with` : st.text, st.hint);
         const kc = await connector.readKubeconfig();
         const current = String(kc.config?.["current-context"] || "");
         const steps = connectSteps(cluster, st, current);
