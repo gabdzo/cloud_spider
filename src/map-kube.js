@@ -167,7 +167,7 @@ export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice
       y += rowH + MK.GAP;
     }
   }
-  const w = Math.min(room, Math.max(right + MK.PAD, 180, 6 * MK.LOD_W + 140));
+  const w = Math.min(room, Math.max(right + MK.PAD, 384));
   // LOD switch, top right: 1 2 3 A.
   LOD_LEVELS.forEach((value, index) => {
     const lw = value === "auto" ? MK.LOD_W + 8 : MK.LOD_W;
