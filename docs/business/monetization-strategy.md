@@ -1,5 +1,7 @@
 # Cloud Spider monetization strategy
 
+> **Superseded (2026-10-11).** This document is kept for history and has not been edited below this note. The current strategy is [`docs/business/cloud-spider-platform-strategy.md`](cloud-spider-platform-strategy.md), which folds in this file's useful parts (credited as *from #85*) and takes precedence wherever the two differ.
+
 Date: 2026-10-11
 Branch: `main`
 Mode: startup office hours, pre-product. CEO posture: hold scope. Do not expand this into a hosted product.
