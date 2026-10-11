@@ -1,5 +1,7 @@
 # Cloud Spider: scalable business options
 
+> **Superseded (2026-10-11).** This document is kept for history and has not been edited below this note. The current strategy is [`docs/business/cloud-spider-platform-strategy.md`](cloud-spider-platform-strategy.md), which folds in this file's useful parts (credited as *from #85*) and takes precedence wherever the two differ.
+
 Date: 2026-10-11
 Branch: `main`
 Status: second commercial assessment. Draft. This file does not replace or edit `docs/business/monetization-strategy.md`.
