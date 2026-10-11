@@ -1,0 +1,16 @@
+kind: Control
+id: K8S-SEC-002
+revision: 1
+title: "No human or app subject is bound to cluster-admin"
+category: security
+target: kubernetes
+evidenceType: config
+severity: { default: critical }
+confidence: high
+evaluator: no-cluster-admin-for-humans
+aggregation: all-or-nothing
+requires: [kube-clusterRoleBindings]
+emptyIs: pass
+whyItMatters: "cluster-admin bound to a person or an app service account means one leaked token owns the whole cluster."
+remediation: { summary: "Replace the binding with a namespaced Role or a narrower ClusterRole; keep cluster-admin for system:masters and break-glass.", effort: M }
+verification: "No ClusterRoleBinding to cluster-admin has a subject outside system:* / eks:* groups and system-namespace service accounts."

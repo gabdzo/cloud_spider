@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-REL-004
+revision: 1
+title: "Ready nodes span at least two zones"
+category: reliability
+target: kubernetes
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: nodes-multi-zone
+aggregation: all-or-nothing
+requires: [kube-cluster, kube-nodes]
+whyItMatters: "All nodes in one zone means one zone outage is a full outage."
+remediation: { summary: "Spread the node group (or the Karpenter NodePool) over at least two subnets in different zones.", effort: M, addon: karpenter }
+verification: "Ready nodes carry at least two distinct topology.kubernetes.io/zone labels."

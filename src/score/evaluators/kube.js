@@ -52,3 +52,46 @@ export const kubeEvaluators = {
   },
 };
 
+// Subjects that are the platform's own: system groups and service accounts
+// in system namespaces (EKS binds cluster-admin to system:masters).
+const systemSubject = (s) => s.name.startsWith("system:") || s.name === "eks:" || s.name.startsWith("eks:") || (s.kind === "ServiceAccount" && SYSTEM_NAMESPACES.has(s.namespace));
+const appNamespacesWithPods = (pods) => [...new Set(pods.filter(isApp).map((p) => p.namespace))].sort();
+
+export const kubeEvaluatorsMore = {
+  "no-cluster-admin-for-humans"({ data }) {
+    const admin = data["kube-clusterRoleBindings"].items.filter((b) => b.role === "cluster-admin");
+    return { items: admin.map((b) => { const extra = b.subjects.filter((s) => !systemSubject(s)); return { id: b.name, pass: extra.length === 0, detail: extra.map((s) => `${s.kind} ${s.name}`).join(", ") }; }) };
+  },
+  "default-deny-ingress"({ data }) {
+    const nps = data["kube-networkPolicies"].items;
+    return { items: appNamespacesWithPods(data["kube-pods"].items).map((ns) => ({ id: ns, pass: nps.some((np) => np.namespace === ns && Object.keys(np.podSelector.matchLabels || {}).length === 0 && !(np.podSelector.matchExpressions || []).length && np.policyTypes.includes("Ingress") && np.ingress === 0), detail: "no NetworkPolicy selects every pod and denies ingress" })) };
+  },
+  "policy-reports-clean"({ data, status }) {
+    if (status["kube-policyReports"] === "absent") return { notApplicable: "no policy reports API (no Kyverno: see K8S-PLT-001)" };
+    const reports = [...data["kube-policyReports"].items, ...(data["kube-clusterPolicyReports"]?.items || [])].filter((r) => !r.namespace || !SYSTEM_NAMESPACES.has(r.namespace));
+    const fails = reports.flatMap((r) => r.fails.map((f) => ({ ...f, namespace: r.namespace })));
+    const ids = [...new Set(fails.map((f) => f.policy))];
+    // One item per failing policy, plus one passing item when reports exist and none fail.
+    if (!fails.length) return { items: reports.length ? [{ id: "policy-reports", pass: true, detail: "" }] : [] };
+    return { items: ids.map((policy) => ({ id: policy, pass: false, detail: fails.filter((f) => f.policy === policy).slice(0, 3).map((f) => `${f.namespace}/${f.resource}`).join(", ") })) };
+  },
+  "pdb-for-replicated"({ data }) {
+    const pdbs = data["kube-pdbs"].items;
+    const covered = (w) => pdbs.some((p) => p.namespace === w.namespace && Object.keys(p.selector).length > 0 && Object.entries(p.selector).every(([k, v]) => w.labels?.[k] === v || w.templateLabels?.[k] === v));
+    return { items: data["kube-deployments"].items.filter((w) => isApp(w) && (w.replicas ?? 1) > 1).map((w) => ({ id: ref(w), pass: covered(w), detail: "no PodDisruptionBudget selects it" })) };
+  },
+  "nodes-multi-zone"({ data }) {
+    const nodes = data["kube-nodes"].items.filter((n) => n.ready);
+    if (!nodes.length) return { unknown: [{ id: "nodes", reason: "no Ready node listed" }] };
+    const zones = [...new Set(nodes.map((n) => n.zone).filter(Boolean))];
+    return { items: [{ id: data["kube-cluster"].clusterName || "cluster", pass: zones.length >= 2, detail: `Ready nodes in ${zones.length} zone(s): ${zones.join(", ") || "unlabelled"}` }] };
+  },
+  "hpa-has-metrics"({ data }) {
+    const hpas = data["kube-hpas"].items.filter(isApp);
+    return { items: hpas.map((h) => ({ id: ref(h), pass: data["kube-metrics"].served, detail: data["kube-metrics"].served ? "" : "metrics.k8s.io is not served: this HPA cannot scale" })) };
+  },
+  "no-latest-tag"({ data }) {
+    const tagOf = (image) => { const last = image.split("/").pop(); return last.includes("@") ? "digest" : last.includes(":") ? last.split(":").pop() : "latest"; };
+    return { items: data["kube-deployments"].items.filter(isApp).map((w) => ({ id: ref(w), pass: w.containers.every((c) => tagOf(c.image) !== "latest"), detail: w.containers.filter((c) => tagOf(c.image) === "latest").map((c) => c.image).join(", ") })) };
+  },
+};

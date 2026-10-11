@@ -1,0 +1,13 @@
+kind: Control
+id: K8S-SEC-008
+revision: 1
+title: "Images are scanned for known vulnerabilities"
+category: security
+target: kubernetes
+evidenceType: config
+severity: { default: high }
+confidence: high
+blockedBy: "image vulnerability data (no collector; import from a scanner later)"
+whyItMatters: "Known-vulnerable images are the most common way into a cluster."
+remediation: { summary: "Scan images in CI and in the registry.", effort: S }
+verification: "A scanner report covers every running image."

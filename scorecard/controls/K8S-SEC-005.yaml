@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-SEC-005
+revision: 1
+title: "App namespaces deny ingress by default"
+category: security
+target: kubernetes
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: default-deny-ingress
+aggregation: proportional
+requires: [kube-pods, kube-networkPolicies]
+whyItMatters: "Without a default-deny policy every pod can reach every other pod: one compromised pod can talk to the database."
+remediation: { summary: "Add a NetworkPolicy with an empty podSelector and policyTypes [Ingress] in each app namespace, then allow what is needed.", effort: S }
+verification: "Every namespace with app pods has a NetworkPolicy selecting all pods with Ingress and no ingress rules."

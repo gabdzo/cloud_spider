@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-REL-003
+revision: 1
+title: "Replicated deployments have a PodDisruptionBudget"
+category: reliability
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: pdb-for-replicated
+aggregation: proportional
+requires: [kube-deployments, kube-pdbs]
+whyItMatters: "Without a PDB, a node drain or a Karpenter consolidation can take every replica down at once."
+remediation: { summary: "Add a PodDisruptionBudget (minAvailable: 1 or maxUnavailable: 1) selecting each Deployment with more than one replica.", effort: S }
+verification: "Every app Deployment with replicas > 1 is selected by a PodDisruptionBudget in its namespace."

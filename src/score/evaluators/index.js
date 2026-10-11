@@ -1,4 +1,4 @@
 // Every evaluator by name, as the catalog's `evaluator:` field refers to it.
-import { kubeEvaluators } from "./kube.js";
+import { kubeEvaluators, kubeEvaluatorsMore } from "./kube.js";
 
-export const EVALUATORS = { ...kubeEvaluators };
+export const EVALUATORS = { ...kubeEvaluators, ...kubeEvaluatorsMore };
