@@ -25,6 +25,9 @@ export function watchLine({ cluster, history }) {
   if (history?.missing) {
     return { status: "ok", text: `no stack ${history.stack || ""} yet. Run makes it.`.replace("  ", " ") }
   }
+  if (history?.never && !(cluster?.found)) {
+    return { status: "ok", text: `stack ${history.stack || ""} is set up but nothing is made yet (a preview creates nothing). RUN makes it.`.replace("  ", " ") }
+  }
   const kind = history?.kind || ""
   const resources = Number.isInteger(history?.resources) ? history.resources : 0
   const count = `${resources} resources`
@@ -96,7 +99,8 @@ export function historyFact(text) {
     return { kind: "", resources: 0 }
   }
   const last = Array.isArray(data) ? data[0] : null
-  return { kind: last?.kind || "", resources: 0 }
+  // A stack that a PREVIEW made has no history yet: nothing was created.
+  return { kind: last?.kind || "", resources: 0, ...(Array.isArray(data) && !data.length ? { never: true } : {}) }
 }
 
 const COARSE = new Set([
@@ -199,4 +203,96 @@ export function addonCommands(spec, cluster) {
     { label: "up", text: "pulumi up" },
     { label: "destroy", text: `pulumi destroy && pulumi stack rm ${stack}` },
   ]
+}
+
+// A failed or refused stack run, in plain words: which known cause it is and
+// what to do about it. The first match wins, so the specific causes come
+// before the general ones. Shared by the server (the {error, hint} reply)
+// and the page (the ERROR plate).
+const HINTS = [
+  {
+    kind: "pulumi-missing",
+    test: /spawn pulumi ENOENT|pulumi: command not found|pulumi did not start|pulumi is not on PATH/i,
+    hint: "Pulumi is not on the PATH of the shell that started Cloud Spider. Install it (brew install pulumi/tap/pulumi), check `pulumi version` in that terminal, then restart the server there with npm start.",
+  },
+  {
+    kind: "passphrase",
+    test: /passphrase|PULUMI_CONFIG_PASSPHRASE|failed to decrypt|incorrect passphrase|getting secrets manager/i,
+    hint: "Pulumi could not open the stack's secrets. These stacks use an empty passphrase: stop the server and start it again with PULUMI_CONFIG_PASSPHRASE= npm start (no value after the =), from the same terminal as your AWS profile.",
+  },
+  {
+    kind: "pulumi-login",
+    test: /not logged in|pulumi login|PULUMI_ACCESS_TOKEN|could not (?:read|open|load) (?:the )?(?:state|backend)|failed to (?:get|load|read) (?:the )?(?:stack|backend)|NoSuchBucket|cloudspider-state-\d+.*(?:AccessDenied|Forbidden|403)/i,
+    hint: "Pulumi cannot reach its state in S3 (bucket cloudspider-state-550536272523, profile default). Check `aws sts get-caller-identity --profile default` works and that upgrades/<dir>/Pulumi.yaml still names that backend; do not `pulumi login` to the Pulumi Cloud.",
+  },
+  {
+    kind: "aws-account",
+    test: /allowed account|account ID not allowed|not in the allowed list|forbidden account|allowedAccountIds/i,
+    hint: "AWS answered for a different account than 550536272523. Start the server with AWS_PROFILE=default (your shell may export a work profile), e.g. AWS_PROFILE=default AWS_REGION=eu-north-1 PULUMI_CONFIG_PASSPHRASE= npm start.",
+  },
+  {
+    kind: "aws-creds",
+    test: /ExpiredToken|token (?:has )?expired|security token included in the request is invalid|UnrecognizedClientException|InvalidClientTokenId|SignatureDoesNotMatch|NoCredentialProviders|no valid credential|could not load credentials|Unable to locate credentials|SSO session|sso login|failed to refresh cached credentials|The config profile .* could not be found/i,
+    hint: "AWS credentials are missing, expired or from the wrong profile. In the server's terminal check `aws sts get-caller-identity --profile default` (for SSO: `aws sso login --profile default`), then restart with AWS_PROFILE=default npm start.",
+  },
+  {
+    kind: "quota",
+    test: /LimitExceeded|limit exceeded|quota|VcpuLimitExceeded|AddressLimitExceeded|VpcLimitExceeded|InsufficientInstanceCapacity|Unsupported.*availability zone/i,
+    hint: "An AWS limit or capacity stopped it (vCPU, VPC, Elastic IP or EKS quota, or no capacity for the instance type in a zone). Take down an unused stack or ask for a quota raise in Service Quotas (eu-north-1), then run again.",
+  },
+  {
+    kind: "name-taken",
+    test: /AlreadyExists|already exists|ResourceInUseException|EntityAlreadyExists|BucketAlreadyOwnedByYou|BucketAlreadyExists|Duplicate/i,
+    hint: "Something with this name already exists outside this stack (often a leftover from an earlier run). Pick another cluster name, or find and delete the leftover (the message names it) before running again.",
+  },
+  {
+    kind: "locked",
+    test: /locked by|currently locked|another update is in progress|conflict: Another update/i,
+    hint: "The stack is locked by an earlier run that did not finish. Make sure no pulumi is still running (ps aux | grep pulumi); then in that stack's folder run `pulumi cancel --stack <stack> --yes` and try again.",
+  },
+  {
+    kind: "busy",
+    test: /an upgrade is already running/i,
+    hint: "Another stack run is still going (its log is in its own card). Wait for it to finish, then press RUN again. PREVIEW counts as a run.",
+  },
+  {
+    kind: "cluster-limit",
+    test: /clusters are already up/i,
+    hint: "Cloud Spider allows two clusters at once so the bill cannot run away. Take one down first, or start the server with CLOUDSPIDER_MAX_CLUSTERS=3.",
+  },
+  {
+    kind: "preflight",
+    test: /free pod slots|Room for pods|is already on|needs .* first|the name does not match|must be (?:a |one of|t4g|\d)|short lowercase name/i,
+    hint: "Cloud Spider refused this before running pulumi, so nothing changed. The message says what to fix.",
+  },
+  {
+    kind: "page",
+    test: /the page failed|the server failed|Failed to fetch|NetworkError/i,
+    hint: "The page could not reach the Cloud Spider server. Check the terminal where you ran npm start: it may have stopped or printed an error.",
+  },
+]
+
+export function runHint(text = "") {
+  const value = String(text || "")
+  if (!value) return { kind: "", hint: "" }
+  const found = HINTS.find((item) => item.test.test(value))
+  return found ? { kind: found.kind, hint: found.hint } : { kind: "", hint: "" }
+}
+
+// The lines worth reading first from a failed run: Pulumi's own error and
+// detail lines, newest last, without the noise around them.
+export function errorHead(error = "", lines = [], max = 4) {
+  const text = [String(error || ""), ...lines.map(String)].join("\n")
+  const all = text.split("\n").map((line) => line.trim()).filter(Boolean)
+  const meaningful = all.filter((line) => /^(error|Details|Error|\S+Exception|panic)\b|failed, exit \d+|: error:|ENOENT|not on PATH|status code: \d{3}|api error/i.test(line))
+  const pick = meaningful.length ? meaningful : all
+  return [...new Set(pick)].slice(0, max)
+}
+
+// A copy-paste line that runs the same steps in a terminal. The passphrase
+// is never written out: it keeps whatever the terminal has (empty here).
+export function rerunCommand(directory, steps = []) {
+  const quote = (value) => (/^[A-Za-z0-9_./:@%+=,[\]-]+$/.test(value) ? value : `'${String(value).replace(/'/g, `'\\''`)}'`)
+  const head = `cd ${quote(directory)} && export AWS_PROFILE=default AWS_REGION=eu-north-1 PULUMI_CONFIG_PASSPHRASE="\${PULUMI_CONFIG_PASSPHRASE-}"`
+  return [head, ...steps.map((args) => ["pulumi", ...args].map(quote).join(" "))].join(" && ")
 }

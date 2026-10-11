@@ -29,6 +29,7 @@ import { renderTelemetry } from "./tele-view.js";
 import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
 import { addonCommands, upgradeSpiderLine } from "./upgrade-rules.js";
+import { radioLine, runModel } from "./run-pane.js";
 import { costLine } from "./stack-costs.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
@@ -3209,7 +3210,7 @@ function cardBody(spec, preset = {}) {
   down.addEventListener("click", () => postUpgrade("destroy"));
   body.append(el("div", { className: "actions" }, confirm, preview, run, down));
   if (spec.addon) body.append(commandRows(addonCommands(spec, preset.clusterName)));
-  body.append(el("pre", { id: "pip-out" }));
+  body.append(runPane());
   return body;
 }
 
@@ -3418,6 +3419,92 @@ function pipParams() {
   return params;
 }
 
+// The run pane: a Pip-Boy terminal in the open card. It shows the card's
+// own stack: the run going on it or its last run (kept on disk by the
+// server), and a refusal stays until the next run instead of flashing for
+// one poll.
+let runLocal = null;
+let runPolledAt = 0;
+let runShownId = "";
+let runStick = true;
+const runRadioSeen = new Set();
+
+function runCardKey() {
+  const params = pipParams();
+  return `${openCard}|${params.clusterName || params.name || ""}`;
+}
+
+function runPane() {
+  const pane = el("div", { id: "pip-run", className: "runpane", hidden: true, role: "region", ariaLabel: "stack run" });
+  const head = el("div", { className: "run-head" }, el("i", { className: "run-lamp" }), el("b", { className: "run-title" }), el("span", { className: "run-word" }), el("span", { className: "run-time" }));
+  const plate = el("div", { className: "run-plate", hidden: true, role: "alert" });
+  const steps = el("ol", { className: "run-steps" });
+  const out = el("pre", { id: "pip-out", tabIndex: 0, ariaLabel: "run log" });
+  out.addEventListener("scroll", () => {
+    runStick = out.scrollTop + out.clientHeight >= out.scrollHeight - 8;
+  });
+  const foot = el("div", { className: "run-foot" }, el("span", { className: "run-busy" }), el("a", { className: "run-log", target: "_blank", rel: "noopener" }));
+  pane.append(head, plate, steps, out, foot);
+  return pane;
+}
+
+function paintRun(body) {
+  const pane = pipEl.querySelector("#pip-run");
+  if (!pane) return;
+  const local = runLocal && runLocal.card === runCardKey() ? runLocal : null;
+  const model = runModel(body, { local, polledAt: runPolledAt, now: Date.now() });
+  const busy = pane.querySelector(".run-busy");
+  pane.hidden = !model.show && !model.busy;
+  pane.dataset.state = model.state;
+  if (busy) busy.textContent = model.busy || "";
+  if (!model.show) {
+    for (const part of pane.querySelectorAll(".run-head, .run-plate, .run-steps, #pip-out, .run-log")) part.hidden = true;
+    return;
+  }
+  for (const part of pane.querySelectorAll(".run-head, .run-steps, #pip-out")) part.hidden = false;
+  pane.querySelector(".run-lamp").className = `run-lamp ${model.lamp}`;
+  pane.querySelector(".run-title").textContent = model.title;
+  pane.querySelector(".run-word").textContent = model.fromDisk ? `${model.word} · LAST RUN` : model.word;
+  pane.querySelector(".run-time").textContent = model.elapsed;
+  const steps = pane.querySelector(".run-steps");
+  steps.replaceChildren(...model.steps.map((step) => el("li", { className: step.status }, el("span", { className: "mark", textContent: step.mark }), el("code", { textContent: step.text.replace(/ --non-interactive/g, "") }))));
+  steps.hidden = !model.steps.length;
+  const plate = pane.querySelector(".run-plate");
+  plate.hidden = !model.plate;
+  if (model.plate) {
+    const parts = [el("div", { className: "plate-title", textContent: model.plate.title })];
+    if (model.plate.step) parts.push(el("div", { className: "plate-step", textContent: `at: ${model.plate.step.replace(/ --non-interactive/g, "")}` }));
+    parts.push(el("pre", { className: "plate-lines", textContent: model.plate.lines.join("\n") }));
+    if (model.plate.hint) parts.push(el("p", { className: "plate-hint" }, el("b", { textContent: "WHAT TO DO " }), document.createTextNode(model.plate.hint)));
+    if (model.plate.command) {
+      const copy = el("button", { type: "button", className: "cmd copy", textContent: "COPY", title: "copy the command to run it in a terminal" });
+      copy.addEventListener("click", () => copyCommand(model.plate.command, copy));
+      parts.push(el("div", { className: "cmdrow plate-cmd" }, el("span", { className: "lbl", textContent: "BY HAND" }), el("code", { textContent: model.plate.command }), copy));
+    }
+    plate.replaceChildren(...parts);
+  }
+  const out = pane.querySelector("#pip-out");
+  if (out.textContent !== model.log) {
+    out.textContent = model.log;
+    if (runStick || runShownId !== model.id) out.scrollTop = out.scrollHeight;
+  }
+  runShownId = model.id;
+  const link = pane.querySelector(".run-log");
+  link.hidden = !model.logPath;
+  if (model.logPath) {
+    const query = new URLSearchParams({ module: openModule() });
+    const params = pipParams();
+    for (const key of ["clusterName", "name"]) if (params[key]) query.set(key, params[key]);
+    link.href = `/api/upgrade/log?${query}`;
+    link.textContent = `log: ${model.logPath}`;
+  }
+  const radio = radioLine(model);
+  if (radio && !runRadioSeen.has(radio.key)) {
+    runRadioSeen.add(radio.key);
+    if (noteSpider(radio.text, radio.status)) renderRadioPanel();
+  }
+}
+
 function paintUpgrade(body) {
   if (sample) return;
   const watch = pipEl.querySelector("#pip-watch");
@@ -3428,13 +3515,27 @@ function paintUpgrade(body) {
     watch.classList.toggle("fail", body?.watch?.status === "fail");
     if (text && noteSpider(text, body.watch.status === "fail" ? "fail" : "ok")) renderRadioPanel();
   }
-  const out = pipEl.querySelector("#pip-out");
-  if (!out) return;
-  const lines = [];
-  if (body?.stack) lines.push(`stack ${body.stack}`);
-  if (body?.error) lines.push(body.error);
-  lines.push(...(body?.lines || []));
-  out.textContent = lines.join("\n");
+  runPolledAt = Date.now();
+  upgradeRunning = Boolean(body?.running);
+  paintRun(body);
+}
+
+let upgradeRunning = false;
+let upgradeSeq = 0;
+
+// Any answer, even a 500 or no answer at all, is JSON with an error.
+async function upgradeJson(url, init) {
+  try {
+    const response = await fetch(url, init);
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { error: `the server answered ${response.status} without JSON${text ? `: ${text.slice(0, 160)}` : ""}` };
+    }
+  } catch (failure) {
+    return { error: `the page failed: the server did not answer (${failure?.message || "no network"})` };
+  }
 }
 
 async function refreshUpgrade(fresh) {
@@ -3449,30 +3550,42 @@ async function refreshUpgrade(fresh) {
   // Which stack to watch: the cluster (or name) typed in the card.
   const params = pipParams();
   for (const key of ["clusterName", "name"]) if (params[key]) query.set(key, params[key]);
-  const body = await fetch(`/api/upgrade?${query}`).then((response) => response.json()).catch(() => ({ error: "the page failed" }));
+  // Only the newest answer paints: an older poll for the name that was in
+  // the field before must not paint its cluster over the new one.
+  const seq = ++upgradeSeq;
+  const card = runCardKey();
+  const body = await upgradeJson(`/api/upgrade?${query}`);
+  if (seq !== upgradeSeq || card !== runCardKey()) return;
   paintUpgrade(body);
 }
 
 async function postUpgrade(action) {
   const spec = openSpec();
-  const out = pipEl.querySelector("#pip-out");
   if (!spec) return;
   if (sample) {
     const line = upgradeSpiderLine({ action, title: spec.title, sample: true });
     noteSpider(line.text, line.status);
     renderRadioPanel();
-    if (out) out.textContent = line.text;
+    runLocal = null;
+    paintRun({ state: "refused", action, stack: "sample", error: line.text, hint: "Switch SAMPLE off to run stacks against the account.", lines: [] });
     return;
   }
-  const body = await fetch("/api/upgrade", {
+  runLocal = null;
+  const body = await upgradeJson("/api/upgrade", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ module: spec.id, action, params: pipParams() }),
-  }).then((response) => response.json()).catch(() => ({ error: "the page failed" }));
+  });
   const line = upgradeSpiderLine({ action, title: spec.title, response: body });
   noteSpider(line.text, line.status);
   renderRadioPanel();
-  paintUpgrade(body);
+  if (body?.error) console.warn(`[stacks] ${action} ${spec.id}: ${body.error}${body.hint ? `\nhint: ${body.hint}` : ""}`);
+  // A refusal the server did not keep (it could not be reached) stays
+  // here until the next press.
+  const kept = body?.state === "refused" && body.stack;
+  if (body?.error && !kept) runLocal = { error: body.error, hint: body.hint || "", action, at: Date.now(), card: runCardKey() };
+  paintUpgrade(body?.error && !kept ? { action, stack: body.stack || "", lines: [] } : body);
+  refreshUpgrade(true);
   if (spec.addon) setTimeout(() => pullAddons(true), 1500);
 }
 
@@ -3652,9 +3765,12 @@ setInterval(() => {
   if (mode === "cluster") pullCluster();
 }, 15_000);
 
+// Live while a run goes (every second), every two seconds otherwise.
+let upgradeTicks = 0;
 setInterval(() => {
-  if (pipOpen && openCard) refreshUpgrade(false);
-}, 2000);
+  upgradeTicks += 1;
+  if (pipOpen && openCard && (upgradeRunning || upgradeTicks % 2 === 0)) refreshUpgrade(false);
+}, 1000);
 
 setInterval(() => {
   pullKubeRadio();

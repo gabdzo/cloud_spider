@@ -20,7 +20,7 @@ import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.
 import { sampleKubeSnapshot } from "./kube-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
-import { campFixtures, watchLine } from "./upgrade-rules.js";
+import { campFixtures, runHint, watchLine } from "./upgrade-rules.js";
 import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
 import { createMetricsCache, sampleMetrics } from "./metrics.js";
@@ -399,7 +399,11 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       return learn.progress(String(body?.key || ""), change);
     },
     async upgradeStatus(module = "", fresh = false, values = {}) {
-      const job = upgrade?.status?.() || { running: false, lines: [] };
+      // The card's own stack (its live run or its last run on disk); the
+      // old single job when the upgrade object is a simple stand-in.
+      const job = module && upgrade?.statusFor
+        ? await upgrade.statusFor(module, values).catch(() => upgrade?.status?.() || { running: false, lines: [] })
+        : upgrade?.status?.() || { running: false, lines: [] };
       if (!module || !upgrade?.facts) return job;
       if (sawRunning && !job.running) fresh = true;
       sawRunning = Boolean(job.running);
@@ -435,36 +439,49 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       if (!originAllowed(requestOrigin, pageOrigin)) return { status: 403, error: "nothing was cancelled" };
       return agent ? agent.cancel() : { cancelled: false };
     },
+    async upgradeLog(module = "", values = {}) {
+      return upgrade?.logFor ? upgrade.logFor(module, values) : null;
+    },
     async upgradeRun(requestOrigin, body = {}) {
-      if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the upgrade did not happen" };
-      if (!upgrade?.run) return { error: "upgrades are not set up" };
-      // An add-on is not raised twice (the demo's metrics-server) or before
-      // what it needs (Karpenter before the Pod Identity agent).
-      if (addonById(body.module) && body.action === "up" && addons?.view) {
-        const view = await addons.view({ fresh: true }).catch(() => null);
-        const cluster = body.params?.clusterName || "cloudspider-up";
-        // Free pod slots from the shared kube read, when it is this cluster.
-        const snap = primary ? await readContext(primary, 30_000).catch(() => null) : null;
-        const same = snap && !snap.error && (snap.clusterName === cluster || String(snap.clusterName || "").endsWith(`/${cluster}`));
-        const room = same && snap.nodes?.length ? podRoom({ nodes: snap.nodes, pods: snap.pods || [] }) : null;
-        const refusal = view ? refuseUp(view.tree, body.module, cluster, room) : "";
-        if (refusal) return { error: refusal };
+      if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the upgrade did not happen", hint: "Open Cloud Spider at the address npm start printed (http://127.0.0.1:9241); another page cannot run stacks." };
+      if (!upgrade?.run) return { error: "upgrades are not set up", hint: "" };
+      // Every no is kept with the card's stack (upgrade.refuse) so the card
+      // keeps showing it; the answer carries {error, hint} either way.
+      const no = (error) => upgrade.refuse
+        ? upgrade.refuse({ module: String(body.module || ""), action: String(body.action || ""), params: body.params || {}, error })
+        : { error, ...runHint(error) };
+      try {
+        // An add-on is not raised twice (the demo's metrics-server) or before
+        // what it needs (Karpenter before the Pod Identity agent).
+        if (addonById(body.module) && body.action === "up" && addons?.view) {
+          const view = await addons.view({ fresh: true }).catch(() => null);
+          const cluster = body.params?.clusterName || "cloudspider-up";
+          // Free pod slots from the shared kube read, when it is this cluster.
+          const snap = primary ? await readContext(primary, 30_000).catch(() => null) : null;
+          const same = snap && !snap.error && (snap.clusterName === cluster || String(snap.clusterName || "").endsWith(`/${cluster}`));
+          const room = same && snap.nodes?.length ? podRoom({ nodes: snap.nodes, pods: snap.pods || [] }) : null;
+          const refusal = view ? refuseUp(view.tree, body.module, cluster, room) : "";
+          if (refusal) return no(refusal);
+        }
+        if (addonById(body.module)) addons?.forget?.();
+        let clusters;
+        if (body.module === "eks" && body.action === "up" && eks?.listClusters) {
+          const listed = await eks.listClusters();
+          if (listed.error) return no(`could not count the clusters before raising one: ${listed.error}`);
+          clusters = listed.names;
+        }
+        const legacyName = body.module === "eks" && upgrade.legacyCluster ? await upgrade.legacyCluster() : undefined;
+        const started = upgrade.run({
+          module: body.module,
+          params: body.params || {},
+          action: body.action,
+          clusters,
+          legacyName,
+        });
+        return started?.error && !started.hint ? { ...started, ...runHint(started.error) } : started;
+      } catch (failure) {
+        return no(`the server failed: ${failure?.message || "error"}`);
       }
-      if (addonById(body.module)) addons?.forget?.();
-      let clusters;
-      if (body.module === "eks" && body.action === "up" && eks?.listClusters) {
-        const listed = await eks.listClusters();
-        if (listed.error) return { error: listed.error };
-        clusters = listed.names;
-      }
-      const legacyName = body.module === "eks" && upgrade.legacyCluster ? await upgrade.legacyCluster() : undefined;
-      return upgrade.run({
-        module: body.module,
-        params: body.params || {},
-        action: body.action,
-        clusters,
-        legacyName,
-      });
     },
     // Vaults: projects from YAML files. sample=true reads the sample folder
     // against the sample place, with canned check answers.

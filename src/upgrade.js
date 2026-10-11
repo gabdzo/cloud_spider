@@ -3,7 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { estimate } from "./stack-costs.js";
 import { ADDONS, DIR as ADDON_DIR, PROJECT as ADDON_PROJECT } from "../upgrades/addons/catalog.js";
-import { LEGACY_CLUSTER, cardName, confirmMatches, failureText, historyFact, resourceFact, stackFor, tooManyClusters } from "./upgrade-rules.js";
+import { LEGACY_CLUSTER, cardName, confirmMatches, errorHead, failureText, historyFact, rerunCommand, resourceFact, runHint, stackFor, tooManyClusters } from "./upgrade-rules.js";
+import { createRunLog } from "./run-log.js";
 
 
 export function childEnvFor(env) {
@@ -16,6 +17,7 @@ export function childEnvFor(env) {
 }
 
 export { LEGACY_CLUSTER, failureText, stackFor, tooManyClusters } from "./upgrade-rules.js";
+export { errorHead, rerunCommand, runHint } from "./upgrade-rules.js";
 export { campFixtures, cardName, confirmMatches, historyFact, pulumiMissing, pulumiWarning, resourceFact, upgradeSpiderLine, watchLine } from "./upgrade-rules.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -215,21 +217,137 @@ export function checkParams(spec, input = {}) {
 
 const CAMP_MS = 30_000;
 
-export function createUpgrade({ run = spawn, cwd = root, env = process.env, clock = () => Date.now() } = {}) {
+// What a card shows of a run: the newest output, at most this many
+// characters (an EKS up prints pages; the error that matters comes last).
+const SHOW_CHARS = 96 * 1024;
+
+function tailLines(lines, max = SHOW_CHARS) {
+  const out = [];
+  let size = 0;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = String(lines[i]);
+    size += line.length + 1;
+    if (size > max) {
+      out.unshift(`… ${i + 1} earlier lines are in the log file`);
+      break;
+    }
+    out.unshift(line);
+  }
+  return out;
+}
+
+// runsDir: where every run's log goes (.cloudspider/runs). Omitted, runs
+// are kept in memory only (the tests).
+export function createUpgrade({ run = spawn, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null } = {}) {
   let job = null;
+  let notice = null;
   let campCache = null;
   let legacyCache = null;
+  let runs = 0;
+  const runLog = createRunLog({ dir: runsDir, clock });
+
+  function view(item) {
+    const ended = item.endedAt ?? null;
+    const failed = Boolean(item.error);
+    const state = item.running ? "running" : item.refused ? "refused" : failed ? "failed" : "done";
+    return {
+      id: item.id,
+      running: Boolean(item.running),
+      state,
+      module: item.module,
+      action: item.action,
+      stack: item.stack || "",
+      error: item.error || "",
+      hint: item.hint || "",
+      head: failed ? errorHead(item.error, item.errLines || [], 4) : [],
+      command: item.command || "",
+      log: item.log || "",
+      startedAt: item.startedAt ?? null,
+      endedAt: ended,
+      elapsedMs: item.startedAt == null ? 0 : (ended ?? clock()) - item.startedAt,
+      steps: (item.steps || []).map((step) => ({ text: step.text, status: step.status })),
+      lines: tailLines(item.lines || []),
+      ...(item.fromDisk ? { fromDisk: true } : {}),
+    };
+  }
 
   function status() {
-    if (!job) return { running: false, lines: [] };
-    return {
-      running: job.running,
-      module: job.module,
-      action: job.action,
-      stack: job.stack || "",
-      error: job.error || "",
-      lines: job.lines.slice(-40),
-    };
+    if (!job && !notice) return { running: false, lines: [] };
+    // A refusal newer than the run is what the user just did: it shows
+    // first and stays until the next run, never wiped by the next poll.
+    if (notice && (!job || notice.at >= job.startedAt)) return { ...view(notice), ...(job?.running ? { busy: { stack: job.stack, action: job.action } } : {}) };
+    return view(job);
+  }
+
+  function save(item) {
+    item.logHandle?.save({
+      id: item.id,
+      module: item.module,
+      action: item.action,
+      stack: item.stack,
+      running: item.running,
+      refused: Boolean(item.refused),
+      error: item.error || "",
+      hint: item.hint || "",
+      head: item.error ? errorHead(item.error, item.errLines || [], 4) : [],
+      command: item.command || "",
+      startedAt: item.startedAt,
+      endedAt: item.endedAt ?? null,
+      steps: (item.steps || []).map((step) => ({ text: step.text, status: step.status })),
+    });
+  }
+
+  // Cloud Spider said no before pulumi ran. Kept like a run (in the card,
+  // on disk) so the reason does not vanish with the next poll.
+  function refuse({ module = "", action = "", stack = "", params = null, error = "", command = "" } = {}) {
+    const at = clock();
+    if (!stack && params) {
+      const spec = UPGRADES.find((item) => item.id === module);
+      const checked = spec ? checkParams(spec, params) : { error: "no spec" };
+      if (!checked.error) stack = stackFor(spec, checked.values, legacyCache?.name || LEGACY_CLUSTER);
+    }
+    runs += 1;
+    const { hint } = runHint(error);
+    notice = { id: `r${runs}`, refused: true, running: false, module, action, stack, error, hint, command, startedAt: at, endedAt: at, at, steps: [], lines: [`refused: ${error}`], errLines: [] };
+    if (stack && runLog) {
+      notice.logHandle = runLog.start(stack, { startedAt: at });
+      notice.log = notice.logHandle?.rel || "";
+      notice.logHandle?.append(`# ${new Date(at).toISOString()} ${action} ${stack}: refused before pulumi ran\n${error}${hint ? `\nhint: ${hint}` : ""}`);
+      save(notice);
+    }
+    return { error, hint, refused: true, stack, state: "refused" };
+  }
+
+  // The card's own stack: the run going on it, else its last run from disk.
+  async function statusFor(module, values = {}) {
+    const spec = UPGRADES.find((item) => item.id === module);
+    if (!spec) return status();
+    const checked = checkParams(spec, values);
+    const legacy = spec.id === "eks" ? await legacyFor() : undefined;
+    const stack = stackFor(spec, checked.values || {}, legacy);
+    const busy = job?.running && job.stack !== stack ? { busy: { stack: job.stack, action: job.action } } : {};
+    const mine = [notice, job].filter((item) => item && item.stack === stack).sort((a, b) => b.startedAt - a.startedAt)[0];
+    if (mine) return { ...view(mine), ...busy };
+    const saved = runLog?.latest(stack);
+    if (saved) {
+      return {
+        ...view({ ...saved, running: false, fromDisk: true, errLines: [], lines: saved.lines, log: saved.log, endedAt: saved.endedAt ?? saved.startedAt }),
+        // A run the server never saw end (it was stopped mid-run).
+        ...(saved.running ? { state: "failed", error: saved.error || "the server stopped while this ran; the log ends where it stopped", hint: "Restart left the stack as pulumi had it. If it says it is locked, run pulumi cancel for this stack, then RUN again." } : {}),
+        ...busy,
+      };
+    }
+    return { running: false, lines: [], stack, ...busy };
+  }
+
+  async function legacyFor() {
+    const spec = UPGRADES.find((item) => item.id === "eks");
+    const now = clock();
+    if (legacyCache && now - legacyCache.at < CAMP_MS) return legacyCache.name;
+    const out = await capture(run, join(cwd, spec.dir), childEnvFor(env), ["stack", "output", "name", "--stack", spec.stack]);
+    const name = out.error ? "" : out.text.trim();
+    legacyCache = { at: now, name: /^[a-z][a-z0-9-]{1,99}$/.test(name) ? name : LEGACY_CLUSTER };
+    return legacyCache.name;
   }
 
   return {
@@ -252,13 +370,18 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
     // (the `name` output), not from Pulumi.upgrade.yaml, which the old Stacks
     // panel rewrote on every new name.
     async legacyCluster() {
-      const spec = UPGRADES.find((item) => item.id === "eks");
-      const now = clock();
-      if (legacyCache && now - legacyCache.at < CAMP_MS) return legacyCache.name;
-      const out = await capture(run, join(cwd, spec.dir), childEnvFor(env), ["stack", "output", "name", "--stack", spec.stack]);
-      const name = out.error ? "" : out.text.trim();
-      legacyCache = { at: now, name: /^[a-z][a-z0-9-]{1,99}$/.test(name) ? name : LEGACY_CLUSTER };
-      return legacyCache.name;
+      return legacyFor();
+    },
+    statusFor,
+    refuse,
+    async logFor(module, values = {}) {
+      const spec = UPGRADES.find((item) => item.id === module);
+      if (!spec || !runLog) return null;
+      const checked = checkParams(spec, values);
+      if (checked.error) return null;
+      const stack = stackFor(spec, checked.values, spec.id === "eks" ? await legacyFor() : undefined);
+      const saved = runLog.latest(stack, { tail: 0 });
+      return saved ? { log: saved.log, text: saved.text } : null;
     },
     async facts(module, values = {}) {
       const spec = UPGRADES.find((item) => item.id === module);
@@ -273,7 +396,7 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
         AWS_REGION: "eu-north-1",
         PULUMI_CONFIG_PASSPHRASE: env.PULUMI_CONFIG_PASSPHRASE || "",
       };
-      return readFacts(run, directory, spec, childEnv, stack);
+      return readFacts(run, directory, spec, childEnv, stack, checked.values || {});
     },
     async campShelf() {
       const now = clock();
@@ -305,28 +428,49 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
     },
     run({ module, params, action, clusters, legacyName, maxClusters = Number(env.CLOUDSPIDER_MAX_CLUSTERS) || 2 }) {
       const spec = UPGRADES.find((item) => item.id === module);
-      if (!spec) return { error: "no such upgrade" };
+      if (!spec) return refuse({ module, action, error: "no such upgrade" });
       const verb = ["destroy", "up", "preview"].includes(action) ? action : "";
-      if (!verb) return { error: "action must be preview, up or destroy" };
+      if (!verb) return refuse({ module, action, error: "action must be preview, up or destroy" });
       const checked = checkParams(spec, params);
-      if (checked.error) return { error: checked.error };
+      if (checked.error) return refuse({ module, action: verb, error: checked.error });
+      const stack = stackFor(spec, checked.values, legacyName);
+      const directory = join(cwd, spec.dir);
+      const steps = upgradeSteps(spec, stack, verb, checked.values);
+      const command = rerunCommand(directory, steps);
+      const no = (error) => refuse({ module: spec.id, action: verb, stack, error, command });
       if (verb === "destroy" && !confirmMatches(cardName(spec, checked.values), params?.confirmName)) {
-        return { error: "the name does not match" };
+        return no("the name does not match");
       }
       if (verb === "up" && tooManyClusters(clusters, cardName(spec, checked.values), maxClusters)) {
-        return { error: `${clusters.length} clusters are already up (${clusters.join(", ")}); the limit is ${maxClusters}. Take one down or set CLOUDSPIDER_MAX_CLUSTERS.` };
+        return no(`${clusters.length} clusters are already up (${clusters.join(", ")}); the limit is ${maxClusters}. Take one down or set CLOUDSPIDER_MAX_CLUSTERS.`);
       }
-      if (job?.running) return { error: "an upgrade is already running" };
-      const stack = stackFor(spec, checked.values, legacyName);
-      job = { running: true, module: spec.id, action: verb, stack, lines: [], errLines: [], error: "" };
-      const directory = join(cwd, spec.dir);
-      const childEnv = {
-        ...env,
-        AWS_PROFILE: env.AWS_PROFILE || "default",
-        AWS_REGION: "eu-north-1",
-        PULUMI_CONFIG_PASSPHRASE: env.PULUMI_CONFIG_PASSPHRASE || "",
+      if (job?.running) return no(`an upgrade is already running (${job.action} on stack ${job.stack})`);
+      runs += 1;
+      const startedAt = clock();
+      notice = null;
+      job = {
+        id: `u${runs}`,
+        running: true,
+        module: spec.id,
+        action: verb,
+        stack,
+        lines: [],
+        errLines: [],
+        error: "",
+        hint: "",
+        command,
+        startedAt,
+        endedAt: null,
+        steps: steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}`, status: "waiting" })),
       };
-      apply(run, directory, spec, stack, verb, checked.values, childEnv, job);
+      if (runLog) {
+        job.logHandle = runLog.start(stack, { startedAt });
+        job.log = job.logHandle?.rel || "";
+        job.logHandle?.append(`# ${new Date(startedAt).toISOString()} ${verb} ${stack} in ${spec.dir}`);
+        save(job);
+      }
+      const childEnv = childEnvFor(env);
+      apply(run, directory, job, childEnv, { clock, save });
       return status();
     },
   };
@@ -364,16 +508,33 @@ export function upgradeSteps(spec, stack, verb, values) {
 
 const KEEP_LINES = 400;
 
-function apply(run, directory, spec, stack, verb, values, env, job) {
-  const steps = upgradeSteps(spec, stack, verb, values);
+function apply(run, directory, job, env, { clock = () => Date.now(), save = () => {} } = {}) {
   let index = 0;
+  const log = (text) => job.logHandle?.append(text);
+  const finish = (error = "") => {
+    job.running = false;
+    job.endedAt = clock();
+    if (error) {
+      job.error = job.error || error;
+      job.hint = runHint([job.error, ...job.errLines.slice(-20)].join("\n")).hint;
+      log(`# failed after ${Math.round((job.endedAt - job.startedAt) / 1000)} s\n${job.error}${job.hint ? `\nhint: ${job.hint}` : ""}`);
+    } else {
+      log(`# done in ${Math.round((job.endedAt - job.startedAt) / 1000)} s`);
+    }
+    save(job);
+  };
   const next = () => {
-    if (index >= steps.length) {
-      job.running = false;
+    if (index >= job.steps.length) {
+      finish();
       return;
     }
-    const args = steps[index];
+    const step = job.steps[index];
+    const args = step.args;
     index += 1;
+    step.status = "running";
+    log(`$ ${step.text}`);
+    job.lines.push(`$ ${step.text}`);
+    save(job);
     let child;
     try {
       child = run("pulumi", args, {
@@ -384,41 +545,51 @@ function apply(run, directory, spec, stack, verb, values, env, job) {
         stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (error) {
-      job.running = false;
-      job.error = error?.message || "pulumi did not start";
-      job.lines.push(job.error);
+      step.status = "failed";
+      const text = error?.message || "pulumi did not start";
+      job.lines.push(text);
+      job.errLines.push(text);
+      finish(text);
       return;
     }
     if (!child?.stdout || !child?.stderr || typeof child.on !== "function") {
-      job.running = false;
-      job.error = "pulumi did not start";
-      job.lines.push(job.error);
+      step.status = "failed";
+      job.lines.push("pulumi did not start");
+      finish("pulumi did not start");
       return;
     }
-    // Keep the newest lines, not the first 12k characters: an EKS up prints
-    // pages of progress and the error that matters comes last.
-    const take = (into) => (chunk) => {
+    // Keep the newest lines in memory; all of them go to the log file.
+    const take = (into, stream) => (chunk) => {
       const text = String(chunk).trimEnd();
       if (!text) return;
+      log(stream === "err" ? text.replace(/^/gm, "! ") : text);
       for (const list of into) {
         list.push(text);
         if (list.length > KEEP_LINES) list.splice(0, list.length - KEEP_LINES);
       }
     };
     const errLines = [];
-    child.stdout.on("data", take([job.lines]));
-    child.stderr.on("data", take([job.lines, errLines]));
+    child.stdout.on("data", take([job.lines], "out"));
+    child.stderr.on("data", take([job.lines, errLines, job.errLines], "err"));
+    let over = false;
     child.on("error", (error) => {
-      job.running = false;
-      job.error = error?.message || "pulumi did not start";
-      job.lines.push(job.error);
+      if (over) return;
+      over = true;
+      step.status = "failed";
+      const text = error?.code === "ENOENT" ? `pulumi is not on PATH (spawn pulumi ENOENT)` : error?.message || "pulumi did not start";
+      job.lines.push(text);
+      job.errLines.push(text);
+      finish(text);
     });
     child.on("close", (code) => {
+      if (over) return;
+      over = true;
       if (code !== 0) {
-        job.running = false;
-        job.error = job.error || failureText(args, code, job.lines, errLines, stack);
+        step.status = "failed";
+        finish(failureText(args, code, job.lines, errLines, job.stack));
         return;
       }
+      step.status = "done";
       next();
     });
   };
@@ -460,7 +631,7 @@ export function capture(run, directory, env, args) {
   });
 }
 
-async function readFacts(run, directory, spec, env, stack = spec.stack) {
+async function readFacts(run, directory, spec, env, stack = spec.stack, values = {}) {
   const history = await capture(run, directory, env, ["stack", "history", "--json", "--stack", stack]);
   const nameKey = spec.id === "eks" || spec.addon ? "clusterName" : "name";
   if (history.error) {
@@ -480,6 +651,7 @@ async function readFacts(run, directory, spec, env, stack = spec.stack) {
     "--stack",
     stack,
   ]);
-  fact.name = config.error ? spec.parameters.find((item) => item.name === nameKey)?.default || "" : config.text.trim();
+  // No config yet: the name typed in the card, not the default cluster's.
+  fact.name = config.error ? values[nameKey] || spec.parameters.find((item) => item.name === nameKey)?.default || "" : config.text.trim();
   return fact;
 }

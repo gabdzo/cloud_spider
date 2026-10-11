@@ -611,3 +611,22 @@ Then make a kubeconfig context that uses that identity (for EKS:
 Context names and namespaces come only from your config, and names that
 do not look like kube names are refused at start. Cloud Spider writes no
 tokens and no pod contents to its log; only config mistakes are printed.
+
+## 20. Stacks: the run pane, run logs and errors (free)
+
+Every PREVIEW, RUN and TAKE IT DOWN in a Stacks card now shows a terminal under the buttons: each pulumi step with ✓ / ▶ / ✗, the clock, and the live log (stdout and stderr). The card shows its own stack only (the name in its fields): the run going on it, or its last run.
+
+- Every run is written to `.cloudspider/runs/<stack>/<time>.log` (plus a `.json` with the steps and the error), gitignored. The `log:` link under the pane opens the whole log; it survives a page reload and a server restart.
+- A failed run gets a red ERROR plate: the step that failed, Pulumi's first error lines, WHAT TO DO for the known causes (pulumi not on PATH, passphrase, Pulumi state not reachable, AWS credentials expired or the wrong profile, quota, a name already taken, a locked stack) and BY HAND with COPY: the same steps as one line for a terminal (the passphrase is never written out). The radio gets the first error line too.
+- A run Cloud Spider refuses before pulumi starts (another run still going, the two-cluster limit, an add-on with no pod room, a wrong name for take-down) shows `REFUSED · NOTHING RAN` and stays until the next press. Before this it flashed for under two seconds and the next poll painted the last run's log over it.
+- PREVIEW makes the stack (and its `Pulumi.<stack>.yaml`) but creates nothing in AWS; the card now says so ("nothing is made yet … RUN makes it"). RUN is what creates the cluster.
+
+### A second, medium cluster (about $0.14/h, $3.40/day while up)
+
+EKS control plane $0.10/h + one t4g.medium $0.0344/h + 20 GB gp3 + a public IPv4 (eu-north-1). The card's cost chip still prices the default t4g.small.
+
+1. Start the server from a terminal where `aws sts get-caller-identity --profile default` answers with account 550536272523 and `pulumi version` works: `AWS_PROFILE=default AWS_REGION=eu-north-1 PULUMI_CONFIG_PASSPHRASE= npm start`.
+2. Stacks → EKS: clusterName `cloudspider-medium` (or any short lowercase name), instanceType `t4g.medium`, nodeCount 1.
+3. Optional: PREVIEW, and wait until the pane says DONE (about a minute). A RUN pressed while the preview is still going is refused.
+4. RUN. Leave the tab open: about 15 minutes; the pane shows each step and the log. When it says DONE, the cluster is up and billing.
+5. Take it down when done: type the cluster name in the box, TAKE IT DOWN (about 10 minutes).

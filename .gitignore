@@ -22,3 +22,6 @@ labs/cloud-platform/.venv/
 
 # Kube contexts for the Cluster view (names of real clusters).
 cloudspider.contexts.yaml
+
+# Stack run logs from the Stacks panel (.cloudspider/runs/<stack>/<ts>.log).
+.cloudspider/
