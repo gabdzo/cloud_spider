@@ -771,4 +771,13 @@ Config: `network.*` in cloudspider.yaml (see cloudspider.example.yaml).
 - **CHECKS:** filter chips, every row with COPY. **FINDINGS:** confidence, the facts behind it, NEXT (COPY) and VERIFY.
 - **YOU KNOW THE DRILL:** every command of the run in order, with COPY ALL. EXPORT MD / JSON download the report.
 
+**AWS (N3, Route 53):** with the AWS lamp on, a run also reads, read-only:
+- the PATH graph of the region;
+- Route 53 (`ListHostedZones`, `ListResourceRecordSets`, `TestDNSAnswer`, `GetHealthCheckStatus`, `GetHostedZone`);
+- CloudFront (`ListDistributions`).
+
+It says what the name points at in this account (A-TGT-01: a CloudFront distribution, the load balancer, an ENI address, or nothing here) and which zone and record answer (A-R53-01). It also reports what Route 53 itself answers (A-R53-02) and whether any record in the zone points at a load balancer or distribution that no longer exists (A-R53-03, subdomain takeover). Failover or weighted records are checked for health checks (A-R53-04), and a private zone owning the name is reported (A-R53-05).
+
+A refused read is UNKNOWN and names the permission to add. Turn the reads off with `network.aws.route53` / `network.aws.cloudfront`. These Route 53 and CloudFront calls cost nothing.
+
 When an AWS load balancer answered, the path diagram follows the same host. In SAMPLE mode the panel debugs fixture answers (try `web.sample.test`, an ALB answering 503; `api.sample.test`, a slow origin; and `google.com`), so nothing leaves the machine.

@@ -12,6 +12,7 @@
     "vaults:new": "node scripts/vaults-new.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudfront": "^3.1149.0",
     "@aws-sdk/client-cloudtrail": "^3.901.0",
     "@aws-sdk/client-cloudwatch": "^3.901.0",
     "@aws-sdk/client-cloudwatch-logs": "^3.901.0",
@@ -22,6 +23,7 @@
     "@aws-sdk/client-lambda": "^3.1149.0",
     "@aws-sdk/client-rds": "^3.1149.0",
     "@aws-sdk/client-resource-groups-tagging-api": "^3.1149.0",
+    "@aws-sdk/client-route-53": "^3.1149.0",
     "yaml": "^2.9.1"
   }
 }

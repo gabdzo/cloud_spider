@@ -37,7 +37,8 @@ function nodeFact(layer, checks) {
     const ips = d?.observed?.addresses || [];
     if (d?.status === "FAIL") return d.observed?.error || "no answer";
     if (d?.status === "NOT_APPLICABLE") return "IP literal";
-    return `${ips.length} IP${ips.length === 1 ? "" : "s"}${d?.observed?.cnames?.length ? " · CNAME" : ""}${get("L-DNS-02")?.observed?.splitHorizon ? " · split" : ""}`;
+    const r53 = get("A-R53-01");
+    return `${ips.length} IP${ips.length === 1 ? "" : "s"}${d?.observed?.cnames?.length ? " · CNAME" : ""}${get("L-DNS-02")?.observed?.splitHorizon ? " · split" : ""}${r53?.status === "PASS" ? " · R53" : r53?.status === "FAIL" ? " · R53 ✗" : ""}`;
   }
   if (layer === "transport") {
     const t = get("L-TCP-01");

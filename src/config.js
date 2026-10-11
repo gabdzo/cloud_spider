@@ -86,6 +86,10 @@ export const SCHEMA = {
         concurrent: { type: "integer", min: 1, max: 8, default: 2, doc: "runs at once" },
       },
     },
+    aws: {
+      route53: { type: "boolean", default: true, doc: "read Route 53 (zones, records, TestDNSAnswer, health checks) when debugging a URL" },
+      cloudfront: { type: "boolean", default: true, doc: "read CloudFront distributions when debugging a URL" },
+    },
     reports: {
       keep: { type: "integer", min: 1, max: 500, default: 50, doc: "debug reports kept under storage.path/netdebug" },
     },

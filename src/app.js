@@ -1203,6 +1203,13 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       const history = ctx.primary && tele?.podHistory ? tele.podHistory(`${ns}/${name}`) : null;
       return { ...inspectPod(raw.pod, { events: raw.events, chain: raw.chain, usage: raw.usage, history, now: now() }), eventNote: raw.eventNote || "" };
     },
+    // netdebug: the PATH graph of the current region (load balancers,
+    // listeners, rules, target groups, subnets, SGs, routes), read-only.
+    async pathGraph() {
+      if (!path || !region) return { error: path ? error || "the region is not read yet" : "path reads are not set up" };
+      const result = await readPath(path, region);
+      return result.error ? { error: `${result.call}: ${result.error}` } : result.graph;
+    },
     async pathView(query = {}) {
       const at = region;
       const failed = (sentence) => ({
