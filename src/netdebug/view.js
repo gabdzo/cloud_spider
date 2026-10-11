@@ -123,6 +123,11 @@ export function timingOf(checks) {
   return { total: dns + h.total, parts: parts.map((p) => ({ ...p, share: p.ms / total })) };
 }
 
+// The DEBUG bar docks in the SNIFF tab (internal mode "path") and nowhere else.
+export function debugBarShown(mode) {
+  return mode === "path";
+}
+
 export function ndModel(run, { filter = "all" } = {}) {
   if (!run) return { state: "empty" };
   if (run.error && !run.report) return { state: "error", text: run.error, hint: run.hint || "" };
