@@ -22,11 +22,14 @@ import { createVaultView } from "./vault-view.js";
 import { sampleFailures, sampleFetch, sampleLogs, samplePlace, sampleStacks } from "./sample.js";
 import { createStackReader } from "./vault-stacks.js";
 import { createSloStore } from "./slo-store.js";
+import { createStorage } from "./storage.js";
 
 const port = Number(process.env.PORT || 9241);
 const pageOrigin = `http://127.0.0.1:${port}`;
 const aws = createAws();
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+// Cloud Spider's own state (bill cache, ...): storage.js, file backend.
+const storage = createStorage({ backend: "file", dir: join(root, ".cloudspider") });
 const vaults = {
   live: createVaultView({ store: createVaultStore({ dir: vaultsDir() }), checker: createCheckRunner(), stacks: createStackReader() }),
   sample: createVaultView({
@@ -59,7 +62,7 @@ const app = createApp({
   logs: aws.logs,
   metrics: aws.metrics,
   path: createPathAws(),
-  cost: createCost({ cacheFile: join(root, ".cloudspider", "cost-cache.json") }),
+  cost: createCost({ storage }),
   upgrade: createUpgrade({ runsDir: join(root, ".cloudspider", "runs") }),
   connector,
   loadKubeContexts,
