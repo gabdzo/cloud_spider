@@ -145,6 +145,10 @@ export function renderRadio(list, rows, current = 0, note = "") {
       li.dataset.index = String(index);
       if (row.status === "fail") li.className = "fail";
       if (index === current) li.setAttribute("aria-current", "true");
+      // A listbox of stations: one tab stop, arrows tune (browser.js).
+      li.setAttribute("role", "option");
+      li.setAttribute("aria-selected", String(index === current));
+      li.tabIndex = index === current ? 0 : -1;
       const when = document.createElement("time");
       when.textContent = timeNote(row.time);
       const what = document.createElement("span");

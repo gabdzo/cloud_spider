@@ -298,7 +298,9 @@ function logRows() {
 function renderRadioPanel() {
   const rows = logRows();
   if (station >= rows.length) station = 0;
+  const hadFocus = radioEl.contains(document.activeElement);
   stations = renderRadio(radioEl, rows, station);
+  if (hadFocus && !radioEl.contains(document.activeElement)) radioEl.querySelector(`li[data-index="${station}"]`)?.focus({ preventScroll: true });
   const trouble = rows.some((row) => row.status === "fail");
   radioPanel.classList.toggle("issue", trouble);
   tabRadio.classList.toggle("issue", trouble);
@@ -378,6 +380,9 @@ function renderMorning() {
     if (!li) {
       li = vel("li", "m-line");
       li.id = id;
+      li.setAttribute("role", "button");
+      li.tabIndex = 0;
+      li.setAttribute("aria-expanded", "false");
       const iconEl = document.createElement("img");
       iconEl.className = "px";
       iconEl.alt = "";
@@ -416,6 +421,8 @@ function renderMorning() {
     }
     text.append(line.text || "");
     li.title = `${line.time ? `${hhmm24(line.time)} ` : ""}${line.text || ""}`;
+    li.dataset.focus = line.focus || "";
+    li.setAttribute("aria-label", `${li.querySelector("b").textContent}: ${li.title}`);
   }
   morningWhen.textContent = sample ? "SAMPLE" : hhmm24(Date.now());
   morningEl.classList.toggle("folded", morningFolded);
@@ -3443,6 +3450,57 @@ radioEl.addEventListener("click", (event) => {
   if (!li) return;
   station = Number(li.dataset.index);
   renderChrome();
+});
+
+// The stations are a listbox: one tab stop, Up/Down/Home/End tune (the
+// selection follows focus), and focus stays on the tuned row through the
+// re-render.
+radioEl.addEventListener("keydown", (event) => {
+  const step = { ArrowDown: 1, ArrowUp: -1, Home: -Infinity, End: Infinity }[event.key];
+  if (step === undefined || !stations.length) return;
+  event.preventDefault();
+  station = Math.max(0, Math.min(stations.length - 1, station + step));
+  renderChrome();
+  const row = radioEl.querySelector(`li[data-index="${station}"]`);
+  row?.focus();
+  row?.scrollIntoView({ block: "nearest" });
+});
+
+// Morning cards are buttons: press one to read its whole sentence and, when
+// it names something on the map, open that thing's plate. A PODS card opens
+// Cluster.
+function pressMorning(li) {
+  const open = li.getAttribute("aria-expanded") !== "true";
+  li.setAttribute("aria-expanded", String(open));
+  if (!open) return;
+  if (li.id.startsWith("m-pods-")) {
+    markHistory();
+    if (mode !== "cluster") enterCluster();
+    return;
+  }
+  const id = li.dataset.focus;
+  if (!id || mode !== "map" || !place) return;
+  const placed = placedMap();
+  const building = buildingAt(placed, 0, 0, id);
+  const fixture = building ? null : fixtureAt(placed, 0, 0, id);
+  if (building) openBuilding(building);
+  else if (fixture) openFixture(fixture);
+  else return;
+  scrollMapTo(building || fixture);
+  mapFocusKey = `${building ? "building" : "fixture"}:${id}`;
+  mapSay.textContent = `${ui.selection?.name || id} plate is open. Escape closes it.`;
+}
+
+morningEl.addEventListener("click", (event) => {
+  const li = event.target.closest(".m-line");
+  if (li) pressMorning(li);
+});
+morningEl.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const li = event.target.closest(".m-line");
+  if (!li || event.target !== li) return;
+  event.preventDefault();
+  pressMorning(li);
 });
 
 lbSelect.addEventListener("change", () => {

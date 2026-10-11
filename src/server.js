@@ -758,6 +758,10 @@ const page = `<!doctype html>
     overflow-wrap: anywhere;
   }
   .m-line .m-text time { color: var(--pip-mid); margin-right: 6px; }
+  /* A card is a button: it opens to its full sentence (and its subject's plate). */
+  .m-line { cursor: pointer; }
+  .m-line:focus-visible { outline: 2px solid var(--pip-hot); outline-offset: 1px; }
+  .m-line[aria-expanded="true"] .m-text { -webkit-line-clamp: unset; display: block; }
   .m-led { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; background: var(--m-tone); box-shadow: 0 0 0 1px #000, 0 0 8px var(--m-tone); }
   .m-line.ok { --m-tone: var(--pip-bright); }
   .m-line.fail { --m-tone: var(--status-broken); background: linear-gradient(180deg, rgba(255, 90, 60, 0.12), rgba(0, 0, 0, 0.35)); }
@@ -1702,6 +1706,7 @@ const page = `<!doctype html>
     overflow-wrap: anywhere;
   }
   #radio li:hover { color: var(--pip-bright); }
+  #radio li:focus-visible { outline: 2px solid var(--pip-hot); outline-offset: -2px; }
   #radio li time { flex: 0 0 auto; color: var(--pip-dim); font-size: 11px; }
   #radio li.fail { color: var(--status-broken); }
   #radio li.fail time { color: var(--status-broken); opacity: 0.75; }
@@ -1853,9 +1858,9 @@ const page = `<!doctype html>
     <canvas id="sunrise" width="64" height="36" aria-hidden="true"></canvas>
     <div class="m-head"><b>MORNING</b><small>REPORT</small><output id="morning-when"></output></div>
     <ul class="m-lines">
-      <li id="m-hurting" class="m-line"><img class="px" data-icon="fire" alt=""><b>HURTING</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
-      <li id="m-changed" class="m-line"><img class="px" data-icon="clock" alt=""><b>CHANGED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
-      <li id="m-idle" class="m-line"><img class="px" data-icon="caps" alt=""><b>IDLE·BILLED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-hurting" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="fire" alt=""><b>HURTING</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-changed" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="clock" alt=""><b>CHANGED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-idle" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="caps" alt=""><b>IDLE·BILLED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
     </ul>
     <button id="morning-fold" class="m-fold" type="button" aria-expanded="true" aria-controls="morning" title="fold the morning report">&#9650;</button>
   </section>
@@ -1893,7 +1898,7 @@ const page = `<!doctype html>
       <div class="ptitle"><img class="px" data-icon="radio" alt="">RADIO<span id="station-count"></span></div>
       <div class="scope"><canvas id="scope"></canvas></div>
       <div class="dial" aria-hidden="true"><div class="scale"></div><div class="nums"><span>88</span><span>94</span><span>100</span><span>106</span><span>112</span></div><div id="needle"></div></div>
-      <ol id="radio"></ol>
+      <ol id="radio" role="listbox" aria-label="radio stations: arrow keys tune"></ol>
     </aside>
   </div>
   <footer class="statusbar" id="stats"></footer>

@@ -772,10 +772,11 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
     const why = place?.linkNote ? ` (${place.linkNote})` : "";
     const base = balancers.length ? `target health not checked${why}` : "no balancer on the map, target health not checked";
     hurting = brokenBits.length
-      ? { status: "fail", text: `${brokenBits.join("; ")}. ${base}.` }
+      ? { status: "fail", text: `${brokenBits.join("; ")}. ${base}.`, focus: broken[0].id }
       : { status: "unknown", text: `${base[0].toUpperCase()}${base.slice(1)}.` };
   } else {
     const hurt = [];
+    let first = "";
     let healthy = 0;
     let total = 0;
     for (const lb of balancers) {
@@ -784,6 +785,7 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
       total += counts.total || 0;
       if (!counts.unhealthy) continue;
       const bad = (place.links || []).filter((edge) => edge.from === lb.id && targetState(edge.state) === "unhealthy");
+      first ||= bad[0]?.to || lb.id;
       const names = bad.map((edge) => `${nameOf(place, edge.to)}${edge.reason ? ` (${edge.reason})` : ""}`);
       const unnamed = counts.unhealthy - bad.length;
       if (unnamed > 0) names.push(`${unnamed} unmapped target${unnamed === 1 ? "" : "s"}`);
@@ -792,7 +794,7 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
       hurt.push(`API ${lb.name || lb.id}: ${names.join(", ")} ${verb}${none}`);
     }
     const bits = [...hurt, ...brokenBits];
-    if (bits.length) hurting = { status: "fail", text: `${bits.join("; ")}.` };
+    if (bits.length) hurting = { status: "fail", text: `${bits.join("; ")}.`, focus: first || broken[0]?.id };
     else if (!balancers.length) hurting = { status: "ok", text: "Nothing is hurting. No balancer on the map to check." };
     else {
       const which = balancers.length === 1 ? ` behind ${balancers[0].name || balancers[0].id}` : "";
@@ -810,6 +812,9 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
   } else {
     const event = changes[0];
     changed = { status: event.error ? "fail" : "ok", time: event.time || 0, text: sentence(changeText(event, place, systems)) };
+    const have = eventKeys(event);
+    const subject = objects.find((item) => keysOf(item).some((key) => have.has(key)));
+    if (subject) changed.focus = subject.id;
   }
   // The biography on each plate: that object's own newest change.
   if (trail?.read && !trail.error) {
@@ -861,6 +866,9 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
   else if (!place?.linksRead && balancers.length) idle = { status: "unknown", text: "Idle not checked: target health is not read yet." };
   else if (!bill || bill.error) idle = { status: "unknown", text: `Nothing idle on the map. Bill not checked${bill?.error ? ` (${bill.error})` : ""}.` };
   else idle = { status: "ok", text: "Nothing idle on the map is billed." };
+  // The card's subject on the map: pressing the card opens its plate.
+  const idleSubject = [...burning, ...unchecked, ...unbilled, ...waiting][0];
+  if (idleSubject && parts.length) idle.focus = idleSubject.id;
 
   return { hurting, changed, idle, marks, systems: systems.map((system) => ({ kind: system.kind, name: system.name, root: system.root, members: [...system.members] })) };
 }
