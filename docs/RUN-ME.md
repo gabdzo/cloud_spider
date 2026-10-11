@@ -649,3 +649,12 @@ CONNECT runs on this Mac, in the cluster's run pane (log and ERROR plate as in �
 
 A context that already points at the cluster (for example `cloudspider-viewer` for `cloudspider-up`) counts as CONNECTED and nothing is rewritten. CONNECT never overwrites a context of the same name that is something else. DISCONNECT removes only `<cluster>-viewer` (its context, its user if nothing else uses it, and its yaml line), after a backup. After a RUN that made a cluster, the pane offers CONNECT NOW. If you start the server with `CLOUDSPIDER_KUBE_CONTEXTS` set, that list wins over the file and the run says so.
 
+
+## 22. ADD-ONS on the EKS card: pick, see the cost and the pod slots, install in one go
+
+Under the EKS card's run pane (for the cluster named in its fields) is the ADD-ONS checklist: Pod Identity agent, metrics-server, Karpenter, AWS Load Balancer Controller, cert-manager, Kyverno, KEDA and the HPA scaling demo, in the order they install. Each row shows its own cost ("free", "+ use" for SQS-billed ones, "+ nodes" for Karpenter, which launches nodes at about $0.02/h each), how many pods it runs, and INSTALLED / PRESENT (put there by another stack or by hand, e.g. the demo's metrics-server) for the ones already on the cluster. Those cannot be ticked and are skipped.
+
+- The line under the list counts: "needs N free pod slots, you have M" from the cluster's nodes (the #71 check). The numbers need the cluster to be CONNECTED (§21). When N > M, INSTALL SELECTED refuses before anything runs. Add a node (§16, "Room for pods") or untick something.
+- Ticking an add-on whose need is missing (Karpenter, LBC or KEDA without the Pod Identity agent) adds the need, and the confirm says so.
+- INSTALL SELECTED asks once, listing each stack it will create (`<addon>-<cluster>`), the pods and the hourly cost. It then runs one job in the EKS card's pane: for each add-on, `pulumi preview`, then `pulumi up`, one after the other. It stops at the first failure with the ERROR plate (what failed, why, BY HAND). The add-ons before it stay installed; press it again after fixing, and they are skipped.
+- **with add-ons**: tick it before RUN on a new cluster. When the cluster run is DONE, CONNECT runs, then INSTALL SELECTED for the ticked add-ons. The card shows `QUEUED · …` while it waits. If any stage fails, the queue stops there and says why.

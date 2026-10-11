@@ -14,7 +14,8 @@ import { diagramFromKube } from "./kube-diagram.js";
 import { createTelemetry } from "./kube-telemetry.js";
 import { inspectPod } from "./kube-inspect.js";
 import { opsView, sampleOps } from "./kube-ops.js";
-import { refuseUp, sampleAddons } from "./addons.js";
+import { detectAddons, refuseUp, sampleAddons } from "./addons.js";
+import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./addon-bundle.js";
 import { podRoom } from "../upgrades/addons/pod-room.js";
 import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.js";
 import { sampleKubeSnapshot } from "./kube-sample.js";
@@ -212,6 +213,33 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     }
     return kubeFlights.get(ctx.name);
   }
+  // cluster -> { items, stage, text }: add-ons queued behind a create.
+  const bundleQueue = new Map();
+  function queueSay(cluster, stage, text) {
+    const item = bundleQueue.get(cluster);
+    if (item) bundleQueue.set(cluster, { ...item, stage, text });
+  }
+  async function afterCreate(cluster, items, done) {
+    if (done?.error || done?.state !== "done") {
+      queueSay(cluster, "stopped", `add-ons not installed: the cluster run ${done?.state || "stopped"}`);
+      return;
+    }
+    const st = await api.connectStatus(cluster).catch(() => null);
+    const install = async () => {
+      queueSay(cluster, "add-ons", `installing ${items.length} add-on${items.length === 1 ? "" : "s"}`);
+      const started = await api.bundleRun(pageOrigin, { cluster, items }).catch((failure) => ({ error: failure?.message || "the add-ons did not start" }));
+      if (started?.error) queueSay(cluster, "stopped", `add-ons not installed: ${started.error}`);
+      else bundleQueue.delete(cluster);
+    };
+    if (st?.state === "connected") return install();
+    queueSay(cluster, "connect", "connecting the cluster");
+    const started = await api.connectRun(pageOrigin, { cluster, action: "connect", onDone: async (connected) => {
+      const after = connected?.state === "done" ? await api.connectStatus(cluster, { fresh: true }).catch(() => null) : null;
+      if (after?.state === "connected") return install();
+      queueSay(cluster, "stopped", `add-ons not installed: CONNECT ${connected?.state === "done" ? `ended ${after?.text || "not connected"}` : "failed"}`);
+    } }).catch((failure) => ({ error: failure?.message }));
+    if (started?.error) queueSay(cluster, "stopped", `add-ons not installed: CONNECT did not start (${started.error})`);
+  }
   const k9sEvents = new Map(); // context -> { at, items, note }
   async function k9sRead(name, sample, wantEvents) {
     if (sample) {
@@ -347,7 +375,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     };
   }
 
-  return {
+  const api = {
     stdout,
     fail(call, error) {
       report(sink, { call, sentence: error?.message || "the read failed" });
@@ -535,10 +563,10 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     // ---- CONNECT: a viewer kube context per EKS cluster (kube-connect.js) ----
     contextNames,
     reloadContexts,
-    async connectStatus(cluster = "") {
+    async connectStatus(cluster = "", { fresh = false } = {}) {
       if (!validCluster(cluster)) return { cluster, state: "error", text: "not a cluster name", hint: "" };
       if (!connector || !upgrade?.outputs) return { cluster, state: "error", text: "CONNECT is not set up", hint: "" };
-      const out = await upgrade.outputs("eks", { clusterName: cluster }).catch((failure) => ({ error: failure?.message || "pulumi did not answer" }));
+      const out = await upgrade.outputs("eks", { clusterName: cluster }, { fresh }).catch((failure) => ({ error: failure?.message || "pulumi did not answer" }));
       const roleArn = String(out?.outputs?.viewerRoleArn || "");
       const kc = await connector.readKubeconfig();
       const conn = connectionOf(kc.config, { cluster, roleArn });
@@ -579,13 +607,53 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         const current = String(kc.config?.["current-context"] || "");
         const steps = connectSteps(cluster, st, current);
         const command = st.context ? "" : `aws ${connectCommand({ cluster, roleArn: st.roleArn }).join(" ")}${current ? ` && kubectl config use-context ${current}` : ""}`;
-        return upgrade.runSteps({ module: "eks", action: "connect", stack, steps, command, where: st.kubeconfig });
+        return upgrade.runSteps({ module: "eks", action: "connect", stack, steps, command, where: st.kubeconfig, onDone: typeof body.onDone === "function" ? body.onDone : undefined });
       }
       if (!st.context) return no(`${cluster} is not connected`, "");
       if (!st.ours) return no(`${st.context} was not made by CONNECT`, `Cloud Spider only removes the context it made (${st.alias}). Remove ${st.context} yourself if you want it gone.`);
       const kc = await connector.readKubeconfig();
       const conn = connectionOf(kc.config, { cluster, roleArn: st.roleArn });
       return upgrade.runSteps({ module: "eks", action: "disconnect", stack, steps: disconnectSteps(conn), command: `kubectl config delete-context ${conn.alias}`, where: st.kubeconfig });
+    },
+    // ADD-ONS on the EKS card: the checklist for one cluster.
+    async bundleStatus(cluster = "", { fresh = false, items = null } = {}) {
+      if (!validCluster(cluster)) return { error: "not a cluster name" };
+      if (!addons?.view) return { error: "add-ons are not set up" };
+      const tree = await addons.view({ fresh }).catch(() => null);
+      const node = tree?.tree?.find((item) => item.cluster === cluster) || null;
+      const conn = connector ? await this.connectStatus(cluster).catch(() => null) : null;
+      const ctx = conn?.state === "connected" ? contexts.find((item) => item.name === conn.context) : null;
+      const snap = ctx ? await readContext(ctx, 30_000).catch(() => null) : null;
+      const good = snap && !snap.error;
+      // No pod cap on the nodes (allocatable not read) is "not counted".
+      const counted = good && snap.nodes?.length ? podRoom({ nodes: snap.nodes, pods: snap.pods || [] }) : null;
+      const view = bundleView({
+        cluster,
+        node,
+        detected: good ? detectAddons(snap) : null,
+        room: counted?.capacity > 0 ? counted : null,
+        connected: conn?.state === "connected",
+      });
+      const chosen = Array.isArray(items) ? items.filter((id) => BUNDLE_IDS.has(id)) : view.items.filter((item) => item.selected).map((item) => item.id);
+      const plan = bundlePlan(view, chosen);
+      return { ...view, plan, line: slotLine(view, plan), queued: bundleQueue.get(cluster) || null, notes: tree?.notes || [] };
+    },
+    // INSTALL SELECTED (body.items) or, with body.plan, only the plan and
+    // its confirm text (nothing runs).
+    async bundleRun(requestOrigin, body = {}) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { error: "nothing was installed", hint: "Open Cloud Spider at the address npm start printed." };
+      const cluster = String(body.cluster || "");
+      if (!validCluster(cluster)) return { error: "not a cluster name", hint: "" };
+      const chosen = (Array.isArray(body.items) ? body.items : []).map(String).filter((id) => BUNDLE_IDS.has(id));
+      const status = await this.bundleStatus(cluster, { fresh: !body.plan });
+      if (status.error) return { error: status.error, hint: "" };
+      const plan = bundlePlan(status, chosen);
+      if (body.plan) return { plan, confirm: confirmText(status, plan), line: slotLine(status, plan) };
+      const legacyName = upgrade.legacyCluster ? await upgrade.legacyCluster().catch(() => undefined) : undefined;
+      if (plan.refusal) return upgrade.refuse ? { ...upgrade.refuse({ module: "eks", action: "add-ons", params: { clusterName: cluster }, error: plan.refusal }), plan } : { error: plan.refusal, plan };
+      addons?.forget?.();
+      const started = upgrade.addonBatch({ cluster, ids: plan.order, legacyName, onDone: () => addons?.forget?.() });
+      return { ...started, plan };
     },
     async upgradeLog(module = "", values = {}) {
       return upgrade?.logFor ? upgrade.logFor(module, values) : null;
@@ -619,13 +687,18 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
           clusters = listed.names;
         }
         const legacyName = body.module === "eks" && upgrade.legacyCluster ? await upgrade.legacyCluster() : undefined;
+        // "with add-ons": after the cluster is DONE, CONNECT, then the bundle.
+        const withAddons = body.module === "eks" && body.action === "up" && Array.isArray(body.withAddons) ? body.withAddons.map(String).filter((id) => BUNDLE_IDS.has(id)) : [];
+        const cluster = String(body.params?.clusterName || "");
         const started = upgrade.run({
           module: body.module,
           params: body.params || {},
           action: body.action,
           clusters,
           legacyName,
+          onDone: withAddons.length ? (done) => afterCreate(cluster, withAddons, done) : undefined,
         });
+        if (withAddons.length && !started?.error && validCluster(cluster)) bundleQueue.set(cluster, { items: withAddons, stage: "cluster", text: `after the cluster: CONNECT, then ${withAddons.length} add-on${withAddons.length === 1 ? "" : "s"}` });
         return started?.error && !started.hint ? { ...started, ...runHint(started.error) } : started;
       } catch (failure) {
         return no(`the server failed: ${failure?.message || "error"}`);
@@ -869,6 +942,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       return pathResult(result.graph, { lb: query.lb || "", host: query.host || "", region: at });
     },
   };
+  return api;
 
   async function readBill(at) {
     if (!cost?.read) {

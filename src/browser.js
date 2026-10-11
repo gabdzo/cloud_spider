@@ -120,6 +120,11 @@ const pipKept = {};
 const connectState = new Map();
 let connectSeq = 0;
 let connectWatch = null;
+// ADD-ONS bundle: the last answer, the ticks per cluster, "with add-ons".
+let bundleBody = null;
+const bundleChosen = new Map();
+let bundleSeq = 0;
+let bundleWith = false;
 const kubeSearchEl = document.querySelector("#kube-search");
 const kubeSearchCount = document.querySelector("#kube-search-count");
 const k9sEl = document.querySelector("#k9s");
@@ -3228,7 +3233,10 @@ function cardBody(spec, preset = {}) {
         pipKept[spec.id] = { ...(pipKept[spec.id] || {}), [parameter.name]: field.value };
       });
     }
-    if (spec.id === "eks" && parameter.name === "clusterName") field.addEventListener("change", () => refreshConnect(true));
+    if (spec.id === "eks" && parameter.name === "clusterName") field.addEventListener("change", () => {
+      refreshConnect(true);
+      refreshBundle(true);
+    });
     if (parameter.name === "clusterName" || parameter.name === "name") field.addEventListener("change", () => refreshUpgrade(true));
     // The bill follows the instance type and node count picked here.
     if (spec.costLines?.some((line) => line.param === parameter.name || (line.perNode && parameter.name === "nodeCount"))) {
@@ -3247,6 +3255,7 @@ function cardBody(spec, preset = {}) {
   body.append(el("div", { className: "actions" }, confirm, preview, run, down));
   if (spec.addon) body.append(commandRows(addonCommands(spec, preset.clusterName)));
   body.append(runPane());
+  if (spec.id === "eks") body.append(bundleBlock());
   if (pipKept[spec.id] && spec.costLines) queueMicrotask(() => repriceCard(spec));
   return body;
 }
@@ -3626,7 +3635,10 @@ async function refreshUpgrade(fresh) {
   if (sample) return;
   const query = new URLSearchParams({ module: openModule() });
   if (fresh) query.set("fresh", "1");
-  if (openModule() === "eks" && (fresh || upgradeTicks % 10 === 0)) refreshConnect(fresh);
+  if (openModule() === "eks" && (fresh || upgradeTicks % 10 === 0)) {
+    refreshConnect(fresh);
+    refreshBundle(fresh);
+  }
   // Which stack to watch: the cluster (or name) typed in the card.
   const params = pipParams();
   for (const key of ["clusterName", "name"]) if (params[key]) query.set(key, params[key]);
@@ -3654,7 +3666,7 @@ async function postUpgrade(action) {
   const body = await upgradeJson("/api/upgrade", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ module: spec.id, action, params: pipParams() }),
+    body: JSON.stringify({ module: spec.id, action, params: pipParams(), ...(spec.id === "eks" && action === "up" && bundleWith ? { withAddons: bundlePicked(pipParams().clusterName || "") } : {}) }),
   });
   const line = upgradeSpiderLine({ action, title: spec.title, response: body });
   noteSpider(line.text, line.status);
@@ -3667,6 +3679,118 @@ async function postUpgrade(action) {
   paintUpgrade(body?.error && !kept ? { action, stack: body.stack || "", lines: [] } : body);
   refreshUpgrade(true);
   if (spec.addon) setTimeout(() => pullAddons(true), 1500);
+}
+
+// ---- ADD-ONS bundle (addon-bundle.js on the server) ----
+// The EKS card's checklist: tick add-ons, see their cost and pod slots and
+// the cluster's free slots, INSTALL SELECTED (one confirm, one run).
+
+function bundleBlock() {
+  const block = el("section", { id: "pip-bundle", className: "bundle", ariaLabel: "add-ons for this cluster" });
+  block.append(el("div", { className: "bhead" }, el("b", { textContent: "ADD-ONS" }), el("span", { className: "bwho" }), el("em", { className: "bsum" })));
+  block.append(el("div", { className: "blist", role: "list" }));
+  block.append(el("div", { className: "bline" }), el("div", { className: "bhint" }), el("div", { className: "bqueue" }));
+  const withBox = el("input", { type: "checkbox", checked: bundleWith });
+  withBox.addEventListener("change", () => {
+    bundleWith = withBox.checked;
+  });
+  const install = el("button", { type: "button", className: "cmd", textContent: "install selected", title: "each ticked add-on, in order: preview, then up; stops at the first failure" });
+  install.addEventListener("click", () => installBundle());
+  block.append(el("div", { className: "bact" }, el("label", { title: "RUN makes the cluster; when it is DONE, CONNECT runs, then these add-ons install" }, withBox, "with add-ons: after RUN is DONE, CONNECT and install these"), install));
+  return block;
+}
+
+function bundlePicked(cluster) {
+  const chosen = bundleChosen.get(cluster);
+  if (chosen) return [...chosen];
+  return (bundleBody?.cluster === cluster ? bundleBody.items : []).filter((item) => item.selected).map((item) => item.id);
+}
+
+async function refreshBundle(force = false) {
+  if (!pipOpen || openModule() !== "eks" || sample) return;
+  const cluster = pipParams().clusterName || "";
+  if (!cluster) return;
+  const seq = ++bundleSeq;
+  const query = new URLSearchParams({ cluster });
+  if (bundleChosen.has(cluster)) query.set("items", [...bundleChosen.get(cluster)].join(","));
+  if (force) query.set("fresh", "1");
+  const body = await upgradeJson(`/api/addons/bundle?${query}`);
+  if (seq !== bundleSeq || (pipParams().clusterName || "") !== cluster) return;
+  bundleBody = body;
+  paintBundle(body);
+}
+
+function paintBundle(body) {
+  const block = pipEl.querySelector("#pip-bundle");
+  if (!block) return;
+  block.querySelector(".bwho").textContent = body?.cluster || "";
+  const list = block.querySelector(".blist");
+  if (body?.error) {
+    list.replaceChildren(el("div", { className: "bhint", textContent: body.error }));
+    return;
+  }
+  const chosen = new Set(bundlePicked(body.cluster));
+  const STATE = { installed: "INSTALLED", present: "PRESENT", busy: "BUSY" };
+  list.replaceChildren(...(body.items || []).map((item) => {
+    const box = el("input", { type: "checkbox", checked: item.state === "absent" && chosen.has(item.id), disabled: item.state !== "absent", ariaLabel: item.title });
+    box.addEventListener("change", () => {
+      const now = new Set(bundlePicked(body.cluster));
+      if (box.checked) now.add(item.id);
+      else now.delete(item.id);
+      bundleChosen.set(body.cluster, now);
+      refreshBundle(false);
+    });
+    const lacking = item.needs.filter((need) => (body.items || []).find((other) => other.id === need)?.state === "absent");
+    const nodes = item.cost.perNode ? `each node it launches ≈ $${item.cost.perNode.toFixed(4)}/h` : "";
+    const state = STATE[item.state] ? `${STATE[item.state]}${item.where ? ` · ${item.where}` : ""}` : [lacking.length ? `needs ${lacking.join(", ")} (installed first)` : "", nodes].filter(Boolean).join(" · ");
+    const row = el("div", { className: "brow", role: "listitem", title: `${item.title}: ${item.cost.text}${item.cost.usage.length ? ` (billed by use: ${item.cost.usage.join("; ")})` : ""}` },
+      box,
+      el("span", { className: "name", textContent: item.title }),
+      el("span", { className: "cost", textContent: item.cost.short }),
+      el("span", { className: "pods", textContent: `${item.pods} pod${item.pods === 1 ? "" : "s"}` }),
+      el("span", { className: "state", textContent: state }));
+    row.dataset.state = item.state;
+    return row;
+  }));
+  const plan = body.plan || {};
+  block.querySelector(".bsum").textContent = plan.order?.length ? `${plan.order.length} to install · ${plan.hour ? `+$${plan.hour.toFixed(4)}/h` : "no hourly cost"}${plan.perNode ? " (+ Karpenter's nodes)" : ""}` : "";
+  const line = block.querySelector(".bline");
+  line.textContent = body.line || "";
+  line.dataset.tight = plan.free != null && plan.need > plan.free ? "1" : "0";
+  const hints = [];
+  if (plan.added?.length) hints.push(`added: ${plan.added.map((add) => `${add.id} (${add.for} needs it)`).join(", ")}`);
+  if (plan.refusal && plan.order?.length) hints.push(plan.refusal);
+  else if (plan.free == null && plan.order?.length) hints.push(body.connected ? "The cluster did not answer; the add-ons that check slots (Kyverno) still check before their up." : "CONNECT the cluster above so Cloud Spider can count its free pod slots.");
+  block.querySelector(".bhint").textContent = hints.join(" · ");
+  block.querySelector(".bqueue").textContent = body.queued ? `QUEUED · ${body.queued.text}` : "";
+  const install = block.querySelector(".bact button");
+  install.disabled = !plan.order?.length;
+}
+
+async function installBundle() {
+  const cluster = pipParams().clusterName || "";
+  if (!cluster || sample) return;
+  const items = bundlePicked(cluster);
+  const planned = await upgradeJson("/api/addons/bundle", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cluster, items, plan: true }) });
+  if (planned.error) {
+    runLocal = { error: planned.error, hint: planned.hint || "", action: "add-ons", at: Date.now(), card: runCardKey() };
+    paintUpgrade({ action: "add-ons", stack: "", lines: [] });
+    return;
+  }
+  if (planned.plan?.refusal) {
+    runLocal = { error: planned.plan.refusal, hint: "", action: "add-ons", at: Date.now(), card: runCardKey() };
+    paintUpgrade({ action: "add-ons", stack: "", lines: [] });
+    return;
+  }
+  if (!window.confirm(planned.confirm)) return;
+  runLocal = null;
+  const body = await upgradeJson("/api/addons/bundle", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cluster, items }) });
+  const line = body.error ? { status: "fail", text: `add-ons on ${cluster}: ${body.error}` } : { status: "ok", text: `installing ${planned.plan.order.length} add-ons on ${cluster}` };
+  if (noteSpider(line.text, line.status)) renderRadioPanel();
+  const kept = body?.state === "refused" && body.stack;
+  if (body.error && !kept) runLocal = { error: body.error, hint: body.hint || "", action: "add-ons", at: Date.now(), card: runCardKey() };
+  paintUpgrade(body.error && !kept ? { action: "add-ons", stack: body.stack || "", lines: [] } : body);
+  refreshUpgrade(true);
 }
 
 // ---- CONNECT (kube-connect.js on the server) ----
