@@ -22,7 +22,7 @@ import { sampleKubeSnapshot } from "./kube-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, runHint, watchLine } from "./upgrade-rules.js";
-import { CONNECT_REGION, connectCommand, connectionOf, validCluster, viewerAlias } from "./kube-connect.js";
+import { CONNECT_REGION, connectCommand, connectionOf, sameEndpoint, validCluster, viewerAlias } from "./kube-connect.js";
 import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
 import { createMetricsCache, sampleMetrics } from "./metrics.js";
@@ -135,6 +135,16 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   const health = createHealthWatch({ clock: now });
   // CONNECT's access check, cached a minute per context.
   const probes = new Map();
+  // A cluster's API endpoint (eks DescribeCluster, read-only), kept 10 min.
+  const endpoints = new Map();
+  async function endpointOf(cluster) {
+    const hit = endpoints.get(cluster);
+    if (hit && now() - hit.at < 600_000) return hit.value;
+    const out = eks?.describeCluster ? await eks.describeCluster(cluster).catch(() => ({})) : {};
+    const value = String(out?.endpoint || "");
+    if (value) endpoints.set(cluster, { at: now(), value });
+    return value;
+  }
   async function probeContext(ctx, { fresh = false } = {}) {
     const hit = probes.get(ctx.name);
     if (!fresh && hit && now() - hit.at < 60_000) return hit.value;
@@ -174,6 +184,31 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       if (access.ok) return { lines: [`CONNECTED: ${name} reads ${cluster}`] };
       if (access.noAccess) return { error: `NO ACCESS: ${access.error}`, hint: noAccessHint(cluster) };
       return { error: `the cluster did not answer: ${access.error}` };
+    } });
+    return steps;
+  }
+  // USE IT: an existing context that reads this cluster with another user
+  // or role. Listed, reloaded, then one GET; refused access takes it out
+  // of the list again. The kubeconfig is never written.
+  function adoptSteps(cluster, name) {
+    const steps = [];
+    steps.push({ text: `add ${name} to cloudspider.contexts.yaml`, fn: () => connector.addToList({ context: name, label: cluster.replace(/^cloudspider-/, "").toUpperCase().slice(0, 24) || cluster, namespaces: "*" }, contexts) });
+    steps.push({ text: "reload Cloud Spider's kube contexts (no restart)", fn: async () => {
+      const got = await reloadContexts();
+      if (got.error) return { error: got.error };
+      if (!got.names.includes(name)) return { error: `${name} is not among the contexts after the reload`, hint: got.source === "CLOUDSPIDER_KUBE_CONTEXTS" ? `CLOUDSPIDER_KUBE_CONTEXTS is set and wins over cloudspider.contexts.yaml: add ";${name}:*" to it and restart.` : "Check cloudspider.contexts.yaml." };
+      return { lines: [`contexts now: ${got.names.join(", ")}`] };
+    } });
+    steps.push({ text: `check ${name} can read ${cluster} (one GET)`, fn: async () => {
+      const ctx = contexts.find((item) => item.name === name);
+      const access = ctx ? await probeContext(ctx, { fresh: true }) : { error: "the context is not loaded" };
+      if (access.ok) return { lines: [`CONNECTED: ${name} reads ${cluster}`] };
+      await connector.removeFromList(name).catch(() => null);
+      await reloadContexts().catch(() => null);
+      probes.delete(name);
+      const left = `${name} was taken out of cloudspider.contexts.yaml again`;
+      if (access.noAccess) return { error: `NO ACCESS: ${access.error}; ${left}`, hint: `${name} cannot read ${cluster}. Rename it (kubectl config rename-context ${name} <other>) and press CONNECT to make the viewer context.` };
+      return { error: `the cluster did not answer: ${access.error}; ${left}` };
     } });
     return steps;
   }
@@ -576,7 +611,23 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         if (!roleArn) {
           return { ...base, state: "no-cluster", text: out?.missing ? `no stack ${out.stack} yet` : `stack ${out?.stack || "?"} has no viewer role output${out?.error ? ` (${String(out.error).split("\n").pop()})` : ""}`, hint: out?.error && !out.missing ? runHint(out.error).hint || "pulumi could not read the cluster's stack; see the error." : "RUN the cluster on the Stacks EKS card first; CONNECT needs its viewer role." };
         }
-        if (conn.clash) return { ...base, state: "error", text: `a kube context ${conn.clash} already exists and is not this cluster's viewer`, hint: `CONNECT never overwrites it. Rename it (kubectl config rename-context ${conn.clash} <other>) and press CONNECT again.` };
+        if (conn.clash) {
+          // Same API server: the cluster, read with another user or role.
+          // USE IT adopts it (one GET first); otherwise only a rename helps.
+          const endpoint = await endpointOf(cluster);
+          if (endpoint && sameEndpoint(endpoint, conn.clashServer)) {
+            const listed = contexts.find((item) => item.name === conn.clash);
+            const other = `${conn.clashRole ? `role ${conn.clashRole.split("/").pop()}` : "another user"}`;
+            if (listed) {
+              const access = await probeContext(listed);
+              if (access.noAccess) return { ...base, context: conn.clash, state: "no-access", text: "NO ACCESS", hint: `${conn.clash} reads ${cluster} with ${other}, and the cluster refuses it. ${noAccessHint(cluster)}`, detail: access.error };
+              return { ...base, context: conn.clash, adopted: true, state: "connected", text: `CONNECTED as ${conn.clash} (${other})`, hint: access.ok ? "" : access.error || "" };
+            }
+            return { ...base, state: "clash-same", adopt: conn.clash, text: `kube context ${conn.clash} already reads ${cluster} (${other})`, hint: `USE IT checks with one GET that ${conn.clash} can read ${cluster} and adds it to Cloud Spider; the kubeconfig is not touched.` };
+          }
+          const why = endpoint ? `it points at ${conn.clashServer || "another server"}, not ${cluster} (${endpoint})` : `Cloud Spider could not read ${cluster}'s endpoint to compare`;
+          return { ...base, state: "error", text: `a kube context ${conn.clash} already exists and is not this cluster's viewer`, hint: `${why}. CONNECT never overwrites it. Rename it (kubectl config rename-context ${conn.clash} <other>) and press CONNECT again.` };
+        }
         return { ...base, state: "not-connected", text: "NOT CONNECTED", hint: `CONNECT writes kube context ${conn.alias} (viewer role, read-only) to ${kc.path} and adds it to Cloud Spider.` };
       }
       const ctx = contexts.find((item) => item.name === conn.match);
@@ -595,12 +646,16 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     async connectRun(requestOrigin, body = {}) {
       if (!originAllowed(requestOrigin, pageOrigin)) return { error: "nothing was connected", hint: "Open Cloud Spider at the address npm start printed." };
       const cluster = String(body.cluster || "");
-      const action = body.action === "disconnect" ? "disconnect" : "connect";
+      const action = ["disconnect", "adopt"].includes(body.action) ? body.action : "connect";
       if (!validCluster(cluster)) return { error: "not a cluster name", hint: "" };
       if (!connector || !upgrade?.runSteps) return { error: "CONNECT is not set up", hint: "" };
       const st = await this.connectStatus(cluster);
       const stack = st.stack || "";
       const no = (error, hint = "") => upgrade.refuse ? { ...upgrade.refuse({ module: "eks", action, stack, error }), ...(hint ? { hint } : {}) } : { error, hint };
+      if (action === "adopt") {
+        if (st.state !== "clash-same" || !st.adopt) return no(st.state === "connected" ? `${cluster} is already connected` : `nothing to adopt for ${cluster}`, st.hint || "");
+        return upgrade.runSteps({ module: "eks", action: "use it", stack, steps: adoptSteps(cluster, st.adopt), command: "", where: st.kubeconfig });
+      }
       if (action === "connect") {
         if (st.state === "no-cluster" || st.state === "error") return no(st.text, st.hint);
         const kc = await connector.readKubeconfig();

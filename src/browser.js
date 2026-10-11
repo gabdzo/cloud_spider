@@ -113,6 +113,11 @@ const kubePanel = document.querySelector("#kube-panel");
 const kubeTabs = document.querySelector("#kube-tabs");
 const kubeCtxEl = document.querySelector("#kube-ctx");
 const kubeConnectEl = document.querySelector("#kube-connect");
+const kubeDockEl = document.querySelector("#kube-connect-dock");
+const KC_OPEN_KEY = "cloudspider.kubeConnect.open";
+const KC_TONE = { connected: "ok", "no-access": "fail", error: "fail", "not-connected": "warn", "not-listed": "warn", "clash-same": "warn", "no-cluster": "warn" };
+let kcChip = null;
+let kcLog = null; // { wrap, bar, pane, open, state, action }
 // CONNECT state (see "CONNECT" below), declared early: views use it on load.
 let connectStripAt = 0;
 let connectStripBody = null;
@@ -1560,6 +1565,7 @@ function renderContexts(body) {
   kubeCtxEl.hidden = list.length < 2;
   if (list.length < 2) {
     contextsShown = "";
+    placeConnectChip();
     return;
   }
   const current = body.context || list[0].context;
@@ -1579,6 +1585,7 @@ function renderContexts(body) {
     return button;
   });
   kubeCtxEl.replaceChildren(title, ...buttons);
+  placeConnectChip();
 }
 
 function setClusterContext(name) {
@@ -2110,7 +2117,7 @@ function enterPath() {
   dropVaultRoute();
   setViewHash("path");
   kubeCtxEl.hidden = true;
-  if (kubeConnectEl) kubeConnectEl.hidden = true;
+  if (kubeConnectEl) hideConnectStrip();
   contextsShown = "";
   showRadioFor("path");
   mode = "path";
@@ -2211,7 +2218,7 @@ function enterCluster() {
 function leaveCluster() {
   setViewHash("");
   kubeCtxEl.hidden = true;
-  if (kubeConnectEl) kubeConnectEl.hidden = true;
+  if (kubeConnectEl) hideConnectStrip();
   contextsShown = "";
   showRadioFor("map");
   mode = "map";
@@ -3798,7 +3805,7 @@ async function installBundle() {
 // runs as a stack run of the cluster's eks stack, so the card's run pane
 // shows its commands and its ERROR plate.
 
-const CONNECT_WORD = { connected: "CONNECTED", "not-connected": "NOT CONNECTED", "not-listed": "NOT LISTED", "no-access": "NO ACCESS", "no-cluster": "NOT UP", error: "CANNOT CONNECT" };
+const CONNECT_WORD = { connected: "CONNECTED", "not-connected": "NOT CONNECTED", "not-listed": "NOT LISTED", "no-access": "NO ACCESS", "no-cluster": "NOT UP", "clash-same": "FOUND", error: "CANNOT CONNECT" };
 
 function connectRow(id) {
   const row = el("div", { id, className: "connect-row", hidden: true, role: "group", ariaLabel: "kube connection" });
@@ -3812,7 +3819,7 @@ function paintConnect(row, status, { onPress } = {}) {
   if (!status) return;
   row.dataset.state = status.state;
   const word = CONNECT_WORD[status.state] || status.state.toUpperCase();
-  const what = status.state === "connected" ? `${word} · ${status.context}` : status.state === "no-cluster" ? `${word} · ${status.text}` : status.state === "error" ? status.text : `${word}${status.context ? ` · ${status.context}` : ""}`;
+  const what = status.state === "connected" ? `${word} · ${status.context}` : ["no-cluster", "clash-same"].includes(status.state) ? `${word} · ${status.text}` : status.state === "error" ? status.text : `${word}${status.context ? ` · ${status.context}` : ""}`;
   row.querySelector(".what").textContent = what;
   row.querySelector(".hint").textContent = status.hint || "";
   const act = row.querySelector(".act");
@@ -3824,6 +3831,7 @@ function paintConnect(row, status, { onPress } = {}) {
   };
   if (["not-connected", "not-listed"].includes(status.state)) button("CONNECT", "connect", `aws eks update-kubeconfig … --alias ${status.alias} (writes ~/.kube/config only)`);
   if (status.state === "no-access") button("CHECK AGAIN", "connect", "run CONNECT again: nothing is rewritten, the access check runs again");
+  if (status.state === "clash-same") button("USE IT", "adopt", `one GET with ${status.adopt}; if it can read ${status.cluster}, Cloud Spider lists it (the kubeconfig is not touched)`);
   if (status.state === "connected" && status.ours) button("DISCONNECT", "disconnect", `remove ${status.alias} from ~/.kube/config and from Cloud Spider`);
   act.replaceChildren(...buttons);
 }
@@ -3850,7 +3858,8 @@ async function startConnect(cluster, action = "connect") {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ cluster, action }),
   });
-  const line = body.error ? { status: "fail", text: `${action} ${cluster}: ${body.error}` } : { status: "ok", text: `${action === "connect" ? "connecting" : "disconnecting"} ${cluster}` };
+  const doing = { connect: "connecting", disconnect: "disconnecting", adopt: "checking the existing context of" }[action] || action;
+  const line = body.error ? { status: "fail", text: `${action === "adopt" ? "use it" : action} ${cluster}: ${body.error}` } : { status: "ok", text: `${doing} ${cluster}` };
   if (noteSpider(line.text, line.status)) renderRadioPanel();
   connectWatch = { cluster, until: Date.now() + 120_000 };
   if (mode === "cluster") paintConnectStrip(body, cluster);
@@ -3872,11 +3881,15 @@ setInterval(async () => {
   const { cluster } = connectWatch;
   const run = await upgradeJson(`/api/upgrade?${new URLSearchParams({ module: "eks", clusterName: cluster })}`);
   if (mode === "cluster") paintConnectStrip(run, cluster);
-  if (!run.running && ["connect", "disconnect"].includes(run.action)) {
+  if (!run.running && ["connect", "disconnect", "use it"].includes(run.action)) {
     connectWatch = null;
     connectState.delete(cluster);
     if (pipOpen) refreshConnect(true);
-    if (mode === "cluster") pullConnectStrip(true);
+    if (mode === "cluster") {
+      pullConnectStrip(true);
+      // The context list may have changed (CONNECT, USE IT, DISCONNECT).
+      pullCluster();
+    }
   }
 }, 1000);
 
@@ -3900,7 +3913,7 @@ async function fetchConnectList(force = false) {
 
 async function pullConnectStrip(force = false) {
   if (!kubeConnectEl || mode !== "cluster" || sample) {
-    if (kubeConnectEl) kubeConnectEl.hidden = true;
+    if (kubeConnectEl) hideConnectStrip();
     return;
   }
   renderConnectStrip(await fetchConnectList(force));
@@ -3945,22 +3958,120 @@ async function openEksCard(cluster) {
   renderChrome();
 }
 
+// Open or folded, remembered (localStorage). Nothing stored: open only when
+// a cluster needs attention. A fold by hand stays folded.
+
+function connectWorst(clusters, error) {
+  if (error) return "fail";
+  const tones = clusters.map((item) => KC_TONE[item.state] || "warn");
+  return tones.includes("fail") ? "fail" : tones.includes("warn") ? "warn" : "ok";
+}
+
+function connectStripOpen(attention) {
+  const stored = readPref(KC_OPEN_KEY, "");
+  return stored === "1" || (stored === "" && attention);
+}
+
+function setConnectStripOpen(open) {
+  writePref(KC_OPEN_KEY, open ? "1" : "0");
+  if (connectStripBody) renderConnectStrip(connectStripBody);
+}
+
+// The folded chip sits right of the TOPOLOGY / TELEMETRY / OPS buttons (or
+// top right when there are neither screens nor contexts), and the context
+// switcher keeps clear of it, so it never covers the tabs, node cards or K9S.
+function connectChip() {
+  if (!kcChip) {
+    kcChip = el("button", { type: "button", id: "kube-connect-chip", className: "kc-chip" });
+    kcChip.append(el("i"), el("b", { textContent: "EKS" }), el("span"), el("small"));
+    kcChip.addEventListener("click", () => setConnectStripOpen(kubeConnectEl.hidden));
+    kubeDockEl.append(kcChip);
+  }
+  return kcChip;
+}
+
+function placeConnectChip() {
+  if (!kcChip || mode !== "cluster" || kubeDockEl.hidden) {
+    kubeCtxEl.style.maxWidth = "";
+    return;
+  }
+  const room = kubeDockEl.parentElement?.clientWidth || window.innerWidth;
+  if (!kubeTabs.hidden) {
+    kubeDockEl.style.left = `${kubeTabs.offsetLeft + kubeTabs.offsetWidth + 8}px`;
+    kubeDockEl.style.top = `${kubeTabs.offsetTop}px`;
+    kubeDockEl.style.right = "auto";
+  } else if (kubeCtxEl.hidden) {
+    kubeDockEl.style.left = "auto";
+    kubeDockEl.style.right = "14px";
+    kubeDockEl.style.top = "8px";
+  } else {
+    kubeDockEl.style.left = "14px";
+    kubeDockEl.style.right = "auto";
+    kubeDockEl.style.top = "8px";
+  }
+  const leftSide = kubeDockEl.style.left !== "auto";
+  kubeCtxEl.style.maxWidth = leftSide ? `${Math.max(160, room - (kubeDockEl.offsetLeft + kubeDockEl.offsetWidth) - 22)}px` : "";
+}
+
+function hideConnectStrip() {
+  kubeConnectEl.hidden = true;
+  kubeDockEl.hidden = true;
+  kubeCtxEl.style.maxWidth = "";
+}
+
 function renderConnectStrip(body) {
   if (mode !== "cluster" || sample || clusterScreen !== "topology") {
-    kubeConnectEl.hidden = true;
+    hideConnectStrip();
     return;
   }
   const clusters = body?.clusters || [];
-  kubeConnectEl.hidden = !clusters.length && !body?.error;
-  kubeConnectEl.style.top = kubeCtxEl.hidden ? "8px" : `${(kubeCtxEl.offsetTop || 8) + (kubeCtxEl.offsetHeight || 40) + 6}px`;
+  if (!clusters.length && !body?.error) {
+    hideConnectStrip();
+    return;
+  }
   const ok = clusters.filter((item) => item.state === "connected").length;
-  // Folded when every cluster is connected; open when one needs a press.
-  if (!kubeConnectEl.dataset.touched) kubeConnectEl.dataset.open = ok === clusters.length && !body?.error ? "0" : "1";
-  const head = el("button", { type: "button", className: "kc-head", ariaExpanded: String(kubeConnectEl.dataset.open !== "0") }, el("b", { textContent: "EKS" }), el("span", { textContent: body?.error ? `the clusters did not list: ${body.error}` : "kube connection · viewer role" }), el("em", { textContent: `${ok}/${clusters.length} CONNECTED ${kubeConnectEl.dataset.open === "0" ? "▸" : "▾"}` }));
-  head.addEventListener("click", () => {
-    kubeConnectEl.dataset.touched = "1";
-    kubeConnectEl.dataset.open = kubeConnectEl.dataset.open === "0" ? "1" : "0";
-    renderConnectStrip(body);
+  const worst = connectWorst(clusters, body?.error);
+  const running = Boolean(kcLog?.state === "running");
+  const open = running || connectStripOpen(worst !== "ok");
+  const chip = connectChip();
+  chip.dataset.tone = worst;
+  chip.setAttribute("aria-expanded", String(open));
+  chip.title = `${body?.error ? `the EKS clusters did not list: ${body.error}` : `${ok} of ${clusters.length} EKS clusters connected${worst !== "ok" ? "; one needs attention" : ""}`} · click to ${open ? "fold" : "open"} (Esc folds)`;
+  chip.querySelector("span").textContent = body?.error ? "!" : `${ok}/${clusters.length}`;
+  chip.querySelector("small").textContent = open ? "▴" : "▾";
+  kubeDockEl.hidden = false;
+  placeConnectChip();
+  kubeConnectEl.hidden = !open;
+  if (!open) return;
+  // Below the screen buttons, the chip and the context switcher (never over
+  // them), from the chip's left edge; full width when narrow.
+  const bottom = (item) => (item && !item.hidden ? item.offsetTop + item.offsetHeight : 0);
+  const top = Math.max(bottom(kubeTabs), bottom(kubeCtxEl), bottom(kubeDockEl), 8) + 6;
+  const room = kubeConnectEl.parentElement?.clientWidth || window.innerWidth;
+  const narrow = room < 820;
+  kubeConnectEl.classList.toggle("narrow", narrow);
+  const left = Math.min(kubeDockEl.offsetLeft, Math.max(14, room - 474));
+  kubeConnectEl.style.left = narrow ? "" : kubeDockEl.style.left === "auto" ? "" : `${left}px`;
+  kubeConnectEl.style.right = narrow || kubeDockEl.style.left === "auto" ? "" : "auto";
+  kubeConnectEl.style.top = `${top}px`;
+  kubeConnectEl.style.maxHeight = `calc(100% - ${top + 64}px)`;
+  const fold = el("button", { type: "button", className: "kc-fold", textContent: "FOLD ▴", title: "fold the EKS panel (Esc)", ariaLabel: "fold the EKS panel" });
+  fold.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setConnectStripOpen(false);
+  });
+  const head = el("div", { className: "kc-head", role: "button", tabIndex: 0, title: "click to fold (Esc)" },
+    el("i", { className: `kc-lamp ${worst}` }),
+    el("b", { textContent: "EKS" }),
+    el("span", { textContent: body?.error ? `the clusters did not list: ${body.error}` : "kube connection · viewer role" }),
+    el("em", { textContent: `${ok}/${clusters.length} CONNECTED` }),
+    fold);
+  head.addEventListener("click", () => setConnectStripOpen(false));
+  head.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setConnectStripOpen(false);
+    }
   });
   const rows = clusters.map((status) => {
     const row = connectRow("");
@@ -3974,23 +4085,61 @@ function renderConnectStrip(body) {
     }
     return row;
   });
-  const pane = kubeConnectEl.querySelector(".runpane") || runPane("kube-connect-run");
-  kubeConnectEl.replaceChildren(head, ...rows, pane);
+  const body2 = el("div", { className: "kc-body" }, ...rows);
+  if (kcLog) body2.append(kcLog.wrap);
+  kubeConnectEl.replaceChildren(head, body2);
+}
+
+// The CONNECT log in the panel: a bar that folds it; open while it runs or
+// when it failed, folded by itself once it is DONE.
+function connectLog() {
+  if (kcLog) return kcLog;
+  const bar = el("button", { type: "button", className: "kc-logbar" });
+  const pane = runPane("kube-connect-run");
+  const wrap = el("div", { className: "kc-log" }, bar, pane);
+  kcLog = { wrap, bar, pane, open: true, state: "", action: "connect" };
+  bar.addEventListener("click", () => {
+    kcLog.open = !kcLog.open;
+    paintConnectLog();
+  });
+  return kcLog;
+}
+
+function paintConnectLog() {
+  if (!kcLog) return;
+  const word = { running: "RUNNING", done: "DONE", failed: "FAILED", refused: "REFUSED" }[kcLog.state] || "";
+  kcLog.bar.textContent = `${String(kcLog.action || "connect").toUpperCase()} LOG${word ? ` · ${word}` : ""} ${kcLog.open ? "▴" : "▾"}`;
+  kcLog.bar.dataset.state = kcLog.state;
+  kcLog.bar.setAttribute("aria-expanded", String(kcLog.open));
+  kcLog.pane.hidden = !kcLog.open;
 }
 
 function paintConnectStrip(run, cluster) {
   if (!kubeConnectEl) return;
-  let pane = kubeConnectEl.querySelector(".runpane");
-  if (!pane) {
-    pane = runPane("kube-connect-run");
-    kubeConnectEl.append(pane);
-  }
-  kubeConnectEl.hidden = false;
-  kubeConnectEl.dataset.open = "1";
+  const log = connectLog();
   const local = run?.error && !(run.state === "refused" && run.stack) ? { error: run.error, hint: run.hint || "", action: "connect", at: Date.now() } : null;
+  const state = local ? "failed" : run?.running ? "running" : run?.state || (run?.error ? "failed" : "done");
+  if (state !== log.state) {
+    // Open while it runs or when it went wrong; DONE folds it.
+    log.open = state !== "done";
+    log.state = state;
+  }
+  log.action = run?.action || "connect";
   runPolledAt = Date.now();
-  drawRun(pane, local ? { action: "connect", stack: run.stack || cluster, lines: [] } : run, { local, query: new URLSearchParams({ module: "eks", clusterName: cluster }) });
+  drawRun(log.pane, local ? { action: "connect", stack: run.stack || cluster, lines: [] } : run, { local, query: new URLSearchParams({ module: "eks", clusterName: cluster }) });
+  paintConnectLog();
+  if (connectStripBody) renderConnectStrip(connectStripBody);
+  else if (!log.wrap.isConnected) kubeConnectEl.append(log.wrap);
 }
+
+// Esc folds the open panel (unless K9S or a field has the key).
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || mode !== "cluster" || !kubeConnectEl || kubeConnectEl.hidden) return;
+  const t = event.target;
+  if (k9sEl.contains(t) || (!k9sEl.hidden && !kubeConnectEl.contains(t))) return;
+  if (t && !kubeConnectEl.contains(t) && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  setConnectStripOpen(false);
+});
 
 async function toggleUpgrade() {
   pipOpen = !pipOpen;

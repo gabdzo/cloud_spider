@@ -10,7 +10,7 @@ import { createApp } from "../src/app.js";
 import { listen } from "../src/server.js";
 import { createUpgrade } from "../src/upgrade.js";
 import { loadContexts } from "../src/kube-contexts.js";
-import { addContextEntry, connectionOf, createConnector, removeContextEntry } from "../src/kube-connect.js";
+import { addContextEntry, connectionOf, sameEndpoint, createConnector, removeContextEntry } from "../src/kube-connect.js";
 import { runModel } from "../src/run-pane.js";
 
 const ORIGIN = "http://127.0.0.1:9241";
@@ -84,7 +84,7 @@ function rig({ contextsYaml = null, access = {}, env: extra = {}, kubeconfig = s
     logGroup: "",
     pageOrigin: ORIGIN,
     clock: () => Date.now(),
-    eks: { async listClusters() { return { names: ["cloudspider-up", "cloudspider-medium"] }; } },
+    eks: { async listClusters() { return { names: ["cloudspider-up", "cloudspider-medium"] }; }, async describeCluster(name) { return { found: true, status: "ACTIVE", endpoint: `https://${name}.fake.eks.amazonaws.com` }; } },
     upgrade,
     connector,
     loadKubeContexts,
@@ -257,6 +257,7 @@ test("errors land on the ERROR plate: expired AWS creds, aws missing, a cluster 
     const status = await r.app.connectStatus("cloudspider-medium");
     assert.equal(status.state, "error");
     assert.match(status.hint, /rename-context/);
+    assert.match(status.hint, /points at https:\/\/work\.example, not cloudspider-medium/);
     const refused = await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium" });
     assert.match(refused.error, /already exists/);
     assert.ok(!existsSync(`${r.kubeconfigFile}.cloudspider.bak`), "nothing was written");
@@ -277,4 +278,61 @@ test("contexts YAML helpers keep comments and refuse broken files", () => {
   assert.match(removed.text, /a # note/);
   const conn = connectionOf(startKubeconfig(), { cluster: "cloudspider-up" });
   assert.equal(conn.match, "cloudspider-viewer");
+});
+
+test("aws-cli 2 writes `--role` in the user: CONNECT's own context is CONNECTED, not a clash (cs-lt, 11:31)", () => {
+  const config = startKubeconfig();
+  config.clusters.push({ name: "arn:aws:eks:eu-north-1:550536272523:cluster/cs-lt", cluster: { server: "https://cs-lt.fake" } });
+  config.users.push({ name: "cs-lt-viewer", user: { exec: { command: "aws", args: ["--region", "eu-north-1", "eks", "get-token", "--cluster-name", "cs-lt", "--output", "json", "--role", ROLE("cs-lt")], env: [{ name: "AWS_PROFILE", value: "default" }] } } });
+  config.contexts.push({ name: "cs-lt-viewer", context: { cluster: "arn:aws:eks:eu-north-1:550536272523:cluster/cs-lt", user: "cs-lt-viewer" } });
+  const conn = connectionOf(config, { cluster: "cs-lt", roleArn: ROLE("cs-lt") });
+  assert.equal(conn.match, "cs-lt-viewer");
+  assert.equal(conn.ours, true);
+  assert.equal(conn.clash, "");
+  assert.ok(sameEndpoint("https://ABC.gr7.eu-north-1.eks.amazonaws.com/", "abc.gr7.eu-north-1.eks.amazonaws.com"));
+  assert.ok(!sameEndpoint("", ""));
+});
+
+test("USE IT: a <cluster>-viewer context on the same API server with another role is adopted after one GET", async () => {
+  const withOther = () => {
+    const config = startKubeconfig();
+    config.clusters.push({ name: "medium-by-hand", cluster: { server: "https://cloudspider-medium.fake.eks.amazonaws.com/" } });
+    config.users.push({ name: "gabriel-admin", user: { exec: { command: "aws", args: ["eks", "get-token", "--cluster-name", "cloudspider-medium"] } } });
+    config.contexts.push({ name: "cloudspider-medium-viewer", context: { cluster: "medium-by-hand", user: "gabriel-admin" } });
+    return config;
+  };
+  const r = rig({ kubeconfig: withOther(), access: { "cloudspider-medium-viewer": "ok" } });
+  try {
+    const before = readFileSync(r.kubeconfigFile, "utf8");
+    const status = await r.app.connectStatus("cloudspider-medium");
+    assert.equal(status.state, "clash-same");
+    assert.equal(status.adopt, "cloudspider-medium-viewer");
+    assert.match(status.hint, /USE IT checks with one GET/);
+    const started = await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", action: "adopt" });
+    assert.equal(started.action, "use it");
+    const done = await settle(r.upgrade);
+    assert.equal(done.state, "done", done.error);
+    assert.equal(readFileSync(r.kubeconfigFile, "utf8"), before, "the kubeconfig is not touched");
+    assert.ok(r.app.contextNames().includes("cloudspider-medium-viewer"));
+    const after = await r.app.connectStatus("cloudspider-medium");
+    assert.equal(after.state, "connected");
+    assert.equal(after.context, "cloudspider-medium-viewer");
+    assert.equal(after.ours, false);
+    const refused = await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", action: "disconnect" });
+    assert.match(refused.error, /not made by CONNECT|not connected/);
+  } finally {
+    r.cleanup();
+  }
+  const denied = rig({ kubeconfig: withOther(), access: { "cloudspider-medium-viewer": "unauthorized" } });
+  try {
+    await denied.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", action: "adopt" });
+    const done = await settle(denied.upgrade);
+    assert.equal(done.state, "failed");
+    assert.match(done.error, /NO ACCESS.*taken out of cloudspider\.contexts\.yaml again/);
+    assert.match(done.hint, /rename-context/);
+    assert.ok(!denied.app.contextNames().includes("cloudspider-medium-viewer"));
+    assert.equal((await denied.app.connectStatus("cloudspider-medium")).state, "clash-same");
+  } finally {
+    denied.cleanup();
+  }
 });
