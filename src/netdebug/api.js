@@ -13,6 +13,7 @@ import { createRateLimiter } from "./ratelimit.js";
 import * as local from "./probes.js";
 import { localChecks } from "./checks.js";
 import { buildReport, findingsFor, reportMarkdown } from "./report.js";
+import { sampleProbes } from "./sample.js";
 
 export const NETWORK_DEFAULTS = {
   enabled: true,
@@ -164,7 +165,7 @@ export function createNetdebug({ settings = NETWORK_DEFAULTS, pageOrigin = "", d
       job.steps.push({ text, state: "running" });
     };
     try {
-      const evidence = await collectLocal(target, { settings: { ...cfg, method: body.method }, probes: probes ? { ...local, ...probes } : local, resolver, fetch, ca, step: stepper });
+      const evidence = await collectLocal(target, { settings: job.sample ? { ...cfg, local: { ...cfg.local, allowInternalTargets: false, doh: NETWORK_DEFAULTS.local.doh }, method: body.method } : { ...cfg, method: body.method }, probes: job.sample ? sampleProbes : probes ? { ...local, ...probes } : local, resolver, fetch, ca, step: stepper });
       const checks = localChecks(evidence, { now: now() });
       const from = ["local"];
       for (const collect of extra) {
@@ -177,6 +178,7 @@ export function createNetdebug({ settings = NETWORK_DEFAULTS, pageOrigin = "", d
       }
       const last = job.steps.at(-1);
       if (last) last.state = "done";
+      if (job.sample) job.context.sample = true;
       job.report = buildReport({ id: job.id, target, startedAt: zoned(t0), durationMs: now() - t0, from, context: job.context, checks, findings: findingsFor(checks, target), audit: [job.audit] });
       job.state = "done";
       await save(job.report).catch((err) => {
@@ -189,7 +191,7 @@ export function createNetdebug({ settings = NETWORK_DEFAULTS, pageOrigin = "", d
       if (last) last.state = "failed";
     } finally {
       job.release();
-      await audit({ ...job.audit, result: job.state });
+      if (!job.sample) await audit({ ...job.audit, result: job.state });
     }
   }
 
@@ -208,10 +210,13 @@ export function createNetdebug({ settings = NETWORK_DEFAULTS, pageOrigin = "", d
       if (/^(localhost|.*\.localhost)$/.test(target.host) && cfg.local.allowInternalTargets !== true) return { status: 400, error: `${target.host} is loopback: refused unless network.local.allowInternalTargets is true` };
       const literal = refuseAddress(target.host, { allowPrivate: cfg.local.allowInternalTargets === true });
       if (literal && !/not a host address/.test(literal)) return { status: 400, error: literal };
-      const slot = rate.take(target.host);
+      // SAMPLE mode: fixture answers (sample.js), nothing leaves the machine,
+      // so no rate limit and no audit line.
+      const isSample = body.sample === true;
+      const slot = isSample ? { ok: true, release() {} } : rate.take(target.host);
       if (!slot.ok) return { status: 429, error: slot.reason, retryAfterMs: slot.retryAfterMs };
       const id = newId();
-      const job = { id, state: "running", target: { input: target.input, host: target.host, port: target.port, scheme: target.scheme }, steps: [], context: {}, release: slot.release, audit: { action: "netdebug.url.probe", target: `${target.host}:${target.port}`, runId: id } };
+      const job = { id, state: "running", target: { input: target.input, host: target.host, port: target.port, scheme: target.scheme }, steps: [], context: {}, release: slot.release, sample: isSample, audit: { action: isSample ? "netdebug.sample" : "netdebug.url.probe", target: `${target.host}:${target.port}`, runId: id } };
       jobs.set(id, job);
       while (jobs.size > 20) jobs.delete(jobs.keys().next().value);
       job.done = run(job, target, { method: body.method === "HEAD" ? "HEAD" : "GET", ...body });

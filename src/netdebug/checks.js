@@ -5,7 +5,7 @@ import { addressClass } from "./target.js";
 import { drillCommands } from "./commands.js";
 
 export const STATES = ["PASS", "FAIL", "UNKNOWN", "NOT_ASSESSED", "NOT_APPLICABLE"];
-export const LAYERS = ["client", "dns", "transport", "tls", "http", "cdn", "lb", "network", "cluster"];
+export const LAYERS = ["client", "dns", "transport", "tls", "http", "route", "cdn", "lb", "network", "cluster"];
 const DAY = 86_400_000;
 
 function row(id, layer, tool, status, rest = {}) {
@@ -132,6 +132,6 @@ export function localChecks(ev, { now = Date.now() } = {}) {
     } else out.push(row("L-HTTP-03", "http", "headers", "NOT_ASSESSED", { reason: "no HTTP answer", command: cmd["L-HTTP-03"] }));
   }
 
-  for (const [id, what] of [["L-NET-01", "traceroute"], ["L-NET-02", "path MTU"], ["L-NET-03", "ICMP echo"], ["L-NET-04", "local route"]]) out.push(row(id, "network", what, "NOT_ASSESSED", { reason: `${what}: not built yet (N11)`, command: cmd[id] }));
+  for (const [id, what] of [["L-NET-01", "traceroute"], ["L-NET-02", "path MTU"], ["L-NET-03", "ICMP echo"], ["L-NET-04", "local route"]]) out.push(row(id, "route", what, "NOT_ASSESSED", { reason: `${what}: not built yet (N11)`, command: cmd[id] }));
   return out;
 }

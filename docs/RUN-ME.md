@@ -763,3 +763,12 @@ Safety:
 - The query string is never stored. The audit log (`.cloudspider/audit.jsonl`) gets host:port only.
 
 Config: `network.*` in cloudspider.yaml (see cloudspider.example.yaml).
+
+**In PATH (N2):** the DEBUG panel docks under the request path, in both themes.
+- **Bar:** type a URL and press RUN (or Enter). The LOCAL / AWS / IN-CLUSTER lamps show where checks ran from; IN-CLUSTER stays off, since the debug pod is not built.
+- **Chain:** CLIENT → DNS → TCP → TLS → HTTP → who answered (ALB / CLOUDFRONT / ORIGIN). Each hop shows a glyph and one fact, the first broken edge is dashed, and a click on a hop filters the checks to it.
+- **TIMING strip:** dns / connect / tls / ttfb / transfer, as `curl -w` splits it.
+- **CHECKS:** filter chips, every row with COPY. **FINDINGS:** confidence, the facts behind it, NEXT (COPY) and VERIFY.
+- **YOU KNOW THE DRILL:** every command of the run in order, with COPY ALL. EXPORT MD / JSON download the report.
+
+When an AWS load balancer answered, the path diagram follows the same host. In SAMPLE mode the panel debugs fixture answers (try `web.sample.test`, an ALB answering 503; `api.sample.test`, a slow origin; and `google.com`), so nothing leaves the machine.

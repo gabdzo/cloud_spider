@@ -45,6 +45,7 @@ import { snapshot } from "./agent-text.js";
 import { createTerminal } from "./terminal.js";
 import { createLearnView } from "./learn-view.js";
 import { createScoreView } from "./score/view.js";
+import { createNetdebugView } from "./netdebug/view.js";
 import { metricAlerts, paintPlace } from "./metrics.js";
 import { sunrise } from "./sprites/landmarks.js";
 import { drawSprite } from "./draw-kit.js";
@@ -80,6 +81,22 @@ const map = document.querySelector("#map");
 const pathButton = document.querySelector("#path");
 const lbSelect = document.querySelector("#lb");
 const hostInput = document.querySelector("#host");
+// DEBUG: network debugging of a URL you type, docked in PATH
+// (src/netdebug/view.js). SAMPLE mode debugs fixture answers.
+// When an AWS load balancer answered, the PATH diagram follows the same
+// host (its ALB route); other targets leave the diagram alone.
+const netdebugView = createNetdebugView({
+  root: document.querySelector("#netdebug"),
+  hostInput,
+  sample: () => sample,
+  onDone(report) {
+    const who = report.checks?.find((c) => c.id === "L-HTTP-03")?.observed?.answeredBy;
+    const host = report.target?.host || "";
+    if (mode !== "path" || who !== "alb" || !host || hostInput.value.trim() === host) return;
+    hostInput.value = host;
+    hostInput.dispatchEvent(new Event("change"));
+  },
+});
 const tabMap = document.querySelector("#tab-map");
 const tabRadio = document.querySelector("#tab-radio");
 const radioPanel = document.querySelector("#radio-panel");
@@ -2151,6 +2168,7 @@ function enterPath() {
   lbSelect.hidden = false;
   hostInput.hidden = false;
   clickGround(ui);
+  netdebugView.show();
   setStatus(ui, "reading the path");
   renderChrome();
   draw();
@@ -2165,6 +2183,7 @@ function leavePath() {
   pathSelected = null;
   lbSelect.hidden = true;
   hostInput.hidden = true;
+  netdebugView.hide();
   setStatus(ui, sample ? "sample, not the account" : "");
   renderChrome();
   if (sample) {
@@ -2286,6 +2305,7 @@ async function toggleSample() {
       pathData = null;
       pathSelected = null;
       lbSelect.replaceChildren();
+      netdebugView.reset();
       setStatus(ui, sample ? "sample, not the account" : "reading the path");
     } else {
       clusterData = null;

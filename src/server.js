@@ -7,6 +7,7 @@ import { samplePathGraph } from "./path-sample.js";
 import { pathResult } from "./path-view.js";
 import { THEME_NAMES, cssVars } from "./theme.js";
 import { SCORE_CSS } from "./score/style.js";
+import { ND_CSS } from "./netdebug/style.js";
 import { scoreRoute } from "./score/routes.js";
 import { netdebugRoute } from "./netdebug/routes.js";
 import { defaults, effectiveConfig } from "./config.js";
@@ -21,6 +22,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 export const FILES = new Set([
   "browser.js",
   "score/view.js",
+  "netdebug/view.js",
   "spend-view.js",
   "draw.js",
   "sprites.js",
@@ -122,6 +124,7 @@ const page = `<!doctype html>
   @font-face { font-family: "JetBrains Mono"; src: url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
   ${cssVars()}
   ${SCORE_CSS}
+  ${ND_CSS}
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; }
@@ -2193,6 +2196,7 @@ const page = `<!doctype html>
       <section id="term" hidden></section>
       <section id="learn" aria-label="learn" hidden></section>
       <section id="score" aria-label="scorecard" hidden></section>
+      <section id="netdebug" aria-label="network debugging" hidden></section>
     </div>
     <aside id="radio-panel" aria-label="radio">
       <div class="ptitle"><img class="px" data-icon="radio" alt=""><span data-pro-label="Activity">RADIO</span><span id="station-count"></span></div>
