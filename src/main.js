@@ -122,7 +122,9 @@ app.score = createScoreApi({
   aws: { clients: createScanClients(), regions: config.scorecard.regions.length ? config.scorecard.regions : [config.aws.region || process.env.AWS_REGION || "eu-north-1"] },
   catalog: () => loadCatalog(),
   profiles: () => loadProfiles(),
-  kubeFor: (name) => (name ? kubeContexts.find((ctx) => ctx.name === name)?.kube : kube) || null,
+  // The app's live context list: a context CONNECT added after start is
+  // scannable without a restart.
+  kubeFor: (name) => app.kubeOf(name),
 });
 
 // Network debugging (PATH › DEBUG): local probes of a URL the user typed,

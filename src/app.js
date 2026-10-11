@@ -749,6 +749,13 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     // ---- CONNECT: a viewer kube context per EKS cluster (kube-connect.js) ----
     contextNames,
     reloadContexts,
+    // The kube client for a context by name, from the live list (so a
+    // context CONNECT just added is found without a restart); "" is the
+    // primary one. SCORE scans through this.
+    kubeOf(name = "") {
+      if (!name) return kube || null;
+      return contexts.find((ctx) => ctx.name === name)?.kube || null;
+    },
     async connectStatus(cluster = "", { fresh = false, inAccount = false } = {}) {
       if (!validCluster(cluster)) return { cluster, state: "error", text: "not a cluster name", hint: "" };
       if (!connector || !upgrade?.outputs) return { cluster, state: "error", text: "CONNECT is not set up", hint: "" };
