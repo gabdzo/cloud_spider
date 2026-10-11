@@ -21,11 +21,20 @@ export function fakeStacks(worldRef, { free = 20, fail = "" } = {}) {
       const plan = bundlePlan(view, items || []);
       return { ...view, plan, line: "" };
     },
+    // The EKS card's fields as its stack has them (FIX for an add-on
+    // included with EKS reruns that stack with them).
+    async upgradeLive(module, values) {
+      return module === "eks" ? { values: { clusterName: values.clusterName, instanceType: "t4g.medium", nodeCount: "1" }, source: "stack config" } : { values: {} };
+    },
     async upgradeRun(origin, { module, action, params }) {
       if (origin !== "http://127.0.0.1:9241") return { error: "the upgrade did not happen" };
       runs.push(`${action} ${module}-${params.clusterName}`);
       const ok = fail !== `${action} ${module}`;
-      if (action === "up" && ok) {
+      if (action === "up" && ok && module === "eks") {
+        // The EKS stack installs the add-ons switched on.
+        if (params.metricsServer === "on") worldRef.world = ADDON_FOOTPRINT["metrics-server"](worldRef.world);
+        if (params.podIdentityAgent === "on" && ADDON_FOOTPRINT["pod-identity"]) worldRef.world = ADDON_FOOTPRINT["pod-identity"](worldRef.world);
+      } else if (action === "up" && ok) {
         worldRef.world = ADDON_FOOTPRINT[module](worldRef.world);
         this.room.free -= 3;
       }

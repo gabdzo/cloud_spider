@@ -4,7 +4,7 @@ import * as k8s from "@pulumi/kubernetes";
 import { ADDONS, parseStack } from "./catalog.js";
 import { REGION } from "./common.js";
 import { readPodRoom, roomRefusal } from "./pod-room.js";
-import { addonPlan, ownerText, readAddon } from "../eks-addons.js";
+import { addonPlan, needsText, ownerText, readAddon } from "../eks-addons.js";
 
 // Cluster add-ons for an EKS cluster from upgrades/eks. One stack per add-on
 // and cluster, named <addon>-<cluster>; config clusterName must match.
@@ -34,14 +34,18 @@ if (addon.podSlots && !new pulumi.Config().getBoolean("skipRoomCheck")) {
     }
   }
 }
-// An EKS add-on another Cloud Spider stack owns (the demo stack's
-// metrics-server or Pod Identity agent) is not created twice: EKS would
-// answer 409 "Addon already exists". The app refuses this first too
-// (src/addons.js); this covers a hand-run pulumi up.
+// The Pod Identity agent and metrics-server come with the EKS stack now
+// (includedWithEks; docs/design/stack-dependencies.md). Their add-on stacks
+// only keep the add-on they made before (retainOnDelete, until
+// scripts/migrate-eks-addons.mjs hands it over); anything else is the EKS
+// card's job. The app refuses this first too (src/addons.js).
 if (addon.eksAddon) {
   const clusterName = new pulumi.Config().get("clusterName") || parsed.cluster;
   const existing = await readAddon(aws.eks.getAddon, clusterName, addon.eksAddon);
-  if (addonPlan(existing, addon.id) === "use") {
+  if (addon.includedWithEks && existing.project !== addon.id) {
+    throw new Error(`${addon.title} is included with EKS: ${needsText(addon.eksAddon, clusterName).replace(/^needs [^:]+: /, "")}${existing.exists ? `; it is on ${clusterName} from ${ownerText(existing.project, clusterName)}` : ""}`);
+  }
+  if (!addon.includedWithEks && addonPlan(existing, addon.id) === "use") {
     throw new Error(`${addon.title} is already on ${clusterName} from ${ownerText(existing.project, clusterName)}; nothing to add (that stack keeps it, take it down there first to move it here)`);
   }
 }

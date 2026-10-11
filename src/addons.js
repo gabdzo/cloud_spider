@@ -126,6 +126,10 @@ export function addonTree({ clusters = [], stacks = [], outputs = {}, detected =
           ready: inCluster ? inCluster.ready : null,
           recommended: Boolean(addon.recommended),
           offered: addon.offered !== false,
+          // Installed by the EKS stack (upgrades/eks): no stack of its own.
+          included: Boolean(addon.includedWithEks),
+          // EKS DescribeAddon answered for it (found or not): "absent" is real.
+          known: Boolean(managed && !managed.error),
           needs: addon.needs,
         };
       });
@@ -149,6 +153,8 @@ export function refuseUp(tree, addonId, cluster, room = null) {
   const node = (tree || []).find((item) => item.cluster === cluster);
   const addon = node?.addons.find((item) => item.id === addonId);
   if (!addon) return "";
+  const spec = ADDONS.find((item) => item.id === addonId);
+  if (spec?.includedWithEks) return `${addon.title} is included with EKS: ${eksAddonHint(spec, cluster)}`;
   if (addon.state === "present") return `${addon.title} is already on ${cluster} (${addon.source}); nothing to add`;
   if (addon.state !== "installed") {
     const tight = roomRefusal(ADDONS.find((item) => item.id === addonId), room, cluster);
@@ -156,8 +162,17 @@ export function refuseUp(tree, addonId, cluster, room = null) {
   }
   // Missing needs only count when the viewer context could look inside this
   // cluster; otherwise "not seen" is not "not there".
-  if (addon.missing?.length && node.seen) return `${addon.title} needs ${addon.missing.join(", ")} on ${cluster} first`;
+  const included = (addon.missing || []).map((id) => ADDONS.find((item) => item.id === id)).filter((need) => need?.includedWithEks);
+  const known = included.find((need) => node.seen || node.addons.find((item) => item.id === need.id)?.known);
+  if (known) return `${addon.title} needs ${known.title}: ${eksAddonHint(known, cluster)}`;
+  const rest = (addon.missing || []).filter((id) => !included.some((need) => need.id === id));
+  if (rest.length && node.seen) return `${addon.title} needs ${rest.join(", ")} on ${cluster} first`;
   return "";
+}
+
+// "RUN the EKS stack for <cluster> (it installs <eks add-on>)"
+export function eksAddonHint(spec, cluster) {
+  return `RUN the EKS stack for ${cluster} (it installs ${spec?.eksAddon || spec?.id})`;
 }
 
 export function createAddons({ run = spawn, cwd = root, env = process.env, clock = () => Date.now(), eks = null, kube = null, ttl = ADDON_TTL } = {}) {

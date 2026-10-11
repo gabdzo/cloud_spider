@@ -332,7 +332,7 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
         const b = button(`FIX: ${n.addon}`, "sc-btn sc-primary");
         b.disabled = busy;
         b.addEventListener("click", () => act({ control: n.id, phase: "plan" }));
-        card.append(el("span", "sc-muted sc-small", `${n.id} · add-on stack ${n.addon}: preview first, nothing changes until you approve`), b);
+        card.append(el("span", "sc-muted sc-small", `${n.id} · ${["pod-identity", "metrics-server"].includes(n.addon) ? `reruns the EKS stack (it installs ${n.addon})` : `add-on stack ${n.addon}`}: preview first, nothing changes until you approve`), b);
       }
       list.append(card);
     }

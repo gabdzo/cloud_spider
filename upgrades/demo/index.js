@@ -2,7 +2,7 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
-import { addonPlan, ownerText, readAddon } from "../eks-addons.js";
+import { usesEksAddon } from "../eks-addons.js";
 
 // The demo workload for the EKS cluster from upgrades/eks. Stack: demo.
 //   web (podinfo) → api (podinfo), loadgen hits web (some 500s and slow calls
@@ -16,8 +16,8 @@ import { addonPlan, ownerText, readAddon } from "../eks-addons.js";
 //       otel-metrics Service. Cloud Spider reads that read-only through the
 //       kube API service proxy: no CloudWatch custom metrics, no extra cost.
 //   The collector gets AWS credentials from EKS Pod Identity (no keys).
-// Also: the metrics-server add-on (pod CPU/memory for Cloud Spider) and the
-// ClusterRole that lets Cloud Spider's read-only viewer role list nodes and
+// Needs the EKS stack's Pod Identity agent and metrics-server add-ons (it
+// never creates them). Also: the ClusterRole that lets Cloud Spider's read-only viewer role list nodes and
 // metrics. No load balancer: reach web with kubectl port-forward.
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
@@ -42,21 +42,13 @@ const kubeconfig = pulumi.all([cluster.endpoint, cluster.certificateAuthorities]
 const provider = new k8s.Provider("eks", { kubeconfig, enableServerSideApply: true });
 const k = { provider };
 
-// Add-ons: Pod Identity (collector credentials) and metrics-server. The
-// add-on cards can install the same two (upgrades/addons); EKS holds one of
-// each per cluster, so one an add-on stack already put there is used, not
-// created again (409 "Addon already exists"). eks-addons.js says which.
-async function eksAddon(name, addonName) {
-  const existing = await readAddon(aws.eks.getAddon, clusterName, addonName);
-  const plan = addonPlan(existing, "demo");
-  if (plan === "use") {
-    pulumi.log.info(`${addonName} is already on ${clusterName} from ${ownerText(existing.project, clusterName)}; the demo uses it and leaves it alone`);
-    return null;
-  }
-  return new aws.eks.Addon(name, { clusterName, addonName, resolveConflictsOnCreate: "OVERWRITE", tags });
-}
-const podIdentity = await eksAddon("pod-identity", "eks-pod-identity-agent");
-await eksAddon("metrics-server", "metrics-server");
+// Add-ons: Pod Identity (collector credentials) and metrics-server come
+// with the EKS stack (docs/design/stack-dependencies.md); this stack never
+// creates them and stops without them. One it made before that rule it
+// keeps (retainOnDelete) until scripts/migrate-eks-addons.mjs hands it over.
+const uses = (name, addonName) => usesEksAddon({ pulumi, aws, clusterName, addonName, self: "demo", name, tags });
+await uses("pod-identity", "eks-pod-identity-agent");
+await uses("metrics-server", "metrics-server");
 
 // Cloud Spider's viewer group (upgrades/eks maps the viewer role to it):
 // nodes and metrics on top of AmazonEKSViewPolicy. Read verbs only.
@@ -102,7 +94,7 @@ const collectorRole = new aws.iam.Role("collector", {
   tags,
 });
 const collectorAccount = new k8s.core.v1.ServiceAccount("otel-collector", { metadata: { name: "otel-collector", namespace: ns } }, inNs);
-new aws.eks.PodIdentityAssociation("otel-collector", { clusterName, namespace: ns, serviceAccount: "otel-collector", roleArn: collectorRole.arn, tags }, { dependsOn: podIdentity ? [podIdentity] : [] });
+new aws.eks.PodIdentityAssociation("otel-collector", { clusterName, namespace: ns, serviceAccount: "otel-collector", roleArn: collectorRole.arn, tags });
 
 // The collector reads the kubelet's stats API on its own node.
 new k8s.rbac.v1.ClusterRole("otel-kubeletstats", {

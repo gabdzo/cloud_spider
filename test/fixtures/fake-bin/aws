@@ -37,5 +37,16 @@ if (args.includes("get-token")) {
   process.stdout.write(JSON.stringify({ kind: "ExecCredential", apiVersion: "client.authentication.k8s.io/v1beta1", status: { token: "k8s-aws-v1.fake" } }));
   process.exit(0);
 }
+// eks describe-addon: FAKE_AWS_ADDONS ({ "<addon>": { "tags": {...} } }).
+if (args[0] === "eks" && args[1] === "describe-addon") {
+  const name = arg("--addon-name");
+  const on = JSON.parse(process.env.FAKE_AWS_ADDONS || "{}")[name];
+  if (!on) {
+    process.stderr.write(`An error occurred (ResourceNotFoundException) when calling the DescribeAddon operation: No addon: ${name} found in cluster: ${arg("--cluster-name")}\n`);
+    process.exit(254);
+  }
+  process.stdout.write(JSON.stringify({ addon: { addonName: name, clusterName: arg("--cluster-name"), addonVersion: "v1", tags: on.tags || {} } }));
+  process.exit(0);
+}
 process.stderr.write(`fake aws: ${args.join(" ")} is not faked\n`);
 process.exit(2);

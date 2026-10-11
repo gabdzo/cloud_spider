@@ -58,7 +58,7 @@ export const UPGRADES = [
   {
     id: "eks",
     title: "EKS",
-    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade).",
+    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them.",
     dir: "upgrades/eks",
     stack: "upgrade",
     project: "cloudspider-upgrade",
@@ -70,6 +70,11 @@ export const UPGRADES = [
       { name: "instanceType", type: "string", default: "t4g.small", choices: ["t4g.small", "t4g.medium"] },
       // max: stacks.eks.maxNodes in cloudspider.yaml (createUpgrade eksMaxNodes).
       { name: "nodeCount", type: "number", default: 1, min: 1, max: EKS_MAX_NODES },
+      // The cluster-level EKS add-ons this stack owns (upgrades/eks-addons.js
+      // EKS_OWNED); docs/design/stack-dependencies.md.
+      { name: "podIdentityAgent", type: "string", default: "on", choices: ["on", "off"] },
+      { name: "metricsServer", type: "string", default: "on", choices: ["on", "off"] },
+      { name: "ebsCsiDriver", type: "string", default: "on", choices: ["on", "off"] },
     ],
   },
   {
@@ -123,17 +128,14 @@ export const UPGRADES = [
   {
     id: "pgcluster",
     title: "Postgres on EKS",
-    note: "CloudNativePG on the EKS cluster: the operator, the EBS CSI driver and one 1-instance database shop/shopdb on a 5 Gi gp3 volume. Needs the cluster; pick t4g.medium on the EKS card first (a t4g.small runs out of pods). Set podIdentityAgent to present if the demo stack is up.",
+    note: "CloudNativePG on the EKS cluster: the operator and one 1-instance database shop/shopdb on a 5 Gi gp3 volume. Needs the cluster with its Pod Identity agent and EBS CSI driver (the EKS stack installs both); pick t4g.medium on the EKS card first (a t4g.small runs out of pods).",
     dir: "upgrades/pgcluster",
     stack: "pgcluster",
     project: "cloudspider-pgcluster",
     vault: "pgcluster",
     needs: ["eks"],
     cost: [{ price: "ebs-gp3-gb", qty: 5 }],
-    parameters: [
-      { name: "clusterName", type: "string", default: "cloudspider-up" },
-      { name: "podIdentityAgent", type: "string", default: "install", choices: ["install", "present"] },
-    ],
+    parameters: [{ name: "clusterName", type: "string", default: "cloudspider-up" }],
   },
   {
     id: "shopapi",
@@ -150,7 +152,7 @@ export const UPGRADES = [
   {
     id: "demo",
     title: "EKS demo app",
-    note: "The demo workload on the EKS cluster (docs/RUN-ME.md §8): podinfo web → api, a load generator, and an OpenTelemetry collector sending pod logs to CloudWatch (1 day) and traces to X-Ray. It also needs the Pod Identity agent and metrics-server EKS add-ons: it installs each one unless an add-on card already did (then it uses that one and leaves it alone), and those two cards refuse an add-on the demo made. Take it down deletes this stack; the cluster stays.",
+    note: "The demo workload on the EKS cluster (docs/RUN-ME.md §8): podinfo web → api, a load generator, and an OpenTelemetry collector sending pod logs to CloudWatch (1 day) and traces to X-Ray. It needs the Pod Identity agent and metrics-server EKS add-ons, which the EKS stack installs; it never creates them. Take it down deletes this stack; the cluster stays.",
     dir: "upgrades/demo",
     stack: "demo",
     project: "cloudspider-demo",

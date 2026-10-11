@@ -19,8 +19,18 @@ const created = [];
 await pulumi.runtime.setMocks(
   {
     newResource(args) {
-      created.push({ type: args.type, name: args.name, inputs: args.inputs, provider: args.provider ? String(args.provider).replace(/::[^:]*$/, "") : "" });
-      return { id: `${args.name}-id`, state: { arn: `arn:aws:mock:::${args.name}`, privateIp: `${args.name}-ip`, ...args.inputs } };
+      // A read (Resource.get) or an import carries an id. CLOUDSPIDER_MOCK_K8S_MISSING
+      // (["<type>:<id>"]) makes such a read fail as a missing object would.
+      if (args.id && JSON.parse(process.env.CLOUDSPIDER_MOCK_K8S_MISSING || "[]").includes(`${args.type}:${args.id}`)) {
+        const missing = new Error(`resource '${args.id}' does not exist`);
+        missing.details = missing.message;
+        throw missing;
+      }
+      created.push({ type: args.type, name: args.name, inputs: args.inputs, provider: args.provider ? String(args.provider).replace(/::[^:]*$/, "") : "", ...(args.id ? { id: args.id } : {}) });
+      // What AWS fills in on a new EKS cluster (upgrades/eks builds its own
+      // kubeconfig from these).
+      const cluster = args.type === "aws:eks/cluster:Cluster" ? { endpoint: "https://mock.eks", certificateAuthority: { data: "bW9jaw==" }, version: args.inputs.version } : {};
+      return { id: `${args.name}-id`, state: { arn: `arn:aws:mock:::${args.name}`, privateIp: `${args.name}-ip`, ...cluster, ...args.inputs } };
     },
     call(args) {
       const token = String(args.token);
@@ -30,14 +40,16 @@ await pulumi.runtime.setMocks(
       // EKS add-ons on the mock cluster: CLOUDSPIDER_MOCK_EKS_ADDONS is
       // {"<addonName>": {"project": "<tag>"}}; any other add-on is absent.
       if (token.includes("eks/getAddon")) {
-        const on = JSON.parse(process.env.CLOUDSPIDER_MOCK_EKS_ADDONS || "{}")[args.inputs?.addonName];
+        // Unset: a cluster as the EKS stack makes it, its three add-ons tagged project=eks.
+        const fallback = '{"eks-pod-identity-agent":{"project":"eks"},"metrics-server":{"project":"eks"},"aws-ebs-csi-driver":{"project":"eks"}}';
+        const on = JSON.parse(process.env.CLOUDSPIDER_MOCK_EKS_ADDONS || fallback)[args.inputs?.addonName];
         if (!on) {
           // The mock monitor hands the program err.details, as gRPC would.
           const missing = new Error(`reading EKS Add-On (${args.inputs?.clusterName}:${args.inputs?.addonName}): couldn't find resource`);
           missing.details = missing.message;
           throw missing;
         }
-        return { ...args.inputs, addonVersion: "v1-mock", tags: on.project ? { project: on.project } : {} };
+        return { ...args.inputs, addonVersion: "v1-mock", tags: on.tags || (on.project ? { project: on.project } : {}) };
       }
       return args.inputs ?? {};
     },

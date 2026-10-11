@@ -26,6 +26,9 @@ export function mergeTags(pulumi, base, own) {
 export function inheritTags(pulumi, base) {
   pulumi.runtime.registerStackTransformation((args) => {
     if (!String(args.type).startsWith("aws:")) return undefined;
+    // Adopted with the import option: the inputs must equal what is there
+    // (the EKS add-on migration), so no tags are merged in.
+    if (args.opts?.import) return undefined;
     if (!args.props || !("tags" in args.props)) return undefined;
     return { props: { ...args.props, tags: mergeTags(pulumi, base, args.props.tags) }, opts: args.opts };
   });

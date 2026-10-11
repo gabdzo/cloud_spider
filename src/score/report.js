@@ -3,6 +3,9 @@
 // and never evidence fields: only results, statuses and failing resource ids.
 import { DISCLAIMER, VERDICT_LABEL } from "./scorer.js";
 
+// Add-ons the EKS stack installs (upgrades/addons/catalog.js includedWithEks).
+const EKS_INCLUDED = new Set(["pod-identity", "metrics-server"]);
+
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const ORDER = { FAIL: 0, UNKNOWN: 1, NOT_ASSESSED: 2, PASS: 3, NOT_APPLICABLE: 4 };
 
@@ -18,7 +21,7 @@ export function reportModel(scan, { permissions = null } = {}) {
     gates: card.gates,
     rows: [...scan.results].sort((a, b) => ORDER[a.status] - ORDER[b.status] || a.id.localeCompare(b.id)).map((r) => ({
       id: r.id, title: r.title, status: r.status, severity: r.severity, reason: r.reason || "",
-      failing: (r.resources || []).filter((x) => !x.pass).map((x) => x.id), fix: r.addon ? `add-on stack ${r.addon}-${scan.clusterName}` : "",
+      failing: (r.resources || []).filter((x) => !x.pass).map((x) => x.id), fix: r.addon ? (EKS_INCLUDED.has(r.addon) ? `the EKS stack of ${scan.clusterName} (it installs ${r.addon})` : `add-on stack ${r.addon}-${scan.clusterName}`) : "",
     })),
     grants: permissions?.grants || [],
     disclaimer: DISCLAIMER,

@@ -24,9 +24,11 @@ export const ADDONS = [
     namespace: "kube-system",
     detect: { daemonset: ["eks-pod-identity-agent"] },
     needs: [],
+    // Installed by the EKS stack (upgrades/eks); this row only shows it.
+    includedWithEks: true,
     recommended: true,
     cost: [],
-    note: "The EKS Pod Identity agent: how Karpenter, the Load Balancer Controller and KEDA get AWS credentials without keys. The demo stack installs it too; skip this one if the tree says PRESENT.",
+    note: "The EKS Pod Identity agent: how Karpenter, the Load Balancer Controller, KEDA, the EBS CSI driver and the demo's collector get AWS credentials without keys. Included with EKS: the EKS stack installs it (podIdentityAgent on the EKS card).",
   },
   {
     id: "metrics-server",
@@ -37,9 +39,10 @@ export const ADDONS = [
     namespace: "kube-system",
     detect: { deployment: ["metrics-server"] },
     needs: [],
+    includedWithEks: true,
     recommended: true,
     cost: [],
-    note: "Pod and node CPU/memory for kubectl top, the HPA and the Cluster view. The EKS community add-on. The demo stack already installs it, so this only matters on a cluster without the demo.",
+    note: "Pod and node CPU/memory for kubectl top, the HPA and the Cluster view. The EKS community add-on. Included with EKS: the EKS stack installs it (metricsServer on the EKS card).",
   },
   {
     id: "kyverno",
