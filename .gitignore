@@ -25,3 +25,6 @@ cloudspider.contexts.yaml
 
 # Stack run logs from the Stacks panel (.cloudspider/runs/<stack>/<ts>.log).
 .cloudspider/
+
+# Local Cloud Spider config (profile names, contexts); see cloudspider.example.yaml.
+cloudspider.yaml

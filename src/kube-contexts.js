@@ -106,19 +106,30 @@ function ignoredSingle(env, winner) {
   return one ? [`CLOUDSPIDER_KUBE_CONTEXT=${one} is ignored: ${winner} lists the contexts (add it there)`] : [];
 }
 
-export async function loadContexts({ env = process.env, read, cwd = process.cwd() } = {}) {
+// configured: kube.contexts from cloudspider.yaml (config.js, already
+// validated). They come first; the contexts file (which CONNECT writes) is
+// merged after them, and a name in both keeps the cloudspider.yaml entry.
+export async function loadContexts({ env = process.env, read, cwd = process.cwd(), configured = [] } = {}) {
   if (String(env.CLOUDSPIDER_KUBE_CONTEXTS || "").trim()) {
     const got = parseContextsEnv(env.CLOUDSPIDER_KUBE_CONTEXTS);
     if (got.contexts.length) return { ...got, errors: [...got.errors, ...ignoredSingle(env, "CLOUDSPIDER_KUBE_CONTEXTS")], source: "CLOUDSPIDER_KUBE_CONTEXTS" };
   }
+  const errors = [];
+  const fromConfig = (configured || []).map((raw, index) => entry(raw, `cloudspider.yaml kube.contexts #${index + 1}`, errors)).filter(Boolean);
   const file = env.CLOUDSPIDER_KUBE_CONTEXTS_FILE || `${cwd.replace(/\/$/, "")}/${CONTEXTS_FILE}`;
+  let fromFile = { contexts: [], errors: [] };
   if (read) {
     const text = await read(file, "utf8").catch(() => null);
-    if (text != null) {
-      const got = parseContextsYaml(text);
-      if (got.contexts.length) return { ...got, errors: [...got.errors, ...ignoredSingle(env, CONTEXTS_FILE)], source: CONTEXTS_FILE };
-    }
+    if (text != null) fromFile = parseContextsYaml(text);
   }
+  if (fromConfig.length) {
+    const names = new Set(fromConfig.map((c) => c.name));
+    const extra = fromFile.contexts.filter((c) => !names.has(c.name));
+    const fileErrors = fromFile.contexts.length ? fromFile.errors : [];
+    const source = extra.length ? `cloudspider.yaml + ${CONTEXTS_FILE}` : "cloudspider.yaml";
+    return { contexts: [...fromConfig, ...extra], errors: [...errors, ...fileErrors, ...ignoredSingle(env, source)], source };
+  }
+  if (fromFile.contexts.length) return { ...fromFile, errors: [...fromFile.errors, ...ignoredSingle(env, CONTEXTS_FILE)], source: CONTEXTS_FILE };
   const single = entry({ context: env.CLOUDSPIDER_KUBE_CONTEXT || DEFAULT_CONTEXT }, "CLOUDSPIDER_KUBE_CONTEXT", []);
   return { contexts: single ? [single] : [], errors: [], source: "CLOUDSPIDER_KUBE_CONTEXT" };
 }

@@ -45,7 +45,7 @@ function accountRead(error) {
 export const KUBE_VIEW_TTL = 5_000;
 export const KUBE_MAP_TTL = 30_000;
 
-export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts }) {
+export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, regionsAllow = [], costTtl = COST_TTL }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -489,6 +489,11 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   }
 
   const api = {
+    // The effective config (config.js effectiveConfig: redacted, with
+    // sources) for /api/config and the settings panel; null in tests.
+    settings() {
+      return settings;
+    },
     stdout,
     fail(call, error) {
       report(sink, { call, sentence: error?.message || "the read failed" });
@@ -913,7 +918,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     },
     async costView() {
       const at = clock();
-      if (costCache && at - costCache.at < COST_TTL) return costCache.bill;
+      if (costCache && at - costCache.at < costTtl) return costCache.bill;
       if (!costFlight) {
         costFlight = readBill(at).finally(() => {
           costFlight = null;
@@ -1142,6 +1147,13 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       return;
     }
     regions = listed?.regions || [];
+    // aws.regions in cloudspider.yaml narrows the picker; a list that names
+    // no enabled region is ignored (and said), not an empty map.
+    if (regionsAllow.length) {
+      const kept = regions.filter((name) => regionsAllow.includes(name));
+      if (kept.length) regions = kept;
+      else sink.push(`config: aws.regions (${regionsAllow.join(", ")}) names no enabled region; showing every region`);
+    }
     region = pickRegion(regions, await ec2.defaultRegion());
     loading = false;
     await loadPlace(region);

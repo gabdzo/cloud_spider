@@ -4405,5 +4405,20 @@ pull().then(() => {
   if (place && !sample) queueSpend();
 });
 
-// A reload (or a pasted link) comes back to the view and panels in the hash.
-queueUrl();
+// cloudspider.yaml (/api/config): a bare URL opens on ui.defaultView, and a
+// surface switched off under features is not offered (the server refuses it
+// too). Then a reload (or a pasted link) comes back to the view and panels
+// in the hash.
+let pageConfig = null;
+fetch("/api/config")
+  .then((response) => response.json())
+  .catch(() => null)
+  .then((body) => {
+    pageConfig = body?.config || null;
+    const features = pageConfig?.features || {};
+    if (features.ask === false) askTab.hidden = true;
+    if (features.learn === false) document.querySelector("#learn-key").hidden = true;
+    const view = pageConfig?.ui?.defaultView;
+    if (!location.hash && view && view !== "map") history.replaceState(null, "", `${location.pathname}${location.search}#${view}`);
+  })
+  .finally(() => queueUrl());
