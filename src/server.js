@@ -1642,6 +1642,13 @@ const page = `<!doctype html>
   .runpane .run-plate .plate-hint { margin: 0; color: var(--pip-bright); font-size: 12px; line-height: 1.35; }
   .runpane .run-plate .plate-hint b { color: var(--world-amber); font-weight: normal; letter-spacing: 0.12em; font-size: 10px; }
   .runpane .run-plate .plate-cmd { border-color: var(--status-broken); }
+  .runpane .run-plate .plate-unlock { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; border-color: var(--status-broken); }
+  .runpane .run-plate .plate-unlock .confirm-name { flex: 1 1 12em; min-width: 0; }
+  .runpane .run-notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .runpane .run-note { padding: 5px 8px; font-size: 12px; line-height: 1.35; color: var(--pip-bright); border: 1px solid var(--world-amber); background: color-mix(in srgb, var(--world-amber) 12%, var(--pip-ink)); overflow-wrap: anywhere; }
+  .runpane .run-note b { color: var(--world-amber); font-weight: normal; letter-spacing: 0.12em; font-size: 10px; }
+  .runpane .run-note.ok { border-color: var(--status-ok, var(--pip-bright)); }
+  .runpane .run-note .cmdrow { margin-top: 4px; }
   .runpane .run-plate .plate-cmd code { max-height: 4.4em; overflow: auto; scrollbar-width: thin; }
   .runpane .run-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; color: var(--pip-dim); }
   .runpane .run-foot a { color: var(--pip-dim); overflow-wrap: anywhere; }
@@ -2248,7 +2255,7 @@ export function listenExit(error, port = 9241) {
 export function featureOff(features, method, path) {
   if (!features) return "";
   if (features.ask === false && path.startsWith("/api/agent")) return "ask";
-  if (features.stacksRun === false && method === "POST" && path === "/api/upgrade") return "stacksRun";
+  if (features.stacksRun === false && method === "POST" && (path === "/api/upgrade" || path === "/api/upgrade/unlock")) return "stacksRun";
   if (features.learn === false && path.startsWith("/api/learn")) return "learn";
   if (features.scorecard === false && path.startsWith("/api/score")) return "scorecard";
   // FIX runs add-on stacks through upgradeRun directly, so it is gated here too.
@@ -2425,6 +2432,16 @@ async function route(app, req, res) {
       return;
     }
     send(res, 200, await app.upgradeRun(req.headers.origin, body));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/upgrade/unlock") {
+    const body = await readJson(req).catch(() => null);
+    if (!body || typeof body !== "object") {
+      send(res, 400, { error: "the unlock request was not JSON", hint: "Reload the page and press UNLOCK again." });
+      return;
+    }
+    send(res, 200, app.upgradeUnlock ? await app.upgradeUnlock(req.headers.origin, body) : { error: "upgrades are not set up" });
     return;
   }
 

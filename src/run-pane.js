@@ -6,7 +6,7 @@
 import { errorHead, runHint } from "./upgrade-rules.js";
 
 const MARK = { done: "✓", running: "▶", failed: "✗", waiting: "·", skipped: "–" };
-const VERB = { up: "RUN", preview: "PREVIEW", destroy: "TAKE DOWN" };
+const VERB = { up: "RUN", preview: "PREVIEW", destroy: "TAKE DOWN", unlock: "UNLOCK" };
 
 export function elapsedText(ms = 0) {
   const total = Math.max(0, Math.round(Number(ms) / 1000) || 0);
@@ -41,6 +41,8 @@ export function runModel(status = {}, { local = null, polledAt = 0, now = 0 } = 
       hint,
       step: failedStep?.text || "",
       command: body.command || "",
+      // A run that stopped on a stack lock: UNLOCK (typed stack name).
+      unlock: state !== "refused" && body.unlock?.stack ? String(body.unlock.stack) : "",
     };
   }
   const lamp = state === "running" ? "run" : state === "done" ? "ok" : "fail";
@@ -54,6 +56,9 @@ export function runModel(status = {}, { local = null, polledAt = 0, now = 0 } = 
     elapsed: elapsedText((body.elapsedMs || 0) + tick),
     steps,
     plate,
+    // What the run did on its own (a stale lock removed, operations a dead
+    // run left pending): { status, text, command? }.
+    notes: (body.notes || []).filter((note) => note?.text).map((note) => ({ status: note.status === "fail" ? "fail" : note.status === "ok" ? "ok" : "warn", text: String(note.text), command: note.command ? String(note.command) : "" })),
     log: (body.lines || []).join("\n"),
     logPath: body.log || "",
     fromDisk: Boolean(body.fromDisk),
@@ -70,6 +75,12 @@ function busyText(body) {
 export function radioLine(model) {
   if (!model?.show || !model.plate) return null;
   return { key: model.id || `${model.title}|${model.plate.lines[0]}`, status: "fail", text: `${model.title}: ${model.plate.lines[0]}` };
+}
+
+// The radio lines for a run's notes, each once (keyed by run and note).
+export function noteLines(model) {
+  if (!model?.show) return [];
+  return (model.notes || []).map((note, i) => ({ key: `${model.id || model.title}|n${i}`, status: note.status, text: `${model.title}: ${note.text}` }));
 }
 
 // A number field outside its range, said while typing (the server refuses
