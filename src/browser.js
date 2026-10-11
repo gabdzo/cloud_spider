@@ -28,7 +28,7 @@ import { paintKube } from "./kube-draw.js";
 import { renderTelemetry } from "./tele-view.js";
 import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
-import { addonCommands, upgradeSpiderLine } from "./upgrade-rules.js";
+import { addonCommands, confirmPrompt, upgradeSpiderLine } from "./upgrade-rules.js";
 import { radioLine, runModel } from "./run-pane.js";
 import { costFor, costLine, estimate } from "./stack-costs.js";
 import {
@@ -3244,7 +3244,10 @@ function cardBody(spec, preset = {}) {
       refreshConnect(true);
       refreshBundle(true);
     });
-    if (parameter.name === "clusterName" || parameter.name === "name") field.addEventListener("change", () => refreshUpgrade(true));
+    if (parameter.name === "clusterName" || parameter.name === "name") {
+      field.addEventListener("change", () => refreshUpgrade(true));
+      field.addEventListener("input", () => promptConfirm(spec, body));
+    }
     // The bill follows the instance type and node count picked here.
     if (spec.costLines?.some((line) => line.param === parameter.name || (line.perNode && parameter.name === "nodeCount"))) {
       field.addEventListener("change", () => repriceCard(spec));
@@ -3252,7 +3255,7 @@ function cardBody(spec, preset = {}) {
     }
     body.append(el("label", {}, `${parameter.name} `, field));
   }
-  const confirm = el("input", { name: "confirmName", placeholder: "type the name", autocomplete: "off" });
+  const confirm = el("input", { name: "confirmName", className: "confirm-name", autocomplete: "off" });
   const preview = el("button", { type: "button", className: "cmd", textContent: "preview", title: "pulumi preview --diff: shows what run would change, changes nothing" });
   preview.addEventListener("click", () => postUpgrade("preview"));
   const run = el("button", { type: "button", className: "cmd", textContent: "run" });
@@ -3260,11 +3263,25 @@ function cardBody(spec, preset = {}) {
   const down = el("button", { type: "button", className: "cmd danger", textContent: "take it down" });
   down.addEventListener("click", () => postUpgrade("destroy"));
   body.append(el("div", { className: "actions" }, confirm, preview, run, down));
+  promptConfirm(spec, body);
   if (spec.addon) body.append(commandRows(addonCommands(spec, preset.clusterName)));
   body.append(runPane());
   if (spec.id === "eks") body.append(bundleBlock());
   if (pipKept[spec.id] && spec.costLines) queueMicrotask(() => repriceCard(spec));
   return body;
+}
+
+// The confirm field says which name TAKE IT DOWN wants: the card's name or
+// its stack name (both are accepted).
+function promptConfirm(spec, body) {
+  const confirm = body.querySelector("input.confirm-name");
+  if (!confirm) return;
+  const values = {};
+  for (const field of body.querySelectorAll("input, select")) if (field.name && field.name !== "confirmName") values[field.name] = field.value;
+  const text = confirmPrompt(spec, values);
+  confirm.placeholder = text;
+  confirm.title = `${text} to take it down`;
+  confirm.setAttribute("aria-label", `${text} to take it down`);
 }
 
 // The open card's cost for the parameters in its fields: the chip in its

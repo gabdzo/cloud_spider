@@ -132,14 +132,14 @@ test("destroy skips config and refuses a name that does not match", async () => 
     action: "destroy",
     params: { clusterName: "cloudspider-up", confirmName: "" },
   });
-  assert.equal(refused.error, "the name does not match");
+  assert.match(refused.error, /^the name does not match: type cloudspider-up or upgrade/);
   assert.equal(fake.calls.length, 0);
   const signal = upgrade.run({
     module: "signal",
     action: "destroy",
     params: { name: "cloudspider-signal", confirmName: "other" },
   });
-  assert.equal(signal.error, "the name does not match");
+  assert.match(signal.error, /^the name does not match: type cloudspider-signal or signal/);
   const started = upgrade.run({
     module: "barrel",
     action: "destroy",
