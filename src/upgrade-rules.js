@@ -278,6 +278,14 @@ const HINTS = [
     hint: "An AWS limit or capacity stopped it (vCPU, VPC, Elastic IP or EKS quota, or no capacity for the instance type in a zone). Take down an unused stack or ask for a quota raise in Service Quotas (eu-north-1), then run again.",
   },
   {
+    // EKS keeps one add-on of a name per cluster. Two Cloud Spider stacks
+    // install metrics-server and the Pod Identity agent: the demo stack and
+    // that add-on's own stack; the other one is the likely owner.
+    kind: "addon-taken",
+    test: /EKS Add-On \(([a-z0-9-]+):([a-z0-9-]+)\)[\s\S]*?(?:ResourceInUseException|already exists)/i,
+    hint: addonTakenHint,
+  },
+  {
     kind: "name-taken",
     test: /AlreadyExists|already exists|ResourceInUseException|EntityAlreadyExists|BucketAlreadyOwnedByYou|BucketAlreadyExists|Duplicate/i,
     hint: "Something with this name already exists outside this stack (often a leftover from an earlier run). Pick another cluster name, or find and delete the leftover (the message names it) before running again.",
@@ -318,7 +326,24 @@ export function runHint(text = "") {
   const value = String(text || "")
   if (!value) return { kind: "", hint: "" }
   const found = HINTS.find((item) => item.test.test(value))
-  return found ? { kind: found.kind, hint: found.hint } : { kind: "", hint: "" }
+  if (!found) return { kind: "", hint: "" }
+  return { kind: found.kind, hint: typeof found.hint === "function" ? found.hint(value) : found.hint }
+}
+
+const EKS_ADDON_IDS = { "eks-pod-identity-agent": "pod-identity", "metrics-server": "metrics-server" }
+
+// Which Cloud Spider stack already holds the add-on a 409 names: the run's
+// own stack is in the text ([stack X] or --stack X); the other installer is
+// the owner.
+function addonTakenHint(text) {
+  const [, cluster, name] = text.match(/EKS Add-On \(([a-z0-9-]+):([a-z0-9-]+)\)/i)
+  const id = EKS_ADDON_IDS[name]
+  const self = (text.match(/\[stack ([^\]\s]+)\]|--stack ([^\s'"]+)/) || []).slice(1).find(Boolean) || ""
+  const check = `aws eks describe-addon --cluster-name ${cluster} --addon-name ${name} --query addon.tags shows its project tag.`
+  if (!id) return `The EKS add-on ${name} is already on ${cluster}, installed outside this stack. ${check}`
+  const addonStack = `${id}-${cluster}`
+  const owner = self === "demo" ? `the add-on stack ${addonStack} (its card under ADD-ONS)` : self === addonStack ? "the EKS demo app (stack demo)" : `the EKS demo app (stack demo) or the add-on stack ${addonStack}`
+  return `${name} is already on ${cluster}, most likely from ${owner}; EKS holds one per cluster. The demo stack uses one another stack made (RUN again after updating Cloud Spider), and an add-on card refuses one the demo made. If it still fails, the add-on has no Cloud Spider project tag (made by hand): take the other stack down first. ${check}`
 }
 
 // The lines worth reading first from a failed run: Pulumi's own error and

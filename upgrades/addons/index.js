@@ -4,6 +4,7 @@ import * as k8s from "@pulumi/kubernetes";
 import { ADDONS, parseStack } from "./catalog.js";
 import { REGION } from "./common.js";
 import { readPodRoom, roomRefusal } from "./pod-room.js";
+import { addonPlan, ownerText, readAddon } from "../eks-addons.js";
 
 // Cluster add-ons for an EKS cluster from upgrades/eks. One stack per add-on
 // and cluster, named <addon>-<cluster>; config clusterName must match.
@@ -31,6 +32,17 @@ if (addon.podSlots && !new pulumi.Config().getBoolean("skipRoomCheck")) {
       if (why) throw new Error(why);
       pulumi.log.info(`${clusterName}: ${room.free} free pod slots, ${addon.title} needs ${addon.podSlots}`);
     }
+  }
+}
+// An EKS add-on another Cloud Spider stack owns (the demo stack's
+// metrics-server or Pod Identity agent) is not created twice: EKS would
+// answer 409 "Addon already exists". The app refuses this first too
+// (src/addons.js); this covers a hand-run pulumi up.
+if (addon.eksAddon) {
+  const clusterName = new pulumi.Config().get("clusterName") || parsed.cluster;
+  const existing = await readAddon(aws.eks.getAddon, clusterName, addon.eksAddon);
+  if (addonPlan(existing, addon.id) === "use") {
+    throw new Error(`${addon.title} is already on ${clusterName} from ${ownerText(existing.project, clusterName)}; nothing to add (that stack keeps it, take it down there first to move it here)`);
   }
 }
 const program = await import(`./${addon.id}.js`);

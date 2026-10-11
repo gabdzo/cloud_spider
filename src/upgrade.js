@@ -145,7 +145,7 @@ export const UPGRADES = [
   {
     id: "demo",
     title: "EKS demo app",
-    note: "The demo workload on the EKS cluster (docs/RUN-ME.md §8): podinfo web → api, a load generator, and an OpenTelemetry collector sending pod logs to CloudWatch (1 day) and traces to X-Ray. It also installs the Pod Identity agent and metrics-server as EKS add-ons, so leave those two add-on cards alone while it is up. Take it down deletes this stack; the cluster stays.",
+    note: "The demo workload on the EKS cluster (docs/RUN-ME.md §8): podinfo web → api, a load generator, and an OpenTelemetry collector sending pod logs to CloudWatch (1 day) and traces to X-Ray. It also needs the Pod Identity agent and metrics-server EKS add-ons: it installs each one unless an add-on card already did (then it uses that one and leaves it alone), and those two cards refuse an add-on the demo made. Take it down deletes this stack; the cluster stays.",
     dir: "upgrades/demo",
     stack: "demo",
     project: "cloudspider-demo",

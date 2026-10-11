@@ -27,6 +27,18 @@ await pulumi.runtime.setMocks(
       if (token.includes("getCallerIdentity")) return { accountId: "550536272523", arn: "arn:aws:iam::550536272523:user/mock", userId: "mock" };
       if (token.includes("getParameter")) return { value: "ami-test", name: args.inputs?.name, type: "String" };
       if (token.includes("eks/getCluster")) return { name: args.inputs?.name, endpoint: "https://mock.eks", certificateAuthorities: [{ data: "bW9jaw==" }], arn: `arn:aws:eks:eu-north-1:550536272523:cluster/${args.inputs?.name}`, vpcConfig: { vpcId: "vpc-mock", subnetIds: ["subnet-a", "subnet-b"], clusterSecurityGroupId: "sg-cluster" } };
+      // EKS add-ons on the mock cluster: CLOUDSPIDER_MOCK_EKS_ADDONS is
+      // {"<addonName>": {"project": "<tag>"}}; any other add-on is absent.
+      if (token.includes("eks/getAddon")) {
+        const on = JSON.parse(process.env.CLOUDSPIDER_MOCK_EKS_ADDONS || "{}")[args.inputs?.addonName];
+        if (!on) {
+          // The mock monitor hands the program err.details, as gRPC would.
+          const missing = new Error(`reading EKS Add-On (${args.inputs?.clusterName}:${args.inputs?.addonName}): couldn't find resource`);
+          missing.details = missing.message;
+          throw missing;
+        }
+        return { ...args.inputs, addonVersion: "v1-mock", tags: on.project ? { project: on.project } : {} };
+      }
       return args.inputs ?? {};
     },
   },

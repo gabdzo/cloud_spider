@@ -11,7 +11,7 @@ import {
   DescribeVolumesCommand,
   DeleteVolumeCommand,
 } from "@aws-sdk/client-ec2";
-import { EKSClient, ListClustersCommand, DescribeClusterCommand, ListNodegroupsCommand, DescribeNodegroupCommand } from "@aws-sdk/client-eks";
+import { EKSClient, ListClustersCommand, DescribeAddonCommand, DescribeClusterCommand, ListNodegroupsCommand, DescribeNodegroupCommand } from "@aws-sdk/client-eks";
 import { RDSClient, DescribeDBInstancesCommand } from "@aws-sdk/client-rds";
 import {
   ElasticLoadBalancingV2Client,
@@ -44,7 +44,7 @@ export function createAws() {
     },
     trail: { lookupEvents },
     logs: { filter: readLogStream, search: searchLogGroup },
-    eks: { listClusters: listUpgradeClusters, describeCluster: describeUpgradeCluster },
+    eks: { listClusters: listUpgradeClusters, describeCluster: describeUpgradeCluster, describeAddon: describeUpgradeAddon },
     metrics: { read: readMetricData },
     volumes: { list: listVolumes, remove: deleteVolume },
   };
@@ -493,6 +493,20 @@ export async function describeUpgradeCluster(name) {
   } catch (error) {
     const code = error?.name || error?.Code || "";
     if (/NotFound/.test(code)) return { found: false, status: "" };
+    return { error: publicError(error).error };
+  }
+}
+
+// One EKS managed add-on (read-only): is it on the cluster, and which Cloud
+// Spider stack tagged it (its project tag, upgrades/tags.js).
+export async function describeUpgradeAddon(clusterName, addonName) {
+  try {
+    const eks = new EKSClient({ region: "eu-north-1" });
+    const out = await eks.send(new DescribeAddonCommand({ clusterName, addonName }));
+    return { found: true, project: out.addon?.tags?.project || "", version: out.addon?.addonVersion || "" };
+  } catch (error) {
+    const code = error?.name || error?.Code || "";
+    if (/NotFound/.test(code)) return { found: false };
     return { error: publicError(error).error };
   }
 }
