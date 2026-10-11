@@ -7,7 +7,7 @@ minCategoryCoverage: 0.30
 minAssessedControls: 8
 minCategoryControls: 3
 runtimeRequired: false
-categoryWeights: { security: 40, reliability: 20, platform: 20, observability: 20, sre: 0 }
+categoryWeights: { security: 40, reliability: 20, platform: 20, observability: 20, sre: 0, networking: 10 }
 gates: []
 overrides:
   K8S-SEC-001: { severity: medium }

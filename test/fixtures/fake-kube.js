@@ -36,6 +36,7 @@ export const pod = (ns, name, { containers = [{ name, image: `${name}:1.0` }], p
   status: { phase, containerStatuses: containers.map((c) => ({ name: c.name, ready: !waiting, state: waiting ? { waiting: { reason: waiting } } : { running: {} } })) },
 });
 
+const dnsPod = (name, nodeName) => ({ metadata: meta("kube-system", name, { "k8s-app": "kube-dns" }), spec: { nodeName }, status: { conditions: [{ type: "Ready", status: "True" }] } });
 const node = (name, zone) => ({ metadata: { name, labels: { "topology.kubernetes.io/zone": zone } }, status: { conditions: [{ type: "Ready", status: "True" }], nodeInfo: { kubeletVersion: "v1.33.0" } } });
 
 // What a fresh EKS cluster from Stacks looks like to the viewer role:
@@ -64,6 +65,14 @@ function freshCore() {
     daemonsets: [daemonset("kube-system", "aws-node"), daemonset("kube-system", "kube-proxy")],
     statefulsets: [],
     pods: [pod("kube-system", "coredns-1"), pod("kube-system", "coredns-2"), pod("kube-system", "aws-node-x"), pod("kube-system", "kube-proxy-x")],
+    // Network reads (kube-network collector): CoreDNS spread over both
+    // nodes; the viewer may not read its metrics through the proxy.
+    corednsPods: [dnsPod("coredns-1", "ip-10-0-1-10"), dnsPod("coredns-2", "ip-10-0-2-10")],
+    corednsMetrics: { forbidden: true, error: "forbidden: services/proxy" },
+    nsDaemonsets: [daemonset("kube-system", "aws-node"), daemonset("kube-system", "kube-proxy")],
+    services: [{ metadata: meta("default", "kubernetes"), spec: { type: "ClusterIP" } }],
+    ingresses: [],
+    endpointSlicesAll: [],
   };
 }
 
