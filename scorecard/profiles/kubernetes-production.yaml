@@ -1,0 +1,12 @@
+id: kubernetes-production
+version: 1
+target: kubernetes
+environments: [production, prod, staging]
+minCoverage: 0.70
+minCategoryCoverage: 0.50
+minAssessedControls: 8
+minCategoryControls: 3
+runtimeRequired: true
+categoryWeights: { security: 30, reliability: 30, observability: 15, sre: 15, platform: 10 }
+gates: [K8S-SEC-001, K8S-SEC-002]
+overrides: {}

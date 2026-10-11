@@ -1,0 +1,17 @@
+id: kubernetes-development
+version: 1
+target: kubernetes
+environments: [sandbox, dev, development, test]
+minCoverage: 0.40
+minCategoryCoverage: 0.30
+minAssessedControls: 8
+minCategoryControls: 3
+runtimeRequired: false
+categoryWeights: { security: 40, reliability: 20, platform: 20, observability: 20, sre: 0 }
+gates: []
+overrides:
+  K8S-SEC-001: { severity: medium }
+  K8S-SEC-005: { severity: low }
+  K8S-REL-002: { severity: low }
+  K8S-REL-003: { applies: false }
+  K8S-REL-004: { applies: false }

@@ -1,0 +1,12 @@
+id: aws-production
+version: 1
+target: aws
+environments: [production, prod, staging]
+minCoverage: 0.70
+minCategoryCoverage: 0.50
+minAssessedControls: 8
+minCategoryControls: 3
+runtimeRequired: true
+categoryWeights: { security: 30, reliability: 25, networking: 15, observability: 15, governance: 10, finops: 5 }
+gates: [AWS-SEC-001, AWS-SEC-002, AWS-SEC-010, AWS-SEC-012, AWS-REL-001]
+overrides: {}
