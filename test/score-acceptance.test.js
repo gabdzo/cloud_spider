@@ -20,7 +20,7 @@ const settle = async (api) => {
 };
 
 function world({ free = 20 } = {}) {
-  const ref = { world: freshCluster() };
+  const ref = { world: freshCluster({ scanner: true }) };
   const app = fakeStacks(ref, { free });
   const history = createScanHistory({ storage: createMemoryStorage() });
   // The API's own fix runner and rescan, as main.js wires them; only the
@@ -113,4 +113,12 @@ test("the rescan after a fix reads the cluster that was fixed, even if another c
   const done = await settle(api);
   assert.equal(done.phase, "done", done.error);
   assert.equal((await history.get(done.scanId)).clusterName, "fresh");
+});
+
+test("without the scanner RBAC a fresh cluster is INSUFFICIENT EVIDENCE, with the reads to grant", async () => {
+  const history = createScanHistory({ storage: createMemoryStorage() });
+  const api = createScoreApi({ app: {}, history, pageOrigin: ORIGIN, catalog: () => loadCatalog(), profiles: () => loadProfiles(), kubeFor: () => fakeKube(freshCluster()) });
+  const out = await api.scan(ORIGIN, {});
+  assert.equal(out.scan.card.verdict, "INSUFFICIENT_EVIDENCE");
+  assert.equal(out.scan.card.overall, null);
 });

@@ -5,13 +5,16 @@
 import { CLUSTER_NAME } from "../../upgrades/addons/catalog.js";
 import { originAllowed } from "../origin.js";
 import { kubeMetrics } from "./collectors/kube-metrics.js";
+import { kubeNodes } from "./collectors/kube-nodes.js";
+import { kubePolicy } from "./collectors/kube-policy.js";
+import { kubeRbac } from "./collectors/kube-rbac.js";
 import { kubeWorkloads } from "./collectors/kube-workloads.js";
 import { EVALUATORS } from "./evaluators/index.js";
 import { createFixRunner } from "./fix.js";
 import { diffScans } from "./history.js";
 import { runScan } from "./scan.js";
 
-export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics];
+export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac];
 const SHORT = (name) => String(name || "").split("/").pop();
 
 // The browser never gets evidence fields, only statuses and results.

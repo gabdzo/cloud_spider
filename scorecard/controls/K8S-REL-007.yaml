@@ -1,0 +1,13 @@
+kind: Control
+id: K8S-REL-007
+revision: 1
+title: "Persistent volumes are backed up"
+category: reliability
+target: kubernetes
+evidenceType: config
+severity: { default: high }
+confidence: high
+blockedBy: "Velero or AWS Backup evidence (collector not built)"
+whyItMatters: "A deleted or corrupted volume without a backup is data loss."
+remediation: { summary: "Back up PVs with Velero or AWS Backup and test a restore.", effort: S }
+verification: "A backup covering each PV completed in the last 24 h."

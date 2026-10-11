@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-REL-008
+revision: 1
+title: "Every HPA has a metrics API to read"
+category: reliability
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: hpa-has-metrics
+aggregation: proportional
+requires: [kube-hpas, kube-metrics]
+whyItMatters: "An HPA without the metrics API never scales: it looks configured and does nothing."
+remediation: { summary: "Install metrics-server from the Stacks add-ons.", effort: S, addon: metrics-server }
+verification: "If any app HPA exists, metrics.k8s.io answers."

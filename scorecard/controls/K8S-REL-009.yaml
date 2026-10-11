@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-REL-009
+revision: 1
+title: "App images are pinned (no :latest)"
+category: reliability
+target: kubernetes
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: no-latest-tag
+aggregation: proportional
+requires: [kube-deployments]
+whyItMatters: "A :latest image changes under you: two pods of one Deployment can run different code."
+remediation: { summary: "Pin a version tag or a digest on every container image.", effort: S }
+verification: "No container of an app Deployment uses :latest or an untagged image."
