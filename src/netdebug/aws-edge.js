@@ -32,6 +32,46 @@ const port = (origin, scheme) => {
   return scheme === "http" ? { protocol: "HTTP", port: origin.httpPort ?? 80 } : { protocol: "HTTPS", port: origin.httpsPort ?? 443 };
 };
 
+// Where CloudFront sends this request when its origin is one of the
+// account's load balancers: { lb, request, via } or null. Pure.
+export function cloudFrontHandoff(aws, target) {
+  const c = aws.classification || {};
+  if (c.kind !== "cloudfront" || aws.distributionsError) return null;
+  const dist = (aws.distributions || []).find((d) => d.id === c.id);
+  if (!dist) return null;
+  const behavior = matchBehavior(dist, target.path || "/");
+  const origin = (dist.origins || []).find((o) => o.id === behavior.targetOriginId);
+  const lb = originLoadBalancer(origin, aws.graph);
+  if (!lb || !origin) return null;
+  return { lb, request: { host: trim(target.host), path: target.path || "/", ...port(origin, target.scheme) }, via: "cloudfront" };
+}
+
+// The ALB leg of the request: the load balancer, the request it sees, the
+// rule routeOn picks, its action and target groups with health. Pure;
+// shared by A-ELB-* (here) and A-VPC-* (aws-vpc.js).
+export function albRoute(aws, target) {
+  const c = aws.classification || {};
+  const graph = aws.graph;
+  let lb = null;
+  let request = null;
+  const handoff = aws.handoff || cloudFrontHandoff(aws, target);
+  if (handoff) ({ lb, request } = handoff);
+  else if (c.kind === "alb" && graph) {
+    lb = graph.loadBalancers.find((x) => x.arn === c.arn);
+    request = { host: trim(target.host), path: target.path || "/", protocol: target.scheme === "http" ? "HTTP" : "HTTPS", port: target.port };
+  }
+  if (!lb) return null;
+  const route = routeOn(graph, lb.arn, { host: request.host, path: request.path, port: request.port })[0] || null;
+  const rule = route ? graph.rules.find((r) => r.arn === route.ruleArn) : null;
+  const action = rule?.actions[0] || {};
+  const tgs = (action.targetGroupArns || []).map((arn) => graph.targetGroups.find((tg) => tg.arn === arn) || { arn, name: arn.split("/").at(-2) || arn, missing: true });
+  const per = tgs.filter((tg) => !tg.missing).map((tg) => {
+    const targets = (graph.health?.[tg.arn] || []).map((h) => ({ ...h, verdict: healthVerdict(h, tg) }));
+    return { arn: tg.arn, name: tg.name, port: tg.port, targetType: tg.targetType, healthCheck: `${tg.healthProtocol} ${tg.healthPath || ""}`.trim(), total: targets.length, healthy: targets.filter((t) => t.state === "healthy").length, targets };
+  });
+  return { lb, request, via: handoff ? "cloudfront" : "dns", route, rule, action, tgs, per };
+}
+
 const NA = (ids, layer, reason) => ids.map((id) => row(id, layer, "NOT_APPLICABLE", { tool: "classifier", reason }));
 const CF = ["A-CF-01", "A-CF-02", "A-CF-03", "A-CF-04"];
 
@@ -74,7 +114,7 @@ export function cloudFrontChecks(aws, target) {
   const pattern = behavior.pathPattern === "*" ? "default (*)" : `"${behavior.pathPattern}"`;
   const how = origin ? `${trim(origin.domain)}${origin.s3 ? " (S3)" : ` ${origin.protocolPolicy || "?"}${origin.readTimeout ? `, read timeout ${origin.readTimeout} s` : ""}`}` : "missing";
   out.push(row("A-CF-02", "cdn", status, { tool: "behaviour match", severity, text: `${target.path || "/"} → behaviour ${pattern} → origin ${behavior.targetOriginId}: ${how}${lb ? ` (load balancer ${lb.name})` : ""}${why ? `. ${why}` : ""}`, observed: { behavior, origin: origin || null, handoff: lb ? { arn: lb.arn, name: lb.name } : null }, command: cmd }));
-  if (lb && origin) aws.handoff = { lb, request: { host, path: target.path || "/", ...port(origin, target.scheme) }, via: "cloudfront" };
+  if (lb && origin) aws.handoff = cloudFrontHandoff(aws, target);
 
   const viewer = behavior.viewerProtocolPolicy;
   const min = dist.cert?.minProtocol || "";
@@ -96,31 +136,22 @@ const ELB = ["A-ELB-01", "A-ELB-02"];
 export function albChecks(aws, target) {
   const c = aws.classification || {};
   const graph = aws.graph;
-  let lb = null;
-  let request = null;
-  if (aws.handoff) ({ lb, request } = aws.handoff);
-  else if (c.kind === "alb" && graph) {
-    lb = graph.loadBalancers.find((x) => x.arn === c.arn);
-    request = { host: trim(target.host), path: target.path || "/", protocol: target.scheme === "http" ? "HTTP" : "HTTPS", port: target.port };
-  }
-  if (!lb) {
+  const leg = albRoute(aws, target);
+  if (!leg) {
     if (c.kind === "alb" && !graph) return ELB.map((id) => row(id, "lb", "UNKNOWN", { tool: "PATH graph", reason: aws.graphError || "the load balancers were not read" }));
     return NA(ELB, "lb", "no load balancer of this account answers this name");
   }
+  const { lb, request, rule, action, tgs, per } = leg;
   const out = [];
   const where = `${request.protocol}:${request.port}`;
   const cmdRules = `aws elbv2 describe-rules --listener-arn $(aws elbv2 describe-listeners --load-balancer-arn ${lb.arn} --query "Listeners[?Port==\`${request.port}\`].ListenerArn" --output text)`;
-  const route = routeOn(graph, lb.arn, { host: request.host, path: request.path, port: request.port })[0];
-  const via = aws.handoff ? ` (Host ${request.host} assumed forwarded by CloudFront)` : "";
-  if (!route) {
+  const via = leg.via === "cloudfront" ? ` (Host ${request.host} assumed forwarded by CloudFront)` : "";
+  if (!rule) {
     const listener = graph.listeners.some((l) => l.lbArn === lb.arn && l.port === request.port);
     out.push(row("A-ELB-01", "lb", "FAIL", { tool: "routeOn", text: listener ? `${lb.name} ${where}: no rule serves ${request.host}${request.path} and there is no default action` : `${lb.name} has no listener on ${request.port}: connections are refused or time out`, observed: { lb: lb.name, request }, command: cmdRules }));
     out.push(row("A-ELB-02", "lb", "NOT_APPLICABLE", { tool: "DescribeTargetHealth", reason: "no rule, no target group" }));
     return out;
   }
-  const rule = graph.rules.find((r) => r.arn === route.ruleArn);
-  const action = rule.actions[0] || {};
-  const tgs = (action.targetGroupArns || []).map((arn) => graph.targetGroups.find((tg) => tg.arn === arn) || { arn, name: arn.split("/").at(-2) || arn, missing: true });
   const ruleName = rule.isDefault ? "the default rule" : `rule ${rule.priority}${rule.hosts.length ? ` (host ${rule.hosts.join(", ")}${rule.paths.length ? ` path ${rule.paths.join(", ")}` : ""})` : rule.paths.length ? ` (path ${rule.paths.join(", ")})` : ""}`;
   const fixed = action.type === "fixed-response";
   const fixedBad = fixed && Number(action.statusCode) >= 400;
@@ -132,15 +163,10 @@ export function albChecks(aws, target) {
     observed: { lb: { arn: lb.arn, name: lb.name }, request, ruleArn: rule.arn, rule: ruleName, action: action.type, statusCode: action.statusCode || "", targetGroups: tgs.map((tg) => ({ arn: tg.arn, name: tg.name })) },
     command: cmdRules,
   }));
-  const real = tgs.filter((tg) => !tg.missing);
-  if (!real.length) {
+  if (!per.length) {
     out.push(row("A-ELB-02", "lb", "NOT_APPLICABLE", { tool: "DescribeTargetHealth", reason: action.type === "forward" ? "the target group is missing" : `the rule ${actionText}` }));
     return out;
   }
-  const per = real.map((tg) => {
-    const targets = (graph.health?.[tg.arn] || []).map((h) => ({ ...h, verdict: healthVerdict(h, tg) }));
-    return { arn: tg.arn, name: tg.name, port: tg.port, healthCheck: `${tg.healthProtocol} ${tg.healthPath || ""}`.trim(), total: targets.length, healthy: targets.filter((t) => t.state === "healthy").length, targets };
-  });
   const dead = per.filter((p) => p.healthy === 0);
   const sick = per.flatMap((p) => p.targets.filter((t) => t.state !== "healthy"));
   const text = per.map((p) => (p.total === 0 ? `${p.name} has no registered targets` : `${p.name}: ${p.healthy}/${p.total} healthy`)).join("; ");
@@ -149,7 +175,7 @@ export function albChecks(aws, target) {
     severity: dead.length ? "high" : sick.length ? "medium" : "info",
     text: `${text}${sick.length ? `. ${sick[0].verdict.sentence}` : ""}`,
     observed: { targetGroups: per },
-    command: `aws elbv2 describe-target-health --target-group-arn ${real[0].arn}`,
+    command: `aws elbv2 describe-target-health --target-group-arn ${per[0].arn}`,
   }));
   return out;
 }

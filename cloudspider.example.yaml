@@ -92,6 +92,8 @@ network:
   aws:                     # read-only: List/Get/Describe and TestDNSAnswer
     route53: true          # zones, records, TestDNSAnswer, health checks, dangling records
     cloudfront: true       # distributions: behaviour, origin, viewer policy, TLS, WAF
+    vpc: true              # NACLs, VPC endpoints, subnet free IPs, flow log settings
+    flowLogs: true         # REJECTs to the targets in the flow log group (15 min, bounded)
   reports:
     keep: 50               # reports kept under storage.path/netdebug
 

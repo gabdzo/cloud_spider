@@ -89,6 +89,8 @@ export const SCHEMA = {
     aws: {
       route53: { type: "boolean", default: true, doc: "read Route 53 (zones, records, TestDNSAnswer, health checks) when debugging a URL" },
       cloudfront: { type: "boolean", default: true, doc: "read CloudFront distributions when debugging a URL" },
+      vpc: { type: "boolean", default: true, doc: "read NACLs, VPC endpoints, subnet free IPs and flow log settings of the load balancer's VPC" },
+      flowLogs: { type: "boolean", default: true, doc: "search the VPC flow log group for REJECTs to the targets (last 15 min, 50 events, one call per target, max 4)" },
     },
     reports: {
       keep: { type: "integer", min: 1, max: 500, default: 50, doc: "debug reports kept under storage.path/netdebug" },

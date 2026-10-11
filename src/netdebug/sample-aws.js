@@ -33,6 +33,36 @@ export const SAMPLE_DISTRIBUTION = {
   webAclId: "",
 };
 
+// The sample VPC: NACLs that pass (the public one is the default), VPC
+// endpoints instead of a NAT gateway, flow logs to CloudWatch Logs with
+// three REJECTs to 10.0.12.31:8080 (sample-sg-node-b allows 22 only).
+const nacl = (id, subnetIds, entries, isDefault = false) => ({ id, vpcId: "sample-vpc", default: isDefault, subnetIds, entries: [...entries, { number: 32767, egress: false, protocol: "-1", action: "deny", cidr: "0.0.0.0/0", from: null, to: null }, { number: 32767, egress: true, protocol: "-1", action: "deny", cidr: "0.0.0.0/0", from: null, to: null }] });
+export const SAMPLE_VPC = {
+  nacls: [
+    nacl("acl-sample-public", ["sample-public-a", "sample-public-b"], [{ number: 100, egress: false, protocol: "-1", action: "allow", cidr: "0.0.0.0/0", from: null, to: null }, { number: 100, egress: true, protocol: "-1", action: "allow", cidr: "0.0.0.0/0", from: null, to: null }], true),
+    nacl("acl-sample-private", ["sample-private-a", "sample-private-b"], [
+      { number: 100, egress: false, protocol: "6", action: "allow", cidr: "10.0.0.0/16", from: 0, to: 65535 },
+      { number: 200, egress: false, protocol: "6", action: "allow", cidr: "0.0.0.0/0", from: 1024, to: 65535 },
+      { number: 100, egress: true, protocol: "-1", action: "allow", cidr: "0.0.0.0/0", from: null, to: null },
+    ]),
+  ],
+  endpoints: ["s3", "ecr.api", "ecr.dkr", "sts", "logs"].map((svc, i) => ({ id: `vpce-sample-${i}`, vpcId: "sample-vpc", service: `com.amazonaws.eu-north-1.${svc}`, type: svc === "s3" ? "Gateway" : "Interface", state: "available" })),
+  subnets: [
+    { id: "sample-public-a", free: 245 },
+    { id: "sample-public-b", free: 246 },
+    { id: "sample-private-a", free: 187 },
+    { id: "sample-private-b", free: 143 },
+  ],
+  flowLogs: [{ id: "fl-sample", resourceId: "sample-vpc", destinationType: "cloud-watch-logs", destination: "/vpc/sample-flow-logs", defaultFormat: true, status: "ACTIVE" }],
+  rejects: {
+    "10.0.12.31:8080": [
+      { eni: "sample-eni-b", src: "10.0.1.37", dst: "10.0.12.31", srcPort: 41822, dstPort: 8080, at: null },
+      { eni: "sample-eni-b", src: "10.0.2.114", dst: "10.0.12.31", srcPort: 52310, dstPort: 8080, at: null },
+      { eni: "sample-eni-b", src: "10.0.1.37", dst: "10.0.12.31", srcPort: 41830, dstPort: 8080, at: null },
+    ],
+  },
+};
+
 export function sampleAws() {
   return {
     graph: async () => samplePathGraph(),
@@ -54,6 +84,24 @@ export function sampleAws() {
       },
       async zoneVpcs() {
         return { vpcs: [] };
+      },
+    },
+    vpc: {
+      async nacls() {
+        return { nacls: SAMPLE_VPC.nacls };
+      },
+      async endpoints() {
+        return { endpoints: SAMPLE_VPC.endpoints };
+      },
+      async subnets() {
+        return { subnets: SAMPLE_VPC.subnets };
+      },
+      async flowLogs() {
+        return { flowLogs: SAMPLE_VPC.flowLogs };
+      },
+      async rejects(region, group, pattern) {
+        const m = /dstaddr="([^"]+)".*dstport="(\d+)"/.exec(pattern);
+        return { records: (m && SAMPLE_VPC.rejects[`${m[1]}:${m[2]}`]) || [] };
       },
     },
     cloudfront: {

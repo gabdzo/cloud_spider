@@ -31,7 +31,7 @@ import { createScanHistory } from "./score/history.js";
 import { createScanClients } from "./score/aws-clients.js";
 import { createNetdebug } from "./netdebug/api.js";
 import { createAwsCollector } from "./netdebug/aws.js";
-import { createCloudFrontReader, createRoute53Reader } from "./netdebug/aws-readers.js";
+import { createCloudFrontReader, createRoute53Reader, createVpcReader } from "./netdebug/aws-readers.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // cloudspider.yaml (config.js): defaults < file < env < flags. A bad value
@@ -136,6 +136,8 @@ app.netdebug.addCollector(createAwsCollector({
   graph: () => app.pathGraph(),
   route53: config.network.aws.route53 ? createRoute53Reader() : null,
   cloudfront: config.network.aws.cloudfront ? createCloudFrontReader() : null,
+  vpc: config.network.aws.vpc ? createVpcReader() : null,
+  flowLogs: config.network.aws.flowLogs,
 }));
 
 // SLO history survives a restart (.cloudspider/slo-ledger.json).
