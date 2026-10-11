@@ -20,6 +20,7 @@ import { createFixRunner } from "./fix.js";
 import { diffScans } from "./history.js";
 import { runScan } from "./scan.js";
 import { permissionReport } from "./permissions.js";
+import { renderReport } from "./report.js";
 
 export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac];
 export const AWS_COLLECTORS = [awsNetwork, awsElbv2, awsEks, awsRds, awsCloudtrail, awsObservability];
@@ -109,6 +110,12 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
       if (!contextOf.has(scan.clusterName)) contextOf.set(scan.clusterName, scan.requestContext ?? "");
       if (body.phase === "plan") return fixes.plan(scan.clusterName, control);
       return fixes.start(origin, { cluster: scan.clusterName, control, phase: body.phase, previewId: String(body.previewId || "") });
+    },
+    // A saved scan as Markdown, HTML or JSON (no evidence fields).
+    async report(id, format) {
+      const scan = await history.get(String(id || ""));
+      if (!scan) return { error: "no scan with that id" };
+      return renderReport(scan, format, { permissions: permissionReport(scan) });
     },
     fixState() {
       return fixes.state();
