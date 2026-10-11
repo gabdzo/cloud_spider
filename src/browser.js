@@ -4458,6 +4458,7 @@ fetch("/api/config")
     const features = pageConfig?.features || {};
     if (features.ask === false) askTab.hidden = true;
     if (features.learn === false) document.querySelector("#learn-key").hidden = true;
+    if (features.scorecard === false) document.querySelector("#score-key").hidden = true;
     const view = pageConfig?.ui?.defaultView;
     if (!location.hash && view && view !== "map") history.replaceState(null, "", `${location.pathname}${location.search}#${view}`);
   })
