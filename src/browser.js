@@ -43,6 +43,7 @@ import { metricAlerts, paintPlace } from "./metrics.js";
 import { sunrise } from "./sprites/landmarks.js";
 import { drawSprite } from "./draw-kit.js";
 import { sloBlock, sloFacts } from "./slo-view.js";
+import { renderSpend } from "./spend-view.js";
 
 const ui = createUi();
 // The morning report (SRE overview): three sentences from the server's
@@ -416,9 +417,8 @@ function showSpend() {
   }
   const label = spend?.label || "the bill";
   spendLabel.textContent = label;
-  const lines = (spend?.lines || []).filter((line) => line !== label);
-  spendLines.textContent = lines.join("\n");
-  spendLines.hidden = !spendOpen || !lines.length;
+  spendLines.hidden = !spendOpen;
+  if (spendOpen) renderSpend(spendLines, spend, { iconURL });
   spendEl.setAttribute("aria-expanded", String(spendOpen));
   spendEl.classList.toggle("issue", Boolean(spend?.error));
   spendEl.title = spendOpen ? "" : label;

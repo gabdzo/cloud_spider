@@ -86,7 +86,9 @@ test("rows sort by amount, drop dust, keep a credit, and name the unit", () => {
     ["pounds", "Amazon Elastic Compute Cloud", "credit"],
   );
   assert.equal(bill.rows[1].amount, "$1.20");
-  assert.equal(bill.rows[2].amount, "$-0.02");
+  assert.equal(bill.rows[2].amount, "\u2212$0.02");
+  assert.equal(formatAmount(-0.004, "USD"), "$0.00");
+  assert.equal(formatAmount(-1.5, ""), "\u22121.50");
   assert.equal(formatAmount(3, "GBP"), "3.00 GBP");
   assert.equal(bill.rows[0].amount, "3.00 GBP");
   assert.match(bill.lines[0], /October, estimated, about a day behind/);
@@ -313,4 +315,41 @@ test("the overview has a home control and a spend box, and the map poll does not
   } finally {
     server.close();
   }
+});
+
+test("the CAPS panel model: credits, duplicate names, pace and the empty and error states", async () => {
+  const { spendModel } = await import("../src/spend-view.js");
+  const rows = shapeResources("Amazon Elastic Load Balancing", [
+    {
+      ResultsByTime: ["2026-10-01", "2026-10-02", "2026-10-03"].map((day, i) => ({
+        TimePeriod: { Start: day },
+        Groups: [
+          { Keys: ["arn:aws:elasticloadbalancing:eu-north-1:1:loadbalancer/app/api/aaaa1111"], Metrics: { UnblendedCost: { Amount: String(0.1 * (i + 1)), Unit: "USD" } } },
+          { Keys: ["arn:aws:elasticloadbalancing:eu-north-1:1:loadbalancer/app/api/bbbb2222"], Metrics: { UnblendedCost: { Amount: "0.02", Unit: "USD" } } },
+          { Keys: ["NoResourceId"], Metrics: { UnblendedCost: { Amount: "-0.05", Unit: "USD" } } },
+        ],
+      })),
+    },
+  ]);
+  assert.deepEqual(rows[0].series, [0.1, 0.2, 0.3]);
+  assert.equal(rows.find((row) => row.id === "NoResourceId").amount, "\u2212$0.15");
+  const bill = { ...shapeCost([page([group("Amazon Elastic Load Balancing", "6.20")])], { start: "2026-10-01", end: "2026-10-11" }), resources: rows, resourceErrors: { "Amazon Elastic Kubernetes Service": "not enabled" } };
+  const model = spendModel(bill);
+  assert.equal(model.kind, "bill");
+  assert.equal(model.head.total, "$6.20");
+  assert.match(model.head.kicker, /OCTOBER · MONTH TO DATE/);
+  assert.match(model.pace, /\$0\.62\/day over 10 days · on pace for \$19\.22 by Oct 31/);
+  assert.equal(model.services[0].name, "ELB");
+  assert.deepEqual(model.resources.map((row) => row.name), ["api ·aaaa", "api ·bbbb", "credits, not tied to a resource"]);
+  assert.equal(model.resources.at(-1).amount, "\u2212$0.15 credit");
+  assert.equal(model.credits, "\u2212$0.15 credit");
+  assert.equal(model.errors[0].text, "not enabled");
+  const empty = spendModel(shapeCost([page([])], { start: "2026-10-01", end: "2026-10-02" }));
+  assert.equal(empty.emptyServices, true);
+  assert.equal(empty.pace, "");
+  assert.equal(spendModel({ error: "AccessDenied", label: "AccessDenied" }).kind, "error");
+  assert.equal(spendModel(null).kind, "loading");
+  const sample = spendModel(sampleCost(new Date("2026-10-11T00:00:00Z")));
+  assert.equal(sample.head.scope, "SAMPLE");
+  assert.ok(sample.resources.some((row) => row.credit));
 });
