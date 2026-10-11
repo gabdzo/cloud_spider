@@ -3286,12 +3286,54 @@ function costBlock(spec) {
   for (const item of cost.usage) lines.append(el("li", { className: "usage" }, el("span", { textContent: `+ ${item}` }), el("span", { textContent: "per use" })));
   if (!cost.items.length && !cost.usage.length) lines.append(el("li", {}, el("span", { textContent: "nothing of its own: runs on what it needs" }), el("span", { textContent: "$0" })));
   block.append(lines, el("div", { className: "src", textContent: `${cost.region} on-demand, AWS price list ${cost.asOf}` }));
-  if (spec.needs?.length) {
-    const needs = el("div", { className: "needs" }, el("span", { textContent: "NEEDS" }));
-    for (const id of spec.needs) needs.append(el("span", { className: "need", textContent: (pipModules.find((item) => item.id === id)?.title || id).toUpperCase() }));
-    block.append(needs);
-  }
   return block;
+}
+
+// NEEDS chips (src/stack-needs.js): what the card needs on its cluster, read
+// from the cluster: green there, red missing (RUN and PREVIEW are refused),
+// dim when it could not be read. A click opens the card that makes it.
+let needsSeq = 0;
+function needsRow(spec, preset = {}) {
+  const row = el("div", { className: "needs", id: "pip-needs" }, el("span", { textContent: "NEEDS" }));
+  for (const id of spec.needs || []) row.append(el("span", { className: "need unknown", textContent: (pipModules.find((item) => item.id === id)?.title || id).toUpperCase() }));
+  row.hidden = !spec.needs?.length;
+  if (spec.needs?.length && !sample) queueMicrotask(() => refreshNeeds(spec, preset));
+  return row;
+}
+
+async function refreshNeeds(spec, preset = {}) {
+  const row = pipEl.querySelector(".card.open #pip-needs");
+  if (!row || openModule() !== spec.id) return;
+  const params = { ...pipParams(), ...preset };
+  const query = { module: spec.id, clusterName: params.clusterName || "" };
+  for (const when of spec.needsWhen || []) if (params[when.param]) query[when.param] = params[when.param];
+  const seq = ++needsSeq;
+  const got = await upgradeJson(`/api/upgrade/needs?${new URLSearchParams(query)}`);
+  if (seq !== needsSeq || !row.isConnected || !Array.isArray(got?.needs)) return;
+  const word = { ok: "there", missing: "missing: RUN and PREVIEW are refused until it is up", unknown: "could not be read (CONNECT the cluster): not checked" };
+  row.replaceChildren(el("span", { textContent: "NEEDS" }));
+  for (const need of got.needs) {
+    const chip = el("button", { type: "button", className: `need ${need.state}`, textContent: `${need.state === "ok" ? "✓ " : need.state === "missing" ? "✗ " : ""}${need.title.toUpperCase()}` });
+    chip.title = `${need.title} on ${need.cluster}${need.because ? ` (${need.because})` : ""}: ${word[need.state] || need.state}. Click to open ${need.open.card === "eks" ? "the EKS card" : "its card"}.`;
+    chip.addEventListener("click", () => openNeed(need));
+    row.append(chip);
+  }
+  if (got.refusal) row.append(el("em", { className: "need-why", textContent: got.refusal }));
+  row.hidden = !got.needs.length;
+}
+
+async function openNeed(need) {
+  const { card, cluster } = need.open || {};
+  if (!card) return;
+  if (card === "eks") return openEksCard(cluster);
+  const module = card.split("@")[0];
+  if (!card.includes("@")) pipKept[module] = { ...(pipKept[module] || {}), clusterName: cluster };
+  openCard = card;
+  markHistory();
+  syncUrl();
+  drawPipForm();
+  refreshUpgrade(true);
+  renderChrome();
 }
 
 // The body of an open Pulumi card: note, bill, watch line, parameters, the
@@ -3302,7 +3344,7 @@ function cardBody(spec, preset = {}) {
   const body = el("div", { className: "card-body" });
   const watch = el("div", { id: "pip-watch" });
   watch.hidden = true;
-  body.append(el("div", { textContent: spec.note || "" }), costBlock(spec));
+  body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), needsRow(spec, preset));
   if (spec.nodeCost) body.append(nodeCostBlock(spec.nodeCost));
   body.append(watch);
   if (spec.id === "eks") body.append(connectRow("pip-connect"), el("div", { id: "pip-live", className: "live-line", hidden: true }, el("span", { className: "live-what" }), el("em", { className: "field-note live-warn" })));
@@ -3347,6 +3389,7 @@ function cardBody(spec, preset = {}) {
       refreshConnect(true);
       refreshBundle(true);
     });
+    if (parameter.name === "clusterName" || spec.needsWhen?.some((when) => when.param === parameter.name)) field.addEventListener("change", () => refreshNeeds(spec, preset));
     if (parameter.name === "clusterName" || parameter.name === "name") {
       field.addEventListener("change", () => refreshUpgrade(true));
       field.addEventListener("input", () => promptConfirm(spec, body));

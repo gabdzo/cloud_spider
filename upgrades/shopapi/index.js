@@ -6,7 +6,7 @@ import { eksProvider } from "../eks-kube.js";
 import { inheritTags, stackTags } from "../tags.js";
 
 // A sample backend on EKS wired to the database from upgrades/pgcluster.
-// Stack: shopapi. Needs eks and pgcluster up.
+// Stack: shopapi. Needs eks and pgcluster up (the card checks both first).
 //   - a migration Job (postgres:16-alpine, psql) that applies sql/*.sql to
 //     the database, re-run whenever the SQL changes (the Job name carries
 //     its hash)
@@ -30,7 +30,12 @@ inheritTags(pulumi, stackTags("shopapi", { cluster: clusterName }));
 const ns = "shop";
 const labels = { app: "shopapi", "app.kubernetes.io/part-of": "cloudspider-shop", "cloudspider/project": "shopapi" };
 const provider = eksProvider({ pulumi, aws, k8s, clusterName });
-const k = { provider };
+// Fail early without the Postgres cluster: namespace shop is pgcluster's (one
+// stack per namespace), so this stack reads it and never makes it. Missing,
+// preview and up stop here with "needs-pgcluster-namespace-shop" instead of
+// half-creating the Service and ConfigMap ("namespaces \"shop\" not found").
+const shopNamespace = k8s.core.v1.Namespace.get("needs-pgcluster-namespace-shop", ns, { provider });
+const k = { provider, dependsOn: [shopNamespace] };
 
 const sqlDir = new URL("./sql/", import.meta.url);
 const migrations = { "001-shop.sql": readFileSync(new URL("001-shop.sql", sqlDir), "utf8") };
@@ -66,7 +71,7 @@ const migrate = new k8s.batch.v1.Job(
       },
     },
   },
-  { ...k, dependsOn: [sql] },
+  { ...k, dependsOn: [shopNamespace, sql] },
 );
 
 const api = new k8s.apps.v1.Deployment(
@@ -99,7 +104,7 @@ const api = new k8s.apps.v1.Deployment(
       },
     },
   },
-  { ...k, dependsOn: [migrate] },
+  { ...k, dependsOn: [shopNamespace, migrate] },
 );
 
 new k8s.core.v1.Service("shopapi", {

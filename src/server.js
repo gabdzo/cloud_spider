@@ -1730,7 +1730,11 @@ const page = `<!doctype html>
   #pip .lines li span:first-child { overflow-wrap: anywhere; }
   #pip .src { font-size: 10px; color: var(--pip-dim); letter-spacing: 0.04em; }
   #pip .needs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 10px; letter-spacing: 0.14em; color: var(--pip-dim); }
-  #pip .need { padding: 0 5px; color: var(--world-amber); border: 1px solid var(--case-brass-lo); }
+  #pip .need { padding: 0 5px; color: var(--world-amber); border: 1px solid var(--case-brass-lo); background: none; font: inherit; letter-spacing: inherit; cursor: pointer; }
+  #pip .need.unknown { opacity: 0.7; }
+  #pip .need.ok { color: #7ee08a; border-color: #3f8f4a; }
+  #pip .need.missing { color: #ff7a6b; border-color: #b4483c; }
+  #pip .need-why { flex-basis: 100%; color: #ff7a6b; font-style: normal; letter-spacing: 0.04em; }
   #pip .need::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 4px; vertical-align: 1px; background: var(--world-amber); box-shadow: 0 0 4px var(--world-amber); }
   #pip .pdiv {
     display: flex; align-items: center; gap: 8px; margin: 10px 8px 6px; padding: 3px 8px;
@@ -2482,6 +2486,17 @@ async function route(app, req, res) {
     const value = url.searchParams.get("clusterName");
     if (value) values.clusterName = value;
     send(res, 200, app.upgradeLive ? await app.upgradeLive(url.searchParams.get("module") || "", values) : { values: {} });
+    return;
+  }
+
+  // NEEDS chips: what a card needs on its cluster and whether it is there.
+  if (req.method === "GET" && url.pathname === "/api/upgrade/needs") {
+    const values = {};
+    for (const key of ["clusterName", "expose", "dbSecret"]) {
+      const value = url.searchParams.get(key);
+      if (value) values[key] = value;
+    }
+    send(res, 200, app.upgradeNeeds ? await app.upgradeNeeds(url.searchParams.get("module") || "", values) : { needs: [], refusal: "" });
     return;
   }
 

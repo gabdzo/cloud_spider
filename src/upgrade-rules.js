@@ -233,6 +233,11 @@ export function addonCommands(spec, cluster) {
 // and the page (the ERROR plate).
 const HINTS = [
   {
+    kind: "shop-missing",
+    test: /namespaces "shop" not found|needs-pgcluster-namespace-shop|Shop API needs the Postgres cluster/i,
+    hint: "The Shop API runs in namespace shop, which the Postgres cluster stack makes (Stacks → Postgres on EKS, pgcluster: CloudNativePG and the database shopdb). Deploy pgcluster on this cluster first, wait for it to finish, then RUN Shop API again: what failed was never created, so the same stack picks up from there.",
+  },
+  {
     kind: "demo-missing",
     test: /namespaces "demo" not found/i,
     hint: "The HPA scaling demo's HPAs scale the EKS demo app (namespace demo), which is not on this cluster. Run scaling-demo again: Cloud Spider now checks for the demo app first and, without it, runs only the burst and inflate parts (the run log says HPA skipped), so the same stack finishes. For the HPAs, raise the EKS demo app on this cluster first.",

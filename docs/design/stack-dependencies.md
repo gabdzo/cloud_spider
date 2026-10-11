@@ -62,6 +62,19 @@ keep two clusters apart; nothing else in the account is shared.
 
 - Every Stacks card: NEEDS chips, green when present, red when missing,
   click jumps to that card. RUN/PREVIEW refuse before Pulumi when one is red.
+  A need that could not be read (no CONNECTed context, no AWS answer) is
+  dim and never refuses. How each is read (src/stack-needs.js, read-only):
+  - EKS cluster: EKS ListClusters.
+  - EKS add-ons (pgcluster: Pod Identity agent + EBS CSI driver; demo: Pod
+    Identity agent + metrics-server; Karpenter/LBC/KEDA: Pod Identity agent;
+    scaling-demo: metrics-server): EKS DescribeAddon.
+  - pgcluster (for Shop API): namespace shop with a pod labelled
+    cnpg.io/cluster=shopdb in the kube read, else a pgcluster stack with
+    resources on that cluster.
+  - Add-ons with cards (lbc): the add-on tree, else the kube read.
+- The shopapi program itself reads namespace shop
+  (`needs-pgcluster-namespace-shop`) and never creates it, so a run that
+  skips the check still stops before the first resource.
 - Bundles, one plan and one approval, in dependency order:
   - **Shop API bundle**: pgcluster (CNPG operator is inside it) → shopapi
     (+ lbc first when expose=alb).
