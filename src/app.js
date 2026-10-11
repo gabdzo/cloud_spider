@@ -15,6 +15,7 @@ import { createTelemetry } from "./kube-telemetry.js";
 import { inspectPod } from "./kube-inspect.js";
 import { opsView, sampleOps } from "./kube-ops.js";
 import { demoAppSeen, detectAddons, refuseUp, sampleAddons } from "./addons.js";
+import { HELD_BY, destroyRefusal } from "../upgrades/eks-addons.js";
 import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./addon-bundle.js";
 import { podRoom } from "../upgrades/addons/pod-room.js";
 import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.js";
@@ -1022,6 +1023,15 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
           const demo = await scalingDemoCheck(String(params.clusterName || "cloudspider-up"), params);
           params = demo.params;
           notes = demo.notes;
+        }
+        // An EKS add-on this stack made before the EKS stack owned them is
+        // never deleted by its take it down (docs/design/stack-dependencies.md).
+        if (body.action === "destroy" && HELD_BY[body.module] && eks?.describeAddon) {
+          const on = String(params.clusterName || "cloudspider-up");
+          const answers = {};
+          for (const name of HELD_BY[body.module]) answers[name] = await eks.describeAddon(on, name).catch(() => null);
+          const held = destroyRefusal(body.module, on, answers);
+          if (held) return no(held);
         }
         if (body.module === "eks" && body.action === "destroy") {
           const typed = String(params.confirmName || "").trim();

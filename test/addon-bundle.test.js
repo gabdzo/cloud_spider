@@ -38,19 +38,22 @@ test("the checklist: every add-on in install order with its cost and pod slots; 
 });
 
 test("the plan: dependency order, needs pulled in, present ones skipped, slot count against the cluster", () => {
-  const view = bundleView({ cluster: "cloudspider-medium", node: null, detected: { "metrics-server": { where: "deployment kube-system/metrics-server" } }, room: room(6), connected: true });
+  // Pod Identity and metrics-server come with EKS (test/eks-addons-included.test.js).
+  const view = bundleView({ cluster: "cloudspider-medium", node: null, detected: { "metrics-server": { where: "deployment kube-system/metrics-server" }, "pod-identity": { where: "daemonset kube-system/eks-pod-identity-agent" } }, room: room(6), connected: true });
   const plan = bundlePlan(view, ["scaling-demo", "kyverno", "karpenter", "metrics-server"]);
-  assert.deepEqual(plan.order, ["pod-identity", "karpenter", "kyverno", "scaling-demo"]);
-  assert.deepEqual(plan.added, [{ id: "pod-identity", for: "karpenter" }]);
+  assert.deepEqual(plan.order, ["karpenter", "kyverno", "scaling-demo"]);
+  assert.deepEqual(plan.added, []);
   assert.deepEqual(plan.skipped.map((item) => item.id), ["metrics-server"]);
-  assert.equal(plan.need, 1 + 1 + 3 + 0);
+  assert.equal(plan.need, 1 + 3 + 0);
   assert.equal(plan.free, 6);
   assert.equal(plan.refusal, "");
-  assert.equal(slotLine(view, plan), "needs 5 free pod slots, you have 6");
+  assert.equal(slotLine(view, plan), "needs 4 free pod slots, you have 6");
   const text = confirmText(view, plan);
-  assert.match(text, /1\. Pod Identity agent — stack pod-identity-cloudspider-medium/);
-  assert.match(text, /4\. HPA scaling demo — stack scaling-demo-cloudspider-medium/);
-  assert.match(text, /skipped: metrics-server, already on the cluster/);
+  assert.match(text, /1\. Karpenter — stack karpenter-cloudspider-medium/);
+  assert.match(text, /3\. HPA scaling demo — stack scaling-demo-cloudspider-medium/);
+  assert.match(text, /skipped: metrics-server, included with EKS, on the cluster/);
+  const noAgent = bundlePlan(bundleView({ cluster: "cloudspider-medium", detected: {}, room: room(6), connected: true }), ["karpenter"]);
+  assert.match(noAgent.refusal, /Karpenter needs Pod Identity agent: RUN the EKS stack for cloudspider-medium/);
   assert.match(text, /No hourly cost of their own, plus use/);
   const tight = bundlePlan(bundleView({ cluster: "c1", room: room(2), connected: true }), ["kyverno", "cert-manager"]);
   assert.match(tight.refusal, /need 6 free pod slots and c1 has 2\. Add a node first/);
@@ -88,7 +91,7 @@ function rig({ free = 8, extra = {}, connected = true, demo = false } = {}) {
   };
   // The medium cluster: one t4g.small (11 pods) with `free` slots left.
   const pods = Array.from({ length: 11 - free }, (_, i) => ({ metadata: { namespace: "kube-system", name: `p${i}` }, spec: { nodeName: "n1" }, status: { phase: "Running" } }));
-  const snapshot = { clusterName: "cloudspider-medium", nodes: [{ metadata: { name: "n1", labels: { "node.kubernetes.io/instance-type": "t4g.small" } }, status: { allocatable: { pods: "11" }, conditions: [{ type: "Ready", status: "True" }] } }], pods, deployments: [{ metadata: { namespace: "kube-system", name: "metrics-server" }, spec: { replicas: 1 }, status: { readyReplicas: 1 } }, ...(demo ? ["web", "api"].map((name) => ({ metadata: { namespace: "demo", name }, spec: { replicas: 1 }, status: { readyReplicas: 1 } })) : [])], namespaces: [{ metadata: { name: "kube-system" } }, ...(demo ? [{ metadata: { name: "demo" } }] : [])], daemonsets: [] };
+  const snapshot = { clusterName: "cloudspider-medium", nodes: [{ metadata: { name: "n1", labels: { "node.kubernetes.io/instance-type": "t4g.small" } }, status: { allocatable: { pods: "11" }, conditions: [{ type: "Ready", status: "True" }] } }], pods, deployments: [{ metadata: { namespace: "kube-system", name: "metrics-server" }, spec: { replicas: 1 }, status: { readyReplicas: 1 } }, ...(demo ? ["web", "api"].map((name) => ({ metadata: { namespace: "demo", name }, spec: { replicas: 1 }, status: { readyReplicas: 1 } })) : [])], namespaces: [{ metadata: { name: "kube-system" } }, ...(demo ? [{ metadata: { name: "demo" } }] : [])], daemonsets: [{ metadata: { namespace: "kube-system", name: "eks-pod-identity-agent" }, status: { desiredNumberScheduled: 1, numberReady: 1 } }] };
   const fakeKube = (name) => ({ context: name, async probe() { return { ok: true }; }, async snapshot() { return name === "cloudspider-medium-viewer" ? snapshot : { error: "not read" }; } });
   const loadKubeContexts = async () => {
     const got = await loadContexts({ env: { CLOUDSPIDER_KUBE_CONTEXTS_FILE: contextsFile }, read: readFile });
@@ -131,10 +134,11 @@ test("INSTALL SELECTED: one run, each add-on previewed then raised, in order, sk
     assert.equal(by["cert-manager"].state, "installed", "from pulumi stack ls");
     assert.equal(by["metrics-server"].state, "present", "seen in the cluster");
     assert.equal(status.room.free, 8);
-    assert.equal(status.line, "needs 6 free pod slots, you have 8");
+    assert.equal(by["pod-identity"].included, true, "included with EKS");
+    assert.equal(status.line, "needs 5 free pod slots, you have 8");
     const ask = { cluster: "cloudspider-medium", items: ["kyverno", "karpenter", "cert-manager", "metrics-server"] };
     const plan = await fetch(`${base}/api/addons/bundle`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: JSON.stringify({ ...ask, plan: true }) }).then((x) => x.json());
-    assert.deepEqual(plan.plan.order, ["pod-identity", "karpenter", "kyverno"]);
+    assert.deepEqual(plan.plan.order, ["karpenter", "kyverno"]);
     assert.match(plan.confirm, /skipped: cert-manager, already installed/);
     assert.equal(r.called().length > 0 ? r.called().some((line) => /^(preview|up)/.test(line)) : false, false, "planning runs nothing");
     const started = await fetch(`${base}/api/addons/bundle`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: JSON.stringify(ask) }).then((x) => x.json());
@@ -145,7 +149,6 @@ test("INSTALL SELECTED: one run, each add-on previewed then raised, in order, sk
     assert.equal(done.state, "done", done.error);
     const runs = r.called().filter((line) => /^(preview|up) /.test(line)).map((line) => `${line.split(" ")[0]} ${line.split(" ").pop()}`);
     assert.deepEqual(runs, [
-      "preview pod-identity-cloudspider-medium", "up pod-identity-cloudspider-medium",
       "preview karpenter-cloudspider-medium", "up karpenter-cloudspider-medium",
       "preview kyverno-cloudspider-medium", "up kyverno-cloudspider-medium",
     ]);
@@ -174,7 +177,7 @@ test("INSTALL SELECTED stops at the first failure with the ERROR plate; too few 
   try {
     await tight.app.reloadContexts();
     const no = await tight.app.bundleRun(ORIGIN, { cluster: "cloudspider-medium", items: ["kyverno", "keda"] });
-    assert.match(no.error, /need 7 free pod slots and cloudspider-medium has 2\. Add a node first/);
+    assert.match(no.error, /need 6 free pod slots and cloudspider-medium has 2\. Add a node first/);
     assert.equal(no.state, "refused");
     assert.deepEqual(tight.called().filter((line) => /^(preview|up) /.test(line)), []);
   } finally {
@@ -195,7 +198,7 @@ test("with add-ons: the create run, then CONNECT, then the bundle, one after the
     assert.ok(config.contexts.some((c) => c.name === "cloudspider-medium-viewer"), "CONNECT ran");
     assert.equal(config["current-context"], "work-ctx");
     const ups = r.called().filter((line) => /^up /.test(line)).map((line) => line.split(" ").pop());
-    assert.deepEqual(ups, ["eks-cloudspider-medium", "pod-identity-cloudspider-medium", "kyverno-cloudspider-medium"]);
+    assert.deepEqual(ups, ["eks-cloudspider-medium", "kyverno-cloudspider-medium"], "the agent came with the EKS stack");
     assert.equal((await r.app.bundleStatus("cloudspider-medium")).queued, null);
   } finally {
     r.cleanup();

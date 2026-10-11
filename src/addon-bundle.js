@@ -8,7 +8,9 @@ import { costFor, estimate } from "./stack-costs.js";
 
 // Install order: Pod Identity first (Karpenter, LBC and KEDA get their AWS
 // credentials through it), metrics-server before the HPA demo, Karpenter
-// early so later pods have somewhere to go.
+// early so later pods have somewhere to go. Pod Identity and metrics-server
+// are included with EKS (the EKS stack installs them): their rows show
+// whether they are there, and nothing here installs them.
 export const BUNDLE_ORDER = ["pod-identity", "metrics-server", "karpenter", "lbc", "cert-manager", "kyverno", "keda", "scaling-demo"];
 
 export function bundleItems() {
@@ -43,9 +45,10 @@ export function bundleView({ cluster, node = null, detected = null, room = null,
       pods: addon.pods || 0,
       cost: addonCost(addon),
       recommended: Boolean(addon.recommended),
+      included: Boolean(addon.includedWithEks),
       state,
       where,
-      selected: state === "absent" && Boolean(addon.recommended),
+      selected: state === "absent" && Boolean(addon.recommended) && !addon.includedWithEks,
     };
   });
   return {
@@ -69,9 +72,20 @@ export function bundlePlan(view, chosen = []) {
   const skipped = [];
   const added = [];
   const have = (id) => ["installed", "present"].includes(byId.get(id)?.state);
+  // One included with EKS comes from the EKS stack, never from here.
+  const fromEks = [];
+  for (const id of [...want]) {
+    if (!byId.get(id)?.included) continue;
+    want.delete(id);
+    skipped.push({ id, why: have(id) ? `included with EKS, on the cluster (${byId.get(id).where || "EKS add-on"})` : `included with EKS: RUN the EKS stack for ${view?.cluster} (it installs it)` });
+  }
   // Needs first: a chosen add-on pulls in what it needs when that is absent.
   for (const id of [...want]) {
     for (const need of byId.get(id)?.needs || []) {
+      if (byId.get(need)?.included) {
+        if (!have(need) && view?.seen) fromEks.push({ id: need, for: id });
+        continue;
+      }
       if (!want.has(need) && !have(need) && byId.has(need)) {
         want.add(need);
         added.push({ id: need, for: id });
@@ -94,7 +108,10 @@ export function bundlePlan(view, chosen = []) {
   const usage = [...new Set(items.flatMap((item) => item.cost.usage))];
   const perNode = items.find((item) => item.cost.perNode)?.cost.perNode || 0;
   let refusal = "";
-  if (!order.length) refusal = want.size ? "everything chosen is already on the cluster" : "nothing is chosen";
+  if (fromEks.length) {
+    const first = fromEks[0];
+    refusal = `${byId.get(first.for).title} needs ${byId.get(first.id).title}: RUN the EKS stack for ${view.cluster} (it installs ${byId.get(first.id).title})`;
+  } else if (!order.length) refusal = want.size || skipped.length ? (skipped.some((skip) => byId.get(skip.id)?.included) ? "everything chosen is already on the cluster or comes with EKS" : "everything chosen is already on the cluster") : "nothing is chosen";
   else if (free != null && need > free) refusal = `the add-ons need ${need} free pod slots and ${view.cluster} has ${free}. ${slotHint(view)}`;
   return { cluster: view?.cluster || "", order, skipped, added, need, free, hour, usage, perNode, refusal };
 }

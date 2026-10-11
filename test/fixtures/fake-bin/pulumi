@@ -4,11 +4,12 @@
 //                  any other stack is missing
 //   stack ls       FAKE_PULUMI_STACKS (JSON array) or []
 //   stack select, install, config set: succeed
+//   stack export, state delete, config rm, preview --json: see below
 //   preview, up    print a short plan; fail (exit 255) for the stack named
 //                  in FAKE_PULUMI_FAIL
 // FAKE_PULUMI_CALLS: a file each call is appended to (one line per call).
 // FAKE_PULUMI_DELAY: ms to wait before answering preview/up.
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 const args = process.argv.slice(2);
 const at = args.indexOf("--stack");
 const stack = at >= 0 ? args[at + 1] : args[0] === "stack" && args[1] === "select" ? args[2] : "";
@@ -24,6 +25,21 @@ if (args[0] === "stack" && args[1] === "output") {
   done(0, JSON.stringify(outputs[stack]));
 }
 if (args[0] === "stack" && args[1] === "ls") done(0, process.env.FAKE_PULUMI_STACKS || "[]");
+// stack export: FAKE_PULUMI_EXPORTS ({ "<stack>": <deployment> }); state
+// delete and config rm succeed; preview --json answers the next entry of
+// FAKE_PULUMI_PREVIEWS (a JSON array, one per preview --json so far).
+if (args[0] === "stack" && args[1] === "export") {
+  const exports = JSON.parse(process.env.FAKE_PULUMI_EXPORTS || "{}");
+  if (!exports[stack]) done(255, "", `error: no stack named '${stack}' found\n`);
+  done(0, JSON.stringify(exports[stack]));
+}
+if (args[0] === "state" && args[1] === "delete") done(0, "Resource deleted\n");
+if (args[0] === "config" && args[1] === "rm") done(0);
+if (args[0] === "preview" && args.includes("--json")) {
+  const seen = process.env.FAKE_PULUMI_CALLS ? readFileSync(process.env.FAKE_PULUMI_CALLS, "utf8").split("\n").filter((line) => line.startsWith("preview --json")).length : 1;
+  const list = JSON.parse(process.env.FAKE_PULUMI_PREVIEWS || "[]");
+  done(0, JSON.stringify(list[seen - 1] || { steps: [] }));
+}
 if (args[0] === "stack" && args[1] === "select") done(0, `Created stack '${stack}'\n`);
 if (args[0] === "install") done(0, "Installing dependencies...\nFinished installing dependencies\n");
 if (args[0] === "config" && args[1] === "set") done(0);

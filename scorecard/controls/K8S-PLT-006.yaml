@@ -13,5 +13,5 @@ requires: [kube-cluster, kube-deployments, kube-daemonsets]
 params:
   daemonsets: [eks-pod-identity-agent]
 whyItMatters: "Without a workload identity agent, pods that call AWS end up with node-role credentials or static keys."
-remediation: { summary: "Install the Pod Identity agent from the Stacks add-ons.", effort: S, addon: pod-identity }
+remediation: { summary: "Rerun the EKS stack with podIdentityAgent on (it installs the Pod Identity agent).", effort: S, addon: pod-identity }
 verification: "The eks-pod-identity-agent daemonset is ready on every node."

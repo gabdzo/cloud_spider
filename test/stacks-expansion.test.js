@@ -75,9 +75,9 @@ test("cards with no name parameter confirm Take it down with the stack name", ()
   assert.equal(cardName(pg, { clusterName: "cloudspider-up" }), "pgcluster");
   assert.ok(confirmMatches(cardName(pg, {}), "pgcluster"));
   assert.equal(cardName(UPGRADES.find((item) => item.id === "rds"), { name: "cloudspider-rds" }), "cloudspider-rds");
-  const steps = upgradeSteps(pg, "pgcluster", "up", { clusterName: "cloudspider-up", podIdentityAgent: "present" });
-  assert.deepEqual(steps.map((step) => step.slice(0, 2).join(" ")), ["stack select", "install", "config set", "config set", "up --yes"]);
-  assert.ok(steps.some((step) => step.includes("cloudspider-pgcluster:podIdentityAgent") && step.at(-1) === "present"));
+  const steps = upgradeSteps(pg, "pgcluster", "up", { clusterName: "cloudspider-up" });
+  assert.deepEqual(steps.map((step) => step.slice(0, 2).join(" ")), ["stack select", "install", "config set", "up --yes"]);
+  assert.ok(!pg.parameters.some((p) => p.name === "podIdentityAgent"), "the EKS stack installs the agent now");
 });
 
 test("a destroy of pgcluster needs the stack name typed", async () => {
@@ -101,8 +101,10 @@ test("a destroy of pgcluster needs the stack name typed", async () => {
 
 // ---- programs under mocks (need npm ci in each folder) ----
 
+// The cluster's EKS add-ons, as the EKS stack installs them.
+const EKS_ADDONS = JSON.stringify({ "eks-pod-identity-agent": { project: "eks" }, "metrics-server": { project: "eks" }, "aws-ebs-csi-driver": { project: "eks" } });
 async function mocked(dir, project, stack, config = {}) {
-  const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", dir, project, stack, JSON.stringify(config)], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", dir, project, stack, JSON.stringify(config)], { cwd: root, env: { ...process.env, CLOUDSPIDER_MOCK_EKS_ADDONS: EKS_ADDONS }, maxBuffer: 16 * 1024 * 1024 });
   return JSON.parse(stdout);
 }
 const ready = (dir) => (existsSync(join(root, dir, "node_modules/@pulumi/pulumi")) ? false : `run npm ci in ${dir}`);
@@ -140,10 +142,9 @@ test("pgcluster: CNPG chart pinned, gp3 volumes tagged for the vault, web_anon m
   assert.equal(db.spec.instances, 1);
   assert.equal(db.spec.storage.storageClass, "cloudspider-gp3");
   assert.deepEqual(db.spec.bootstrap.initdb.postInitSQL, ["create role web_anon nologin", "grant web_anon to app"]);
-  assert.equal(find(resources, "eks/addon:Addon", "ebs-csi").podIdentityAssociations[0].serviceAccount, "ebs-csi-controller-sa");
-  assert.ok(find(resources, "eks/addon:Addon", "pod-identity"));
-  const present = await mocked("upgrades/pgcluster", "cloudspider-pgcluster", "pgcluster", { "cloudspider-pgcluster:podIdentityAgent": "present" });
-  assert.equal(find(present, "eks/addon:Addon", "pod-identity"), undefined, "present: the demo stack's agent is reused");
+  // The EBS CSI driver and the Pod Identity agent are the EKS stack's
+  // (test/eks-owns-addons.test.js).
+  assert.equal(find(resources, "eks/addon:Addon"), undefined);
 });
 
 test("shopapi: the migration Job runs before PostgREST and both read the CNPG app secret", { skip: ready("upgrades/shopapi") }, async () => {

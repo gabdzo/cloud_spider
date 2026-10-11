@@ -3490,7 +3490,8 @@ function addonRow(spec, item, cluster) {
   });
   card.append(head);
   const tags = [];
-  if (item.state === "present") tags.push(el("span", { className: "ad-tag warn", textContent: "NOT FROM ITS STACK: UP IS REFUSED" }));
+  if (item.included) tags.push(el("span", { className: "ad-tag", textContent: item.state === "installed" ? "INCLUDED WITH EKS · THIS OLD STACK STILL HOLDS IT: scripts/migrate-eks-addons.mjs HANDS IT OVER" : "INCLUDED WITH EKS: THE EKS STACK INSTALLS IT" }));
+  else if (item.state === "present") tags.push(el("span", { className: "ad-tag warn", textContent: "NOT FROM ITS STACK: UP IS REFUSED" }));
   if (item.state === "n/a") tags.push(el("span", { className: "ad-tag dim", textContent: "NOT BUILT YET: NEEDS A DOMAIN AND A ROUTE 53 ZONE" }));
   else if (item.missing?.length && item.state !== "installed") tags.push(el("span", { className: "ad-tag", textContent: `NEEDS ${item.missing.map((id) => (addonTitle(id) || id).toUpperCase()).join(", ")} FIRST` }));
   if (!item.recommended && item.offered) tags.push(el("span", { className: "ad-tag dim", textContent: "OPTIONAL" }));
@@ -3937,7 +3938,8 @@ function paintBundle(body) {
   const chosen = new Set(bundlePicked(body.cluster));
   const STATE = { installed: "INSTALLED", present: "PRESENT", busy: "BUSY" };
   list.replaceChildren(...(body.items || []).map((item) => {
-    const box = el("input", { type: "checkbox", checked: item.state === "absent" && chosen.has(item.id), disabled: item.state !== "absent", ariaLabel: item.title });
+    // Included with EKS: the EKS stack installs it, not this checklist.
+    const box = el("input", { type: "checkbox", checked: item.state === "absent" && !item.included && chosen.has(item.id), disabled: item.state !== "absent" || item.included, ariaLabel: item.title });
     box.addEventListener("change", () => {
       const now = new Set(bundlePicked(body.cluster));
       if (box.checked) now.add(item.id);
@@ -3947,7 +3949,7 @@ function paintBundle(body) {
     });
     const lacking = item.needs.filter((need) => (body.items || []).find((other) => other.id === need)?.state === "absent");
     const nodes = item.cost.perNode ? `each node it launches ≈ $${item.cost.perNode.toFixed(4)}/h` : "";
-    const state = STATE[item.state] ? `${STATE[item.state]}${item.where ? ` · ${item.where}` : ""}` : [lacking.length ? `needs ${lacking.join(", ")} (installed first)` : "", nodes].filter(Boolean).join(" · ");
+    const state = item.included ? `INCLUDED WITH EKS · ${item.state === "absent" ? "not on the cluster: RUN the EKS stack" : item.where || "on the cluster"}` : STATE[item.state] ? `${STATE[item.state]}${item.where ? ` · ${item.where}` : ""}` : [lacking.length ? `needs ${lacking.join(", ")} (installed first)` : "", nodes].filter(Boolean).join(" · ");
     const row = el("div", { className: "brow", role: "listitem", title: `${item.title}: ${item.cost.text}${item.cost.usage.length ? ` (billed by use: ${item.cost.usage.join("; ")})` : ""}` },
       box,
       el("span", { className: "name", textContent: item.title }),

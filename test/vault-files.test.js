@@ -71,14 +71,17 @@ const PROGRAMS = [
   { dir: "upgrades/camp", project: "cloudspider-camp", stack: "camp", vaults: ["camp"] },
   { dir: "upgrades/demo", project: "cloudspider-demo", stack: "demo", vaults: ["demo"] },
   { dir: "upgrades/rds", project: "cloudspider-rds", stack: "rds", vaults: ["rds"], template: true },
-  { dir: "upgrades/pgcluster", project: "cloudspider-pgcluster", stack: "pgcluster", vaults: ["pgcluster"], template: true },
+  // Its own AWS resources are only the EBS CSI driver it made before the EKS
+  // stack owned it (kept until the migration): mock that cluster.
+  { dir: "upgrades/pgcluster", project: "cloudspider-pgcluster", stack: "pgcluster", vaults: ["pgcluster"], template: true, eksAddons: { "eks-pod-identity-agent": { project: "eks" }, "aws-ebs-csi-driver": { project: "pgcluster" } } },
   { dir: "upgrades/site", project: "cloudspider-site", stack: "site", vaults: ["site"], template: true },
   { dir: "upgrades/worker", project: "cloudspider-worker", stack: "worker", vaults: ["worker"], template: true },
   { dir: "upgrades/openshift", project: "cloudspider-openshift", stack: "openshift", vaults: ["openshift"], template: true },
 ];
 
 async function mocked(program, config = {}) {
-  const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", program.dir, program.project, program.stack, JSON.stringify(config)], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+  const env = program.eksAddons ? { ...process.env, CLOUDSPIDER_MOCK_EKS_ADDONS: JSON.stringify(program.eksAddons) } : process.env;
+  const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", program.dir, program.project, program.stack, JSON.stringify(config)], { cwd: root, env, maxBuffer: 16 * 1024 * 1024 });
   return JSON.parse(stdout);
 }
 
@@ -128,8 +131,9 @@ for (const program of PROGRAMS) {
 test("upgrades/eks: a second cluster names its roles and node group after itself; the first is unchanged", { skip: existsSync(`${root}upgrades/eks/node_modules/@pulumi/pulumi`) ? false : "run npm ci in upgrades/eks" }, async () => {
   const program = PROGRAMS.find((item) => item.dir === "upgrades/eks");
   const first = await mocked(program);
-  // The viewer role is new (no rename risk), so it is named on every stack.
-  for (const item of first.filter((r) => /iam\/role:Role$|eks\/nodeGroup:NodeGroup$/.test(r.type) && r.name !== "viewer")) {
+  // The viewer and EBS CSI driver roles are new (no rename risk), so they
+  // are named on every stack.
+  for (const item of first.filter((r) => /iam\/role:Role$|eks\/nodeGroup:NodeGroup$/.test(r.type) && !["viewer", "ebs-csi-driver"].includes(r.name))) {
     assert.equal(item.inputs.name, undefined, `${item.name} keeps its auto name on the old stack`);
     assert.equal(item.inputs.nodeGroupName, undefined);
   }

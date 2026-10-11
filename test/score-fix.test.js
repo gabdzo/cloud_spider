@@ -18,11 +18,10 @@ function setup(opts) {
 
 test("plan: preflight names the stack, its needs and the cost; nothing runs", async () => {
   const { app, runner } = setup();
+  // The agent LBC needs comes with the EKS stack, never from this plan.
   const p = await runner.plan("fresh", lbc);
-  assert.deepEqual(p.order, ["pod-identity", "lbc"]);
-  assert.deepEqual(p.added, [{ id: "pod-identity", for: "lbc" }]);
-  assert.match(p.confirm, /stack lbc-fresh/);
-  assert.equal(p.refusal, "");
+  assert.deepEqual(p.added, []);
+  assert.match(p.refusal, /AWS Load Balancer Controller needs Pod Identity agent: RUN the EKS stack for fresh/);
   assert.equal(app.runs.length, 0);
 });
 

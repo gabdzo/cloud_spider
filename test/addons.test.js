@@ -96,13 +96,13 @@ test("the tree: installed from its stack, present from elsewhere, missing needs,
   assert.equal(tree[0].installed, 1);
   assert.equal(tree[0].present, 3);
   assert.equal(tree[1].addons.find((a) => a.id === "lbc").state, "installed");
-  assert.match(refuseUp(tree, "metrics-server", "cloudspider-up"), /already on cloudspider-up \(deployment kube-system\/metrics-server\)/);
+  assert.match(refuseUp(tree, "metrics-server", "cloudspider-up"), /metrics-server is included with EKS: RUN the EKS stack for cloudspider-up/);
   assert.equal(refuseUp(tree, "karpenter", "cloudspider-up"), "");
   const blind = addonTree({ clusters: ["c1"], stacks: [] });
   assert.deepEqual(blind[0].addons.find((a) => a.id === "karpenter").missing, ["pod-identity"]);
   assert.equal(refuseUp(blind, "karpenter", "c1"), "", "not seen is not missing");
   const seenEmpty = addonTree({ clusters: ["c1"], detected: {}, detectedCluster: "c1" });
-  assert.match(refuseUp(seenEmpty, "karpenter", "c1"), /needs pod-identity on c1 first/);
+  assert.match(refuseUp(seenEmpty, "karpenter", "c1"), /Karpenter needs Pod Identity agent: RUN the EKS stack for c1/);
   const sample = sampleAddons();
   assert.equal(sample.sample, true);
   assert.equal(sample.tree.length, 2);
@@ -223,7 +223,7 @@ test("routes: /api/addons and /api/cluster/ops, sample and live; an add-on up th
     assert.equal(sampleOpsView.clusterName, "cloudspider-up");
     const post = (body) => fetch(`${base}/api/upgrade`, { method: "POST", headers: { "content-type": "application/json", origin: "http://127.0.0.1:9241" }, body: JSON.stringify(body) }).then((r) => r.json());
     const refused = await post({ module: "metrics-server", action: "up", params: { clusterName: "cloudspider-up" } });
-    assert.match(refused.error, /metrics-server is already on cloudspider-up/);
+    assert.match(refused.error, /metrics-server is included with EKS: RUN the EKS stack for cloudspider-up/);
     assert.equal(posted.length, 0);
     const preview = await post({ module: "metrics-server", action: "preview", params: { clusterName: "cloudspider-up" } });
     assert.equal(preview.running, true, "preview is never refused");
@@ -259,7 +259,10 @@ const ready = existsSync(join(root, "upgrades/addons/node_modules/@pulumi/pulumi
 
 async function mocked(addon, cluster = "cloudspider-up", extra = {}) {
   const config = { "cloudspider-addons:clusterName": cluster, ...Object.fromEntries(Object.entries(extra).map(([k, v]) => [`cloudspider-addons:${k}`, v])) };
-  const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", "upgrades/addons", "cloudspider-addons", `${addon}-${cluster}`, JSON.stringify(config)], { cwd: root, maxBuffer: 16 * 1024 * 1024 });
+  // The two add-ons included with EKS run here only as the old stacks that
+  // made them (tagged with their own project).
+  const env = { ...process.env, CLOUDSPIDER_MOCK_EKS_ADDONS: JSON.stringify({ "eks-pod-identity-agent": { project: "pod-identity" }, "metrics-server": { project: "metrics-server" } }) };
+  const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", "upgrades/addons", "cloudspider-addons", `${addon}-${cluster}`, JSON.stringify(config)], { cwd: root, env, maxBuffer: 16 * 1024 * 1024 });
   return JSON.parse(stdout);
 }
 const kind = (resources, name) => resources.filter((r) => r.inputs?.kind === name).map((r) => r.inputs);

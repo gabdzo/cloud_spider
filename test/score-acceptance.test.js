@@ -57,7 +57,8 @@ test("ACCEPTANCE: fresh cluster scores low; three add-on fixes later the score h
     scanId = done.scanId;
     scores.push((await api.view({})).scan.card.overall);
   }
-  assert.deepEqual(app.runs, ["preview metrics-server-fresh", "up metrics-server-fresh", "preview kyverno-fresh", "up kyverno-fresh", "preview cert-manager-fresh", "up cert-manager-fresh"]);
+  // metrics-server comes with the EKS stack: its FIX reruns that stack.
+  assert.deepEqual(app.runs, ["preview eks-fresh", "up eks-fresh", "preview kyverno-fresh", "up kyverno-fresh", "preview cert-manager-fresh", "up cert-manager-fresh"]);
   assert.ok(scores.every((s, i) => i === 0 || s > scores[i - 1]), scores.join(" → "));
   assert.ok(scores.at(-1) - scores[0] >= 50, scores.join(" → "));
   const view = await api.view({});

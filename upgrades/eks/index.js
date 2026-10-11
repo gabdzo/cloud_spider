@@ -3,6 +3,7 @@ import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
+import { EKS_OWNED, adoptList, eksOwnPlan, ownerText, readAddon } from "../eks-addons.js";
 
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
@@ -131,6 +132,62 @@ const nodes = new aws.eks.NodeGroup(
   { dependsOn: nodePolicies, customTimeouts: { create: "40m", update: "40m", delete: "40m" } },
 );
 
+// The cluster-level EKS managed add-ons belong to this stack
+// (docs/design/stack-dependencies.md): the Pod Identity agent, metrics-server
+// and the EBS CSI driver, each on unless its config says off. No other stack
+// creates them; they check for them and refuse without. On a cluster where
+// another stack made one earlier, this stack leaves it alone until
+// scripts/migrate-eks-addons.mjs hands it over: that removes it from the old
+// stack's state (no AWS call) and sets adoptAddons + adoptPhase here, so the
+// next up adopts it with the import option (phase import), then puts this
+// stack's tags on it (phase retag). Nothing here ever deletes one.
+const isOn = (key) => !["off", "false", "no", "0"].includes(String(config.get(key) ?? "on").toLowerCase());
+const adopt = adoptList(config.get("adoptAddons"));
+const adoptPhase = config.get("adoptPhase") || "import";
+if (!["import", "retag"].includes(adoptPhase)) throw new Error("adoptPhase must be import or retag");
+const addonTags = { ...tags, project: "eks", cluster: clusterName, "managed-by": "pulumi" };
+const addons = {};
+for (const item of EKS_OWNED.filter((entry) => isOn(entry.key))) {
+  const existing = await readAddon(aws.eks.getAddon, clusterName, item.addonName);
+  const plan = eksOwnPlan(existing, item.addonName, { adopt, phase: adoptPhase });
+  if (plan === "use") {
+    pulumi.log.info(`${item.addonName} is on ${clusterName} from ${ownerText(existing.project, clusterName)}; left alone. To hand it to this stack: node scripts/migrate-eks-addons.mjs ${clusterName} (dry run first)`);
+    continue;
+  }
+  const extra = {};
+  const opts = { dependsOn: [nodes, ...(item.addonName === "aws-ebs-csi-driver" && addons["eks-pod-identity-agent"] ? [addons["eks-pod-identity-agent"]] : [])] };
+  if (item.addonName === "aws-ebs-csi-driver") {
+    // Its controller's AWS credentials, through EKS Pod Identity.
+    const csiRole = new aws.iam.Role("ebs-csi-driver", {
+      name: `${clusterName}-ebs-csi-driver`,
+      assumeRolePolicy: JSON.stringify({
+        Version: "2012-10-17",
+        Statement: [{ Effect: "Allow", Principal: { Service: "pods.eks.amazonaws.com" }, Action: ["sts:AssumeRole", "sts:TagSession"] }],
+      }),
+      tags,
+    });
+    new aws.iam.RolePolicyAttachment("ebs-csi-driver", { role: csiRole.name, policyArn: "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy" });
+    extra.podIdentityAssociations = [{ roleArn: csiRole.arn, serviceAccount: "ebs-csi-controller-sa" }];
+  }
+  if (plan === "import") {
+    // Exactly as it is (an import fails on any difference); its Pod Identity
+    // association from the old stack stays until phase retag sets ours.
+    addons[item.addonName] = new aws.eks.Addon(item.addonName, { clusterName, addonName: item.addonName, tags: existing.tags }, {
+      ...opts,
+      import: `${clusterName}:${item.addonName}`,
+      ignoreChanges: ["podIdentityAssociations", "resolveConflictsOnCreate", "resolveConflictsOnUpdate"],
+    });
+    continue;
+  }
+  addons[item.addonName] = new aws.eks.Addon(item.addonName, {
+    clusterName: cluster.name,
+    addonName: item.addonName,
+    resolveConflictsOnCreate: "OVERWRITE",
+    ...extra,
+    tags: addonTags,
+  }, opts);
+}
+
 // Cloud Spider's read-only door into the cluster: a role anyone in this
 // account may assume, mapped to AmazonEKSViewPolicy (no Secrets) and to the
 // group cloudspider-viewers, which upgrades/demo binds to "get/list nodes and
@@ -212,3 +269,4 @@ export const name = cluster.name;
 export const viewerRoleArn = viewerRole.arn;
 export const versionOut = cluster.version;
 export const nodeGroup = nodes.nodeGroupName;
+export const eksAddons = Object.keys(addons);

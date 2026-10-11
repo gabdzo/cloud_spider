@@ -1,7 +1,7 @@
-// The demo stack and the add-on stacks both install metrics-server and the
+// The demo stack and the add-on stacks both installed metrics-server and the
 // Pod Identity agent; EKS holds one of each per cluster (409 "Addon already
-// exists"). Each reads the add-on first: absent → create, its own → keep,
-// another Cloud Spider stack's → use it (demo) or refuse (add-on card).
+// exists"). Since the EKS stack owns them (test/eks-owns-addons.test.js) the
+// others only use them, or keep one they made before.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync } from "node:fs";
@@ -22,8 +22,8 @@ const fakeGet = (on) => async ({ clusterName, addonName }) => {
 };
 
 test("readAddon: absent, present with its project tag, other errors thrown", async () => {
-  assert.deepEqual(await readAddon(fakeGet({}), "c", "metrics-server"), { exists: false, project: "", version: "" });
-  assert.deepEqual(await readAddon(fakeGet({ "metrics-server": { project: "metrics-server" } }), "c", "metrics-server"), { exists: true, project: "metrics-server", version: "v1" });
+  assert.deepEqual(await readAddon(fakeGet({}), "c", "metrics-server"), { exists: false, project: "", version: "", tags: {} });
+  assert.deepEqual(await readAddon(fakeGet({ "metrics-server": { project: "metrics-server" } }), "c", "metrics-server"), { exists: true, project: "metrics-server", version: "v1", tags: { project: "metrics-server" } });
   await assert.rejects(readAddon(fakeGet("boom"), "c", "metrics-server"), /AccessDenied/);
 });
 
@@ -48,9 +48,8 @@ const addonsReady = existsSync(join(root, "upgrades/addons/node_modules/@pulumi/
 const eksAddons = (resources) => resources.filter((r) => r.type === "aws:eks/addon:Addon").map((r) => r.inputs.addonName).sort();
 const DEMO = ["upgrades/demo", "cloudspider-demo", "demo", { "cloudspider-demo:clusterName": "cloudspider-up" }];
 
-test("demo on a fresh cluster creates both add-ons", { skip: demoReady }, async () => {
-  const resources = await mock(...DEMO, {});
-  assert.deepEqual(eksAddons(resources), ["eks-pod-identity-agent", "metrics-server"]);
+test("demo on a cluster without the add-ons refuses (the EKS stack installs them)", { skip: demoReady }, async () => {
+  await assert.rejects(mock(...DEMO, {}), (error) => /needs eks-pod-identity-agent: RUN the EKS stack/.test(`${error.stdout}${error.stderr}`));
 });
 
 test("demo after the add-ons bundle uses their add-ons and still makes the rest (no 409)", { skip: demoReady }, async () => {
@@ -60,15 +59,15 @@ test("demo after the add-ons bundle uses their add-ons and still makes the rest 
   assert.ok(resources.some((r) => r.type.endsWith("Namespace") && r.name === "demo"));
 });
 
-test("demo keeps the add-ons it made itself (never drops them from its state)", { skip: demoReady }, async () => {
+test("demo keeps the add-ons it made itself (never drops them from its state); an untagged one it uses", { skip: demoReady }, async () => {
   const resources = await mock(...DEMO, { "eks-pod-identity-agent": { project: "demo" }, "metrics-server": {} });
-  assert.deepEqual(eksAddons(resources), ["eks-pod-identity-agent", "metrics-server"]);
+  assert.deepEqual(eksAddons(resources), ["eks-pod-identity-agent"]);
 });
 
 test("an add-on stack refuses an add-on the demo stack owns, naming it", { skip: addonsReady }, async () => {
   await assert.rejects(
     mock("upgrades/addons", "cloudspider-addons", "metrics-server-cloudspider-up", { "cloudspider-addons:clusterName": "cloudspider-up" }, { "metrics-server": { project: "demo" } }),
-    (error) => /metrics-server is already on cloudspider-up from the EKS demo app \(stack demo\)/.test(`${error.stdout}${error.stderr}`),
+    (error) => /metrics-server is included with EKS: RUN the EKS stack for cloudspider-up \(it installs metrics-server\); it is on cloudspider-up from the EKS demo app \(stack demo\)/.test(`${error.stdout}${error.stderr}`),
   );
   const own = await mock("upgrades/addons", "cloudspider-addons", "metrics-server-cloudspider-up", { "cloudspider-addons:clusterName": "cloudspider-up" }, { "metrics-server": { project: "metrics-server" } });
   assert.deepEqual(eksAddons(own), ["metrics-server"]);
@@ -85,7 +84,7 @@ test("the add-on cards see the demo's EKS add-ons on any cluster (EKS API, no ku
   assert.equal(ms.state, "present");
   assert.match(ms.source, /from the EKS demo app \(stack demo\)/);
   assert.equal(addons.find((item) => item.id === "pod-identity").state, "installed");
-  assert.match(refuseUp(tree, "metrics-server", "cloudspider-up"), /metrics-server is already on cloudspider-up \(EKS add-on metrics-server from the EKS demo app \(stack demo\)\); nothing to add/);
+  assert.match(refuseUp(tree, "metrics-server", "cloudspider-up"), /metrics-server is included with EKS: RUN the EKS stack for cloudspider-up \(it installs metrics-server\)/);
 });
 
 test("a 409 'Addon already exists' names the other Cloud Spider stack", () => {

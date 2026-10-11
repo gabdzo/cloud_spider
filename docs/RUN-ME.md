@@ -199,7 +199,8 @@ Needs the cluster from §6 **on t4g.medium** (a t4g.small runs out of pods): set
 ```sh
 cd upgrades/pgcluster && npm ci
 pulumi stack select pgcluster --create
-pulumi config set podIdentityAgent present        # ONLY if the demo stack (§8) is up; it already installed the agent
+# The Pod Identity agent and the EBS CSI driver come with the EKS stack
+# (docs/design/stack-dependencies.md); pgcluster stops without them.
 pulumi up --stack pgcluster                        # ~5 minutes: CSI driver, operator, shop/shopdb
 kubectl -n shop get cluster shopdb                 # STATUS "Cluster in healthy state"
 cd ../shopapi && npm ci
@@ -422,7 +423,7 @@ pulumi destroy && pulumi stack rm kyverno-$CLUSTER    # take it away again
 
 | Order | Add-on (id) | What you get | Cost |
 |---|---|---|---|
-| 1 | Pod Identity agent (`pod-identity`) | EKS add-on; how the next three get AWS credentials. Skip it if the tree says PRESENT (the demo installs it). | $0 |
+| 1 | Pod Identity agent (`pod-identity`) | EKS add-on; how the next three get AWS credentials. Included with EKS: the EKS stack installs it (row shows INCLUDED WITH EKS). | $0 |
 | 1 | metrics-server (`metrics-server`) | EKS add-on for `kubectl top` and HPAs. Skip it if PRESENT (the demo installs it). | $0 |
 | 2 | Kyverno (`kyverno`) | Four baseline policies in **Audit** mode: no privileged containers, no hostPath, requests set, no `:latest`. Plus two demo policies, also Audit: `require-app-name-label` (Pods carry `app.kubernetes.io/name`) and `require-readiness-probe`. Nothing is blocked. | $0 (about 200m CPU, 600 Mi on your node) |
 | 2 | Karpenter (`karpenter`) | Controller, interruption queue + 5 EventBridge rules, node role. NodePool `default`: t4g.small/medium arm64, spot first, **capped at 4 vCPU**, empty nodes removed after 1 min, every node replaced after 24 h. `pulumi config set capacity on-demand` to skip spot. | $0 idle (SQS free tier); **each node $0.0245/h, $0.59/day, $17.88/month** (t4g.small + 20 GB gp3 + public IPv4), at most 4 vCPU |
@@ -736,7 +737,7 @@ In the Cluster view the EKS panel folds into a chip right of TOPOLOGY / TELEMETR
 Under the EKS card's run pane (for the cluster named in its fields) is the ADD-ONS checklist: Pod Identity agent, metrics-server, Karpenter, AWS Load Balancer Controller, cert-manager, Kyverno, KEDA and the HPA scaling demo, in the order they install. Each row shows its own cost ("free", "+ use" for SQS-billed ones, "+ nodes" for Karpenter, which launches nodes at about $0.02/h each), how many pods it runs, and INSTALLED / PRESENT (put there by another stack or by hand, e.g. the demo's metrics-server) for the ones already on the cluster. Those cannot be ticked and are skipped.
 
 - The line under the list counts: "needs N free pod slots, you have M" from the cluster's nodes (the #71 check). The numbers need the cluster to be CONNECTED (§21). When N > M, INSTALL SELECTED refuses before anything runs. Add a node (§16, "Room for pods") or untick something.
-- Ticking an add-on whose need is missing (Karpenter, LBC or KEDA without the Pod Identity agent) adds the need, and the confirm says so.
+- The Pod Identity agent and metrics-server rows say INCLUDED WITH EKS: the EKS stack installs them (podIdentityAgent / metricsServer on its card), so they cannot be ticked. Karpenter, LBC or KEDA on a cluster without the agent is refused with "RUN the EKS stack for <cluster>". Older clusters whose add-ons a pod-identity / metrics-server / demo / pgcluster stack made: `node scripts/migrate-eks-addons.mjs <cluster>` (dry run; `--apply` hands them to the EKS stack by state delete + import, deleting nothing).
 - INSTALL SELECTED asks once, listing each stack it will create (`<addon>-<cluster>`), the pods and the hourly cost. It then runs one job in the EKS card's pane: for each add-on, `pulumi preview`, then `pulumi up`, one after the other. It stops at the first failure with the ERROR plate (what failed, why, BY HAND). The add-ons before it stay installed; press it again after fixing, and they are skipped.
 - **with add-ons**: tick it before RUN on a new cluster. When the cluster run is DONE, CONNECT runs, then INSTALL SELECTED for the ticked add-ons. The card shows `QUEUED · …` while it waits. If any stage fails, the queue stops there and says why.
 

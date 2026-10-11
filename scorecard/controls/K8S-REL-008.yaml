@@ -11,5 +11,5 @@ evaluator: hpa-has-metrics
 aggregation: proportional
 requires: [kube-hpas, kube-metrics]
 whyItMatters: "An HPA without the metrics API never scales: it looks configured and does nothing."
-remediation: { summary: "Install metrics-server from the Stacks add-ons.", effort: S, addon: metrics-server }
+remediation: { summary: "Rerun the EKS stack with metricsServer on (it installs metrics-server).", effort: S, addon: metrics-server }
 verification: "If any app HPA exists, metrics.k8s.io answers."
