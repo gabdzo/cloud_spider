@@ -21,7 +21,7 @@ import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.
 import { sampleKubeSnapshot } from "./kube-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
-import { campFixtures, runHint, watchLine } from "./upgrade-rules.js";
+import { campFixtures, nodeGroupChange, runHint, watchLine } from "./upgrade-rules.js";
 import { CONNECT_REGION, connectCommand, connectionOf, contextsForCluster, sameEndpoint, validCluster, viewerAlias } from "./kube-connect.js";
 import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
@@ -44,6 +44,9 @@ function accountRead(error) {
 
 export const KUBE_VIEW_TTL = 5_000;
 export const KUBE_MAP_TTL = 30_000;
+
+// How long RUN waits for the EKS card's live read (instance type check).
+const LIVE_MS = 20_000;
 
 export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL }) {
   const stdout = [];
@@ -944,6 +947,26 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     async upgradeLog(module = "", values = {}) {
       return upgrade?.logFor ? upgrade.logFor(module, values) : null;
     },
+    // The EKS card's fields as the stack has them: its config, and for a
+    // cluster that is up the live node group (instance type, desired size),
+    // which wins. Read-only.
+    async upgradeLive(module = "", values = {}) {
+      if (!upgrade?.liveParams) return { values: {} };
+      const got = await upgrade.liveParams(module, values).catch((error) => ({ error: error?.message || "the stack did not answer" }));
+      if (got.error || module !== "eks") return got;
+      const cluster = got.outputs?.name || got.values?.clusterName || values.clusterName || "";
+      const group = got.outputs?.nodeGroup || "";
+      if (!cluster || !group || !eks?.describeNodegroup) return { ...got, source: "stack config" };
+      const live = await eks.describeNodegroup(cluster, group).catch(() => null);
+      if (!live?.found) return { ...got, source: "stack config" };
+      return {
+        ...got,
+        source: `node group ${group}`,
+        nodeGroup: group,
+        values: { ...got.values, ...(live.instanceType ? { instanceType: live.instanceType } : {}), ...(Number.isInteger(live.desired) ? { nodeCount: String(live.desired) } : {}) },
+        scaling: { desired: live.desired, min: live.min, max: live.max },
+      };
+    },
     async upgradeRun(requestOrigin, body = {}) {
       if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the upgrade did not happen", hint: "Open Cloud Spider at the address npm start printed (http://127.0.0.1:9241); another page cannot run stacks." };
       if (!upgrade?.run) return { error: "upgrades are not set up", hint: "" };
@@ -966,6 +989,16 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
           if (refusal) return no(refusal);
         }
         if (addonById(body.module)) addons?.forget?.();
+        // A new instance type replaces the node group: only when asked.
+        if (body.module === "eks" && body.action === "up" && !body.replaceNodeGroup && this.upgradeLive) {
+          // Bounded: a pulumi that hangs must not hang RUN (no answer: no check).
+          const live = await Promise.race([
+            this.upgradeLive("eks", { clusterName: body.params?.clusterName || "cloudspider-up" }).catch(() => null),
+            new Promise((done) => setTimeout(done, LIVE_MS, null).unref?.()),
+          ]);
+          const change = nodeGroupChange({ instanceType: live?.values?.instanceType, nodeGroup: live?.nodeGroup }, body.params || {});
+          if (change) return no(change);
+        }
         let clusters;
         if (body.module === "eks" && body.action === "up" && eks?.listClusters) {
           const listed = await eks.listClusters();

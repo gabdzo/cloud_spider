@@ -431,6 +431,23 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       const saved = runLog.latest(stack, { tail: 0 });
       return saved ? { log: saved.log, text: saved.text } : null;
     },
+    // What the card's existing stack holds (read-only): its config values
+    // for the card's parameters and its outputs. The EKS card fills its
+    // fields from this so RUN never changes the instance type by accident.
+    async liveParams(module, values = {}) {
+      const spec = UPGRADES.find((item) => item.id === module);
+      if (!spec) return { error: "no such upgrade" };
+      const checked = checkParams(spec, { ...values, ...(spec.id === "eks" ? { instanceType: "", nodeCount: "" } : {}) });
+      if (checked.error) return { error: checked.error };
+      const stack = stackFor(spec, checked.values, spec.id === "eks" ? await legacyFor() : undefined);
+      // A stack that is running is not read (its run holds it; a second RUN
+      // is refused as busy anyway).
+      if (jobs.get(stack)?.running) return { stack, values: {}, outputs: {}, busy: true };
+      const directory = join(cwd, spec.dir);
+      const config = await capture(run, directory, childEnvFor(env), ["config", "--json", "--stack", stack]);
+      if (config.error) return { stack, values: {}, outputs: {}, missing: /no stack named|not found|does not exist/i.test(config.error) };
+      return { stack, values: configValues(spec, config.text), outputs: await stackOutputs(run, directory, childEnvFor(env), stack) };
+    },
     async facts(module, values = {}) {
       const spec = UPGRADES.find((item) => item.id === module);
       if (!spec) return { error: "no such upgrade" };
@@ -929,6 +946,35 @@ export function capture(run, directory, env, args) {
       else resolve({ text });
     });
   });
+}
+
+// `pulumi config --json` → the card's own parameters (secrets are never
+// read: without --show-secrets they come back without a value).
+export function configValues(spec, text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return {};
+  }
+  const out = {};
+  for (const parameter of spec.parameters) {
+    const entry = data?.[`${spec.project}:${parameter.name}`];
+    if (!entry || entry.secret || entry.value == null) continue;
+    out[parameter.name] = String(entry.value);
+  }
+  return out;
+}
+
+async function stackOutputs(run, directory, env, stack) {
+  const out = await capture(run, directory, env, ["stack", "output", "--json", "--stack", stack]);
+  if (out.error) return {};
+  try {
+    const data = JSON.parse(out.text);
+    return { name: typeof data.name === "string" ? data.name : "", nodeGroup: typeof data.nodeGroup === "string" ? data.nodeGroup : "" };
+  } catch {
+    return {};
+  }
 }
 
 async function readFacts(run, directory, spec, env, stack = spec.stack, values = {}) {

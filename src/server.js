@@ -1601,6 +1601,8 @@ const page = `<!doctype html>
   #pip label select, #pip label input { flex: 0 1 200px; }
   #pip .field-note { color: var(--status-broken); font-size: 11px; font-style: normal; text-align: right; }
   #pip .field-note:empty { display: none; }
+  #pip .live-line { display: flex; flex-direction: column; gap: 2px; color: var(--pip-bright); font-size: 11px; letter-spacing: 0.06em; }
+  #pip .live-line .field-note { text-align: left; font-weight: bold; }
   #pip .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   #pip .actions input { flex: 1 1 140px; }
   #pip .danger { border-color: var(--status-broken); color: var(--status-broken); }
@@ -2453,6 +2455,15 @@ async function route(app, req, res) {
       return;
     }
     send(res, 200, await app.bundleRun(req.headers.origin, body));
+    return;
+  }
+
+  // The card's fields as its stack has them (EKS: the live node group).
+  if (req.method === "GET" && url.pathname === "/api/upgrade/live") {
+    const values = {};
+    const value = url.searchParams.get("clusterName");
+    if (value) values.clusterName = value;
+    send(res, 200, app.upgradeLive ? await app.upgradeLive(url.searchParams.get("module") || "", values) : { values: {} });
     return;
   }
 

@@ -79,3 +79,14 @@ export function numberProblem(parameter, value) {
   const n = Number(value);
   return Number.isInteger(n) && n >= parameter.min && n <= parameter.max ? "" : `${parameter.name}: ${parameter.min} to ${parameter.max}`;
 }
+
+// The EKS card's LIVE line: what the cluster's stack runs now (GET
+// /api/upgrade/live), and a warning when the card's instance type differs.
+export function liveLine(live, values = {}) {
+  const v = live?.values || {};
+  if (!v.instanceType && !v.nodeCount) return { text: "", warn: "" };
+  const nodes = v.nodeCount ? ` · ${v.nodeCount} node${v.nodeCount === "1" ? "" : "s"}` : "";
+  const text = `LIVE · ${v.instanceType || "?"}${nodes} (${live.source || "stack config"})`;
+  const warn = v.instanceType && values.instanceType && values.instanceType !== v.instanceType ? `instanceType ${values.instanceType} REPLACES the node group (live: ${v.instanceType})` : "";
+  return { text, warn };
+}
