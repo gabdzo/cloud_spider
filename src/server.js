@@ -1053,6 +1053,31 @@ const page = `<!doctype html>
   #kube-tabs button { font: inherit; font-size: 11px; letter-spacing: 0.14em; padding: 5px 12px; color: var(--pip-dim); background: var(--pip-ink); border: 1px solid var(--pip-dark); cursor: pointer; }
   #kube-tabs button:hover { color: var(--pip-bright); border-color: var(--pip-dim); }
   #kube-tabs button[aria-pressed="true"] { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); box-shadow: 0 0 10px var(--glow-soft); }
+  /* Kube context switcher (kube-contexts.js): a row of lit push-buttons,
+     one per context, each with its health lamp and scope. */
+  #kube-ctx { position: absolute; z-index: 4; right: 14px; top: 8px; display: flex; align-items: stretch; gap: 0; padding: 3px; background: var(--btn-skirt); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-rim-hi), 0 2px 6px var(--btn-shade); max-width: calc(100% - 330px); overflow-x: auto; }
+  #kube-ctx[hidden] { display: none; }
+  #kube-ctx > b { align-self: center; padding: 0 8px 0 6px; font-size: 9px; letter-spacing: 0.2em; color: var(--pip-dim); white-space: nowrap; }
+  #kube-ctx button { position: relative; display: grid; grid-template-columns: 10px auto; grid-template-rows: auto auto; gap: 0 7px; align-items: center; min-width: 92px; padding: 4px 12px 4px 9px; font: inherit; text-align: left; color: var(--btn-off-label); background: linear-gradient(180deg, var(--btn-off-top), var(--btn-off-mid) 45%, var(--btn-off-low)); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-gloss), inset 0 -2px 0 var(--btn-shade); cursor: pointer; }
+  #kube-ctx button + button { margin-left: 3px; }
+  #kube-ctx button:hover { background: linear-gradient(180deg, var(--btn-hover), var(--btn-off-mid) 45%, var(--btn-off-low)); color: var(--pip-mid); }
+  #kube-ctx button[aria-pressed="true"] { color: var(--btn-lit-label); background: linear-gradient(180deg, var(--btn-lit-top), var(--btn-lit-mid) 45%, var(--btn-lit-low)); box-shadow: inset 0 1px 0 var(--btn-gloss-lit), inset 0 2px 4px var(--btn-shade), 0 0 10px var(--btn-glow-far); }
+  #kube-ctx button i { grid-row: 1 / 3; width: 9px; height: 9px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim), 0 0 0 1px var(--lamp-off-hi); }
+  #kube-ctx button.ok i { background: var(--lamp-on); box-shadow: 0 0 6px var(--btn-glow), inset 0 0 0 1px var(--lamp-on-core); }
+  #kube-ctx button.warn i { background: var(--status-hang); box-shadow: 0 0 6px var(--status-hang); }
+  #kube-ctx button.fail i { background: var(--status-broken); box-shadow: 0 0 7px var(--status-broken); animation: blink 1.2s steps(1) infinite; }
+  #kube-ctx button.error i { background: var(--status-broken); opacity: 0.6; }
+  #kube-ctx button span { font-size: 11px; letter-spacing: 0.14em; white-space: nowrap; }
+  #kube-ctx button small { font-size: 9px; letter-spacing: 0.08em; color: var(--pip-dim); white-space: nowrap; }
+  #kube-ctx button[aria-pressed="true"] small { color: var(--pip-hot); opacity: 0.75; }
+  #kube-ctx button { padding-right: 26px; }
+  #kube-ctx button em { position: absolute; top: 3px; right: 3px; min-width: 15px; padding: 0 3px; font-style: normal; font-size: 9px; line-height: 13px; text-align: center; color: var(--pip-ink); background: var(--status-broken); border: 1px solid var(--btn-rim); }
+  #kube-ctx button.warn em { background: var(--status-hang); }
+  @media (max-width: 900px) {
+    #kube-ctx { top: 44px; right: 8px; max-width: calc(100% - 16px); }
+    #kube-ctx > b { display: none; }
+    #kube-ctx button { min-width: 0; }
+  }
   #kube-tele { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 50px 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; }
   .kt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 6px 10px; border: 1px solid var(--pip-dark); background: var(--pip-ink); }
   .kt-why { color: var(--pip-mid); flex: 1; min-width: 200px; }
@@ -1811,6 +1836,7 @@ const page = `<!doctype html>
       </div>
       <section id="vault-page" aria-label="vaults page" hidden></section>
       <nav id="kube-tabs" aria-label="cluster screens" hidden></nav>
+      <nav id="kube-ctx" aria-label="kube contexts" hidden></nav>
       <section id="kube-tele" aria-label="cluster telemetry" hidden></section>
       <section id="kube-ops" aria-label="cluster add-ons" hidden></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
@@ -2067,7 +2093,7 @@ async function route(app, req, res) {
       send(res, 200, samplePodDetail(url.searchParams.get("name") || "", { previous: url.searchParams.get("previous") === "1" }));
       return;
     }
-    send(res, 200, await app.clusterPod({ ns: url.searchParams.get("ns"), name: url.searchParams.get("name"), container: url.searchParams.get("container"), previous: url.searchParams.get("previous") === "1", tail: url.searchParams.get("tail") }));
+    send(res, 200, await app.clusterPod({ ns: url.searchParams.get("ns"), name: url.searchParams.get("name"), container: url.searchParams.get("container"), previous: url.searchParams.get("previous") === "1", tail: url.searchParams.get("tail"), context: url.searchParams.get("context") || "" }));
     return;
   }
 
@@ -2080,7 +2106,7 @@ async function route(app, req, res) {
       return;
     }
     await app.boot();
-    send(res, 200, await app.clusterPodInspect({ ns: url.searchParams.get("ns"), name: url.searchParams.get("name") }));
+    send(res, 200, await app.clusterPodInspect({ ns: url.searchParams.get("ns"), name: url.searchParams.get("name"), context: url.searchParams.get("context") || "" }));
     return;
   }
 
@@ -2093,7 +2119,14 @@ async function route(app, req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/cluster") {
     await app.boot();
-    send(res, 200, await app.clusterView());
+    send(res, 200, await app.clusterView({ context: url.searchParams.get("context") || "" }));
+    return;
+  }
+
+  // The health watch (kube-health.js): radio rows and one lamp per kube
+  // context. Reads nothing itself; main.js polls on each context's clock.
+  if (req.method === "GET" && url.pathname === "/api/kube/health") {
+    send(res, 200, app.kubeHealth ? app.kubeHealth() : { radio: [], contexts: [] });
     return;
   }
 

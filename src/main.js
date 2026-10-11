@@ -8,6 +8,8 @@ import { createTerraformReader } from "./terraform.js";
 import { createLearn } from "./learn.js";
 import { createAgent } from "./agent.js";
 import { createKube } from "./kube.js";
+import { loadContexts } from "./kube-contexts.js";
+import { readFile } from "node:fs/promises";
 import { createAddons } from "./addons.js";
 import { listen, listenExit } from "./server.js";
 import { dirname, join } from "node:path";
@@ -33,7 +35,12 @@ const vaults = {
   sampleFailures,
   sampleLogs,
 };
-const kube = createKube();
+// Kube contexts (kube-contexts.js): env, cloudspider.contexts.yaml, or the
+// one CLOUDSPIDER_KUBE_CONTEXT. The first is the primary one.
+const kubeConfig = await loadContexts({ env: process.env, read: readFile, cwd: root });
+for (const line of kubeConfig.errors) process.stdout.write(`kube contexts: ${line}\n`);
+const kubeContexts = kubeConfig.contexts.map((ctx) => ({ ...ctx, kube: createKube({ context: ctx.name, namespaces: ctx.namespaces }) }));
+const kube = kubeContexts[0]?.kube || createKube();
 const app = createApp({
   ec2: aws.ec2,
   trail: aws.trail,
@@ -48,6 +55,7 @@ const app = createApp({
   vaults,
   agent: createAgent({ cwd: root }),
   kube,
+  kubeContexts,
   addons: createAddons({ eks: aws.eks, kube }),
   logGroup: process.env.CLOUDSPIDER_LOG_GROUP || "",
   pageOrigin,
@@ -74,6 +82,12 @@ process.stdout.write(`cloud spider ${pageOrigin}\n`);
 setInterval(() => {
   app.poll().catch((error) => app.fail("DescribeInstances", error));
 }, 1000);
+
+// The pod health watch: each context on its own clock (default 60 s).
+setInterval(() => {
+  app.watchKube().catch(() => {});
+}, 15_000);
+setTimeout(() => app.watchKube().catch(() => {}), 3000);
 
 setInterval(() => {
   app.refreshRadio(false).catch((error) => app.fail("LookupEvents", error));

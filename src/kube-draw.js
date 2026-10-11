@@ -183,7 +183,22 @@ function drawLane(ctx, lane, columns, hover) {
   ctx.font = TINY;
   ctx.fillStyle = hover ? PIP.bright : PIP.dim;
   const hint = lane.open ? "[ FOLD ]" : "[ OPEN ]";
-  ctx.fillText(hint, x + w - 14 - ctx.measureText(hint).width, y + 19);
+  const hintX = x + w - 14 - ctx.measureText(hint).width;
+  ctx.fillText(hint, hintX, y + 19);
+  // What this namespace would not let us read: amber chips, never a failure.
+  if (lane.noAccess?.length) {
+    const text = `NO ACCESS · ${lane.noAccess.join(" ").toUpperCase()}`;
+    ctx.font = TINY;
+    const cw = Math.ceil(ctx.measureText(text).width) + 14;
+    const cx = hintX - 12 - cw;
+    ctx.fillStyle = rgba(WORLD.amber, 0.14);
+    ctx.fillRect(cx, y + 6, cw, barH - 12);
+    ctx.strokeStyle = rgba(WORLD.amber, 0.85);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx + 0.5, y + 6.5, cw - 1, barH - 13);
+    ctx.fillStyle = WORLD.amber;
+    ctx.fillText(text, cx + 7, y + 19);
+  }
   if (!lane.open || !columns) return;
   // Column captions.
   ctx.font = TINY;

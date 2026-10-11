@@ -22,6 +22,8 @@ import { sampleTerraformState } from "./terraform.js";
 import { createLinkCache } from "./aws-path.js";
 import { createMetricsCache, sampleMetrics } from "./metrics.js";
 import { idleCandidates, morningReport, nextIdleStreak } from "./layout.js";
+import { createHealthWatch, morningLine } from "./kube-health.js";
+import { DEFAULT_POLL_MS, scopeText } from "./kube-contexts.js";
 
 const CALL = { stop: "StopInstances", start: "StartInstances" };
 const ACCOUNT_HINT = "Set AWS_PROFILE=default and AWS_REGION=eu-north-1.";
@@ -38,7 +40,7 @@ function accountRead(error) {
 export const KUBE_VIEW_TTL = 5_000;
 export const KUBE_MAP_TTL = 30_000;
 
-export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write }) {
+export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -80,25 +82,61 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   // One kube snapshot shared by the Cluster view and the map's compound
   // (map-kube.js): one read in flight, reused for maxAge. Each fresh read
   // also feeds the cluster SLOs.
-  let kubeCached = null;
-  let kubeFlight = null;
-  async function readKube(maxAge) {
-    if (kubeCached && now() - kubeCached.at < maxAge) return kubeCached.snap;
-    if (!kubeFlight) {
-      kubeFlight = kube
-        .snapshot()
+  // Every kube context (kube-contexts.js) keeps its own client and its own
+  // snapshot cache; the first is the primary one (`kube`), the only one that
+  // feeds the SLOs, the map, TELEMETRY and OPS.
+  const contexts = (kubeContexts?.length ? kubeContexts : kube ? [{ name: kube.context, label: kube.context, namespaces: kube.scope || "*", pollMs: DEFAULT_POLL_MS, kube }] : []).map((ctx, index) => ({ ...ctx, primary: index === 0 }));
+  const primary = contexts[0] || null;
+  if (primary && !kube) kube = primary.kube;
+  const kubeCaches = new Map();
+  const kubeFlights = new Map();
+  const polledAt = new Map();
+  const health = createHealthWatch({ clock: now });
+  async function readContext(ctx, maxAge) {
+    const cached = kubeCaches.get(ctx.name);
+    if (cached && now() - cached.at < maxAge) return cached.snap;
+    if (!kubeFlights.has(ctx.name)) {
+      const flight = Promise.resolve()
+        .then(() => ctx.kube.snapshot())
         .catch((failure) => ({ error: failure?.message || "the cluster did not answer" }))
         .then((snap) => {
-          if (snap.clusterName) sloCluster = snap.clusterName;
-          if (!snap.unset && sloCluster) clusterSlo.record(sloCluster, snap);
-          kubeCached = { at: now(), snap };
+          if (ctx.primary) {
+            if (snap.clusterName) sloCluster = snap.clusterName;
+            if (!snap.unset && sloCluster) clusterSlo.record(sloCluster, snap);
+          }
+          kubeCaches.set(ctx.name, { at: now(), snap });
+          polledAt.set(ctx.name, now());
+          health.take(ctx, snap);
           return snap;
         })
         .finally(() => {
-          kubeFlight = null;
+          kubeFlights.delete(ctx.name);
         });
+      kubeFlights.set(ctx.name, flight);
     }
-    return kubeFlight;
+    return kubeFlights.get(ctx.name);
+  }
+  async function readKube(maxAge) {
+    return readContext(primary, maxAge);
+  }
+  function contextList() {
+    return contexts.map((ctx) => ({ ...health.summary(ctx), primary: ctx.primary, poll: ctx.pollMs }));
+  }
+  function contextFor(name) {
+    return name ? contexts.find((ctx) => ctx.name === name) || null : primary;
+  }
+  async function contextView(ctx) {
+    const snap = await readContext(ctx, KUBE_VIEW_TTL);
+    if (snap.error) {
+      return { context: ctx.name, error: "", diagram: null, headline: "", note: snap.unset ? `kube context ${ctx.name}: ${snap.error} (docs/RUN-ME.md §19)` : `kube context ${ctx.name}: ${snap.error}` };
+    }
+    return {
+      context: ctx.name,
+      error: "",
+      diagram: diagramFromKube(snap, { cluster: { name: snap.clusterName } }),
+      headline: "",
+      note: [`inside ${snap.clusterName} via kube context ${ctx.name} (read-only, ${scopeText(ctx.namespaces)})`, ...(snap.notes || [])].join(" · "),
+    };
   }
   const linkCache = createLinkCache({
     read: (name, balancers) => path.targetLines(name, balancers),
@@ -125,13 +163,16 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   // six-hour cache only; this never calls Cost Explorer.
   function morning() {
     if (!place) return null;
-    return morningReport({
+    const report = morningReport({
       place,
       events: radio.changes(),
       trail: radio.trailState(),
       bill: costCache?.bill || null,
       idleStreak,
     });
+    // One line per kube context that has been read: counts and the worst pods.
+    const pods = contexts.filter((ctx) => polledAt.has(ctx.name)).map((ctx) => health.summary(ctx)).filter((sum) => sum.lamp !== "off").map((sum) => ({ context: sum.context, label: sum.label, ...morningLine(sum) }));
+    return pods.length ? { ...report, pods } : report;
   }
 
   const waits = createWaits({
@@ -443,7 +484,28 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       }
       return costFlight;
     },
-    async clusterView() {
+    // Cluster view. No context (or the primary one): the region's EKS
+    // clusters and, inside, the primary kube context. Another context: its
+    // own namespaces only, no AWS read at all.
+    async clusterView({ context = "" } = {}) {
+      // An unknown name (a context since removed from the config) is the
+      // primary one.
+      const ctx = contextFor(context) || primary;
+      const view = ctx && !ctx.primary ? await contextView(ctx) : await this.primaryClusterView();
+      return contexts.length > 1 ? { ...view, context: ctx?.name || "", contexts: contextList() } : view;
+    },
+    // The health watch (kube-health.js): each context read at its own
+    // interval (default 60 s) through the shared snapshot cache. main.js
+    // calls this on a timer; the radio and the morning take the result.
+    async watchKube() {
+      const due = contexts.filter((ctx) => now() - (polledAt.get(ctx.name) ?? -Infinity) >= ctx.pollMs);
+      await Promise.all(due.map((ctx) => readContext(ctx, KUBE_VIEW_TTL)));
+      return this.kubeHealth();
+    },
+    kubeHealth() {
+      return { radio: health.radio(), contexts: contextList() };
+    },
+    async primaryClusterView() {
       const at = region;
       const failed = (sentence) => ({
         region: at,
@@ -498,7 +560,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       if (!kube) return { clusters: [], unset: true, note: "no kube context: the map shows the cluster without its apps" };
       const snap = await readKube(KUBE_MAP_TTL);
       if (snap.error) return { clusters: [], unset: !!snap.unset, error: snap.error };
-      return { clusters: [{ name: snap.clusterName || sloCluster || "cluster", diagram: diagramFromKube(snap, {}), at: kubeCached?.at || now() }], nextAt: (kubeCached?.at || now()) + KUBE_MAP_TTL };
+      const at = kubeCaches.get(primary.name)?.at || now();
+      return { clusters: [{ name: snap.clusterName || sloCluster || "cluster", diagram: diagramFromKube(snap, {}), at }], nextAt: at + KUBE_MAP_TTL };
     },
     // The telemetry screen: node gauges, pressure lamps, top pods, 1 h of
     // history kept in memory (kube-telemetry.js). Read-only kube reads.
@@ -533,16 +596,18 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       return opsFlight;
     },
     // One pod's last log lines and events (Cluster view, on click).
-    async clusterPod({ ns, name, container, previous = false, tail = 80 } = {}) {
-      if (!kube) return { error: "the kube context is not set up" };
-      return kube.podDetail(String(ns || ""), String(name || ""), String(container || ""), { previous: !!previous, tail: Number(tail) || 80 }).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
+    async clusterPod({ ns, name, container, previous = false, tail = 80, context = "" } = {}) {
+      const client = contextFor(context)?.kube;
+      if (!client) return { error: "the kube context is not set up" };
+      return client.podDetail(String(ns || ""), String(name || ""), String(container || ""), { previous: !!previous, tail: Number(tail) || 80 }).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
     },
     // Deep-inspect (read-only, redacted): kube-inspect.js.
-    async clusterPodInspect({ ns, name } = {}) {
-      if (!kube?.podInspect) return { error: "the kube context is not set up" };
-      const raw = await kube.podInspect(String(ns || ""), String(name || "")).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
+    async clusterPodInspect({ ns, name, context = "" } = {}) {
+      const ctx = contextFor(context);
+      if (!ctx?.kube?.podInspect) return { error: "the kube context is not set up" };
+      const raw = await ctx.kube.podInspect(String(ns || ""), String(name || "")).catch((failure) => ({ error: failure?.message || "the pod did not answer" }));
       if (raw.error) return { error: raw.error };
-      const history = tele?.podHistory ? tele.podHistory(`${ns}/${name}`) : null;
+      const history = ctx.primary && tele?.podHistory ? tele.podHistory(`${ns}/${name}`) : null;
       return { ...inspectPod(raw.pod, { events: raw.events, chain: raw.chain, usage: raw.usage, history, now: now() }), eventNote: raw.eventNote || "" };
     },
     async pathView(query = {}) {

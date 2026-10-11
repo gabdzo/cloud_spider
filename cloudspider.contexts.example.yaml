@@ -1,0 +1,20 @@
+# Copy to cloudspider.contexts.yaml (gitignored) and edit. Cloud Spider only
+# ever sends GET requests, with the credentials of each kubeconfig context.
+#
+# The first context is the primary one: the map compound, TELEMETRY, OPS and
+# the cluster SLOs read it. Every context gets its own entry in the Cluster
+# view's context switcher, a health watch (CrashLoopBackOff, image pulls,
+# OOMKilled, rising restarts, Pending > 5 min, failed Jobs, unready
+# Deployments) on the radio, and a line on the morning report.
+#
+# namespaces: a list reads ONLY those namespaces (namespaced endpoints, no
+# cluster-wide lists, no nodes): enough for a Role bound in those namespaces.
+# "*" reads the whole cluster (needs cluster-wide list rights).
+contexts:
+  - context: cloudspider-viewer
+    label: DEMO
+    namespaces: "*"
+  - context: my-work-context
+    label: WORK
+    namespaces: [team-a, team-b]
+    poll: 60   # seconds between health reads (at least 30; default 60)

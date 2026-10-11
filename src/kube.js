@@ -6,6 +6,8 @@
 // fixed list of paths. The viewer role is bound to AmazonEKSViewPolicy (no
 // Secrets) plus a ClusterRole for nodes and metrics, so even a bug here
 // cannot change the cluster.
+// More contexts (kube-contexts.js) each get their own client; a context
+// scoped to namespaces reads only namespaced paths in those namespaces.
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { request } from "node:https";
@@ -77,6 +79,19 @@ export const PATHS = {
   pod: (ns, name) => `/api/v1/namespaces/${checkName(ns)}/pods/${checkName(name)}`,
   replicaSet: (ns, name) => `/apis/apps/v1/namespaces/${checkName(ns)}/replicasets/${checkName(name)}`,
   podMetricsOne: (ns, name) => `/apis/metrics.k8s.io/v1beta1/namespaces/${checkName(ns)}/pods/${checkName(name)}`,
+  jobs: () => "/apis/batch/v1/jobs",
+  // Namespaced lists: all a Role bound in one namespace can read. A context
+  // scoped to namespaces (kube-contexts.js) uses only these.
+  nsPods: (ns) => `/api/v1/namespaces/${checkName(ns)}/pods`,
+  nsServices: (ns) => `/api/v1/namespaces/${checkName(ns)}/services`,
+  nsEvents: (ns) => `/api/v1/namespaces/${checkName(ns)}/events?limit=200`,
+  nsDeployments: (ns) => `/apis/apps/v1/namespaces/${checkName(ns)}/deployments`,
+  nsDaemonsets: (ns) => `/apis/apps/v1/namespaces/${checkName(ns)}/daemonsets`,
+  nsStatefulsets: (ns) => `/apis/apps/v1/namespaces/${checkName(ns)}/statefulsets`,
+  nsJobs: (ns) => `/apis/batch/v1/namespaces/${checkName(ns)}/jobs`,
+  nsIngresses: (ns) => `/apis/networking.k8s.io/v1/namespaces/${checkName(ns)}/ingresses`,
+  nsHpas: (ns) => `/apis/autoscaling/v2/namespaces/${checkName(ns)}/horizontalpodautoscalers`,
+  nsPodMetrics: (ns) => `/apis/metrics.k8s.io/v1beta1/namespaces/${checkName(ns)}/pods`,
   podEvents: (ns, name) =>
     `/api/v1/namespaces/${checkName(ns)}/events?fieldSelector=${encodeURIComponent(`involvedObject.kind=Pod,involvedObject.name=${checkName(name)}`)}`,
 };
@@ -138,8 +153,16 @@ function httpsGet(url, { ca, token, timeout = TIMEOUT_MS }) {
   });
 }
 
-export function createKube({ env = process.env, run = spawn, read = readFile, get = httpsGet, clock = Date.now } = {}) {
-  const contextName = env.CLOUDSPIDER_KUBE_CONTEXT || DEFAULT_CONTEXT;
+// What a namespaced snapshot reads per namespace, and which of those the
+// view cannot do without (the rest degrade to a "no access" chip).
+export const SCOPED_READS = { pods: "nsPods", services: "nsServices", deployments: "nsDeployments", daemonsets: "nsDaemonsets", statefulsets: "nsStatefulsets", jobs: "nsJobs", ingresses: "nsIngresses", podMetrics: "nsPodMetrics" };
+
+// context: the kubeconfig context; namespaces: "*" (the whole cluster) or a
+// list, in which case only namespaced paths in those namespaces are read.
+export function createKube({ env = process.env, run = spawn, read = readFile, get = httpsGet, clock = Date.now, context = "", namespaces = "*" } = {}) {
+  const contextName = context || env.CLOUDSPIDER_KUBE_CONTEXT || DEFAULT_CONTEXT;
+  const scope = Array.isArray(namespaces) ? namespaces.map((ns) => checkName(ns)) : "*";
+  const inScope = (ns) => scope === "*" || scope.includes(String(ns || ""));
   let target = null;
   let cred = null;
   let pending = null;
@@ -191,7 +214,7 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
       cred = null;
       return { error: "the cluster said 401 (the token was refused)" };
     }
-    if (res.status === 403) return { forbidden: true, error: "forbidden for the viewer role" };
+    if (res.status === 403) return { forbidden: true, error: `forbidden for kube context ${contextName}` };
     if (res.status === 404) return { missing: true, error: "not found" };
     if (res.status < 200 || res.status >= 300) return { error: `the cluster said ${res.status}` };
     if (text) return { text: res.body };
@@ -202,8 +225,31 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     }
   }
 
+  // Namespaced: every SCOPED_READS list in every listed namespace, merged.
+  // A 403 or 404 on one list is a chip on that namespace, never a failure.
+  async function scopedSnapshot(t) {
+    const names = Object.keys(SCOPED_READS);
+    const jobs = scope.flatMap((ns) => names.map((name) => ({ ns, name, path: PATHS[SCOPED_READS[name]](ns) })));
+    const results = await Promise.all(jobs.map((job) => getPath(job.path)));
+    const out = { clusterName: t.clusterName, scope, notes: [], access: {}, namespaces: scope.map((ns) => ({ metadata: { name: ns } })), nodes: [], nodeMetrics: [] };
+    for (const name of names) out[name] = [];
+    const hard = results.filter((r) => r.error && !r.forbidden && !r.missing);
+    if (hard.length === results.length) return { error: hard[0]?.error || "the cluster did not answer", clusterName: t.clusterName, scope };
+    jobs.forEach((job, i) => {
+      const r = results[i];
+      out[job.name].push(...(r.json?.items || []));
+      if (job.name === "podMetrics") return;
+      if (r.forbidden || (r.error && !r.missing)) (out.access[job.ns] ||= []).push(job.name);
+    });
+    const blind = Object.keys(out.access);
+    if (blind.length) out.notes.push(`no access: ${blind.map((ns) => `${ns} (${out.access[ns].join(", ")})`).join("; ")}`);
+    if (!out.podMetrics.length && out.pods.length) out.notes.push("no pod metrics");
+    return out;
+  }
+
   return {
     context: contextName,
+    scope,
     async target() {
       const t = await resolveTarget();
       return t.error ? { error: t.error } : { server: t.server, clusterName: t.clusterName };
@@ -213,6 +259,7 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     async snapshot() {
       const t = await resolveTarget();
       if (t.error) return { error: t.error, unset: true };
+      if (scope !== "*") return scopedSnapshot(t);
       const names = ["namespaces", "nodes", "pods", "services", "deployments", "daemonsets", "statefulsets", "ingresses", "podMetrics", "nodeMetrics"];
       const results = await Promise.all(names.map((name) => getPath(PATHS[name]())));
       const out = { clusterName: t.clusterName, notes: [] };
@@ -232,6 +279,23 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     async ops() {
       const t = await resolveTarget();
       if (t.error) return { error: t.error, unset: true };
+      if (scope !== "*") {
+        // Namespaced: events, HPAs and workloads per namespace; nothing
+        // cluster-scoped (nodes, cluster policies, node pools) is asked.
+        const lists = { events: "nsEvents", hpas: "nsHpas", deployments: "nsDeployments", daemonsets: "nsDaemonsets" };
+        const jobs = scope.flatMap((ns) => Object.keys(lists).map((name) => ({ ns, name, path: PATHS[lists[name]](ns) })));
+        const results = await Promise.all(jobs.map((job) => getPath(job.path)));
+        if (results.every((r) => r.error && !r.forbidden && !r.missing)) return { error: results[0]?.error || "the cluster did not answer", clusterName: t.clusterName };
+        const out = { clusterName: t.clusterName, scope, absent: ["policyReports", "clusterPolicyReports", "clusterPolicies", "nodePools", "nodeClaims", "scaledObjects"], forbidden: [], errors: [], nodes: [], policyReports: [], clusterPolicyReports: [], clusterPolicies: [], nodePools: [], nodeClaims: [], scaledObjects: [] };
+        for (const name of Object.keys(lists)) out[name] = [];
+        jobs.forEach((job, i) => {
+          const r = results[i];
+          out[job.name].push(...(r.json?.items || []));
+          if (r.forbidden) out.forbidden.push(`${job.ns}/${job.name}`);
+          else if (r.error && !r.missing) out.errors.push(`${job.ns}/${job.name}: ${r.error}`);
+        });
+        return out;
+      }
       const names = ["events", "hpas", "deployments", "daemonsets", "nodes", "policyReports", "clusterPolicyReports", "clusterPolicies", "nodePools", "nodeClaims", "scaledObjects"];
       const results = await Promise.all(names.map((name) => getPath(PATHS[name]())));
       const fatal = results.find((r) => r.error && !r.forbidden && !r.missing);
@@ -259,6 +323,7 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
       return getPath(path, { text: true });
     },
     async podDetail(ns, name, container = "", { previous = false, tail = 80 } = {}) {
+      if (!inScope(ns)) return { error: `namespace ${String(ns).slice(0, 63)} is not in kube context ${contextName}'s list` };
       let logPath;
       let eventPath;
       try {
@@ -278,6 +343,7 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     // Deep-inspect: the pod object, who owns it, its events and usage.
     // GETs only; the caller redacts (kube-inspect.js).
     async podInspect(ns, name) {
+      if (!inScope(ns)) return { error: `namespace ${String(ns).slice(0, 63)} is not in kube context ${contextName}'s list` };
       let paths;
       try {
         paths = { pod: PATHS.pod(ns, name), events: PATHS.podEvents(ns, name), usage: PATHS.podMetricsOne(ns, name) };

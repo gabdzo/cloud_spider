@@ -106,6 +106,7 @@ const MAP_VIEW_KEY = "cloudspider.mapView";
 const MAP_TAG_KEY = "cloudspider.mapTagKey";
 const kubePanel = document.querySelector("#kube-panel");
 const kubeTabs = document.querySelector("#kube-tabs");
+const kubeCtxEl = document.querySelector("#kube-ctx");
 const kubeTele = document.querySelector("#kube-tele");
 const kubeOps = document.querySelector("#kube-ops");
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
@@ -136,6 +137,20 @@ const spider = [];
 // Kubernetes events worth hearing (scaling, Karpenter nodes, policy,
 // warnings), from /api/cluster/ops; newest first, at most three.
 let kubeRows = [];
+// The pod health watch (kube-health.js): its newest radio rows and the
+// lamps per kube context, every 30 s.
+let healthRows = [];
+async function pullKubeHealth() {
+  if (!tabVisible || sample) return;
+  const body = await fetch("/api/kube/health").then((r) => r.json()).catch(() => null);
+  if (!body || sample) return;
+  const rows = (Array.isArray(body.radio) ? body.radio : []).map(({ time, status, text, count }) => ({ time, status, text, issue: "", count }));
+  if (JSON.stringify(rows) !== JSON.stringify(healthRows)) {
+    healthRows = rows;
+    renderRadioPanel();
+  }
+  if (mode === "cluster" && clusterData) renderContexts({ ...clusterData, contexts: body.contexts });
+}
 let spiderRegion = "";
 let spend = null;
 let spendSample = null;
@@ -267,7 +282,8 @@ function logRows() {
     ? [{ time: 0, status: "fail", text: errorEl.textContent, issue: "", count: 1 }]
     : [];
   const trail = (ui.trail || []).filter((row) => row?.text && row.text !== "the radio is quiet");
-  return [...pageIssue, ...spider, ...kubeRows, ...trail].slice(0, 8);
+  const pods = sample ? [] : healthRows.slice(0, 3);
+  return [...pageIssue, ...spider, ...pods, ...kubeRows, ...trail].slice(0, 8);
 }
 
 function renderRadioPanel() {
@@ -324,10 +340,41 @@ function renderMorning() {
   ui.marks = currentMorning()?.marks || null;
   morningEl.hidden = !report;
   if (!report) return;
-  const key = JSON.stringify([report.hurting, report.changed, report.idle, morningFolded]);
+  const pods = sample ? [] : report.pods || [];
+  const key = JSON.stringify([report.hurting, report.changed, report.idle, pods, morningFolded]);
   if (key === morningShown) return;
   morningShown = key;
   const order = ["hurting", "changed", "idle"];
+  // One PODS line per kube context (kube-health.js), after the three.
+  const podLines = pods.map((line, index) => {
+    const id = `m-pods-${index}`;
+    let li = morningEl.querySelector(`#${id}`);
+    if (!li) {
+      li = vel("li", "m-line");
+      li.id = id;
+      const iconEl = document.createElement("img");
+      iconEl.className = "px";
+      iconEl.alt = "";
+      iconEl.width = 16;
+      iconEl.height = 16;
+      iconEl.src = iconURL("pod");
+      const ledEl = vel("i", "m-led");
+      ledEl.setAttribute("aria-hidden", "true");
+      li.append(iconEl, vel("b"), vel("span", "m-text"), ledEl);
+      morningLines.idle.parentElement.append(li);
+    }
+    li.querySelector("b").textContent = `PODS · ${String(line.label || line.context).toUpperCase()}`;
+    morningLines[id] = li;
+    report[id] = line;
+    return id;
+  });
+  for (const li of [...morningEl.querySelectorAll(".m-line[id^='m-pods-']")]) {
+    if (!podLines.includes(li.id)) {
+      delete morningLines[li.id];
+      li.remove();
+    }
+  }
+  order.push(...podLines);
   const lead = order.slice().sort((a, b) => (MORNING_RANK[report[a]?.status] ?? 3) - (MORNING_RANK[report[b]?.status] ?? 3))[0];
   for (const name of order) {
     const line = report[name] || { status: "unknown", text: "not checked." };
@@ -1293,7 +1340,63 @@ try {
 let clusterTabsShown = false;
 
 function clusterHasScreens() {
-  return mode === "cluster" && clusterData?.diagram?.layout === "kube";
+  return mode === "cluster" && clusterData?.diagram?.layout === "kube" && isPrimaryContext();
+}
+
+// ---- kube contexts (kube-contexts.js): one lit button per context ----
+const CLUSTER_CONTEXT_KEY = "cloudspider.cluster.context";
+let clusterContext = readPref(CLUSTER_CONTEXT_KEY, "");
+let contextsShown = "";
+
+function isPrimaryContext() {
+  const list = clusterData?.contexts || [];
+  if (!list.length || !clusterData?.context) return true;
+  return list.find((item) => item.context === clusterData.context)?.primary !== false;
+}
+
+function contextScope(item) {
+  if (item.scope === "*") return "ALL NAMESPACES";
+  return `${item.scope.length} NS · ${item.scope.join(" ")}`;
+}
+
+function renderContexts(body) {
+  const list = mode === "cluster" && !sample && Array.isArray(body?.contexts) ? body.contexts : [];
+  kubeCtxEl.hidden = list.length < 2;
+  if (list.length < 2) {
+    contextsShown = "";
+    return;
+  }
+  const current = body.context || list[0].context;
+  const key = JSON.stringify([current, list.map((item) => [item.context, item.label, item.lamp, item.total, item.scope])]);
+  if (key === contextsShown) return;
+  contextsShown = key;
+  const title = vel("b", "", "CONTEXT");
+  const buttons = list.map((item) => {
+    const button = vel("button", item.lamp);
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(item.context === current));
+    const issues = item.total ? `${item.total} issue${item.total === 1 ? "" : "s"}: ${(item.worst || []).map((w) => w.line).join("; ")}` : item.lamp === "ok" ? "every pod healthy" : item.error || "not read yet";
+    button.title = `${item.context} · ${item.scope === "*" ? "every namespace" : item.scope.join(", ")} · ${issues}`;
+    button.append(vel("i"), vel("span", "", item.label.toUpperCase()), vel("small", "", contextScope(item)));
+    if (item.total) button.append(vel("em", "", String(item.total)));
+    button.addEventListener("click", () => setClusterContext(item.context));
+    return button;
+  });
+  kubeCtxEl.replaceChildren(title, ...buttons);
+}
+
+function setClusterContext(name) {
+  if (name === (clusterData?.context || clusterContext)) return;
+  clusterContext = name;
+  writePref(CLUSTER_CONTEXT_KEY, name);
+  clusterData = null;
+  clusterSelected = null;
+  showPod(null);
+  contextsShown = "";
+  setStatus(ui, `reading ${name}`);
+  renderChrome();
+  draw();
+  pullCluster();
 }
 
 function syncClusterScreens() {
@@ -1414,9 +1517,11 @@ async function pullKubeRadio() {
 function placedCluster() {
   if (clusterData?.diagram?.layout === "kube") {
     // Laid out once per answer, width and lane state; frames only paint.
-    const key = `${map.clientWidth || 0}|${JSON.stringify(clusterLanes)}`;
+    // A narrow window puts the context switcher under the tabs.
+    const top = !kubeCtxEl.hidden && (map.clientWidth || 0) < 900 ? 88 : 52;
+    const key = `${map.clientWidth || 0}|${top}|${JSON.stringify(clusterLanes)}`;
     if (clusterPlaced.data !== clusterData || clusterPlaced.key !== key) {
-      clusterPlaced = { key, data: clusterData, placed: layoutKube(clusterData.diagram, { width: map.clientWidth || 0, state: clusterLanes, top: 52 }) };
+      clusterPlaced = { key, data: clusterData, placed: layoutKube(clusterData.diagram, { width: map.clientWidth || 0, state: clusterLanes, top }) };
     }
     return clusterPlaced.placed;
   }
@@ -1792,6 +1897,8 @@ function showRadioFor(next) {
 
 function enterPath() {
   dropVaultRoute();
+  kubeCtxEl.hidden = true;
+  contextsShown = "";
   showRadioFor("path");
   mode = "path";
   clusterData = null;
@@ -1834,9 +1941,11 @@ async function pullCluster() {
   clusterFailure = "";
   const wasSample = sample;
   try {
-    const response = await fetch(wasSample ? "/api/cluster-sample" : "/api/cluster");
+    const asked = clusterContext;
+    const response = await fetch(wasSample ? "/api/cluster-sample" : `/api/cluster${asked ? `?context=${encodeURIComponent(asked)}` : ""}`);
     const body = await readBody(response);
-    if (body.stale || mode !== "cluster" || wasSample !== sample) return;
+    if (body.stale || mode !== "cluster" || wasSample !== sample || asked !== clusterContext) return;
+    renderContexts(body);
     clusterData = body;
     clusterFailure = "";
     if (clusterSelected && !body.diagram?.nodes?.some((node) => node.id === clusterSelected)) clusterSelected = null;
@@ -1883,6 +1992,8 @@ function enterCluster() {
 }
 
 function leaveCluster() {
+  kubeCtxEl.hidden = true;
+  contextsShown = "";
   showRadioFor("map");
   mode = "map";
   clusterData = null;
@@ -2084,6 +2195,7 @@ function showWorkload(node) {
 let podTicket = 0;
 const podInspector = createPodInspector(kubePanel, {
   sample: () => sample,
+  context: () => (clusterData?.context && !isPrimaryContext() ? clusterData.context : ""),
   onClose: () => {
     clusterSelected = null;
     draw();
@@ -2979,7 +3091,9 @@ setInterval(() => {
 setInterval(() => {
   pullKubeRadio();
   pullMapKube();
+  pullKubeHealth();
 }, 30_000);
+setTimeout(pullKubeHealth, 2500);
 setTimeout(pullMapKube, 1500);
 setTimeout(pullKubeRadio, 4000);
 
