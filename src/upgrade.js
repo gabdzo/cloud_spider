@@ -271,7 +271,37 @@ function tailLines(lines, max = SHOW_CHARS) {
 // are kept in memory only (the tests).
 const ALL_UPGRADES = UPGRADES;
 
-export function createUpgrade({ run = spawn, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES } = {}) {
+export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) => process.kill(pid, signal), cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES } = {}) {
+  // Every child this server spawned that has not exited yet (pulumi and the
+  // odd npm/kubectl step), for a clean shutdown (src/shutdown.js). Each runs
+  // detached, in its own process group: a terminal Ctrl-C reaches the server
+  // only, and the server asks pulumi to cancel.
+  const live = new Map();
+  let stopping = false;
+  const run = (cmd, args, opts) => {
+    const child = spawnChild(cmd, args, opts);
+    if (child && child.pid) {
+      const own = (args || []).indexOf("--stack");
+      live.set(child, { pid: child.pid, text: [cmd, ...(args || [])].join(" "), stack: own >= 0 ? args[own + 1] : "" });
+    }
+    return child;
+  };
+  const exited = (child) => child.exitCode != null || child.signalCode != null || child.done;
+  function children() {
+    for (const child of live.keys()) if (exited(child)) live.delete(child);
+    return [...live.values()].map((item) => ({ ...item, stack: item.stack || jobOfPid(item.pid)?.stack || "" }));
+  }
+  function jobOfPid(pid) {
+    return runningJobs().find((item) => item.childPid === pid) || null;
+  }
+  const signalOne = (pid, signal) => {
+    try {
+      kill(pid, signal);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   // Every UPGRADES below is this server's list (stacks.eks.maxNodes applied).
   const UPGRADES = withEksMaxNodes(ALL_UPGRADES, eksMaxNodes);
   // Runs go on side by side when they touch different stacks. One stack
@@ -414,6 +444,24 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       }));
     },
     status,
+    children,
+    // Shutdown, step 1: SIGINT to each running child (pulumi cancels, writes
+    // its state and releases the stack lock); no further step or run starts.
+    stop() {
+      stopping = true;
+      const items = children();
+      for (const item of items) signalOne(item.pid, "SIGINT");
+      return items.length;
+    },
+    // Shutdown, step 2: SIGKILL to each child's process group (pulumi and its
+    // provider plugins, which would otherwise be left orphaned); the pid
+    // alone if the group is gone.
+    force() {
+      stopping = true;
+      const items = children();
+      for (const item of items) if (!signalOne(-item.pid, "SIGKILL")) signalOne(item.pid, "SIGKILL");
+      return items.length;
+    },
     // The cluster the old shared stack really holds, read from its state
     // (the `name` output), not from Pulumi.upgrade.yaml, which the old Stacks
     // panel rewrote on every new name.
@@ -674,6 +722,7 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
   }
 
   function startJob({ module, action, stack, directory, where, command, steps, onDone, locks = [stack], cluster = "", isCluster = false }) {
+    if (stopping) return refuse({ module, action, stack, error: "the server is shutting down (Ctrl-C); start Cloud Spider again to run this", command });
     runs += 1;
     const startedAt = clock();
     // The newest event is this run; a refusal on another card stays on that
@@ -708,6 +757,7 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
     for (const lock of mine.locks) jobs.set(lock, mine);
     apply(run, directory, job, childEnvFor(env), {
       clock,
+      stopping: () => stopping,
       save,
       gate: gateDir,
       done: () => {
@@ -765,7 +815,7 @@ export function upgradeSteps(spec, stack, verb, values) {
 
 const KEEP_LINES = 400;
 
-function apply(run, directory, job, env, { clock = () => Date.now(), save = () => {}, done = () => {}, gate = null } = {}) {
+function apply(run, directory, job, env, { clock = () => Date.now(), save = () => {}, done = () => {}, gate = null, stopping = () => false } = {}) {
   let index = 0;
   const log = (text) => job.logHandle?.append(text);
   const say = (text, err = false) => {
@@ -799,8 +849,15 @@ function apply(run, directory, job, env, { clock = () => Date.now(), save = () =
       step.release = null;
     }
   };
+  const STOPPED = "the server was stopped (Ctrl-C) while this ran: pulumi was asked to cancel and release the stack lock; the steps after this one did not run";
   const next = () => {
     releaseAll();
+    if (stopping() && index < job.steps.length) {
+      for (const step of job.steps.slice(index)) step.status = "skipped";
+      say(STOPPED, true);
+      finish(STOPPED);
+      return;
+    }
     if (index >= job.steps.length) {
       finish();
       return;
@@ -867,6 +924,7 @@ function apply(run, directory, job, env, { clock = () => Date.now(), save = () =
       finish(text);
       return;
     }
+    job.childPid = child?.pid;
     if (!child?.stdout || !child?.stderr || typeof child.on !== "function") {
       step.status = "failed";
       job.lines.push(`${cmd} did not start`);
@@ -899,6 +957,14 @@ function apply(run, directory, job, env, { clock = () => Date.now(), save = () =
     child.on("close", (code) => {
       if (over) return;
       over = true;
+      job.childPid = null;
+      if (code !== 0 && stopping()) {
+        step.status = "failed";
+        for (const later of job.steps.slice(index)) later.status = "skipped";
+        say(STOPPED, true);
+        finish(STOPPED);
+        return;
+      }
       if (code !== 0) {
         step.status = "failed";
         // A batch step names its own stack (an add-on in the EKS pane).
