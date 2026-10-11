@@ -337,7 +337,7 @@ Each continuous check becomes a scorecard control (schema §5.1) with the same e
 | NET-K8S-001 Each application namespace has a default-deny ingress NetworkPolicy, and the CNI enforces it | security | config | K-NP-01, K-NP-02 | medium |
 | NET-K8S-002 Every Service selected by an Ingress/TG has ≥1 ready endpoint in ≥2 zones | reliability | runtime | K-SVC-02 | high |
 
-Status (N10, 2026-10-11): all of these except NET-TLS-001 ship in `scorecard/controls/NET-*.yaml`, evaluated by `src/score/evaluators/network.js` over the `kube-network` and `aws-net` collectors. NET-TLS-001 waits for an ACM reader. NET-K8S-001 checks enforcement only, because default deny is already K8S-SEC-005. NET-DNS-004 uses the counters since the pods started. NET-VPC-002 checks both sides for IP targets and the load balancer side for instance targets.
+Status (N10, 2026-10-11): all of these ship in `scorecard/controls/NET-*.yaml`, evaluated by `src/score/evaluators/network.js` over the `kube-network` and `aws-net` collectors. NET-TLS-001 reads ACM (certificates in use by load balancers or CloudFront): FAIL under 14 days, WARN under 30, as approved; no certificate in use is NOT_APPLICABLE. NET-K8S-001 checks enforcement only, because default deny is already K8S-SEC-005. NET-DNS-004 uses the counters since the pods started. NET-VPC-002 checks both sides for IP targets and the load balancer side for instance targets.
 
 These join the scorecard's `networking` category. Their results feed the same scoring, coverage and gates (§6 of the scorecard); this feature adds no scoring rules of its own.
 

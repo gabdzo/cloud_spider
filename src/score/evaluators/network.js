@@ -194,4 +194,35 @@ export const networkEvaluators = {
       return { id: `${s.region}/${s.id}`, pass: share > min, detail: `${s.free} of ${size} free (${(share * 100).toFixed(1)}%)` };
     }) };
   },
+  // NET-TLS-001: certificates that load balancers or CloudFront serve
+  // expire in ≥ failDays (FAIL) and ≥ warnDays (else a pass marked WARN).
+  // Certificates used by anything else, or by nothing, are not judged.
+  "cert-expiry"({ data, now = Date.now(), params = {} }) {
+    const failDays = params.failDays ?? 14;
+    const warnDays = params.warnDays ?? 30;
+    const users = (arns) => arns.map((a) => {
+      const lb = /:loadbalancer\/(?:app|net)\/([^/]+)/.exec(a);
+      if (lb) return `load balancer ${lb[1]}`;
+      const cf = /^arn:aws[\w-]*:cloudfront::\d*:distribution\/(.+)$/.exec(a);
+      return cf ? `CloudFront ${cf[1]}` : null;
+    }).filter(Boolean);
+    const items = [];
+    const unknown = [];
+    for (const c of data["aws-acm"].certificates || []) {
+      const by = users(c.inUseBy || []);
+      if (!by.length) continue;
+      const id = `${c.region}/${c.domain}`;
+      if (!c.notAfter) {
+        unknown.push({ id, reason: "no expiry date (certificate not issued yet?)" });
+        continue;
+      }
+      const days = Math.floor((Date.parse(c.notAfter) - now) / 86_400_000);
+      const when = days < 0 ? `expired ${-days} day${days === -1 ? "" : "s"} ago` : `expires in ${days} day${days === 1 ? "" : "s"}`;
+      const where = `${c.notAfter.slice(0, 10)}${c.type === "IMPORTED" ? ", imported: no automatic renewal" : ""}; used by ${by.slice(0, 2).join(", ")}${by.length > 2 ? ` (+${by.length - 2})` : ""}`;
+      if (days < failDays) items.push({ id, pass: false, detail: `${when} (${where})`, exposure: days < 7 ? 2 : 1 });
+      else if (days < warnDays) items.push({ id, pass: true, warn: true, detail: `WARN: ${when} (${where})` });
+      else items.push({ id, pass: true, detail: `${when}` });
+    }
+    return { items, unknown };
+  },
 };

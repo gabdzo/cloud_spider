@@ -48,10 +48,10 @@ async function collectAll(handlers = ACCOUNT) {
 }
 const dataOf = (out) => Object.fromEntries([...out].map(([k, v]) => [k, v.fields]));
 
-test("the account NET controls load, all in networking (NET-TLS-001 waits for an ACM reader: a permanent stub would only cut coverage)", async () => {
+test("the account NET controls load, all in networking", async () => {
   const { controls } = await loadCatalog();
   const aws = controls.filter((c) => c.id.startsWith("NET-") && c.target === "aws").map((c) => c.id).sort();
-  assert.deepEqual(aws, ["NET-DNS-001", "NET-DNS-002", "NET-HTTP-001", "NET-TLS-002", "NET-VPC-001", "NET-VPC-002", "NET-VPC-003"]);
+  assert.deepEqual(aws, ["NET-DNS-001", "NET-DNS-002", "NET-HTTP-001", "NET-TLS-001", "NET-TLS-002", "NET-VPC-001", "NET-VPC-002", "NET-VPC-003"]);
 });
 
 test("collectors: zones and records, distributions, load balancer edges, subnets, NACLs, flow logs; reads only", async () => {

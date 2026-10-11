@@ -23,6 +23,7 @@ export function fakeAws(handlers, calls = []) {
       iam: () => client("iam", "us-east-1"),
       r53: () => client("r53", "us-east-1"),
       cf: () => client("cf", "us-east-1"),
+      acm: (region) => client("acm", region),
     },
   };
 }

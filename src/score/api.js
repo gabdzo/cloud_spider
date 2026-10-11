@@ -13,7 +13,7 @@ import { kubeWorkloads } from "./collectors/kube-workloads.js";
 import { awsCloudtrail } from "./collectors/aws-cloudtrail.js";
 import { awsEks } from "./collectors/aws-eks.js";
 import { awsElbv2 } from "./collectors/aws-elbv2.js";
-import { awsCloudfront, awsLbEdge, awsRoute53, awsVpcNet } from "./collectors/aws-net.js";
+import { awsAcm, awsCloudfront, awsLbEdge, awsRoute53, awsVpcNet } from "./collectors/aws-net.js";
 import { awsNetwork } from "./collectors/aws-network.js";
 import { awsObservability } from "./collectors/aws-observability.js";
 import { awsRds } from "./collectors/aws-rds.js";
@@ -25,7 +25,7 @@ import { permissionReport } from "./permissions.js";
 import { renderReport } from "./report.js";
 
 export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac, kubeNetwork];
-export const AWS_COLLECTORS = [awsNetwork, awsElbv2, awsEks, awsRds, awsCloudtrail, awsObservability, awsRoute53, awsCloudfront, awsLbEdge, awsVpcNet];
+export const AWS_COLLECTORS = [awsNetwork, awsElbv2, awsEks, awsRds, awsCloudtrail, awsObservability, awsRoute53, awsCloudfront, awsLbEdge, awsVpcNet, awsAcm];
 const SHORT = (name) => String(name || "").split("/").pop();
 
 // The browser never gets evidence fields, only statuses and results.
