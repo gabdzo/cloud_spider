@@ -9,7 +9,8 @@ ownership rule that ends the 409s.
 ## The rule
 
 1. **The EKS stack owns the cluster-level EKS managed add-ons**:
-   `eks-pod-identity-agent`, `metrics-server`, `aws-ebs-csi-driver`.
+   `vpc-cni` (since #172, with prefix delegation), `eks-pod-identity-agent`,
+   `metrics-server`, `aws-ebs-csi-driver`.
    They are on by default (`podIdentityAgent`, `metricsServer`,
    `ebsCsiDriver` config, `false` turns one off).
 2. **No other stack creates them.** A stack that uses one declares it
@@ -23,8 +24,11 @@ ownership rule that ends the 409s.
    earlier is handed to the EKS stack: `pulumi state delete` in the old stack
    (no AWS call), then the EKS stack adopts it with the Pulumi `import`
    option. `scripts/migrate-eks-addons.mjs <cluster>` does it, dry run first.
-5. vpc-cni, CoreDNS and kube-proxy are EKS's self-managed defaults (made by
-   EKS at cluster creation, not managed add-ons); no stack touches them.
+5. CoreDNS and kube-proxy are EKS's self-managed defaults (made by EKS at
+   cluster creation, not managed add-ons); no stack touches them. vpc-cni
+   was one too until #172: the EKS stack's next RUN creates the managed
+   add-on, which takes over the existing aws-node DaemonSet
+   (resolveConflicts OVERWRITE), see "Pod capacity".
 
 ## Stacks
 
