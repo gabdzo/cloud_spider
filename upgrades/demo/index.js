@@ -127,25 +127,36 @@ new k8s.rbac.v1.RoleBinding("viewer-otel-metrics", {
   subjects: [{ apiGroup: "rbac.authorization.k8s.io", kind: "Group", name: "cloudspider-viewers" }],
 }, inNs);
 
+// Both collectors run the upstream contrib image: ADOT (aws-otel-collector)
+// ships no kubeletstats or hostmetrics receiver, so the node agent crashed on
+// start. Multi-arch (t4g arm64 and amd64), tag and index digest pinned; its
+// entrypoint is /otelcol-contrib. Its AWS exporters (awscloudwatchlogs,
+// awsxray) take EKS Pod Identity credentials (aws-sdk-go-v2 default chain).
+// test/demo-otel.test.js checks both configs against this release's
+// components (test/fixtures/otelcol-contrib-components.json); component ids
+// use 0.162's canonical names (file_log, kubelet_stats, host_metrics,
+// otlp_grpc), the old ones are deprecated aliases there.
+export const COLLECTOR_IMAGE = "otel/opentelemetry-collector-contrib:0.162.0@sha256:39923a8e431bd1f57be82411999d389fcfe40857492e4365456d97a4c1f74be6";
+
 export const collectorConfig = `receivers:
   otlp:
     protocols:
       grpc: { endpoint: 0.0.0.0:4317 }
       http: { endpoint: 0.0.0.0:4318 }
-  filelog:
+  file_log:
     include: [/var/log/pods/${ns}_*/*/*.log]
     exclude: [/var/log/pods/${ns}_otel-collector-*/*/*.log]
     start_at: end
     include_file_path: true
     operators:
       - type: container
-  kubeletstats:
+  kubelet_stats:
     collection_interval: 30s
     auth_type: serviceAccount
     endpoint: "https://\${env:K8S_NODE_IP}:10250"
     insecure_skip_verify: true
     metric_groups: [node, pod, container]
-  hostmetrics:
+  host_metrics:
     collection_interval: 30s
     root_path: /hostfs
     scrapers:
@@ -168,13 +179,13 @@ exporters:
     log_stream_name: pods
   awsxray:
     region: ${region}
-  otlp/gateway:
+  otlp_grpc/gateway:
     endpoint: otel-gateway:4317
     tls: { insecure: true }
 service:
   pipelines:
     logs:
-      receivers: [filelog, otlp]
+      receivers: [file_log, otlp]
       processors: [memory_limiter, batch]
       exporters: [awscloudwatchlogs]
     traces:
@@ -182,9 +193,9 @@ service:
       processors: [memory_limiter, batch]
       exporters: [awsxray]
     metrics:
-      receivers: [kubeletstats, hostmetrics]
+      receivers: [kubelet_stats, host_metrics]
       processors: [memory_limiter, resource/node, batch]
-      exporters: [otlp/gateway]
+      exporters: [otlp_grpc/gateway]
 `;
 const collectorConfigMap = new k8s.core.v1.ConfigMap("otel-collector", { metadata: { name: "otel-collector", namespace: ns }, data: { "config.yaml": collectorConfig } }, inNs);
 const collectorLabels = { app: "otel-collector" };
@@ -198,8 +209,11 @@ new k8s.apps.v1.DaemonSet("otel-collector", {
         serviceAccountName: collectorAccount.metadata.name,
         containers: [{
           name: "collector",
-          image: "public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0",
+          image: COLLECTOR_IMAGE,
           args: ["--config=/conf/config.yaml"],
+          // The image runs as uid 10001; /var/log/pods and the host's /proc are
+          // root's. Root in the container, no privilege escalation.
+          securityContext: { runAsUser: 0, runAsGroup: 0, allowPrivilegeEscalation: false },
           env: [
             { name: "K8S_NODE_NAME", valueFrom: { fieldRef: { fieldPath: "spec.nodeName" } } },
             { name: "K8S_NODE_IP", valueFrom: { fieldRef: { fieldPath: "status.hostIP" } } },
@@ -249,7 +263,7 @@ new k8s.apps.v1.Deployment("otel-gateway", {
       spec: {
         containers: [{
           name: "gateway",
-          image: "public.ecr.aws/aws-observability/aws-otel-collector:v0.50.0",
+          image: COLLECTOR_IMAGE,
           args: ["--config=/conf/config.yaml"],
           ports: [{ containerPort: 4317, name: "otlp-grpc" }, { containerPort: 8889, name: "prom" }],
           resources: { requests: { cpu: "10m", memory: "48Mi" }, limits: { memory: "128Mi" } },
