@@ -24,6 +24,7 @@ export const PRICES = {
   "rds-gp3-gb": { usd: 0.12, per: "month", text: "RDS gp3 GB" },
   "secret": { usd: 0.4, per: "month", text: "Secrets Manager secret" },
   "s3-gb": { usd: 0.023, per: "month", text: "S3 Standard GB" },
+  alb: { usd: 0.024, per: "hour", text: "Application Load Balancer" },
 };
 
 // Billed per request or per GB moved: $0 when nobody uses it.
@@ -33,6 +34,7 @@ export const USAGE = {
   cloudfront: "CloudFront requests and data out (free tier 1 TB)",
   logs: "CloudWatch Logs ingested and stored",
   "s3-requests": "S3 requests",
+  "alb-lcu": "ALB LCUs (new connections, active connections, bytes, rule evaluations; ~$0.008/LCU-hour)",
 };
 
 const round = (value, places) => Math.round(value * 10 ** places) / 10 ** places;
@@ -71,8 +73,11 @@ export function estimate(lines = []) {
 // with `perNode` is counted once per node (nodeCount).
 export function costFor(lines = [], params = {}) {
   const nodes = Math.max(1, Number(params.nodeCount) || 1);
-  return lines.map((line) => {
-    if (line.usage) return line;
+  // A line with `when` ({ param: value }) counts only when the card is set so
+  // (shopapi's ALB with expose=alb).
+  const on = (line) => !line.when || Object.entries(line.when).every(([key, value]) => String(params[key] ?? "") === String(value));
+  return lines.filter(on).map((line) => {
+    if (line.usage) return { usage: line.usage };
     let price = line.price;
     if (line.param && params[line.param] && PRICES[`${line.prefix || ""}${params[line.param]}`]) price = `${line.prefix || ""}${params[line.param]}`;
     const qty = (line.qty ?? 1) * (line.perNode ? nodes : 1);

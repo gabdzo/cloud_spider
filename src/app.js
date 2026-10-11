@@ -19,6 +19,8 @@ import { HELD_BY, destroyRefusal } from "../upgrades/eks-addons.js";
 import { needRefusal, needStates, needsOf } from "./stack-needs.js";
 import { shopReadiness } from "./shop-check.js";
 import { waitingLines } from "./run-waiting.js";
+import { bundleById, bundleConfirm, bundleSteps, stackBundlePlan } from "./stack-bundles.js";
+import { costFor, estimate } from "./stack-costs.js";
 import { UPGRADES } from "./upgrade.js";
 import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./addon-bundle.js";
 import { daemonSetCheck, daemonSetRoom, podRoom } from "../upgrades/addons/pod-room.js";
@@ -1022,6 +1024,55 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     },
     async stacksOn(cluster) {
       return stacksOn(cluster);
+    },
+    // A stack bundle (src/stack-bundles.js): body { bundle, cluster, params,
+    // plan }. plan: true answers the plan and its one-line approval; without
+    // it the bundle runs as one batch (preview, up per step). Refused before
+    // pulumi when the cluster or an EKS add-on a step needs is missing.
+    async stackBundle(requestOrigin, body = {}) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { error: "nothing ran", hint: "Open Cloud Spider at the address npm start printed." };
+      const bundle = bundleById(String(body.bundle || ""));
+      if (!bundle) return { error: "no such bundle", hint: "" };
+      const cluster = String(body.cluster || body.params?.clusterName || "cloudspider-up");
+      if (!validCluster(cluster)) return { error: "not a cluster name", hint: "" };
+      const params = { ...(body.params || {}), clusterName: cluster };
+      const steps = bundleSteps(bundle, params);
+      const specs = steps.map((step) => ({ step, spec: UPGRADES.find((item) => item.id === step.module) }));
+      // Needs no step meets: the cluster and its EKS add-ons.
+      const base = [];
+      for (const { step, spec } of specs) for (const need of needsOf(spec, step.params)) if (["eks", "eks-addon"].includes(need.kind) && !base.some((item) => item.kind === need.kind && item.id === need.id)) base.push({ ...need, owner: spec });
+      // Steps already there (each as the need a later card would have).
+      const asNeeds = specs.slice(0, -1).map(({ step }) => (addonById(step.module) ? { kind: "addon", id: step.module, cluster } : { kind: "card", id: step.module, cluster }));
+      const probes = await needProbes([...base, ...asNeeds], cluster, params);
+      const baseStates = needStates(base, probes);
+      const have = Object.fromEntries(needStates(asNeeds, probes).map((need) => [need.id, need.state === "ok"]));
+      const plan = stackBundlePlan(bundle, params, { have, base: baseStates, refusalFor: (need) => `${bundle.title}: ${needRefusal(need.owner, [need], cluster)}` });
+      const day = plan.order.reduce((sum, step) => {
+        const spec = UPGRADES.find((item) => item.id === step.module);
+        return sum + (spec?.cost ? estimate(costFor(spec.cost, step.params)).day : 0);
+      }, 0);
+      const confirm = bundleConfirm(bundle, plan, cluster, day);
+      if (body.plan) return { bundle: bundle.id, title: bundle.title, cluster, plan, confirm, day };
+      const no = (error) => (upgrade.refuse ? { ...upgrade.refuse({ module: steps.at(-1)?.module || "", action: "bundle", params, error }), plan } : { error, plan });
+      if (plan.refusal) return no(plan.refusal);
+      // A DaemonSet step needs a slot on every node (as on its own card).
+      const notes = {};
+      for (const step of plan.order) {
+        const spec = UPGRADES.find((item) => item.id === step.module);
+        if (!spec?.daemonSets?.length) continue;
+        const snap = await clusterSnapshot(cluster);
+        if (!snap || snap.error || !snap.nodes?.length || Array.isArray(snap.scope)) continue;
+        for (const ds of spec.daemonSets) {
+          const checked = daemonSetCheck(spec.title, ds, daemonSetRoom({ nodes: snap.nodes, pods: snap.pods || [] }, ds), cluster);
+          if (checked.refusal) return no(checked.refusal);
+          notes[spec.id] = [...(notes[spec.id] || []), ...checked.notes];
+        }
+      }
+      if (plan.order.some((step) => addonById(step.module))) addons?.forget?.();
+      const started = upgrade.stackBatch({ cluster, steps: plan.order, notes, title: "bundle", onDone: () => addons?.forget?.() });
+      const waitIn = [...new Set(plan.order.flatMap((step) => UPGRADES.find((item) => item.id === step.module)?.namespaces || []))];
+      if (started?.running && waitIn.length) watchWaiting(started.stack, cluster, waitIn);
+      return { ...started, plan, confirm };
     },
     async upgradeLog(module = "", values = {}) {
       return upgrade?.logFor ? upgrade.logFor(module, values) : null;

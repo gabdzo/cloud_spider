@@ -75,12 +75,38 @@ keep two clusters apart; nothing else in the account is shared.
 - The shopapi program itself reads namespace shop
   (`needs-pgcluster-namespace-shop`) and never creates it, so a run that
   skips the check still stops before the first resource.
-- Bundles, one plan and one approval, in dependency order:
-  - **Shop API bundle**: pgcluster (CNPG operator is inside it) → shopapi
-    (+ lbc first when expose=alb).
-  - **Demo bundle**: demo → scaling-demo.
+- Bundles (src/stack-bundles.js), one plan and one approval, in dependency
+  order, on every member's card: PLAN shows the order, what is skipped
+  (already on the cluster; never the last step) and the bill, and changes
+  nothing; RUN BUNDLE runs preview then up per step, stops at the first
+  failure, holds every step's stack lock, and shows on the last step's card.
+  Refused before Pulumi when the EKS cluster or one of its add-ons is missing,
+  and (Demo) when a full node has no room for the collector.
+  - **Shop API bundle**: pgcluster (CNPG operator is inside it) → lbc (only
+    when expose=alb) → shopapi with that expose.
+  - **Demo bundle**: demo → scaling-demo with demoApp=present, hpa=on.
 - pod-identity and metrics-server rows say INCLUDED WITH EKS; the scorecard's
   FIX for their controls reruns the EKS stack with its current settings.
+
+## Shop API on an ALB (expose=alb)
+
+`expose=none` (default) keeps PostgREST cluster-internal. `expose=alb` adds
+Ingress `shop/shopapi` in the drill's shape: ingressClassName `alb`,
+`scheme: internet-facing`, `target-type: ip` (pod IPs, so prefix-delegated
+pods are targets directly), health check `GET /items` every 10 s, 2/2
+thresholds, tags `project=shopapi,cluster=<c>,cloudspider=expendable`. The
+ALB is made by lbc (NEEDS chip `lbc` only when expose=alb) and belongs to the
+shopapi stack: destroy Shop API (or set expose=none) **before** lbc, or the
+ALB is orphaned. The stack exports `url`. PATH from the internet: IGW →
+public-subnet route 0.0.0.0/0 → ALB (2 AZs) → target group (pod IPs) →
+pods; test/shopapi-alb.test.js checks that binding on cloudspider-up's shape
+and that removing the IGW route breaks it.
+
+Cost chip: ALB $0.024/h (~$0.58/day, as priced in src/stack-costs.js) + 2 public IPv4 ($0.005/h each,
+~$0.24/day) ≈ **$0.82/day** idle, plus LCU usage (pennies at demo traffic).
+
+Recovery of the failed shopapi run: the failed creates never reached state,
+so after pgcluster is up, RUN Shop API again (or the bundle): it converges.
 
 ## Pod capacity
 

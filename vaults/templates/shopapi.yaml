@@ -2,8 +2,9 @@
 #   npm run vaults:new -- shopapi shopapi
 # upgrades/shopapi (Pulumi project cloudspider-shopapi, stack shopapi): in
 # namespace shop, a migration Job (psql) and PostgREST serving GET /items
-# from shopdb. It makes no AWS resources of its own, so the vault binds it
-# through its stack (spec.stack); the pods show in the Cluster view.
+# from shopdb. With expose=none it makes no AWS resources, so the vault binds
+# it through its stack (spec.stack); with expose=alb the controller's ALB
+# carries project=shopapi and lands here too. The pods show in the Cluster view.
 apiVersion: cloudspider/v1
 kind: Vault
 metadata:

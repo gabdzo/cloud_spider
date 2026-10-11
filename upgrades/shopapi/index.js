@@ -18,11 +18,16 @@ import { inheritTags, stackTags } from "../tags.js";
 // CloudNativePG writes. RDS instead: put the RDS URI into a Secret with the
 // same name and key (docs/RUN-ME.md §11); the RDS stack's VPC is separate,
 // so that needs peering, which this PoC does not make (open question).
-// It adds no AWS resources (beyond the ones on its node); the vault binds it
-// by its stack. Vault: vaults/templates/shopapi.yaml.
+// With expose=none it adds no AWS resources; the vault binds it by its stack.
+// With expose=alb the controller makes an ALB tagged project=shopapi. Vault: vaults/templates/shopapi.yaml.
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
 const secretName = config.get("dbSecret") || "shopdb-app";
+// none: a ClusterIP Service only (port-forward). alb: an internet-facing ALB
+// through the AWS Load Balancer Controller (the lbc add-on, which the card
+// checks for first).
+const expose = config.get("expose") || "none";
+if (!["none", "alb"].includes(expose)) throw new Error("expose must be none or alb");
 if (!/^[a-z][a-z0-9-]{1,62}$/.test(secretName)) throw new Error("dbSecret must be a Kubernetes name");
 
 inheritTags(pulumi, stackTags("shopapi", { cluster: clusterName }));
@@ -110,12 +115,40 @@ const api = new k8s.apps.v1.Deployment(
   { ...k, dependsOn: [shopNamespace, migrate], customTimeouts: { create: "5m", update: "5m" } },
 );
 
-new k8s.core.v1.Service("shopapi", {
+const service = new k8s.core.v1.Service("shopapi", {
   metadata: { name: "shopapi", namespace: ns, labels },
   spec: { selector: { app: "shopapi" }, ports: [{ name: "http", port: 80, targetPort: "http" }] },
 }, k);
+
+// expose=alb: the drill's Ingress shape (docs/disaster-drill-2026-10-11.md).
+// Targets are the pod IPs (target type ip); the health check is the API's own
+// GET /items. The ALB carries project=shopapi (the lbc stack's default tags
+// have no project, #93), so vaults/templates/shopapi.yaml owns it. Taking
+// this stack down deletes the Ingress and the controller deletes the ALB.
+const ingress = expose === "alb" ? new k8s.networking.v1.Ingress("shopapi", {
+  metadata: {
+    name: "shopapi",
+    namespace: ns,
+    labels,
+    annotations: {
+      "alb.ingress.kubernetes.io/scheme": "internet-facing",
+      "alb.ingress.kubernetes.io/target-type": "ip",
+      "alb.ingress.kubernetes.io/healthcheck-path": "/items",
+      "alb.ingress.kubernetes.io/healthcheck-interval-seconds": "10",
+      "alb.ingress.kubernetes.io/healthy-threshold-count": "2",
+      "alb.ingress.kubernetes.io/unhealthy-threshold-count": "2",
+      "alb.ingress.kubernetes.io/tags": `project=shopapi,cluster=${clusterName},cloudspider=expendable`,
+    },
+  },
+  spec: {
+    ingressClassName: "alb",
+    rules: [{ http: { paths: [{ path: "/", pathType: "Prefix", backend: { service: { name: "shopapi", port: { number: 80 } } } }] } }],
+  },
+}, { ...k, dependsOn: [shopNamespace, service, api], customTimeouts: { create: "10m", update: "10m" } }) : null;
 
 export const namespace = ns;
 export const deployment = api.metadata.name;
 export const migrationJob = migrate.metadata.name;
 export const portForward = `kubectl -n ${ns} port-forward svc/shopapi 3000:80`;
+export const exposed = expose;
+export const url = ingress ? ingress.status.loadBalancer.ingress[0].hostname.apply((host) => `http://${host}/items`) : "";

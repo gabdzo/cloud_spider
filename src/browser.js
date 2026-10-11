@@ -32,6 +32,7 @@ import { addonCommands, confirmPrompt, upgradeSpiderLine } from "./upgrade-rules
 import { liveLine, noteLines, numberProblem, radioLine, runModel } from "./run-pane.js";
 import { sourceText } from "./node-labels.js";
 import { costFor, costLine, estimate } from "./stack-costs.js";
+import { bundlesWith } from "./stack-bundles.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
 } from "./chrome.js";
@@ -3322,6 +3323,52 @@ async function refreshNeeds(spec, preset = {}) {
   row.hidden = !got.needs.length;
 }
 
+// Stack bundles (src/stack-bundles.js) on each card in one: PLAN shows the
+// order and the bill in one line (nothing runs), RUN BUNDLE is the one
+// approval for all of it. The run shows on the last step's card.
+function bundleRows(spec, preset = {}) {
+  const rows = el("div", { className: "sbundles" });
+  for (const bundle of bundlesWith(spec.id)) {
+    const row = el("div", { className: "sbundle", role: "group", ariaLabel: bundle.title });
+    const plan = el("em", { className: "sb-plan", textContent: bundle.note });
+    const planButton = el("button", { type: "button", className: "cmd", textContent: "plan", title: "what the bundle would run, in order, and its bill; changes nothing" });
+    const runButton = el("button", { type: "button", className: "cmd", textContent: "run bundle", disabled: true, title: "PLAN first: then this runs every step in order (preview, up), stopping at the first failure" });
+    const ask = () => {
+      const params = { ...pipParams(), ...preset };
+      return { bundle: bundle.id, cluster: params.clusterName || "cloudspider-up", params: Object.fromEntries(Object.entries(params).filter(([key]) => ["expose"].includes(key))) };
+    };
+    planButton.addEventListener("click", async () => {
+      plan.textContent = "planning…";
+      const got = await upgradeJson("/api/stacks/bundle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...ask(), plan: true }) });
+      plan.textContent = got.confirm || got.error || "no answer";
+      plan.classList.toggle("refused", Boolean(got.plan?.refusal || got.error));
+      runButton.disabled = Boolean(got.error || got.plan?.refusal || !got.plan?.order?.length);
+      runButton.dataset.cluster = got.cluster || "";
+    });
+    runButton.addEventListener("click", async () => {
+      runButton.disabled = true;
+      const got = await upgradeJson("/api/stacks/bundle", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ask()) });
+      if (got.error) {
+        plan.textContent = got.error;
+        plan.classList.add("refused");
+        return;
+      }
+      const last = got.module || "";
+      const cluster = runButton.dataset.cluster || "cloudspider-up";
+      if (last && last !== spec.id) {
+        if (!pipModules.find((item) => item.id === last)?.addon) pipKept[last] = { ...(pipKept[last] || {}), clusterName: cluster };
+        openCard = pipModules.find((item) => item.id === last)?.addon ? `${last}@${cluster}` : last;
+        drawPipForm();
+      }
+      refreshUpgrade(true);
+      renderChrome();
+    });
+    row.append(el("b", { textContent: bundle.title.toUpperCase() }), planButton, runButton, plan);
+    rows.append(row);
+  }
+  return rows;
+}
+
 async function openNeed(need) {
   const { card, cluster } = need.open || {};
   if (!card) return;
@@ -3344,7 +3391,7 @@ function cardBody(spec, preset = {}) {
   const body = el("div", { className: "card-body" });
   const watch = el("div", { id: "pip-watch" });
   watch.hidden = true;
-  body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), needsRow(spec, preset));
+  body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), needsRow(spec, preset), bundleRows(spec, preset));
   if (spec.nodeCost) body.append(nodeCostBlock(spec.nodeCost));
   body.append(watch);
   if (spec.id === "eks") body.append(connectRow("pip-connect"), el("div", { id: "pip-live", className: "live-line", hidden: true }, el("span", { className: "live-what" }), el("em", { className: "field-note live-warn" })));
@@ -3395,7 +3442,7 @@ function cardBody(spec, preset = {}) {
       field.addEventListener("input", () => promptConfirm(spec, body));
     }
     // The bill follows the instance type and node count picked here.
-    if (spec.costLines?.some((line) => line.param === parameter.name || (line.perNode && parameter.name === "nodeCount"))) {
+    if (spec.costLines?.some((line) => line.param === parameter.name || (line.perNode && parameter.name === "nodeCount") || (line.when && parameter.name in line.when))) {
       field.addEventListener("change", () => repriceCard(spec));
       field.addEventListener("input", () => repriceCard(spec));
     }
