@@ -97,6 +97,8 @@ Cloud Spider reads only the `cloudspider-viewer` context (override with `CLOUDSP
 
 ## 8. Deploy the demo (PR 23, a few cents a day on top of the cluster)
 
+The Stacks panel has an **EKS demo app** card (stack `demo`) with PREVIEW, RUN and TAKE IT DOWN; the commands below do the same by hand.
+
 ```sh
 cd upgrades/demo && npm ci
 pulumi stack init demo                           # once; same S3 backend and passphrase as the other stacks
@@ -112,6 +114,8 @@ cd ../..
 A t4g.small fits 11 pods: 6 system (aws-node, kube-proxy, 2× coredns, pod identity agent, metrics-server) plus 4 demo pods. If a demo pod stays Pending with "Too many pods", set `pulumi config set instanceType t4g.medium` in upgrades/eks and run `up` there again. That fits 17 pods and adds about $0.017/h.
 
 ## 9. Tear down (stops all spend)
+
+In the app: Stacks → **EKS demo app** → type `demo` → TAKE IT DOWN, then the EKS card. Or by hand:
 
 ```sh
 cd upgrades/demo && pulumi destroy --stack demo --yes && cd ../..
