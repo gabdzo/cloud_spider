@@ -158,7 +158,7 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
     const targets = workloads.filter((w) => w.ns === meta(svc).namespace && subset(svc.spec?.selector, w.labels));
     const ports = (svc.spec?.ports || []).map((p) => p.port).join(",");
     const healthy = targets.some((t) => t.status === "ok");
-    nodes.push({ id, kind: "service", ns: meta(svc).namespace, label: meta(svc).name, caption: `${svc.spec?.type || "ClusterIP"} :${ports}`, status: targets.length && !healthy ? "broken" : "ok" });
+    nodes.push({ id, kind: "service", ns: meta(svc).namespace, labels: meta(svc).labels || {}, label: meta(svc).name, caption: `${svc.spec?.type || "ClusterIP"} :${ports}`, status: targets.length && !healthy ? "broken" : "ok" });
     for (const t of targets) edges.push({ from: id, to: t.id, status: t.status === "broken" ? "broken" : "ok" });
   }
   const ingresses = (snapshot.ingresses || []).filter(inUserNs);
@@ -199,6 +199,7 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       caption: [state.word, state.restarts ? `${state.restarts} restart${state.restarts === 1 ? "" : "s"}` : "", usage].filter(Boolean).join(" · "),
       status: state.health,
       pod: { ns: meta(pod).namespace, name: meta(pod).name, containers: (pod.spec?.containers || []).map((c) => c.name), node: pod.spec?.nodeName || "" },
+      labels: meta(pod).labels || {},
     });
     const owner = ownerWorkload(pod, byKey);
     nodes[nodes.length - 1].owner = owner;
@@ -226,7 +227,15 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       host: { name: nodeName, type, pods: running, ready: item ? healthy : null, instanceId: (/\/((?:i-)?[0-9a-z-]+)$/.exec(item?.spec?.providerID || "") || [])[1] || "", load },
     });
   }
-  for (const n of nodes) delete n.labels;
+  // Labels stay for the search bar (kube-search.js, k=v), minus the
+  // controllers' hash labels, at most 16 per card.
+  for (const n of nodes) {
+    if (n.labels) {
+      const tags = Object.entries(n.labels).filter(([k]) => !/(pod-template-hash|controller-revision-hash|pod-template-generation)$/.test(k)).slice(0, 16);
+      if (tags.length) n.tags = Object.fromEntries(tags);
+    }
+    delete n.labels;
+  }
   return { layout: "kube", columns: usedColumns(nodes), nodes, edges };
 }
 

@@ -9,6 +9,7 @@ import { PIP, STATUS, WORLD, font, rgba } from "./theme.js";
 import { brackets, clip, drawSprite } from "./draw-kit.js";
 import { backdropLayer } from "./path-draw.js";
 import { KUBE_LAYOUT, cardText, expandChip, middle, pathOf } from "./kube-layout.js";
+import { placedMatches } from "./kube-search.js";
 
 const FONT = font(FONT_PX);
 const SMALL = font(FONT_PX - 2);
@@ -25,7 +26,9 @@ const KIND_TAG = { ingress: "ING", service: "SVC", pod: "POD", "pod-group": "POD
 const WORKLOAD_TAG = { Deployment: "DEPLOY", DaemonSet: "DAEMON", StatefulSet: "STATEFUL" };
 const COLUMN_TITLE = { ingress: "INGRESS", service: "SERVICES", workload: "WORKLOADS", pod: "PODS" };
 
-export function paintKube(ctx, { placed, selectedId, hoverId, animTime, width, height, reducedMotion, scrollTop = 0, stickyTop = scrollTop }) {
+// match: null, or { ids } from kube-search.js: matching cards are ringed,
+// the rest dimmed.
+export function paintKube(ctx, { placed, selectedId, hoverId, animTime, width, height, reducedMotion, scrollTop = 0, stickyTop = scrollTop, match = null }) {
   ctx.imageSmoothingEnabled = false;
   ctx.textBaseline = "alphabetic";
   ctx.clearRect(0, 0, width, height);
@@ -39,8 +42,9 @@ export function paintKube(ctx, { placed, selectedId, hoverId, animTime, width, h
 
   for (const lane of placed.lanes) drawLane(ctx, lane, placed.columns, hoverId === `lane:${lane.ns}`);
   // Dim traces first, the lit path on top.
+  const hits = match ? new Set(placed.nodes.filter((n) => placedMatches(n, match.ids)).map((n) => n.id)) : null;
   placed.edges.forEach((edge, i) => {
-    if (!lit.edges.has(i)) drawTrace(ctx, edge, { lit: false, faded: focused });
+    if (!lit.edges.has(i)) drawTrace(ctx, edge, { lit: false, faded: focused || (hits && !(hits.has(edge.from) && hits.has(edge.to))) });
   });
   placed.edges.forEach((edge, i) => {
     if (lit.edges.has(i)) drawTrace(ctx, edge, { lit: true, flow: flow.edges.has(i) && !reducedMotion, animTime });
@@ -53,6 +57,20 @@ export function paintKube(ctx, { placed, selectedId, hoverId, animTime, width, h
     if (focused && !on && node.kind !== "control-plane") {
       ctx.fillStyle = rgba(PIP.ink, 0.55);
       ctx.fillRect(node.x - 2, node.y - 2, node.w + 4, node.h + 4);
+    }
+    if (hits && node.kind !== "control-plane") {
+      if (hits.has(node.id)) {
+        // A search hit: a hot double ring, like a marked part on a schematic.
+        ctx.strokeStyle = PIP.hot;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(node.x - 3.5, node.y - 3.5, node.w + 7, node.h + 7);
+        ctx.strokeStyle = rgba(PIP.hot, 0.35);
+        ctx.lineWidth = 1;
+        ctx.strokeRect(node.x - 6.5, node.y - 6.5, node.w + 13, node.h + 13);
+      } else if (!focused || on) {
+        ctx.fillStyle = rgba(PIP.ink, 0.62);
+        ctx.fillRect(node.x - 2, node.y - 2, node.w + 4, node.h + 4);
+      }
     }
   }
   // Sticky: a tall lane scrolled past its head keeps its name and column

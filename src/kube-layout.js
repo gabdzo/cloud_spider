@@ -145,6 +145,7 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
       ns: head.ns,
       label: head.label,
       members: members.map((m) => m.label),
+      memberIds: members.map((m) => m.id),
       caption: `${type} :${ports.join(",")}`,
       status: members.find((m) => m.status === "broken")?.status || head.status,
     };

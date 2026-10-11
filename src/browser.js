@@ -22,6 +22,7 @@ import { paintDiagram, paintPath, sentenceRect } from "./path-draw.js";
 import { CLUSTER_COLUMNS } from "./cluster.js";
 import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
+import { countText, matchOrder, searchKube } from "./kube-search.js";
 import { paintKube } from "./kube-draw.js";
 import { renderTelemetry } from "./tele-view.js";
 import { createPodInspector } from "./pod-inspect-view.js";
@@ -109,6 +110,8 @@ const MAP_TAG_KEY = "cloudspider.mapTagKey";
 const kubePanel = document.querySelector("#kube-panel");
 const kubeTabs = document.querySelector("#kube-tabs");
 const kubeCtxEl = document.querySelector("#kube-ctx");
+const kubeSearchEl = document.querySelector("#kube-search");
+const kubeSearchCount = document.querySelector("#kube-search-count");
 const kubeTele = document.querySelector("#kube-tele");
 const kubeOps = document.querySelector("#kube-ops");
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
@@ -266,10 +269,12 @@ function renderChromeParts() {
     const notes = mode === "path" ? pathData?.notes || [] : [];
     const clusterNote = mode === "cluster" ? clusterData?.note || "" : "";
     confirmEl.textContent = clusterNote || notes.join("  ");
+    syncSearchBar();
     no.hidden = true;
     yes.hidden = true;
     return;
   }
+  syncSearchBar();
   confirmEl.textContent = ui.confirmation?.line || "";
   no.hidden = !ui.confirmation;
   yes.hidden = !ui.confirmation?.allowsY;
@@ -1559,8 +1564,11 @@ function renderContexts(body) {
 
 function setClusterContext(name) {
   if (name === (clusterData?.context || clusterContext)) return;
+  kubeSearchText.set(clusterData?.context || clusterContext, kubeSearchEl.value);
   clusterContext = name;
   writePref(CLUSTER_CONTEXT_KEY, name);
+  kubeSearchEl.value = kubeSearchText.get(name) || "";
+  searchCursor = -1;
   clusterData = readingView(name);
   if (clusterData) renderContexts(clusterData);
   clusterSelected = null;
@@ -1692,9 +1700,15 @@ function placedCluster() {
     // Laid out once per answer, width and lane state; frames only paint.
     // A narrow window puts the context switcher under the tabs.
     const top = !kubeCtxEl.hidden && (map.clientWidth || 0) < 900 ? 88 : 52;
-    const key = `${map.clientWidth || 0}|${top}|${JSON.stringify(clusterLanes)}`;
+    const found = currentSearch();
+    // A search opens the lanes and lists the folded workloads it found
+    // pods in, without touching the saved lane state.
+    const state = found.active
+      ? { open: { ...clusterLanes.open, ...Object.fromEntries(found.open.map((ns) => [ns, true])) }, expanded: [...new Set([...clusterLanes.expanded, ...found.expand])] }
+      : clusterLanes;
+    const key = `${map.clientWidth || 0}|${top}|${JSON.stringify(state)}`;
     if (clusterPlaced.data !== clusterData || clusterPlaced.key !== key) {
-      clusterPlaced = { key, data: clusterData, placed: layoutKube(clusterData.diagram, { width: map.clientWidth || 0, state: clusterLanes, top }) };
+      clusterPlaced = { key, data: clusterData, placed: layoutKube(clusterData.diagram, { width: map.clientWidth || 0, state, top }) };
     }
     return clusterPlaced.placed;
   }
@@ -1707,7 +1721,8 @@ function drawCluster() {
   const placed = placedCluster();
   const { width, height } = sizeCanvas(placed.contentWidth, placed.contentHeight);
   if (placed.kind === "kube") {
-    paintKube(ctx, { placed, selectedId: clusterSelected, hoverId: clusterHover, animTime, width, height, reducedMotion, scrollTop: map.scrollTop || 0, stickyTop: (map.scrollTop || 0) + stickyOffset() });
+    const found = currentSearch();
+    paintKube(ctx, { placed, selectedId: clusterSelected, hoverId: clusterHover, animTime, width, height, reducedMotion, scrollTop: map.scrollTop || 0, stickyTop: (map.scrollTop || 0) + stickyOffset(), match: found.active ? found : null });
     return;
   }
   paintDiagram(ctx, {
@@ -2392,6 +2407,80 @@ function showPod(node) {
   }
   podInspector.open(node);
 }
+
+// ---- cluster search (kube-search.js): the prompt bar filters the lanes ----
+const kubeSearchText = new Map(); // per kube context
+let searchCursor = -1;
+let searchMemo = { diagram: null, text: "", result: null };
+
+function searchable() {
+  return mode === "cluster" && clusterData?.diagram?.layout === "kube" && (!clusterHasScreens() || clusterScreen === "topology");
+}
+
+function currentSearch() {
+  const text = searchable() ? kubeSearchEl.value : "";
+  if (searchMemo.diagram !== clusterData?.diagram || searchMemo.text !== text) {
+    searchMemo = { diagram: clusterData?.diagram, text, result: searchKube(clusterData?.diagram, text) };
+  }
+  return searchMemo.result;
+}
+
+function syncSearchBar() {
+  const on = searchable();
+  kubeSearchEl.hidden = !on;
+  statusEl.hidden = on;
+  confirmEl.classList.toggle("caption", on);
+  const found = on ? currentSearch() : null;
+  kubeSearchCount.hidden = !found?.active;
+  kubeSearchCount.textContent = countText(found);
+  kubeSearchCount.classList.toggle("none", Boolean(found?.active && !found.count));
+}
+
+function jumpToMatch(step = 1) {
+  const found = currentSearch();
+  if (!found.active) return;
+  const order = matchOrder(placedCluster(), found.ids);
+  if (!order.length) return;
+  searchCursor = (searchCursor + step + order.length) % order.length;
+  const n = order[searchCursor];
+  clusterSelected = n.id;
+  // Bring it into view below the pinned lane head.
+  map.scrollTo({ top: Math.max(0, n.y - 230), left: Math.max(0, n.x - 60), behavior: reducedMotion ? "auto" : "smooth" });
+  kubeSearchCount.textContent = `${searchCursor + 1} of ${order.length}  ·  Enter next, Shift+Enter back`;
+  draw();
+}
+
+kubeSearchEl.addEventListener("input", () => {
+  searchCursor = -1;
+  kubeSearchText.set(clusterData?.context || clusterContext, kubeSearchEl.value);
+  syncSearchBar();
+  draw();
+});
+kubeSearchEl.addEventListener("keydown", (event) => {
+  // Keys typed here stay here: map keyboard nav never sees them.
+  event.stopPropagation();
+  if (event.key === "Enter") {
+    event.preventDefault();
+    jumpToMatch(event.shiftKey ? -1 : 1);
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    kubeSearchEl.value = "";
+    kubeSearchText.set(clusterData?.context || clusterContext, "");
+    searchCursor = -1;
+    kubeSearchEl.blur();
+    syncSearchBar();
+    draw();
+  }
+});
+// "/" focuses the search in the Cluster view, unless something is typed.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || !searchable() || kubeSearchEl.hidden) return;
+  const t = event.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  event.preventDefault();
+  kubeSearchEl.focus();
+  kubeSearchEl.select();
+});
 
 // Pinned lane heads sit under the floating context switcher, not behind it.
 function stickyOffset() {
