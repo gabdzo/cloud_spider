@@ -37,3 +37,13 @@ test("with no room anywhere the plate still stays on the canvas", () => {
   assert.ok(at.x >= 8 && at.y >= 8 && at.y + 400 <= 420 - 8);
   assert.ok(!overlaps({ ...at, w: 420, h: 400 }, shack));
 });
+
+test("the VPC banner keeps clear of the gate: CIDR first, then the name clips", async () => {
+  const { bannerText } = await import("../src/draw.js");
+  const ctx = { font: "", measureText: (text) => ({ width: text.length * 8.5 }) };
+  const camp = (w, gate = "igw") => ({ x: 0, w, gate, label: "cloudspider-up  10.43.0.0/16" });
+  assert.equal(bannerText(ctx, camp(1000)), "cloudspider-up  10.43.0.0/16");
+  assert.equal(bannerText(ctx, camp(440)), "cloudspider-up");
+  assert.match(bannerText(ctx, camp(300)), /^cloud.*…$/);
+  assert.equal(bannerText(ctx, camp(400, "")), "cloudspider-up  10.43.0.0/16");
+});

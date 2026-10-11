@@ -935,10 +935,26 @@ function drawClosedLabel(ctx, camp) {
 }
 
 // Cloth banner hung from the wall, carrying the VPC name.
-function bannerBox(ctx, settlement) {
+// The banner keeps clear of the gate in the top wall: on a narrow camp
+// (760 px) "name  cidr" ran into the IGW. It drops the CIDR first (the FOLD
+// button's title and aria-label still carry the full line), then clips the
+// name.
+export function bannerText(ctx, settlement) {
   ctx.font = FONT;
-  const w = Math.ceil(ctx.measureText(settlement.label).width) + 22;
-  return { x: settlement.x + 22, y: settlement.y + 2, w, h: 26 };
+  const label = settlement.label || "";
+  if (!settlement.gate) return label;
+  const gateW = settlementGate()[0].length * 3;
+  const room = settlement.x + Math.floor((settlement.w - gateW) / 2) - 14 - (settlement.x + 22) - 22;
+  if (room < 40 || ctx.measureText(label).width <= room) return label;
+  const name = label.split("  ")[0];
+  if (ctx.measureText(name).width <= room) return name;
+  return clipTo(ctx, name, room, FONT);
+}
+
+function bannerBox(ctx, settlement) {
+  const text = bannerText(ctx, settlement);
+  const w = Math.ceil(ctx.measureText(text).width) + 22;
+  return { x: settlement.x + 22, y: settlement.y + 2, w, h: 26, text };
 }
 
 function drawBanner(ctx, settlement) {
@@ -975,9 +991,9 @@ function drawSettlementLabel(ctx, settlement) {
   const b = bannerBox(ctx, settlement);
   ctx.font = FONT;
   ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-  ctx.fillText(settlement.label, b.x + 12, b.y + 20);
+  ctx.fillText(b.text, b.x + 12, b.y + 20);
   ctx.fillStyle = WORLD.text;
-  ctx.fillText(settlement.label, b.x + 11, b.y + 19);
+  ctx.fillText(b.text, b.x + 11, b.y + 19);
 }
 
 function drawSmoke(ctx, building, animTime, reducedMotion) {

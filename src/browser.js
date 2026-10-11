@@ -1778,6 +1778,7 @@ function placeFolds(placed) {
       button.textContent = camp.closed ? "OPEN" : "FOLD";
       button.setAttribute("aria-expanded", String(!camp.closed));
       button.setAttribute("aria-label", `${camp.closed ? "Expand" : "Collapse"} VPC ${camp.label}`);
+      button.title = `${camp.closed ? "open" : "fold"} ${camp.label}`;
       button.style.left = `${camp.x + camp.w - (camp.closed ? 124 : 84)}px`;
       button.style.top = `${camp.y + 4}px`;
       button.addEventListener("click", () => toggleVpc(camp.id));
