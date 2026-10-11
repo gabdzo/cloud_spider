@@ -2,7 +2,7 @@
 
 Nothing in these PRs touched AWS. Run these yourself from the repo root on your Mac, with your usual profile (`AWS_PROFILE=default`, eu-north-1) and `PULUMI_CONFIG_PASSPHRASE` (empty unless you set one). Always `preview` before `up`. Prices are approximate eu-north-1 list prices.
 
-## 1. Clean up the local EKS state (free, one time)
+## 1. Clean up the local EKS state (free, one time; already done: skip it unless `pulumi stack ls` still lists an empty eks-cloudspider-up)
 
 ```sh
 git pull
@@ -16,12 +16,14 @@ cd ../..
 ## 2. Restart Cloud Spider
 
 ```sh
-npm ci && AWS_PROFILE=default AWS_REGION=eu-north-1 npm start    # http://127.0.0.1:9241
+npm ci && AWS_PROFILE=default AWS_REGION=eu-north-1 CLOUDSPIDER_LOG_GROUP=/cloudspider/test npm start    # http://127.0.0.1:9241
 ```
+
+`PORT=<n>` serves on another port. After every pull: `npm ci`, restart, reload the page (PATH and CLUSTER come back to the same view).
 
 ## 3. New vaults from templates (PR 20, free, no AWS)
 
-Templates are in vaults/templates/ and show under TEMPLATES on the map. To make a living vault:
+Templates are in vaults/templates/ and show under TEMPLATES on the VAULTS page. To make a living vault:
 
 ```sh
 npm run vaults:new -- service shop-api      # writes vaults/shop-api.yaml (name, free number, project tag)
@@ -145,7 +147,7 @@ The first 1 million GetMetricData metrics a month may fall under the free tier, 
 
 ## 11. More stacks and Terraform (PR stacks-expansion, pay only for what you raise)
 
-Every new card shows its cost on the card (hour / day / month, eu-north-1). Raise them from the Stacks panel (the RUN key) or by hand as below. Each stack is its own state; Take it down (or `pulumi destroy`) removes everything it made. Install a stack's packages once: `cd upgrades/<name> && npm ci`.
+Every new card shows its cost on the card (hour / day / month, eu-north-1). Raise them from the Stacks panel (open the card, `preview`, then `run`) or by hand as below. Each stack is its own state; `take it down` (or `pulumi destroy`) removes everything it made. Install a stack's packages once: `cd upgrades/<name> && npm ci`.
 
 ### RDS Postgres: about $0.02/h, $0.48/day, $14.48/month
 
@@ -241,7 +243,7 @@ The `openshift` stack is one m7i-flex.2xlarge (8 vCPU, 32 GiB) with EC2 nested v
 It stops itself in two ways. A timer powers it off `maxHours` (default 4, 1–12) after **every** boot; the instance is set to stop on shutdown, not terminate. EventBridge Scheduler also stops it every night at 22:00 Europe/Prague. When it is stopped, only the disk bills.
 
 1. **Get your pull secret.** Download it from <https://console.redhat.com/openshift/create/local> (free Red Hat account). Keep it on your laptop. It never goes into the repo, Pulumi config or state.
-2. **Raise it.** Open STACKS → OPENSHIFT LOCAL, keep `m7i-flex.2xlarge` and `maxHours` 4, then press Bring it up. Or from the shell:
+2. **Raise it.** Open STACKS → OPENSHIFT LOCAL, keep `m7i-flex.2xlarge` and `maxHours` 4, then press `preview` and `run`. Or from the shell:
    ```bash
    cd upgrades/openshift && npm ci
    pulumi stack select openshift --create
@@ -260,7 +262,7 @@ It stops itself in two ways. A timer powers it off `maxHours` (default 4, 1–12
    crc start -p ~/pull-secret.txt   # ~10 min; prints the kubeadmin password
    eval $(crc oc-env) && oc login -u kubeadmin https://api.crc.testing:6443
    ```
-   If `crc setup` says virtualization is not available, nested KVM did not work. Set `instanceType` to `c5.metal`, run Bring it up again and repeat. That host costs ~$4.39/h, so keep `maxHours` low.
+   If `crc setup` says virtualization is not available, nested KVM did not work. Set `instanceType` to `c5.metal`, press `run` again and repeat. That host costs ~$4.39/h, so keep `maxHours` low.
 4. **Run the labs on the host.** Clone the repo there (`git clone https://github.com/gabdzo/cloud_spider`) and follow the LEARN tab's OPENSHIFT EX280 holotapes (`cd labs/ex280/lab01-workloads && ./setup.sh`). The route hosts are `*.apps-crc.testing`; the verify scripts curl them from the host itself.
 5. **The console from your laptop (optional):**
    ```bash
@@ -269,7 +271,7 @@ It stops itself in two ways. A timer powers it off `maxHours` (default 4, 1–12
    ```
    Then point `console-openshift-console.apps-crc.testing` and `oauth-openshift.apps-crc.testing` at 127.0.0.1 in /etc/hosts and open https://console-openshift-console.apps-crc.testing:8443. CRC listens on the host's 443 only after `crc start`.
 6. **Pause and resume.** The map's stop key (it is tagged `cloudspider=expendable`) or `aws ec2 stop-instances --instance-ids "$ID"` pauses it. To keep going past the timer, run `sudo shutdown -c`. After a start, run `crc start` again (~5 min). The cluster keeps its state on the disk.
-7. **Tear down.** Use STACKS → OPENSHIFT LOCAL → Take it down, or `pulumi destroy` in `upgrades/openshift`. That deletes the instance, the disk, the VPC, the role and the schedule. Nothing bills afterwards.
+7. **Tear down.** Use STACKS → OPENSHIFT LOCAL → `take it down`, or `pulumi destroy` in `upgrades/openshift`. That deletes the instance, the disk, the VPC, the role and the schedule. Nothing bills afterwards.
 
 ## 13. LEARN: the lab shelf (free in Cloud Spider; the clusters cost what they cost)
 
