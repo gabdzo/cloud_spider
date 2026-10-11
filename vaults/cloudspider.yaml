@@ -30,3 +30,21 @@ spec:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/infra
     docs: https://github.com/gabdzo/cloud_spider#readme
     dashboard: https://eu-north-1.console.aws.amazon.com/vpcconsole/home?region=eu-north-1#vpcs:tag:project=cloudspider
+  # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  slos:
+    - name: gate-availability
+      sli: availability
+      source: alb
+      target: 99%
+      window: 30d
+    - name: gate-latency
+      sli: latency
+      source: alb
+      threshold: 500
+      target: 99%
+      window: 30d
+    - name: machines-healthy
+      sli: availability
+      source: ec2
+      target: 99.5%
+      window: 30d

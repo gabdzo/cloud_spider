@@ -24,3 +24,10 @@ spec:
   links:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/shopapi
     docs: https://docs.postgrest.org/
+  # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  slos:
+    - name: api-restarts
+      sli: error-rate
+      source: kube:restarts:shop/shopapi
+      target: 99%
+      window: 30d

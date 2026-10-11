@@ -24,3 +24,10 @@ spec:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/signal
     docs: https://github.com/gabdzo/cloud_spider#readme
     dashboard: https://eu-north-1.console.aws.amazon.com/cloudwatch/home?region=eu-north-1#logsV2:log-groups/log-group/$252Fcloudspider$252Fcloudspider-signal
+  # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  slos:
+    - name: log-group-present
+      sli: availability
+      source: resources
+      target: 99.9%
+      window: 30d

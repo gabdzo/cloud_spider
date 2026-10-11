@@ -26,3 +26,12 @@ spec:
       - url: https://orders-api.sample.cloudspider.test/version
         expect: 200
         timeout: 2000
+  slos:
+    - name: health-availability
+      sli: availability
+      source: checks
+      target: 99.5%
+    - name: order-errors
+      sli: error-rate
+      source: lambda
+      target: 99%

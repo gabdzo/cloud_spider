@@ -27,3 +27,16 @@ spec:
   links:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/worker
     dashboard: https://eu-north-1.console.aws.amazon.com/sqs/v3/home?region=eu-north-1#/queues
+  # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  slos:
+    - name: job-errors
+      sli: error-rate
+      source: lambda
+      target: 99%
+      window: 30d
+    - name: job-duration
+      sli: latency
+      source: lambda
+      threshold: 5000
+      target: 99%
+      window: 30d

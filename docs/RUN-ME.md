@@ -410,3 +410,43 @@ for a in metrics-server pod-identity; do pulumi destroy -s $a-$CLUSTER --yes && 
 aws ec2 describe-instances --region eu-north-1 --filters Name=tag:project,Values=karpenter Name=instance-state-name,Values=running --query 'Reservations[].Instances[].InstanceId'   # must be []
 ```
 Take the add-ons down before the cluster itself (section 9). A destroyed cluster leaves add-on stacks that can no longer reach it; `pulumi stack rm --force -s <addon>-<cluster>` drops them.
+
+## 17. SLOs: SLA, SLO and SLI on the cards (free: no new reads)
+
+A vault can list its objectives under `spec.slos`. The cluster gets three by default:
+- API availability
+- node readiness
+- pod restart rate
+
+```yaml
+spec:
+  slos:
+    - name: page-availability
+      sli: availability          # availability | latency | error-rate
+      source: checks             # checks | check:<name> | alb | lambda | ec2 | resources
+                                 # | kube:api | kube:nodes | kube:restarts[:<ns>/<workload>]
+      target: 99.5%
+      window: 30d                # default 30d, up to 90d
+    - name: page-latency
+      sli: latency
+      source: check:camp page
+      threshold: 800             # ms; latency only
+      target: 99%
+```
+
+- **SLI** is what was measured: good ÷ all. **SLO** is your target for it over the window. **SLA** is a promise to someone else with a penalty. There is none here, so keep each SLO stricter than any SLA you might give.
+- **Error budget** is 100 % − SLO. The segmented bar shows how much of it is left in what Cloud Spider has seen. The card says how much that is, for example `3d of 30d seen`.
+- **Burn rate** is how fast the last hour spends the budget. 1× lasts exactly the window. At 2× or more the **BUDGET BURNING** lamp lights; at 14.4× or more it says FAST. When nothing is left, the lamp reads **BUDGET SPENT**.
+- **Where it shows:**
+  - each vault's panel and page (dial, bar and lamp)
+  - the map's info plate for every piece the vault owns
+  - the Cluster view's node card (API and nodes)
+  - a workload card: click a workload, and its own restart rate is shown next to the cluster objectives
+  - **SLA · SLO · SLI ?** on any of these opens the short explanation
+- **Where the numbers come from:**
+  - `checks` uses the vault's own HTTP checks, as the page already runs them (one reading per result).
+  - `alb`, `lambda` and `ec2` use the 3 h CloudWatch series the map already asks for.
+  - `resources` uses the owned pieces' status on each map read.
+  - `kube:*` uses the Cluster view's read-only snapshot. Restarts count from the second read on.
+
+  Readings are kept **in memory** in 5-minute buckets for at most 30 days, so a server restart starts the count over. Nothing is written anywhere and no AWS or kube call is added, so this costs nothing extra. A real 30-day view would need a store (for example CloudWatch metric math or Prometheus recording rules); that is not part of this.

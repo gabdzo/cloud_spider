@@ -27,3 +27,10 @@ spec:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/pgcluster
     docs: https://cloudnative-pg.io/documentation/current/
     dashboard: https://eu-north-1.console.aws.amazon.com/eks/home?region=eu-north-1#/clusters/cloudspider-up
+  # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  slos:
+    - name: db-restarts
+      sli: error-rate
+      source: kube:restarts:shop/shopdb
+      target: 99.5%
+      window: 30d

@@ -71,6 +71,7 @@ function damaged(file, doc, errors, name = "", number = null) {
     links: {},
     checks: [],
     stack: null,
+    slos: [],
   };
 }
 

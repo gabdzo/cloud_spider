@@ -5,7 +5,10 @@ const REQUIRED = { stop: "running", start: "stopped" };
 const CALL = { stop: "StopInstances", start: "StartInstances" };
 
 export function isExpendable(instance) {
-  return (instance?.tags || []).some(
+  // Instances carry [{key, value}]; camp fixtures a plain {key: value} map.
+  const tags = instance?.tags;
+  if (tags && !Array.isArray(tags)) return tags.cloudspider === "expendable";
+  return (tags || []).some(
     (tag) => tag.key === "cloudspider" && tag.value === "expendable",
   );
 }

@@ -26,3 +26,10 @@ spec:
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/barrel
     docs: https://github.com/gabdzo/cloud_spider#readme
     dashboard: https://eu-north-1.console.aws.amazon.com/s3/buckets/cloudspider-barrel-550536272523?region=eu-north-1
+  # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  slos:
+    - name: bucket-present
+      sli: availability
+      source: resources
+      target: 99.9%
+      window: 30d

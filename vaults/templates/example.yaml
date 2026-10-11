@@ -44,3 +44,15 @@ spec:
         contains: Example Domain    # optional text the body must contain
         timeout: 5000               # optional ms, default 5000 (100-30000); over half of it,
                                     # or over 2s, is "slow" (amber)
+  slos:                             # optional; targets measured from data Cloud Spider already reads
+    - name: home-availability       # required: lowercase, digits, dashes; unique in this vault
+      sli: availability             # required: availability | latency | error-rate
+      source: check:home page       # required: checks | check:<name> | alb | lambda | ec2 | resources
+                                    #   | kube:api | kube:nodes | kube:restarts[:<ns>/<workload>]
+      target: 99.5%                 # required: 50-99.999 (%), the SLO
+      window: 30d                   # optional, default 30d (hours or days, up to 90d)
+    - name: home-latency
+      sli: latency
+      source: check:home page
+      threshold: 800                # latency only: good when at or under this many ms
+      target: 99%
