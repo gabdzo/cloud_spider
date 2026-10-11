@@ -235,7 +235,7 @@ const HINTS = [
   {
     kind: "demo-missing",
     test: /namespaces "demo" not found/i,
-    hint: "The HPA scaling demo scales the demo app (namespace demo), which is not on this cluster. Set hpa to off to run only the burst and inflate parts (Karpenter still gets work), or raise the demo stack on this cluster first.",
+    hint: "The HPA scaling demo's HPAs scale the EKS demo app (namespace demo), which is not on this cluster. Run scaling-demo again: Cloud Spider now checks for the demo app first and, without it, runs only the burst and inflate parts (the run log says HPA skipped), so the same stack finishes. For the HPAs, raise the EKS demo app on this cluster first.",
   },
   {
     kind: "aws-missing",
@@ -362,4 +362,14 @@ export function rerunCommand(directory, steps = []) {
   const quote = (value) => (/^[A-Za-z0-9_./:@%+=,[\]-]+$/.test(value) ? value : `'${String(value).replace(/'/g, `'\\''`)}'`)
   const head = `cd ${quote(directory)} && export AWS_PROFILE=default AWS_REGION=eu-north-1 PULUMI_CONFIG_PASSPHRASE="\${PULUMI_CONFIG_PASSPHRASE-}"`
   return [head, ...steps.map((args) => ["pulumi", ...args].map(quote).join(" "))].join(" && ")
+}
+
+// Run output: Pulumi's --diff prints a Kubernetes provider's kubeconfig input
+// (the cluster's CA data, its API server URL), on one line or as a JSON
+// block. Not secret, but long and noisy: hide the whole one-line document and
+// the CA data in a block. Best effort per chunk; everything else stays.
+export function maskKubeconfig(text) {
+  return String(text)
+    .replace(/(\bkubeconfig\s*:\s*)"(?:[^"\\]|\\.){40,}"/g, '$1"[kubeconfig hidden]"')
+    .replace(/(certificate-authority-data\\?"?\s*[:=]\s*\\?")[A-Za-z0-9+/=]{20,}/g, "$1[hidden]");
 }

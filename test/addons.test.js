@@ -303,9 +303,13 @@ test("every add-on under mocks: tagged project=<id> and cluster=<name>, viewer R
   // KEDA: the worker starts at zero.
   const scaled = kind(by.keda, "ScaledObject")[0];
   assert.deepEqual([scaled.spec.minReplicaCount, scaled.spec.maxReplicaCount], [0, 3]);
-  // The scaling demo: two HPAs on the demo app, burst off.
-  const hpas = kind(by["scaling-demo"], "HorizontalPodAutoscaler");
-  assert.deepEqual(hpas.map((h) => h.metadata.name).sort(), ["api", "web"]);
+  // The scaling demo: no HPAs unless the app says the demo app is there
+  // (demoApp=present); a cluster without it gets the burst/inflate parts only.
+  assert.deepEqual(kind(by["scaling-demo"], "HorizontalPodAutoscaler"), []);
+  assert.equal(kind(by["scaling-demo"], "Deployment").length, 2);
+  const withDemo = await mocked("scaling-demo", "cloudspider-up", { demoApp: "present" });
+  assert.deepEqual(kind(withDemo, "HorizontalPodAutoscaler").map((h) => h.metadata.name).sort(), ["api", "web"]);
+  assert.deepEqual(kind(await mocked("scaling-demo", "cloudspider-up", { demoApp: "present", hpa: "off" }), "HorizontalPodAutoscaler"), []);
   const onDemand = await mocked("karpenter", "cloudspider-up", { capacity: "on-demand" });
   const capacity = kind(onDemand, "NodePool")[0].spec.template.spec.requirements.find((r) => r.key === "karpenter.sh/capacity-type");
   assert.deepEqual(capacity.values, ["on-demand"]);

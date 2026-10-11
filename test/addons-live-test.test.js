@@ -48,9 +48,9 @@ test("the HPA demo can run without the demo app (hpa=off), and its failure says 
   assert.match(checkParams(spec, { clusterName: "cs-lt", hpa: "maybe" }).error, /hpa must be/);
   const hint = runHint('error: resource "urn:...::hpa-web" was not successfully created by the Kubernetes API server: namespaces "demo" not found');
   assert.equal(hint.kind, "demo-missing");
-  assert.match(hint.hint, /hpa to off/);
+  assert.match(hint.hint, /Run scaling-demo again: Cloud Spider now checks for the demo app first/);
   const program = readFileSync(new URL("../upgrades/addons/scaling-demo.js", import.meta.url), "utf8");
-  assert.match(program, /hpa === "on" \? \["web", "api"\] : \[\]/);
+  assert.match(program, /hpa === "on" && demoApp === "present" \? \["web", "api"\] : \[\]/);
 });
 
 test("metrics-server lets the viewer group read nodes and metrics on a fresh cluster", async () => {

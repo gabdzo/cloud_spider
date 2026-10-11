@@ -488,3 +488,23 @@ test("the old stack keeps whatever cluster it really holds, read from its state"
   const up = createUpgrade({ env: {}, run: stub("") }).run({ module: "eks", action: "up", params: { clusterName: "my-first" }, legacyName: "my-first" });
   assert.equal(up.stack, "upgrade");
 });
+
+test("run output: the provider kubeconfig is not printed in full (CA data, the whole document)", async () => {
+  const { maskKubeconfig } = await import("../src/upgrade-rules.js");
+  const ca = "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUM1ekNDQWMrZ0F3SUJBZ0lCQURBTkJna3Foa2lHOXcwQkFRc0ZBREFWTVJNd0VRWURWUVFERXdwcmRXSmwK";
+  const oneLine = `    + kubeconfig: "{\\"apiVersion\\":\\"v1\\",\\"clusters\\":[{\\"cluster\\":{\\"certificate-authority-data\\":\\"${ca}\\",\\"server\\":\\"https://ABC.gr7.eu-north-1.eks.amazonaws.com\\"},\\"name\\":\\"kubernetes\\"}]}"`;
+  const masked = maskKubeconfig(oneLine);
+  assert.equal(masked, `    + kubeconfig: "[kubeconfig hidden]"`);
+  const block = ["      kubeconfig: (json) {", "          clusters: [", "              [0]: {", "                  cluster: {", `                      certificate-authority-data: "${ca}"`, "                      server: \"https://ABC.gr7.eu-north-1.eks.amazonaws.com\""].join("\n");
+  const out = maskKubeconfig(block);
+  assert.equal(out.includes(ca), false);
+  assert.match(out, /certificate-authority-data: "\[hidden\]"/);
+  assert.match(out, /clusters: \[/, "the rest of a multi-line diff stays");
+  // Ordinary lines pass untouched.
+  for (const line of ["+ 6 to create", "kubernetes:apps/v1:Deployment burst created", 'clusterName: "cloudspider-up"']) assert.equal(maskKubeconfig(line), line);
+});
+
+test("run output goes through maskKubeconfig before the pane and the run log", () => {
+  const src = readFileSync(new URL("../src/upgrade.js", import.meta.url), "utf8");
+  assert.match(src, /const text = maskKubeconfig\(String\(chunk\)\.trimEnd\(\)\);/);
+});

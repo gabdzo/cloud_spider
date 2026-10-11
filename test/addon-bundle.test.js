@@ -13,7 +13,7 @@ import { createAddons } from "../src/addons.js";
 import { loadContexts } from "../src/kube-contexts.js";
 import { createConnector } from "../src/kube-connect.js";
 import { BUNDLE_ORDER, bundlePlan, bundleView, confirmText, slotLine } from "../src/addon-bundle.js";
-import { addonTree } from "../src/addons.js";
+import { addonTree, demoAppSeen } from "../src/addons.js";
 
 const ORIGIN = "http://127.0.0.1:9241";
 const REPO = fileURLToPath(new URL("..", import.meta.url));
@@ -61,7 +61,7 @@ test("the plan: dependency order, needs pulled in, present ones skipped, slot co
 });
 
 // A rig like kube-connect's: fake aws/kubectl/pulumi on PATH, temp HOME.
-function rig({ free = 8, extra = {}, connected = true } = {}) {
+function rig({ free = 8, extra = {}, connected = true, demo = false } = {}) {
   const home = mkdtempSync(join(tmpdir(), "cs-bundle-"));
   mkdirSync(join(home, ".kube"));
   const kubeconfigFile = join(home, ".kube", "config");
@@ -88,7 +88,7 @@ function rig({ free = 8, extra = {}, connected = true } = {}) {
   };
   // The medium cluster: one t4g.small (11 pods) with `free` slots left.
   const pods = Array.from({ length: 11 - free }, (_, i) => ({ metadata: { namespace: "kube-system", name: `p${i}` }, spec: { nodeName: "n1" }, status: { phase: "Running" } }));
-  const snapshot = { clusterName: "cloudspider-medium", nodes: [{ metadata: { name: "n1", labels: { "node.kubernetes.io/instance-type": "t4g.small" } }, status: { allocatable: { pods: "11" }, conditions: [{ type: "Ready", status: "True" }] } }], pods, deployments: [{ metadata: { namespace: "kube-system", name: "metrics-server" }, spec: { replicas: 1 }, status: { readyReplicas: 1 } }], daemonsets: [] };
+  const snapshot = { clusterName: "cloudspider-medium", nodes: [{ metadata: { name: "n1", labels: { "node.kubernetes.io/instance-type": "t4g.small" } }, status: { allocatable: { pods: "11" }, conditions: [{ type: "Ready", status: "True" }] } }], pods, deployments: [{ metadata: { namespace: "kube-system", name: "metrics-server" }, spec: { replicas: 1 }, status: { readyReplicas: 1 } }, ...(demo ? ["web", "api"].map((name) => ({ metadata: { namespace: "demo", name }, spec: { replicas: 1 }, status: { readyReplicas: 1 } })) : [])], namespaces: [{ metadata: { name: "kube-system" } }, ...(demo ? [{ metadata: { name: "demo" } }] : [])], daemonsets: [] };
   const fakeKube = (name) => ({ context: name, async probe() { return { ok: true }; }, async snapshot() { return name === "cloudspider-medium-viewer" ? snapshot : { error: "not read" }; } });
   const loadKubeContexts = async () => {
     const got = await loadContexts({ env: { CLOUDSPIDER_KUBE_CONTEXTS_FILE: contextsFile }, read: readFile });
@@ -199,5 +199,78 @@ test("with add-ons: the create run, then CONNECT, then the bundle, one after the
     assert.equal((await r.app.bundleStatus("cloudspider-medium")).queued, null);
   } finally {
     r.cleanup();
+  }
+});
+
+// scaling-demo without the EKS demo app (field bug: INSTALL SELECTED on a
+// cluster with no namespace demo failed on the HPAs, after the namespace and
+// the burst/inflate Deployments were made).
+test("demoAppSeen: demo/web and demo/api seen, not seen, or not known", () => {
+  const dep = (ns, name) => ({ metadata: { namespace: ns, name } });
+  assert.equal(demoAppSeen({ namespaces: [{ metadata: { name: "demo" } }], deployments: [dep("demo", "web"), dep("demo", "api")] }), true);
+  assert.equal(demoAppSeen({ namespaces: [{ metadata: { name: "kube-system" } }], deployments: [dep("kube-system", "coredns")] }), false);
+  assert.equal(demoAppSeen({ namespaces: [{ metadata: { name: "demo" } }], deployments: [dep("demo", "web")] }), false, "web without api is not the demo app");
+  // A namespace-scoped read that does not list demo cannot tell.
+  assert.equal(demoAppSeen({ scope: ["team-a"], namespaces: [{ metadata: { name: "team-a" } }], deployments: [] }), null);
+  assert.equal(demoAppSeen(null), null);
+  assert.equal(demoAppSeen({ error: "no answer" }), null);
+});
+
+const configSet = (lines, stack, key) => lines.filter((line) => line.startsWith(`config set --stack ${stack} `) && line.includes(`cloudspider-addons:${key} `)).map((line) => line.split(" ").pop());
+
+test("INSTALL SELECTED: scaling-demo on a cluster without the demo app runs with hpa off and says why in the run log", async () => {
+  const r = rig({ free: 8 });
+  try {
+    await r.app.reloadContexts();
+    const started = await r.app.bundleRun(ORIGIN, { cluster: "cloudspider-medium", items: ["scaling-demo"] });
+    assert.equal(started.running, true, started.error);
+    const done = await until(r.upgrade, (st) => !st.running);
+    assert.equal(done.state, "done", done.error);
+    const stack = "scaling-demo-cloudspider-medium";
+    assert.deepEqual(configSet(r.called(), stack, "hpa"), ["off"], "set once before the preview; the up uses the same stack config");
+    assert.deepEqual(configSet(r.called(), stack, "demoApp"), ["absent"]);
+    assert.ok(done.lines.some((line) => /HPA on demo\/web\+api skipped: the EKS demo app \(namespace demo, web and api\) is not on cloudspider-medium\. Deploy the EKS demo app first/.test(line)), done.lines.join("\n"));
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("INSTALL SELECTED: with the demo app on the cluster, scaling-demo keeps its HPAs", async () => {
+  const r = rig({ free: 8, demo: true });
+  try {
+    await r.app.reloadContexts();
+    await r.app.bundleRun(ORIGIN, { cluster: "cloudspider-medium", items: ["scaling-demo"] });
+    const done = await until(r.upgrade, (st) => !st.running);
+    assert.equal(done.state, "done", done.error);
+    assert.deepEqual(configSet(r.called(), "scaling-demo-cloudspider-medium", "hpa"), ["on"]);
+    assert.deepEqual(configSet(r.called(), "scaling-demo-cloudspider-medium", "demoApp"), ["present"]);
+    assert.equal(done.lines.some((line) => /HPA on demo\/web\+api skipped/.test(line)), false);
+  } finally {
+    r.cleanup();
+  }
+});
+
+test("the scaling-demo card: preview and up check for the demo app too; not connected means not checked, so no HPAs", async () => {
+  const r = rig({ free: 8 });
+  try {
+    await r.app.reloadContexts();
+    const started = await r.app.upgradeRun(ORIGIN, { module: "scaling-demo", action: "preview", params: { clusterName: "cloudspider-medium", hpa: "on", burst: "off", inflate: 0 } });
+    assert.equal(started.running, true, started.error);
+    const done = await until(r.upgrade, (st) => !st.running);
+    assert.equal(done.state, "done", done.error);
+    assert.deepEqual(configSet(r.called(), "scaling-demo-cloudspider-medium", "hpa"), ["off"]);
+    assert.ok(done.lines.some((line) => /HPA on demo\/web\+api skipped/.test(line)));
+  } finally {
+    r.cleanup();
+  }
+  const off = rig({ free: 8, connected: false });
+  try {
+    await off.app.reloadContexts();
+    await off.app.upgradeRun(ORIGIN, { module: "scaling-demo", action: "up", params: { clusterName: "cloudspider-medium" } });
+    const done = await until(off.upgrade, (st) => !st.running);
+    assert.deepEqual(configSet(off.called(), "scaling-demo-cloudspider-medium", "demoApp"), ["absent"]);
+    assert.ok(done.lines.some((line) => /HPA on demo\/web\+api skipped: could not check cloudspider-medium for the EKS demo app/.test(line)), done.lines.join("\n"));
+  } finally {
+    off.cleanup();
   }
 });
