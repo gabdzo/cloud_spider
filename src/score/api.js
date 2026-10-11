@@ -9,6 +9,12 @@ import { kubeNodes } from "./collectors/kube-nodes.js";
 import { kubePolicy } from "./collectors/kube-policy.js";
 import { kubeRbac } from "./collectors/kube-rbac.js";
 import { kubeWorkloads } from "./collectors/kube-workloads.js";
+import { awsCloudtrail } from "./collectors/aws-cloudtrail.js";
+import { awsEks } from "./collectors/aws-eks.js";
+import { awsElbv2 } from "./collectors/aws-elbv2.js";
+import { awsNetwork } from "./collectors/aws-network.js";
+import { awsObservability } from "./collectors/aws-observability.js";
+import { awsRds } from "./collectors/aws-rds.js";
 import { EVALUATORS } from "./evaluators/index.js";
 import { createFixRunner } from "./fix.js";
 import { diffScans } from "./history.js";
@@ -16,6 +22,7 @@ import { runScan } from "./scan.js";
 import { permissionReport } from "./permissions.js";
 
 export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac];
+export const AWS_COLLECTORS = [awsNetwork, awsElbv2, awsEks, awsRds, awsCloudtrail, awsObservability];
 const SHORT = (name) => String(name || "").split("/").pop();
 
 // The browser never gets evidence fields, only statuses and results.
@@ -29,10 +36,22 @@ export function suggestionsOf(scan) {
   return (scan?.results || []).filter((r) => r.status === "FAIL" && r.addon).map((r) => ({ control: r.id, title: r.title, addon: r.addon, severity: r.severity }));
 }
 
-export function createScoreApi({ app, kubeFor, history, catalog, profiles, settings = {}, pageOrigin, collectors = KUBE_COLLECTORS, clock = () => new Date(), runner = null, fixOptions = {} }) {
+export function createScoreApi({ app, kubeFor, aws = null, history, catalog, profiles, settings = {}, pageOrigin, collectors = KUBE_COLLECTORS, clock = () => new Date(), runner = null, fixOptions = {} }) {
   // cluster → the kube context it was scanned through, so the rescan after
   // a fix reads the cluster that was fixed, whatever was scanned meanwhile.
   const contextOf = new Map();
+  // scorecard.packs (cloudspider.yaml): which packs SCAN offers.
+  const packOn = (target) => !Array.isArray(settings.packs) || settings.packs.includes(target);
+  // AWS: the account in settings.regions (first is home), never a cluster.
+  async function scanAws() {
+    if (!aws?.clients || !aws.regions?.length) throw new Error("no AWS regions to scan (scorecard.regions in cloudspider.yaml)");
+    const [cat, prof] = await Promise.all([catalog(), profiles()]);
+    const scan = await runScan({ target: "aws", catalog: cat, profiles: prof.profiles, collectors: AWS_COLLECTORS, evaluators: EVALUATORS, context: { clients: aws.clients, regions: aws.regions }, environment: settings.environment || "", clock });
+    scan.clusterName = "account";
+    const previous = await history.latest("aws", "account");
+    await history.save(scan);
+    return { scan, diff: diffScans(previous, scan) };
+  }
   async function scanNow(context) {
     const kube = kubeFor(context);
     if (!kube) throw new Error(`no kube context ${context}`);
@@ -52,7 +71,13 @@ export function createScoreApi({ app, kubeFor, history, catalog, profiles, setti
   const controlOf = async (scanId, id) => (await history.get(scanId))?.results.find((r) => r.id === id) || null;
 
   return {
-    async view({ context = "" } = {}) {
+    async view({ context = "", target = "kubernetes" } = {}) {
+      if (target === "aws") {
+        const latest = await history.latest("aws", "account");
+        const trend = await history.trend("aws", "account");
+        const prev = trend.length > 1 ? await history.get(trend.at(-2).id) : null;
+        return { target, cluster: "account", scan: publicScan(latest), trend, diff: latest ? diffScans(prev, latest) : null, suggestions: [], permissions: latest ? permissionReport(latest) : null, fix: fixes.state() };
+      }
       const kube = kubeFor(context);
       if (!kube) return { error: `no kube context ${context || "(default)"}`, hint: "CONNECT a cluster on its EKS card first." };
       const t = await kube.target();
@@ -62,10 +87,12 @@ export function createScoreApi({ app, kubeFor, history, catalog, profiles, setti
       const prev = trend.length > 1 ? await history.get(trend.at(-2).id) : null;
       return { context: kube.context, cluster, scan: publicScan(latest), trend, diff: latest ? diffScans(prev, latest) : null, suggestions: suggestionsOf(latest), permissions: latest ? permissionReport(latest) : null, fix: fixes.state() };
     },
-    async scan(origin, { context = "" } = {}) {
+    async scan(origin, { context = "", target = "kubernetes" } = {}) {
       if (!originAllowed(origin, pageOrigin)) return { error: "the scan did not run", hint: "Open Cloud Spider at the address npm start printed." };
       try {
-        const { scan, diff } = await scanNow(context);
+        if (target !== "aws" && target !== "kubernetes") return { error: "target must be kubernetes or aws" };
+        if (!packOn(target)) return { error: `the ${target} pack is off`, hint: "scorecard.packs in cloudspider.yaml lists the packs SCAN offers." };
+        const { scan, diff } = target === "aws" ? await scanAws() : await scanNow(context);
         return { scan: publicScan(scan), diff, suggestions: suggestionsOf(scan), permissions: permissionReport(scan) };
       } catch (failure) {
         return { error: `the scan failed: ${failure?.message || failure}` };
