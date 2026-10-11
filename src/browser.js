@@ -232,7 +232,8 @@ function renderChrome() {
   renderTally();
   renderMorning();
   const names = troubleNames().filter((name) => !(ui.status || "").includes(name));
-  statusEl.textContent = names.length ? `${ui.status ? `${ui.status}  ` : ""}${names.join(", ")} is in trouble` : ui.status;
+  const who = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
+  statusEl.textContent = names.length ? `${ui.status ? `${ui.status}  ` : ""}${who} ${names.length > 1 ? "are" : "is"} in trouble` : ui.status;
   const words = `${statusEl.textContent} ${!errorEl.hidden ? errorEl.textContent : ""}`;
   statusEl.classList.toggle("issue", hasTrouble() || /did not|cannot|fail|denied|broken|trouble/i.test(words));
   renderRadioPanel();
@@ -450,11 +451,19 @@ function hasTrouble() {
 
 function troubleNames() {
   if (mode === "cluster") {
-    return (clusterData?.diagram?.nodes || [])
-      .filter((node) => node.status === "broken")
-      .map((node) => node.label || node.kind)
-      .filter(Boolean)
-      .slice(0, 2);
+    // The workload is the useful name: its namespace and its pods break with
+    // it, so list workloads first, then pods, then whatever else is broken,
+    // and count what does not fit instead of dropping it silently.
+    const RANK = { workload: 0, pod: 1, service: 2, node: 3, namespace: 4 };
+    const broken = (clusterData?.diagram?.nodes || []).filter((node) => node.status === "broken" && (node.label || node.kind));
+    broken.sort((a, b) => (RANK[a.kind] ?? 5) - (RANK[b.kind] ?? 5));
+    // A broken workload already explains its pods and its namespace.
+    const lead = broken.length ? RANK[broken[0].kind] ?? 5 : 5;
+    if (lead === 0) broken.splice(0, broken.length, ...broken.filter((node) => node.kind === "workload" || node.kind === "service" || node.kind === "node"));
+    const names = [...new Set(broken.map((node) => (node.kind === "workload" && node.ns ? `${node.ns}/${node.label}` : node.label || node.kind)))];
+    const shown = names.slice(0, 2);
+    if (names.length > 2) shown.push(`${names.length - 2} more`);
+    return shown;
   }
   if (mode !== "map") return [];
   return (place?.fixtures || [])
@@ -466,13 +475,15 @@ function troubleNames() {
 
 function showSpend() {
   const onMap = mode === "map";
-  spendEl.hidden = !onMap || !spend;
+  // The LCD is there from the first frame (reading the bill…), so the
+  // header row does not jump when the bill arrives seconds later.
+  spendEl.hidden = !onMap;
   pipEl.hidden = !pipOpen;
   if (spendEl.hidden) {
     spendLines.hidden = true;
     return;
   }
-  const label = spend?.label || "the bill";
+  const label = spend?.label || "reading the bill…";
   spendLabel.textContent = label;
   spendLines.hidden = !spendOpen;
   if (spendOpen) renderSpend(spendLines, spend, { iconURL });
