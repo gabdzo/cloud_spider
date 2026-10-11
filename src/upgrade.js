@@ -25,6 +25,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ADDON_PARAMETERS = {
   karpenter: [{ name: "capacity", type: "string", default: "spot", choices: ["spot", "on-demand"] }],
   "scaling-demo": [
+    { name: "hpa", type: "string", default: "on", choices: ["on", "off"] },
     { name: "burst", type: "string", default: "off", choices: ["off", "on"] },
     { name: "inflate", type: "number", default: 0, min: 0, max: 6 },
   ],

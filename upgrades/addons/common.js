@@ -35,14 +35,21 @@ export function setup({ pulumi, aws, k8s, addon }) {
   return { config, clusterName, provider, k: { provider }, cluster, tags: { cloudspider: "expendable" } };
 }
 
+// Helm's createNamespace leaves the namespace behind on destroy (live test
+// 2026-10-11: kyverno, cert-manager and keda stayed, cert-manager with its
+// webhook CA secret). The namespace is a Pulumi resource instead, so take it
+// down removes it too. kube-system is never ours.
 export function helmRelease(k8s, k, addon, values, opts = {}) {
   const oci = addon.chart.startsWith("oci://");
+  const own = addon.namespace !== "kube-system";
+  const ns = own ? new k8s.core.v1.Namespace(`${addon.id}-ns`, { metadata: { name: addon.namespace } }, k) : null;
+  const dependsOn = [...[].concat(opts.dependsOn || []), ...(ns ? [ns] : [])];
   return new k8s.helm.v3.Release(
     addon.id,
     {
       name: addon.id,
       namespace: addon.namespace,
-      createNamespace: addon.namespace !== "kube-system",
+      createNamespace: false,
       chart: addon.chart,
       version: addon.chartVersion,
       ...(oci ? {} : { repositoryOpts: { repo: addon.repo } }),
@@ -51,7 +58,7 @@ export function helmRelease(k8s, k, addon, values, opts = {}) {
       cleanupOnFail: true,
       timeout: 600,
     },
-    { ...k, ...opts },
+    { ...k, ...opts, dependsOn },
   );
 }
 

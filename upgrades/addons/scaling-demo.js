@@ -6,15 +6,18 @@ import { setup, small, viewerAccess } from "./common.js";
 //   - burst=on: a second load generator, 8 parallel loops on web
 //   - inflate=N: N pause pods asking for 500m CPU each in scaling-demo; more
 //     than the node has left makes Karpenter (if up) add a node
-// Without the demo stack the HPAs wait for their targets.
+//   - hpa=off: no HPAs, for a cluster without the demo app (the HPAs live in
+//     namespace demo, and an up there fails with namespaces "demo" not found)
 export default function scalingDemo({ pulumi, aws, k8s, addon }) {
   const { config, k } = setup({ pulumi, aws, k8s, addon });
   const burst = config.get("burst") || "off";
   const inflate = Number(config.get("inflate") ?? 0);
+  const hpa = config.get("hpa") || "on";
+  if (!["on", "off"].includes(hpa)) throw new Error("hpa must be on or off");
   if (!["on", "off"].includes(burst)) throw new Error("burst must be on or off");
   if (!Number.isInteger(inflate) || inflate < 0 || inflate > 6) throw new Error("inflate must be a whole number from 0 to 6");
 
-  for (const name of ["web", "api"]) {
+  for (const name of hpa === "on" ? ["web", "api"] : []) {
     new k8s.autoscaling.v2.HorizontalPodAutoscaler(`hpa-${name}`, {
       metadata: { name, namespace: "demo", labels: { "app.kubernetes.io/part-of": "cloudspider-addons" } },
       spec: {
