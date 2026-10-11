@@ -63,6 +63,21 @@ function nodeFact(layer, checks) {
     const r = get("L-HTTP-02")?.observed?.redirects || 0;
     return `${h.observed?.status} · ${h.observed?.finalTiming?.total ?? h.durationMs ?? "?"} ms${r ? ` · ${r}↪` : ""}`;
   }
+  if (layer === "cdn") {
+    const d = get("A-CF-01");
+    const b = get("A-CF-02");
+    if (d?.status === "UNKNOWN") return "not readable";
+    const pattern = b?.observed?.behavior?.pathPattern;
+    return `${d?.observed?.id || "?"}${pattern ? ` · ${pattern === "*" ? "default" : pattern}` : ""}${b?.status === "FAIL" ? " · origin ✗" : ""}`;
+  }
+  if (layer === "lb") {
+    const r = get("A-ELB-01");
+    const hs = get("A-ELB-02");
+    if (r?.status === "UNKNOWN") return "not readable";
+    const tgs = hs?.observed?.targetGroups || [];
+    if (tgs.length) return short(`${r?.observed?.lb?.name || "ALB"} · ${tgs.map((t) => `${t.healthy}/${t.total}`).join(" ")} healthy`, 30);
+    if (r?.observed?.action === "fixed-response") return `${r.observed.lb?.name || "ALB"} · fixed ${r.observed.statusCode}`;
+  }
   const mine = checks.filter((c) => c.layer === layer);
   const bad = mine.find((c) => c.status === "FAIL") || mine.find((c) => c.status === "UNKNOWN") || mine[0];
   return short(bad?.text || bad?.reason || "", 30);
@@ -103,11 +118,13 @@ export function ndModel(run, { filter = "all" } = {}) {
       chain.push({ layer: "client", label: "CLIENT", status: "PASS", fact: r.context?.sample ? "sample run" : "this machine" });
       continue;
     }
-    const mine = checks.filter((c) => c.layer === step.layer);
+    // offPath: a fact about the zone, not this request (another name's
+    // dangling record); it is listed, but does not colour the hop.
+    const mine = checks.filter((c) => c.layer === step.layer && !c.offPath);
     // A layer with nothing that ran is not a hop (yet).
     if (!mine.some((c) => c.status !== "NOT_ASSESSED" && c.status !== "NOT_APPLICABLE") && step.layer !== "tls") continue;
     chain.push({ layer: step.layer, label: step.label, status: worst(mine.map((c) => c.status)), fact: nodeFact(step.layer, checks) });
-    if (step.layer === "http" && who && !checks.some((c) => c.layer === "cdn" || c.layer === "lb")) {
+    if (step.layer === "http" && who && !checks.some((c) => (c.layer === "cdn" || c.layer === "lb") && c.status !== "NOT_APPLICABLE" && c.status !== "NOT_ASSESSED")) {
       const status = checks.find((c) => c.id === "L-HTTP-01")?.observed?.status;
       chain.push({ layer: "answer", label: WHO[who] || "SERVER", status: status >= 500 ? "FAIL" : "PASS", fact: `answered ${status ?? "?"}`, who });
     }
@@ -115,7 +132,7 @@ export function ndModel(run, { filter = "all" } = {}) {
   // The first failing hop breaks the edge into it.
   // An answer node that failed (an ALB 503) is where the request broke,
   // even though the HTTP check failed too.
-  const answer = chain.findIndex((n) => n.layer === "answer" && n.status === "FAIL");
+  const answer = chain.findIndex((n) => ["answer", "cdn", "lb", "network", "cluster"].includes(n.layer) && n.status === "FAIL");
   const broken = answer >= 0 ? answer : chain.findIndex((n) => n.status === "FAIL");
   chain.forEach((n, i) => {
     n.edgeIn = i === 0 ? "" : broken >= 0 && i === broken ? "broken" : broken >= 0 && i > broken ? "after" : "ok";
