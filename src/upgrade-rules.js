@@ -7,8 +7,28 @@ export function cardName(spec, values = {}) {
   return values.name || ""
 }
 
+// TAKE IT DOWN accepts the card's name or its stack name (camp's name is
+// cloudspider-camp, its stack is camp: both work).
+export function confirmNames(spec, values = {}, legacyName = LEGACY_CLUSTER) {
+  return [...new Set([cardName(spec, values), stackFor(spec, values, legacyName)].filter(Boolean))]
+}
+
 export function confirmMatches(expected, typed) {
-  return Boolean(expected) && typed === expected
+  const names = (Array.isArray(expected) ? expected : [expected]).filter(Boolean)
+  const text = typeof typed === "string" ? typed.trim() : ""
+  return Boolean(text) && names.includes(text)
+}
+
+// What the confirm field asks for, and what a mismatch says.
+export function confirmPrompt(spec, values = {}, legacyName = LEGACY_CLUSTER) {
+  const [name, other] = confirmNames(spec, values, legacyName)
+  if (!name) return "type the name"
+  return other ? `type ${name} (or ${other})` : `type ${name}`
+}
+
+export function confirmMismatch(spec, values = {}, legacyName = LEGACY_CLUSTER) {
+  const names = confirmNames(spec, values, legacyName)
+  return names.length ? `the name does not match: type ${names.join(" or ")} to take it down` : "the name does not match"
 }
 
 export function upgradeSpiderLine({ action, title, sample, response }) {

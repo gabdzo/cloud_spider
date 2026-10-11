@@ -91,7 +91,7 @@ test("a destroy of pgcluster needs the stack name typed", async () => {
     return child;
   };
   const upgrade = createUpgrade({ run: fake, env: {} });
-  assert.equal(upgrade.run({ module: "pgcluster", action: "destroy", params: { confirmName: "nope" } }).error, "the name does not match");
+  assert.equal(upgrade.run({ module: "pgcluster", action: "destroy", params: { confirmName: "nope" } }).error, "the name does not match: type pgcluster to take it down");
   assert.equal(calls.length, 0);
   const started = upgrade.run({ module: "pgcluster", action: "destroy", params: { confirmName: "pgcluster" } });
   assert.equal(started.running, true);

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { costFor, estimate } from "./stack-costs.js";
 import { ADDONS, DIR as ADDON_DIR, PROJECT as ADDON_PROJECT } from "../upgrades/addons/catalog.js";
-import { LEGACY_CLUSTER, cardName, confirmMatches, errorHead, failureText, historyFact, rerunCommand, resourceFact, runHint, stackFor, tooManyClusters } from "./upgrade-rules.js";
+import { LEGACY_CLUSTER, cardName, confirmMatches, confirmMismatch, confirmNames, errorHead, failureText, historyFact, rerunCommand, resourceFact, runHint, stackFor, tooManyClusters } from "./upgrade-rules.js";
 import { volumeSweepStep } from "./volume-sweep.js";
 import { createRunLog } from "./run-log.js";
 
@@ -19,7 +19,7 @@ export function childEnvFor(env) {
 
 export { LEGACY_CLUSTER, failureText, stackFor, tooManyClusters } from "./upgrade-rules.js";
 export { errorHead, rerunCommand, runHint } from "./upgrade-rules.js";
-export { campFixtures, cardName, confirmMatches, historyFact, pulumiMissing, pulumiWarning, resourceFact, upgradeSpiderLine, watchLine } from "./upgrade-rules.js";
+export { campFixtures, cardName, confirmMatches, confirmMismatch, confirmNames, confirmPrompt, historyFact, pulumiMissing, pulumiWarning, resourceFact, upgradeSpiderLine, watchLine } from "./upgrade-rules.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -373,6 +373,7 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
         note: spec.note,
         engine: "pulumi",
         needs: spec.needs || [],
+        stack: spec.stack,
         vault: spec.vault || "",
         cost: estimate(costFor(spec.cost || [], {})),
         costLines: spec.cost || [],
@@ -454,8 +455,8 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       const steps = upgradeSteps(spec, stack, verb, checked.values);
       const command = rerunCommand(directory, steps);
       const no = (error) => refuse({ module: spec.id, action: verb, stack, error, command });
-      if (verb === "destroy" && !confirmMatches(cardName(spec, checked.values), params?.confirmName)) {
-        return no("the name does not match");
+      if (verb === "destroy" && !confirmMatches(confirmNames(spec, checked.values, legacyName), params?.confirmName)) {
+        return no(confirmMismatch(spec, checked.values, legacyName));
       }
       if (verb === "up" && tooManyClusters(clusters, cardName(spec, checked.values), maxClusters)) {
         return no(`${clusters.length} clusters are already up (${clusters.join(", ")}); the limit is ${maxClusters}. Take one down or set CLOUDSPIDER_MAX_CLUSTERS.`);
