@@ -22,7 +22,7 @@ import { createVaultView } from "./vault-view.js";
 import { sampleFailures, sampleFetch, sampleLogs, samplePlace, sampleStacks } from "./sample.js";
 import { createStackReader } from "./vault-stacks.js";
 import { createSloStore } from "./slo-store.js";
-import { effectiveConfig, leaves, loadConfig, resolvePath, usage } from "./config.js";
+import { effectiveConfig, envExports, loadConfig, resolvePath, usage } from "./config.js";
 import { createStorage } from "./storage.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -43,13 +43,7 @@ process.stdout.write(`config: ${loaded.file || "no cloudspider.yaml (defaults + 
 // Modules that read env vars directly (the AWS SDK, kube.js, vaults.js,
 // pulumi/terraform children) see what the file or a flag set. A value that
 // came from the env is already there; a default is left unset as before.
-for (const { path, spec } of leaves()) {
-  const from = loaded.sources[path.join(".")];
-  if (!spec.env || from === "default" || from.startsWith("env ")) continue;
-  const value = path.reduce((at, key) => at[key], config);
-  if (value === "" || typeof value === "object") continue;
-  process.env[spec.env] = String(path.join(".") === "paths.vaults" || path.join(".") === "kube.contextsFile" ? resolvePath(root, value) : value);
-}
+Object.assign(process.env, envExports(loaded, root));
 const port = config.server.port;
 const host = config.server.host;
 const pageOrigin = `http://${host.includes(":") ? `[${host}]` : host}:${port}`;

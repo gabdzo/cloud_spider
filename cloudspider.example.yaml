@@ -57,6 +57,14 @@ storage:
   path: .cloudspider       # env CLOUDSPIDER_STATE_DIR. Bill cache, SLO history, run logs.
   table: ""                # reserved for the dynamodb backend
 
+learn:
+  # The lab cluster LEARN checks run against; every kubectl/oc they call is
+  # pinned to it. Must look like a lab (kind-*, k3d-*, minikube,
+  # docker-desktop, rancher-desktop, crc, or "lab" in the name); ppf-* work
+  # contexts are always refused. Empty: RUN CHECK says "no lab context".
+  context: ""              # env CLOUDSPIDER_LAB_CONTEXT, e.g. kind-lab
+  deny: []                 # env CLOUDSPIDER_LAB_DENY=a,b. More contexts that are never a lab.
+
 features:
   ask: true                # env CLOUDSPIDER_FEATURE_ASK. ASK, the local agent terminal.
   stacksRun: true          # env CLOUDSPIDER_FEATURE_STACKS_RUN. Running Pulumi from STACKS.

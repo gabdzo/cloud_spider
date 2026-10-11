@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaults, effectiveConfig, findConfigFile, leaves, loadConfig, redact, SCHEMA, usage } from "../src/config.js";
+import { defaults, effectiveConfig, envExports, findConfigFile, leaves, loadConfig, redact, SCHEMA, usage } from "../src/config.js";
 import { createApp } from "../src/app.js";
 import { featureOff, listen } from "../src/server.js";
 import { loadContexts } from "../src/kube-contexts.js";
@@ -165,4 +165,22 @@ test("--help lists every key with its env var and flag", () => {
   const text = usage();
   for (const { path } of leaves(SCHEMA)) assert.ok(text.includes(path.join(".")), path.join("."));
   assert.match(text, /server\.port\s+9241\s+PORT\s+--port/);
+});
+
+test("learn.context and learn.deny replace CLOUDSPIDER_LAB_CONTEXT / _DENY, which keep working", async () => {
+  const dir = await withFile("learn:\n  context: kind-lab\n  deny: [ppf-prod, work-x]\npaths:\n  vaults: my-vaults\n");
+  const got = loadConfig({ env: {}, root: dir, home: "/nowhere" });
+  assert.deepEqual(got.errors, []);
+  assert.equal(got.config.learn.context, "kind-lab");
+  // What main.js exports for learn.js (and the other env readers).
+  const env = envExports(got, "/repo");
+  assert.equal(env.CLOUDSPIDER_LAB_CONTEXT, "kind-lab");
+  assert.equal(env.CLOUDSPIDER_LAB_DENY, "ppf-prod,work-x");
+  assert.equal(env.CLOUDSPIDER_VAULTS_DIR, "/repo/my-vaults");
+  assert.equal(env.PORT, undefined, "a default is not exported");
+  // The env var still wins and is not re-exported.
+  const fromEnv = loadConfig({ env: { CLOUDSPIDER_LAB_CONTEXT: "minikube" }, root: dir, home: "/nowhere" });
+  assert.equal(fromEnv.config.learn.context, "minikube");
+  assert.equal(envExports(fromEnv, "/repo").CLOUDSPIDER_LAB_CONTEXT, undefined);
+  assert.match(loadConfig({ argv: ["--set", "learn.context=not a context"], env: {}, root: "/nowhere", home: "/nowhere" }).errors[0], /learn\.context/);
 });
