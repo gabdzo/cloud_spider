@@ -62,7 +62,7 @@ export const UPGRADES = [
   {
     id: "eks",
     title: "EKS",
-    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the VPC CNI (with prefix delegation, so a node is not capped at its ENI IPs: 11 pods on a t4g.small, 17 on a t4g.medium), the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them. maxPods: auto keeps the node group as it is; 32 (t4g.small) or 58 (t4g.medium) REPLACES the node group once so new nodes take that many pods (PREVIEW shows the replace; RUN asks you to confirm it).",
+    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the VPC CNI (with prefix delegation, so a node is not capped at its ENI IPs: 11 pods on a t4g.small, 17 on a t4g.medium), the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them. Prefix delegation alone does not raise a managed node's pod cap: maxPods auto keeps the node group as it is, at EKS's ENI limit (11 on a t4g.small, 17 on a t4g.medium); 32 (t4g.small) or 32, 58 or 110 (t4g.medium) REPLACES the node group once, the new group first, so new nodes take that many pods (PREVIEW shows the replace; RUN asks you to confirm it).",
     dir: "upgrades/eks",
     stack: "upgrade",
     project: "cloudspider-upgrade",

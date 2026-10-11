@@ -37,6 +37,8 @@ await pulumi.runtime.setMocks(
       if (token.includes("getCallerIdentity")) return { accountId: "550536272523", arn: "arn:aws:iam::550536272523:user/mock", userId: "mock" };
       if (token.includes("getParameter")) return { value: "ami-test", name: args.inputs?.name, type: "String" };
       if (token.includes("eks/getCluster")) return { name: args.inputs?.name, endpoint: "https://mock.eks", certificateAuthorities: [{ data: "bW9jaw==" }], arn: `arn:aws:eks:eu-north-1:550536272523:cluster/${args.inputs?.name}`, vpcConfig: { vpcId: "vpc-mock", subnetIds: ["subnet-a", "subnet-b"], clusterSecurityGroupId: "sg-cluster" } };
+      // A mock subnet's zone is its id's last letter: subnet-a is in eu-north-1a.
+      if (token.includes("ec2/getSubnet")) return { id: args.inputs?.id, availabilityZone: `eu-north-1${String(args.inputs?.id).slice(-1)}`, vpcId: "vpc-mock" };
       // EKS add-ons on the mock cluster: CLOUDSPIDER_MOCK_EKS_ADDONS is
       // {"<addonName>": {"project": "<tag>"}}; any other add-on is absent.
       if (token.includes("eks/getAddon")) {

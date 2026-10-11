@@ -124,8 +124,10 @@ the VPC CNI caps a t4g.medium at 17 pods and a t4g.small at 11.
   (`ENABLE_PREFIX_DELEGATION=true`, `WARM_PREFIX_TARGET=1`; card
   `prefixDelegation`, default on). It is created before the node group.
 - EKS card `maxPods` (default `auto`): `auto` adds nothing, so an existing
-  node group is untouched (EKS itself picks 110 for nodes it launches with
-  prefix delegation on, and kubelet then reserves 11 MiB × 110 + 255 MiB).
+  node group is untouched, and its nodes keep EKS's ENI limit (11 on a
+  t4g.small, 17 on a t4g.medium) **even with prefix delegation on** (seen
+  live on cloudspider-up 2026-10-11: a t4g.medium launched after prefix
+  delegation still had 17). The stack's `podsPerNode` output says so.
   `32` (t4g.small) / `32|58|110` (t4g.medium) adds a launch template with an
   AL2023 nodeadm NodeConfig (`kubelet.config.maxPods`) and **replaces the
   node group once** (a new one comes up first; the legacy stack keeps
@@ -134,8 +136,18 @@ the VPC CNI caps a t4g.medium at 17 pods and a t4g.small at 11.
   Only new nodes get the new cap. After the RUN check:
   `kubectl get nodes -o custom-columns=NAME:.metadata.name,PODS:.status.allocatable.pods`.
 - Karpenter's EC2NodeClass sets `kubelet.maxPods` (card `maxPods`, default
-  32) only when the vpc-cni add-on has prefix delegation on; a change drifts
-  the NodeClass, so Karpenter replaces its (ephemeral) nodes.
+  32) only when the vpc-cni add-on has prefix delegation on (read at RUN: a
+  Karpenter stack run before the EKS stack turned it on has no maxPods, so
+  RUN it again); a change drifts the NodeClass, so Karpenter replaces its
+  (ephemeral) nodes. Karpenter computes the ENI limit itself otherwise.
+- Karpenter's NodePool requires `topology.kubernetes.io/zone` In the AZs of
+  the cluster's subnets (config `zones` narrows it). That allows every zone;
+  it does not spread nodes (Karpenter picks the cheapest offering). Pods with
+  `topologySpreadConstraints` on `topology.kubernetes.io/zone` spread them.
+- Prefix delegation needs a free, aligned /28 in the node's subnet. A /24
+  fragmented by one-IP-per-pod nodes can have none (`InsufficientCidrBlocks`
+  in CloudTrail, pods stuck on "failed to assign an IP address"): replacing
+  the old nodes frees their scattered IPs (cloudspider-up 2026-10-11).
 - Every DaemonSet of ours runs at `system-node-critical`, so on a full node
   it preempts a lower-priority pod instead of waiting.
 - Preflight (demo): a DaemonSet needs 1 free slot on every node. A full node
