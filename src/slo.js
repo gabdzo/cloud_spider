@@ -70,7 +70,7 @@ export function validateSlos(list, path = "spec.slos") {
       return;
     }
     for (const key of Object.keys(item)) {
-      if (!["name", "sli", "source", "target", "window", "threshold", "percentile", "description"].includes(key)) warnings.push(`${at}.${key}: unknown key, ignored`);
+      if (!["name", "sli", "source", "target", "window", "threshold", "percentile", "cluster", "description"].includes(key)) warnings.push(`${at}.${key}: unknown key, ignored`);
     }
     const before = errors.length;
     const name = typeof item.name === "string" ? item.name.trim() : "";
@@ -93,9 +93,19 @@ export function validateSlos(list, path = "spec.slos") {
         if (!PERCENTILES.includes(percentile)) errors.push(`${at}.percentile: must be one of ${PERCENTILES.join(", ")}`);
       } else if (item.percentile !== undefined) warnings.push(`${at}.percentile: only an alb latency SLO reads a percentile, ignored`);
     } else if (item.percentile !== undefined) warnings.push(`${at}.percentile: only a latency SLO has one, ignored`);
+    // kube:* only: which cluster (its EKS name, or a kube context's name)
+    // when Cloud Spider reads more than one.
+    let cluster = null;
+    if (item.cluster !== undefined) {
+      if (!source.startsWith("kube:")) warnings.push(`${at}.cluster: only a kube:* SLO reads a cluster, ignored`);
+      else if (typeof item.cluster !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}$/.test(item.cluster.trim())) errors.push(`${at}.cluster: the cluster's name or a kube context's name`);
+      else cluster = item.cluster.trim();
+    }
     if (errors.length !== before) return;
     seen.add(name);
-    slos.push({ name, sli: item.sli, source, target, window, threshold, percentile, description: typeof item.description === "string" ? item.description.trim() : "" });
+    const out = { name, sli: item.sli, source, target, window, threshold, percentile, description: typeof item.description === "string" ? item.description.trim() : "" };
+    if (cluster) out.cluster = cluster;
+    slos.push(out);
   });
   return { slos, errors, warnings };
 }
@@ -419,11 +429,15 @@ function restartsOf(pod) {
 }
 
 // Records one cluster read into the ledger. snap is kube.snapshot()'s
-// answer (or {error}). Keeps the last restart counts to see new restarts.
+// answer (or {error}). Keeps the last restart counts to see new restarts,
+// per reader (`from`, the kube context): two contexts on one cluster each
+// compare with their own last read, so the ratios hold. A context with a
+// namespace allowlist only ever reports the namespaces it may read.
 export function createClusterSlo({ ledger, clock = Date.now }) {
   const lastRestarts = new Map();
   return {
-    record(cluster, snap) {
+    record(cluster, snap, { from = cluster, namespaces = "*" } = {}) {
+      const allowed = Array.isArray(namespaces) ? new Set(namespaces) : null;
       const at = clock();
       ledger.record(`kube:${cluster}:api`, snap?.error ? 0 : 1, 1, { at });
       if (snap?.error) return;
@@ -434,7 +448,8 @@ export function createClusterSlo({ ledger, clock = Date.now }) {
       }
       const groups = new Map();
       for (const pod of snap.pods || []) {
-        const key = `${pod.metadata?.namespace}/${pod.metadata?.name}`;
+        if (allowed && !allowed.has(pod.metadata?.namespace)) continue;
+        const key = `${from}|${cluster}|${pod.metadata?.namespace}/${pod.metadata?.name}`;
         const now = restartsOf(pod);
         const before = lastRestarts.get(key);
         lastRestarts.set(key, now);
@@ -483,10 +498,44 @@ export function resourcesHealthy(items) {
   return { good: list.length - bad.length, total: list.length };
 }
 
+// Which cluster a kube:* SLO reads, when several are read (every kube
+// context feeds the ledger; drill 2026-10-11, finding 6):
+//   1. the SLO's own `cluster:` (an EKS name, or a context's name)
+//   2. kube:restarts:<ns>/<workload>: the cluster where that workload is seen
+//      (the primary context's first if several)
+//   3. an EKS cluster the vault owns on the map
+//   4. a cluster the vault's other kube:restarts SLOs found
+//   5. the primary context's cluster
+// clusters: [{ cluster, context, primary }] for every context read so far.
+export function sloClusterFor(slo, { vault, ledger, clusters = [], owned = [], cluster = null }) {
+  const names = [...new Set(clusters.map((c) => c.cluster).filter(Boolean))];
+  const primary = clusters.find((c) => c.primary)?.cluster || cluster || names[0] || null;
+  if (slo.cluster) return clusters.find((c) => c.context === slo.cluster)?.cluster || slo.cluster;
+  const seenIn = (ref) => {
+    const keys = new Set(ledger.keys());
+    const hits = names.filter((name) => keys.has(`kube:${name}:restarts:${ref}`));
+    return hits.includes(primary) ? primary : hits[0] || null;
+  };
+  const ref = /^kube:restarts:(.+)$/.exec(slo.source)?.[1];
+  if (ref) {
+    const hit = seenIn(ref);
+    if (hit) return hit;
+  }
+  const eks = owned.filter((item) => item?.kind === "eks").map((item) => item.name).find((name) => names.includes(name));
+  if (eks) return eks;
+  for (const other of vault?.slos || []) {
+    const otherRef = /^kube:restarts:(.+)$/.exec(other.source)?.[1];
+    const hit = otherRef ? seenIn(otherRef) : null;
+    if (hit) return hit;
+  }
+  return primary;
+}
+
 // The vault's SLO answers. checks: the vault's check results (peek);
 // owned: its resources on the map; hits: its CloudWatch answers;
-// cluster: the kube context's cluster name (for kube:* sources).
-export function vaultSlos(vault, { ledger, checks = [], owned = [], hits = [], cluster = null, now = Date.now() }) {
+// cluster: the primary kube context's cluster name, clusters: every
+// context's (for kube:* sources).
+export function vaultSlos(vault, { ledger, checks = [], owned = [], hits = [], cluster = null, clusters = [], now = Date.now() }) {
   return (vault.slos || []).map((slo) => {
     const key = `vault:${vault.key || vault.name}:${slo.name}`;
     const win = windowMs(slo.window);
@@ -527,6 +576,7 @@ export function vaultSlos(vault, { ledger, checks = [], owned = [], hits = [], c
       return evaluateSlo(slo, ledger.counts(key, win), { from: "owned resources" });
     }
     if (slo.source.startsWith("kube:")) {
+      cluster = sloClusterFor(slo, { vault, ledger, clusters, owned, cluster }) || cluster;
       if (!cluster) return evaluateSlo(slo, null, { from: "the Cluster view (kube context)" });
       const restarts = /^kube:restarts:(.+)$/.exec(slo.source);
       const ledgerKey = restarts ? `kube:${cluster}:restarts:${restarts[1]}` : `kube:${cluster}:${slo.source.slice(5)}`;

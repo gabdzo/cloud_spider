@@ -99,17 +99,24 @@ export function parseContextsYaml(text) {
   return { contexts: unique(list, errors), errors };
 }
 
+// CLOUDSPIDER_KUBE_CONTEXT only counts when nothing else lists contexts;
+// say so instead of ignoring it silently (drill 2026-10-11, finding 6).
+function ignoredSingle(env, winner) {
+  const one = String(env.CLOUDSPIDER_KUBE_CONTEXT || "").trim();
+  return one ? [`CLOUDSPIDER_KUBE_CONTEXT=${one} is ignored: ${winner} lists the contexts (add it there)`] : [];
+}
+
 export async function loadContexts({ env = process.env, read, cwd = process.cwd() } = {}) {
   if (String(env.CLOUDSPIDER_KUBE_CONTEXTS || "").trim()) {
     const got = parseContextsEnv(env.CLOUDSPIDER_KUBE_CONTEXTS);
-    if (got.contexts.length) return { ...got, source: "CLOUDSPIDER_KUBE_CONTEXTS" };
+    if (got.contexts.length) return { ...got, errors: [...got.errors, ...ignoredSingle(env, "CLOUDSPIDER_KUBE_CONTEXTS")], source: "CLOUDSPIDER_KUBE_CONTEXTS" };
   }
   const file = env.CLOUDSPIDER_KUBE_CONTEXTS_FILE || `${cwd.replace(/\/$/, "")}/${CONTEXTS_FILE}`;
   if (read) {
     const text = await read(file, "utf8").catch(() => null);
     if (text != null) {
       const got = parseContextsYaml(text);
-      if (got.contexts.length) return { ...got, source: CONTEXTS_FILE };
+      if (got.contexts.length) return { ...got, errors: [...got.errors, ...ignoredSingle(env, CONTEXTS_FILE)], source: CONTEXTS_FILE };
     }
   }
   const single = entry({ context: env.CLOUDSPIDER_KUBE_CONTEXT || DEFAULT_CONTEXT }, "CLOUDSPIDER_KUBE_CONTEXT", []);

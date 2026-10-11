@@ -455,6 +455,11 @@ spec:
       threshold: 300
       percentile: p95            # alb latency only: p50 | p90 | p95 (default) | p99
       target: 99%
+    - name: api-restarts
+      sli: error-rate
+      source: kube:restarts:shop/shopapi
+      target: 99%
+      cluster: cs-drill          # kube:* only, optional: an EKS name or a kube context
 ```
 
 - **SLI** is what was measured: good ÷ all. **SLO** is your target for it over the window. **SLA** is a promise to someone else with a penalty. There is none here, so keep each SLO stricter than any SLA you might give.
@@ -473,7 +478,14 @@ spec:
     - **The cost.** 4 metrics per read, one read a minute: about 5,760 metrics a day, about **$0.06/day ($1.7/month) per watched ALB** at $0.01 per 1,000. Nothing is read for an ALB no `alb` SLO names.
   - `lambda` and `ec2` use the 3 h, 5-minute CloudWatch series the map already asks for.
   - `resources` uses the owned pieces' status on each map read.
-  - `kube:*` uses the Cluster view's read-only snapshot. Restarts count from the second read on.
+  - `kube:*` uses the read-only snapshots of **every** kube context (§19), each read on its own clock by the health watch, and each only within its namespace allowlist. Restarts count from the second read on. Which cluster a vault's `kube:*` SLO reads:
+    1. its own `cluster:` (the EKS name or a kube context's name), when set
+    2. for `kube:restarts:<ns>/<workload>`, the cluster where that workload is seen
+    3. an EKS cluster the vault owns on the map
+    4. the cluster the vault's own `kube:restarts` SLOs found
+    5. the primary (first) context's cluster
+  
+    So a CONNECTed cluster's vault no longer reads `nodata` until it is made primary. `CLOUDSPIDER_KUBE_CONTEXT` set next to `CLOUDSPIDER_KUBE_CONTEXTS` or cloudspider.contexts.yaml is now named as ignored in the server's log.
 
   Readings are kept in 5-minute buckets for at most 30 days, in memory and in **`.cloudspider/slo-ledger.json`** (saved every minute when something changed, and on Ctrl-C; read back on start, so a restart keeps the history). The file holds counts only. Delete it to start the budgets over. Apart from the `alb` reader above, no AWS or kube call is added.
 
