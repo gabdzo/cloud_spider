@@ -3140,7 +3140,9 @@ const learnView = createLearnView({
 });
 learnApi = learnView;
 // SCORE: the scorecard panel over the map (src/score/view.js).
-const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key") });
+// SCAN reads the cluster picked in the Cluster view (an auto-CONNECTed EKS
+// cluster is listed there; the current kubeconfig context is not changed).
+const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key"), context: () => clusterData?.context || clusterContext });
 document.querySelector("#score-key").addEventListener("click", () => {
   if (!scoreView.isOpen() && learnView.isOpen()) learnView.setOpen(false);
   scoreView.toggle();
