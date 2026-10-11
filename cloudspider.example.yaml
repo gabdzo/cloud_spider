@@ -65,7 +65,16 @@ learn:
   context: ""              # env CLOUDSPIDER_LAB_CONTEXT, e.g. kind-lab
   deny: []                 # env CLOUDSPIDER_LAB_DENY=a,b. More contexts that are never a lab.
 
+scorecard:
+  # SCORE: which profile judges the scan (production rules when empty, and
+  # the report says it assumed that), which regions the AWS scan reads
+  # (first is home; empty: aws.region) and which packs SCAN offers.
+  environment: ""          # production, staging, development, sandbox…
+  regions: []              # e.g. [eu-north-1, eu-west-1]
+  packs: [kubernetes, aws]
+
 features:
   ask: true                # env CLOUDSPIDER_FEATURE_ASK. ASK, the local agent terminal.
   stacksRun: true          # env CLOUDSPIDER_FEATURE_STACKS_RUN. Running Pulumi from STACKS.
   learn: true              # env CLOUDSPIDER_FEATURE_LEARN. LEARN labs.
+  scorecard: true          # SCORE. Its FIX button also needs stacksRun.

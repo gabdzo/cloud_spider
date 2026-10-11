@@ -2237,6 +2237,7 @@ export function featureOff(features, method, path) {
   if (features.ask === false && path.startsWith("/api/agent")) return "ask";
   if (features.stacksRun === false && method === "POST" && path === "/api/upgrade") return "stacksRun";
   if (features.learn === false && path.startsWith("/api/learn")) return "learn";
+  if (features.scorecard === false && path.startsWith("/api/score")) return "scorecard";
   // FIX runs add-on stacks through upgradeRun directly, so it is gated here too.
   if (features.stacksRun === false && method === "POST" && path === "/api/score/fix") return "stacksRun";
   return "";

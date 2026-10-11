@@ -53,9 +53,23 @@ test("the page has the SCORE key and panel", async () => {
   }
 });
 
-
-test("stacksRun off blocks FIX (it runs stacks through upgradeRun) but not SCAN", async () => {
+test("features: scorecard off hides /api/score; stacksRun off blocks FIX but not SCAN", async () => {
   const { featureOff } = await import("../src/server.js");
+  assert.equal(featureOff({ scorecard: false }, "GET", "/api/score"), "scorecard");
   assert.equal(featureOff({ stacksRun: false }, "POST", "/api/score/fix"), "stacksRun");
   assert.equal(featureOff({ stacksRun: false }, "POST", "/api/score/scan"), "");
+});
+
+test("config: the scorecard section validates and defaults", async () => {
+  const { defaults, loadConfig } = await import("../src/config.js");
+  assert.deepEqual(defaults().scorecard, { environment: "", regions: [], packs: ["kubernetes", "aws"] });
+  assert.equal(defaults().features.scorecard, true);
+  const bad = loadConfig({ argv: [], env: {}, root: "/nowhere", exists: (f) => f.endsWith("cloudspider.yaml"), read: () => "scorecard:\n  packs: [gcp]\n" });
+  assert.ok(bad.errors.some((e) => /scorecard\.packs/.test(e)), bad.errors.join("; "));
+});
+
+test("features.scorecard: false also hides the SCORE key in the page", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../src/browser.js", import.meta.url), "utf8");
+  assert.match(source, /features\.scorecard === false\) document\.querySelector\("#score-key"\)\.hidden = true/);
 });

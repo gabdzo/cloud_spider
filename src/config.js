@@ -66,10 +66,16 @@ export const SCHEMA = {
     context: { type: "string", pattern: CONTEXT, default: "", env: "CLOUDSPIDER_LAB_CONTEXT", doc: "the lab cluster's kube context LEARN checks are pinned to (kind-*, k3d-*, minikube, crc, or \"lab\" in the name); empty: checks do not run" },
     deny: { type: "list", items: CONTEXT, default: [], env: "CLOUDSPIDER_LAB_DENY", doc: "more contexts that are never a lab (ppf-* always are)" },
   },
+  scorecard: {
+    environment: { type: "string", pattern: /^[a-z0-9-]{0,32}$/, default: "", doc: "environment label that picks the scorecard profile (production, staging, development, sandbox…); empty: production rules, and the report says so" },
+    regions: { type: "list", items: REGION, default: [], doc: "regions the AWS scorecard scans (first is home, for CloudTrail); empty: aws.region" },
+    packs: { type: "list", items: /^(kubernetes|aws)$/, default: ["kubernetes", "aws"], doc: "which control packs SCAN offers" },
+  },
   features: {
     ask: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_ASK", doc: "ASK: the local agent terminal" },
     stacksRun: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_STACKS_RUN", doc: "running Pulumi from STACKS (reading stacks stays on)" },
     learn: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_LEARN", doc: "LEARN: the lab shelf and its read-only checks" },
+    scorecard: { type: "boolean", default: true, doc: "SCORE: the readiness scorecard (FIX also needs stacksRun)" },
   },
 };
 
