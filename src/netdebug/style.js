@@ -41,10 +41,10 @@ export const ND_CSS = `
   ${TONES}
   #netdebug .nd-label { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--n-text2); white-space: nowrap; }
   #netdebug .nd-quiet { color: var(--n-muted); margin: 0; }
-  #netdebug .nd-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--n-line); background: var(--n-raised); flex-wrap: wrap; }
+  #netdebug .nd-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--n-line); background: var(--n-raised); flex-wrap: nowrap; }
   #netdebug[data-open="0"] .nd-bar { border-bottom: 0; }
   #netdebug .nd-title { font-size: 12px; letter-spacing: .18em; color: var(--n-accent); }
-  #netdebug .nd-url { flex: 1 1 320px; min-width: 200px; font: inherit; font-size: 13px; padding: 5px 9px; color: var(--n-text); background: var(--n-ink); border: 1px solid var(--n-strong); outline: none; }
+  #netdebug .nd-url { flex: 1 1 280px; min-width: 180px; font: inherit; font-size: 13px; padding: 5px 9px; color: var(--n-text); background: var(--n-ink); border: 1px solid var(--n-strong); outline: none; }
   #netdebug .nd-url:focus { border-color: var(--n-accent); }
   #netdebug .nd-url::placeholder { color: var(--n-muted); }
   #netdebug .nd-modes { display: inline-flex; gap: 6px; }
@@ -56,7 +56,8 @@ export const ND_CSS = `
   #netdebug .nd-btn:hover:not(:disabled) { background: var(--n-hover); }
   #netdebug .nd-btn:disabled { color: var(--n-muted); border-color: var(--n-line); cursor: default; }
   #netdebug .nd-primary:not(:disabled) { color: var(--n-ink); background: var(--n-accent); }
-  #netdebug .nd-meta { font-size: 11px; color: var(--n-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 340px; }
+  #netdebug .nd-meta { font-size: 11px; color: var(--n-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 340px; min-width: 60px; }
+  #netdebug .nd-exports, #netdebug .nd-fold { flex-shrink: 0; }
   #netdebug .nd-exports { display: inline-flex; gap: 6px; }
   #netdebug .nd-fold { font: inherit; cursor: pointer; color: var(--n-text2); background: transparent; border: 1px solid var(--n-line); padding: 2px 8px; }
   #netdebug .nd-body { overflow: auto; padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }

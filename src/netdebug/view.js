@@ -433,7 +433,10 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       body.replaceChildren(h("ol", { className: "nd-steps", "aria-live": "polite" }, ...model.steps.map((s) => h("li", { dataset: { state: s.state } }, h("span", { className: "nd-glyph", text: s.state === "done" ? "✓" : s.state === "failed" ? "✗" : "▶" }), s.text))));
       return;
     }
-    const hasWhy = why && run?.report?.findings?.some((f) => f.walkthrough === "alb-503");
+    // Open from a WHY? link too (an SLO burning on an ALB that answers 200
+    // right now): whenever the run reached a load balancer of the account.
+    const reachedAlb = (run?.report?.checks || []).some((c) => c.id === "A-ELB-01" && c.status !== "NOT_APPLICABLE");
+    const hasWhy = why && (reachedAlb || run?.report?.findings?.some((f) => f.walkthrough === "alb-503"));
     body.replaceChildren(
       hasWhy ? drawWhy() : "",
       h("div", { className: "nd-verdict", dataset: { status: model.verdict } }, h("b", { text: STATE_TEXT[model.verdict] || model.verdict }), h("span", { text: `${model.summary.pass} pass · ${model.summary.fail} fail · ${model.summary.unknown} unknown · ${model.summary.notAssessed} not assessed` })),
