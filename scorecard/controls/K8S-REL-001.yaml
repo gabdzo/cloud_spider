@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-REL-001
+revision: 1
+title: "App workloads set CPU and memory requests"
+category: reliability
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: requests-set
+aggregation: proportional
+requires: [kube-deployments, kube-statefulsets]
+whyItMatters: "Without requests the scheduler packs blind and the first busy neighbour starves the pod."
+remediation: { summary: "Set resources.requests.cpu and .memory on every container (Kyverno's baseline policy reports the ones missing).", effort: S }
+verification: "Every container of every Deployment and StatefulSet outside the system namespaces sets both requests."

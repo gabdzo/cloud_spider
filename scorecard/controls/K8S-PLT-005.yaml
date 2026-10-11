@@ -1,0 +1,17 @@
+kind: Control
+id: K8S-PLT-005
+revision: 1
+title: "Node autoscaling runs"
+category: platform
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: workload-present
+aggregation: all-or-nothing
+requires: [kube-cluster, kube-deployments, kube-daemonsets]
+params:
+  deployments: [karpenter, cluster-autoscaler, cluster-autoscaler-aws-cluster-autoscaler]
+whyItMatters: "Without node autoscaling, pods that do not fit stay Pending until someone adds a node by hand."
+remediation: { summary: "Install Karpenter from the Stacks add-ons (needs the Pod Identity agent; adds nodes, which cost money).", effort: M, addon: karpenter }
+verification: "A karpenter or cluster-autoscaler deployment is ready."

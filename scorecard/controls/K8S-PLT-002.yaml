@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-PLT-002
+revision: 1
+title: "The metrics API is served"
+category: platform
+target: kubernetes
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: metrics-api
+aggregation: all-or-nothing
+requires: [kube-cluster, kube-metrics]
+whyItMatters: "No metrics API means no HPA, no kubectl top and no CPU/memory in the Cluster view; autoscaling silently does nothing."
+remediation: { summary: "Install metrics-server from the Stacks add-ons.", effort: S, addon: metrics-server }
+verification: "GET /apis/metrics.k8s.io/v1beta1/nodes answers 200."

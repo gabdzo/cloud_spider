@@ -1,0 +1,16 @@
+kind: Control
+id: K8S-REL-010
+revision: 1
+title: "No pod is stuck (crash loop, image pull, long Pending)"
+category: reliability
+target: kubernetes
+evidenceType: runtime
+severity: { default: high }
+confidence: high
+evaluator: pods-healthy
+aggregation: proportional
+requires: [kube-pods]
+emptyIs: pass
+whyItMatters: "A pod in CrashLoopBackOff or stuck Pending is capacity you pay for and an answer nobody gets."
+remediation: { summary: "Open the pod in the Cluster view (logs, events) and fix the cause; Pending pods usually need room (node autoscaling, K8S-PLT-005).", effort: M }
+verification: "No pod is in CrashLoopBackOff, ImagePullBackOff, ErrImagePull, CreateContainer*Error, Failed, or Pending for more than 10 minutes."
