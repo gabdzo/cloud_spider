@@ -1,3 +1,4 @@
+import { createShutdown } from "./shutdown.js";
 import { spawnSync } from "node:child_process";
 import { createAws } from "./aws.js";
 import { createApp } from "./app.js";
@@ -85,6 +86,8 @@ async function loadKubeContexts() {
 }
 const connector = createConnector({ env: process.env, contextsFile, exampleFile: join(root, "cloudspider.contexts.example.yaml") });
 const kube = kubeContexts[0]?.kube || createKube();
+// Stack runs (pulumi). Kept here too: a Ctrl-C waits for them (shutdown.js).
+const stacks = createUpgrade({ runsDir: join(stateDir, "runs"), volumes: aws.volumes, eksMaxNodes: config.stacks.eks.maxNodes });
 const app = createApp({
   ec2: aws.ec2,
   trail: aws.trail,
@@ -93,7 +96,7 @@ const app = createApp({
   path: createPathAws(),
   cost: config.cost.enabled ? createCost({ storage, ttl: config.cost.cacheTtlMinutes * 60_000 }) : costOff(),
   costTtl: config.cost.cacheTtlMinutes * 60_000,
-  upgrade: createUpgrade({ runsDir: join(stateDir, "runs"), volumes: aws.volumes, eksMaxNodes: config.stacks.eks.maxNodes }),
+  upgrade: stacks,
   connector,
   loadKubeContexts,
   terraform: createTerraformReader(),
@@ -160,12 +163,14 @@ else if (sloLoaded.note && !/no saved/.test(sloLoaded.note)) process.stdout.writ
 setInterval(() => {
   sloStore.save().then((out) => out.error && process.stdout.write(`SLO history: not saved (${out.error})\n`));
 }, 60_000);
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.once(signal, () => {
-    sloStore.save().finally(() => process.exit(0));
-    setTimeout(() => process.exit(0), 2000).unref();
-  });
-}
+// Ctrl-C / SIGTERM: a running pulumi is asked to cancel and release its
+// stack lock first (up to 60 s; Ctrl-C again forces). Then SLO history is
+// saved and the server exits.
+const shutdown = createShutdown({
+  upgrade: stacks,
+  save: () => Promise.race([sloStore.save(), new Promise((done) => setTimeout(done, 2000).unref())]),
+});
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => shutdown.signal(signal));
 
 const pulumi = spawnSync("pulumi", ["version"], { shell: false });
 const pulumiLine = pulumiWarning(pulumi.status);
