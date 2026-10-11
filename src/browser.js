@@ -44,6 +44,7 @@ import { plateText } from "./vault-schema.js";
 import { snapshot } from "./agent-text.js";
 import { createTerminal } from "./terminal.js";
 import { createLearnView } from "./learn-view.js";
+import { createScoreView } from "./score/view.js";
 import { metricAlerts, paintPlace } from "./metrics.js";
 import { sunrise } from "./sprites/landmarks.js";
 import { drawSprite } from "./draw-kit.js";
@@ -3118,6 +3119,12 @@ const learnView = createLearnView({
   },
 });
 learnApi = learnView;
+// SCORE: the scorecard panel over the map (src/score/view.js).
+const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key") });
+document.querySelector("#score-key").addEventListener("click", () => {
+  if (!scoreView.isOpen() && learnView.isOpen()) learnView.setOpen(false);
+  scoreView.toggle();
+});
 document.querySelector("#learn-key").addEventListener("click", () => {
   markHistory();
   if (!learnView.isOpen()) {
