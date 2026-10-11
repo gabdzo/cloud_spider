@@ -1,0 +1,13 @@
+kind: Control
+id: AWS-SEC-030
+revision: 1
+title: "S3 buckets block public access"
+category: security
+target: aws
+evidenceType: config
+severity: { default: high }
+confidence: high
+blockedBy: "s3:GetPublicAccessBlock (collector not built)"
+whyItMatters: "A bucket without a public access block can be made public by one policy change."
+remediation: { summary: "Turn on S3 Block Public Access at account and bucket level.", effort: S }
+verification: "GetPublicAccessBlock shows all four settings true."

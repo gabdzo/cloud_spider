@@ -10,6 +10,13 @@ test("the shipped catalog loads without errors and every id is unique", async ()
   assert.equal(new Set(catalog.controls.map((c) => c.id)).size, catalog.controls.length);
 });
 
+test("stubs name what would assess them", async () => {
+  const { controls } = await loadCatalog();
+  const stub = controls.find((c) => c.id === "AWS-SEC-030");
+  assert.match(stub.blockedBy, /s3:GetPublicAccessBlock/);
+  assert.equal(stub.evaluator, undefined);
+});
+
 test("a broken or duplicate file is reported and skipped, the rest still load", async () => {
   const files = {
     "/c/catalog.yaml": "version: 1.2.3\n",
@@ -46,4 +53,11 @@ test("every assessed control names an evaluator that exists", async () => {
   const { EVALUATORS } = await import("../src/score/evaluators/index.js");
   const { controls } = await loadCatalog();
   for (const c of controls.filter((x) => x.evaluator)) assert.equal(typeof EVALUATORS[c.evaluator], "function", c.id);
+});
+
+test("every gate a profile names is a control in the catalog (a missing gate would silently stop gating)", async () => {
+  const { loadProfiles } = await import("../src/score/profiles.js");
+  const { controls } = await loadCatalog();
+  const ids = new Set(controls.map((c) => c.id));
+  for (const profile of (await loadProfiles()).profiles) for (const gate of profile.gates) assert.ok(ids.has(gate), `${profile.id} gates on ${gate}, which is not in the catalog`);
 });

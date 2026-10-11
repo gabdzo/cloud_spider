@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-SEC-010
+revision: 1
+title: "CloudTrail logs management events in every region"
+category: security
+target: aws
+evidenceType: config
+severity: { default: critical }
+confidence: high
+evaluator: cloudtrail-on
+aggregation: all-or-nothing
+requires: [aws-cloudtrail]
+whyItMatters: "Without a trail there is no record of who changed what: incidents become guesswork."
+remediation: { summary: "Create a multi-region trail with management events (read and write) and keep it logging.", effort: S }
+verification: "A trail has IsMultiRegionTrail=true, IsLogging=true and management events ReadWriteType All."

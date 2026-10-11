@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-SEC-002
+revision: 1
+title: "The root user has no access keys"
+category: security
+target: aws
+evidenceType: config
+severity: { default: critical }
+confidence: high
+blockedBy: "iam:GetAccountSummary (collector not built)"
+whyItMatters: "Root access keys cannot be scoped or restricted; a leaked key owns the whole account. A production gate: until it is assessed the verdict stays CONDITIONAL at best."
+remediation: { summary: "Delete the root user's access keys (IAM → Security credentials, signed in as root) and use roles instead.", effort: S }
+verification: "iam:GetAccountSummary shows AccountAccessKeysPresent = 0."
+references:
+  - { source: "AWS IAM user guide: root user best practices", url: "https://docs.aws.amazon.com/IAM/latest/UserGuide/root-user-best-practices.html" }

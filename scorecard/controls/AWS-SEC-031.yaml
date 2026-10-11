@@ -1,0 +1,13 @@
+kind: Control
+id: AWS-SEC-031
+revision: 1
+title: "GuardDuty is enabled in every scanned region"
+category: security
+target: aws
+evidenceType: config
+severity: { default: medium }
+confidence: high
+blockedBy: "guardduty:ListDetectors (collector not built)"
+whyItMatters: "Without GuardDuty, credential misuse and crypto-mining go unnoticed."
+remediation: { summary: "Enable GuardDuty in each region.", effort: S }
+verification: "ListDetectors returns an enabled detector per region."

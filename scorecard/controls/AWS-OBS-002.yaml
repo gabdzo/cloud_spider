@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-OBS-002
+revision: 2
+title: "Log groups have a retention period"
+category: observability
+target: aws
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: log-retention
+aggregation: proportional
+requires: [aws-loggroups]
+whyItMatters: "Never-expiring log groups grow cost without bound."
+remediation: { summary: "Set a retention period on each log group.", effort: S }
+verification: "DescribeLogGroups shows retentionInDays on every group."

@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-SEC-011
+revision: 1
+title: "Database storage is encrypted"
+category: security
+target: aws
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: rds-encrypted
+aggregation: proportional
+requires: [aws-rds]
+whyItMatters: "Unencrypted storage and snapshots leak data the moment a snapshot is shared or copied."
+remediation: { summary: "Encrypt by restoring from an encrypted snapshot copy (encryption cannot be turned on in place).", effort: M }
+verification: "Every RDS instance has StorageEncrypted=true."

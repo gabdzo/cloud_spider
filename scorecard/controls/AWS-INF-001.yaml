@@ -1,0 +1,13 @@
+kind: Control
+id: AWS-INF-001
+revision: 1
+title: "Path stops before the pod (informational)"
+category: reliability
+target: aws
+evidenceType: config
+severity: { default: info }
+confidence: high
+blockedBy: "path diagnosis join to Service and Pod (not built)"
+whyItMatters: "Load balancer path health is not pod health; this records the boundary."
+remediation: { summary: "None; informational.", effort: S }
+verification: "Not applicable."

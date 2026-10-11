@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-REL-011
+revision: 1
+title: "EKS clusters are ACTIVE"
+category: reliability
+target: aws
+evidenceType: runtime
+severity: { default: high }
+confidence: high
+evaluator: eks-active
+aggregation: all-or-nothing
+requires: [aws-eks]
+whyItMatters: "A cluster stuck in UPDATING or FAILED cannot take changes and may not be serving."
+remediation: { summary: "Read the cluster's health issues in the EKS console and resolve them before deploying.", effort: M }
+verification: "Every EKS cluster's status is ACTIVE."
