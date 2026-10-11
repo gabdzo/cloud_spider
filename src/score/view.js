@@ -25,10 +25,12 @@ export function scoreModel(view) {
   const fixable = new Map((view.suggestions || []).map((s) => [s.control, s]));
   const rows = [...scan.results]
     .sort((a, b) => ORDER[a.status] - ORDER[b.status] || (b.gate === true) - (a.gate === true) || a.id.localeCompare(b.id))
-    .map((r) => ({ id: r.id, title: r.title, status: r.status, statusText: STATUS_TEXT[r.status] || r.status, severity: r.severity, gate: r.gate === true, reason: r.reason || failingLine(r), fix: fixable.has(r.id) ? fixable.get(r.id).addon : "" }));
+    .map((r) => ({ id: r.id, title: r.title, status: r.status, statusText: STATUS_TEXT[r.status] || r.status, severity: r.severity, gate: r.gate === true, reason: r.reason || failingLine(r), fix: fixable.get(r.id)?.already ? "" : fixable.get(r.id)?.addon || "", card: fixable.get(r.id)?.card || null, already: fixable.get(r.id)?.already || "" }));
   const counts = Object.fromEntries(Object.keys(ORDER).map((s) => [s, scan.results.filter((r) => r.status === s).length]));
   const rank = new Map((card.priorities || []).map((p, i) => [p.id, i]));
-  const next = rows.filter((r) => r.fix).sort((a, b) => (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99)).slice(0, 3).map(({ id, title, fix, severity }) => ({ id, title, addon: fix, severity }));
+  // Actionable first (FIX or OPEN a card); an add-on that is already there
+  // is not a next fix: it comes last, with why it still fails.
+  const next = rows.filter((r) => r.fix || r.card || r.already).sort((a, b) => Boolean(a.already) - Boolean(b.already) || (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99)).slice(0, 3).map(({ id, title, fix, severity, card, already, reason }) => ({ id, title, addon: fix, severity, card, already, reason }));
   const categories = (card.categories || [])
     .filter((c) => c.applicableWeight > 0)
     .map((c) => ({
@@ -96,7 +98,7 @@ export function fixModel(state, plan = null) {
   return { step: "failed", stage: -1, title, text: state.error || "the fix failed", log, buttons: [] };
 }
 
-export function createScoreView({ root, toggleButton, context = () => "", onChange = () => {} }) {
+export function createScoreView({ root, toggleButton, context = () => "", onChange = () => {}, openCard = null }) {
   let open = false;
   let target = "kubernetes";
   let model = null;
@@ -316,10 +318,22 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
     const list = el("div", "sc-nextlist");
     for (const n of model.next) {
       const card = el("div", "sc-nextcard");
-      const b = button(`FIX: ${n.addon}`, "sc-btn sc-primary");
-      b.disabled = busy;
-      b.addEventListener("click", () => act({ control: n.id, phase: "plan" }));
-      card.append(el("span", "sc-sev", n.severity), el("span", "sc-nexttitle", n.title), el("span", "sc-muted sc-small", `${n.id} · add-on stack ${n.addon}: preview first, nothing changes until you approve`), b);
+      card.append(el("span", "sc-sev", n.severity), el("span", "sc-nexttitle", n.title));
+      if (n.card) {
+        // Fixed on a Stacks card: open it prefilled (live instance type).
+        const params = Object.entries(n.card.params || {}).map(([k, v]) => `${k} ${v}`).join(", ");
+        const b = button(`OPEN ${String(n.card.id).toUpperCase()} CARD`, "sc-btn sc-primary");
+        b.disabled = busy || !openCard;
+        b.addEventListener("click", () => openCard?.(n.card, model.cluster));
+        card.append(el("span", "sc-muted sc-small", `${n.id} · ${n.reason || ""}`.trim()), el("span", "sc-muted sc-small", `opens Stacks › ${String(n.card.id).toUpperCase()}${params ? ` with ${params}` : ""}; PREVIEW first, nothing changes until you RUN`), b);
+      } else if (n.already) {
+        card.append(el("span", "sc-muted sc-small", `${n.id} · ${n.already}`));
+      } else {
+        const b = button(`FIX: ${n.addon}`, "sc-btn sc-primary");
+        b.disabled = busy;
+        b.addEventListener("click", () => act({ control: n.id, phase: "plan" }));
+        card.append(el("span", "sc-muted sc-small", `${n.id} · add-on stack ${n.addon}: preview first, nothing changes until you approve`), b);
+      }
       list.append(card);
     }
     wrap.append(list);
