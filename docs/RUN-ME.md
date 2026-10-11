@@ -470,6 +470,7 @@ spec:
   - the map's info plate for every piece the vault owns
   - the Cluster view's node card (API and nodes)
   - a workload card: click a workload, and its own restart rate is shown next to the cluster objectives
+  - the morning's **HURTING** card, for an SLO whose budget is spent or that burns FAST. HURTING also names an ALB whose last 10 minutes of traffic got 5XX (5 % or more, or 50+), including the ALB's own 503s when no target is left; such an ALB is not called idle
   - **SLA · SLO · SLI ?** on any of these opens the short explanation
 - **Where the numbers come from:**
   - `checks` uses the vault's own HTTP checks, as the page already runs them (one reading per result).
@@ -549,7 +550,10 @@ gets:
   - ImagePullBackOff / ErrImagePull
   - OOMKilled (current or last state)
   - restart counts that rose since the last read (3 or more)
-  - Pending for over 5 minutes
+  - Pending for over 5 minutes, with the cause: the pod's newest Warning
+    event (for example `FailedAttachVolume: Multi-Attach error…` or
+    `FailedScheduling`), else its Unschedulable condition. Events are read
+    (GET, cached 60 s) only for namespaces with a stuck pod.
   - failed Jobs
   - Deployments and StatefulSets with fewer ready replicas than wanted
 

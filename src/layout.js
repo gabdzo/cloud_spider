@@ -754,7 +754,30 @@ function billFor(bill, item, kind) {
   return { checked: true, row: row || null };
 }
 
-export function morningReport({ place, events = [], trail = { read: false }, bill = null, idleStreak = {} } = {}) {
+// What an ALB served in the last ten minutes, from the metrics answer
+// (metrics.js; the SLO reader's 1-minute points when it has them).
+export const TRAFFIC_MS = 10 * 60_000;
+export function recentTraffic(hit) {
+  if (!hit || hit.kind !== "alb") return null;
+  const period = (Number(hit.period) || 300) * 1000;
+  const take = Math.max(1, Math.ceil(TRAFFIC_MS / period));
+  const sum = (metric) => ((hit.series || []).find((item) => item.metric === metric)?.points || []).slice(-take).reduce((total, p) => total + (Number(p) || 0), 0);
+  const elb = sum("HTTPCode_ELB_5XX_Count");
+  const tgt = sum("HTTPCode_Target_5XX_Count");
+  const requests = Math.max(sum("RequestCount"), elb + tgt);
+  return { requests, elb, tgt, bad: elb + tgt, minutes: Math.round((take * period) / 60_000) };
+}
+
+// The SLOs worth the HURTING line: budget spent, or burning fast.
+// slos: [{ vault, name, flag, fast, burn, owned }] (app.js, from the last
+// vault evaluation).
+function sloBits(slos = []) {
+  return slos
+    .filter((slo) => slo.flag === "spent" || (slo.flag === "burning" && slo.fast))
+    .map((slo) => ({ id: slo.owned?.[0] || "", text: `vault ${slo.vault}: ${slo.name} ${slo.flag === "spent" ? "BUDGET SPENT" : "burning"}${slo.burn != null ? ` (burn ${slo.burn}×${slo.fast ? " FAST" : ""})` : ""}` }));
+}
+
+export function morningReport({ place, events = [], trail = { read: false }, bill = null, idleStreak = {}, metrics = null, slos = [] } = {}) {
   const systems = systemsOf(place || {});
   const marks = {};
   const objects = [...(place?.instances || []), ...(place?.fixtures || [])];
@@ -768,11 +791,32 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
     return `${system && system !== item.name ? `${system}: ` : ""}${item.name || item.id} is in trouble`;
   });
   const balancers = (place?.fixtures || []).filter((item) => item.kind === "alb");
+  // Live traffic that fails (drill 2026-10-11 finding 9: "Nothing is
+  // hurting: 0 of 0 targets" while the ALB answered 503 to everyone). An
+  // ALB that serves 5XX is hurting whatever its target health says, and an
+  // ALB with traffic is never idle.
+  const busy = new Set();
+  const trafficBits = [];
+  for (const lb of balancers) {
+    const seen = recentTraffic(metrics?.targets?.[lb.id]);
+    if (!seen || !seen.requests) continue;
+    busy.add(lb.id);
+    const share = seen.bad / seen.requests;
+    if (!seen.bad || (share < 0.05 && seen.bad < 50)) continue;
+    const counts = place?.linksRead && !place?.linkNote ? place.targetCounts?.[lb.id] : null;
+    const why = seen.elb && counts && !counts.healthy ? `, ${counts.total ? "no healthy target" : "no target"}: the ALB answers 503 itself` : "";
+    trafficBits.push({ id: lb.id, text: `API ${lb.name || lb.id}: ${seen.bad} of ${seen.requests} requests got a 5XX in the last ${seen.minutes} min (${Math.round(share * 100)}%)${why}` });
+  }
+  const sloHurt = sloBits(slos);
+  const extra = [...trafficBits, ...sloHurt];
+  const extraText = extra.map((bit) => bit.text);
+  const extraFocus = extra.find((bit) => bit.id)?.id || "";
   if (!place?.linksRead || place?.linkNote) {
     const why = place?.linkNote ? ` (${place.linkNote})` : "";
     const base = balancers.length ? `target health not checked${why}` : "no balancer on the map, target health not checked";
-    hurting = brokenBits.length
-      ? { status: "fail", text: `${brokenBits.join("; ")}. ${base}.`, focus: broken[0].id }
+    const bits = [...extraText, ...brokenBits];
+    hurting = bits.length
+      ? { status: "fail", text: `${bits.join("; ")}. ${base}.`, focus: extraFocus || broken[0]?.id }
       : { status: "unknown", text: `${base[0].toUpperCase()}${base.slice(1)}.` };
   } else {
     const hurt = [];
@@ -793,8 +837,8 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
       const verb = counts.unhealthy === 1 ? "fails its health check" : "fail their health checks";
       hurt.push(`API ${lb.name || lb.id}: ${names.join(", ")} ${verb}${none}`);
     }
-    const bits = [...hurt, ...brokenBits];
-    if (bits.length) hurting = { status: "fail", text: `${bits.join("; ")}.`, focus: first || broken[0]?.id };
+    const bits = [...extraText, ...hurt, ...brokenBits];
+    if (bits.length) hurting = { status: "fail", text: `${bits.join("; ")}.`, focus: extraFocus || first || broken[0]?.id };
     else if (!balancers.length) hurting = { status: "ok", text: "Nothing is hurting. No balancer on the map to check." };
     else {
       const which = balancers.length === 1 ? ` behind ${balancers[0].name || balancers[0].id}` : "";
@@ -828,8 +872,8 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
     }
   }
 
-  // 3. What is idle but still billed.
-  const candidates = idleCandidates(place);
+  // 3. What is idle but still billed. An ALB with live traffic is not.
+  const candidates = idleCandidates(place).filter((item) => !busy.has(item.id));
   const kindOf = new Map((place?.fixtures || []).map((item) => [item.id, item.kind]));
   const burning = [];
   const waiting = [];
