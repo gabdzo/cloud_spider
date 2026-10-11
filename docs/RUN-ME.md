@@ -786,6 +786,15 @@ It says what the name points at in this account (A-TGT-01: a CloudFront distribu
 
 When the origin is one of the account's load balancers, the run follows it into the ALB. It does the same when the name points straight at the load balancer. PATH's own routing picks the listener and rule (A-ELB-01), and target health explains an empty or unhealthy target group (A-ELB-02). The DEBUG chain then shows CLOUDFRONT and ALB hops. In SAMPLE mode, `cdn.sample.test` shows the CloudFront 502 and `web.sample.test` the ALB 503.
 
+**VPC (N5):** from the ALB to its targets, the run reports:
+- A-VPC-01: security groups, PATH's own evaluator.
+- A-VPC-02: NACLs in both directions, including return traffic to the ephemeral ports 1024-65535. The denied ports and the deciding rule number are named.
+- A-VPC-03: route tables. A public ALB needs an internet gateway, and target subnets need a NAT gateway or S3/ECR endpoints. Blackhole routes are flagged.
+- A-VPC-04: free IPs in the pod subnets.
+- A-VPC-05: whether the VPC has flow logs. When they go to CloudWatch Logs in the default format, it looks up the REJECTs to each target over the last 15 minutes: one `FilterLogEvents` call, 50 events, at most 4 targets.
+
+Unlike the configuration verdicts, a REJECT is a fact. It raises the security-group or NACL finding to high confidence. The reads are `ec2:DescribeNetworkAcls`, `DescribeVpcEndpoints`, `DescribeSubnets`, `DescribeFlowLogs` and `logs:FilterLogEvents`. Turn them off with `network.aws.vpc` / `network.aws.flowLogs`. In SAMPLE mode, `api.sample.test` shows sample-sg-node-b dropping 8080, seen in the flow logs.
+
 A refused read is UNKNOWN and names the permission to add. Turn the reads off with `network.aws.route53` / `network.aws.cloudfront`. These Route 53 and CloudFront calls cost nothing.
 
 When an AWS load balancer answered, the path diagram follows the same host. In SAMPLE mode the panel debugs fixture answers (try `web.sample.test`, an ALB answering 503; `api.sample.test`, a slow origin; and `google.com`), so nothing leaves the machine.

@@ -78,6 +78,14 @@ function nodeFact(layer, checks) {
     if (tgs.length) return short(`${r?.observed?.lb?.name || "ALB"} · ${tgs.map((t) => `${t.healthy}/${t.total}`).join(" ")} healthy`, 30);
     if (r?.observed?.action === "fixed-response") return `${r.observed.lb?.name || "ALB"} · fixed ${r.observed.statusCode}`;
   }
+  if (layer === "network") {
+    const mark = (id, label) => {
+      const x = get(id);
+      return x && x.status !== "NOT_APPLICABLE" && x.status !== "NOT_ASSESSED" ? `${label} ${x.status === "PASS" ? "✓" : x.status === "FAIL" ? "✗" : "?"}` : "";
+    };
+    const hits = (get("A-VPC-05")?.observed?.hits || []).reduce((n, x) => n + x.count, 0);
+    return [mark("A-VPC-01", "SG"), mark("A-VPC-02", "NACL"), mark("A-VPC-03", "RT"), hits ? `${hits} REJECT` : ""].filter(Boolean).join(" · ");
+  }
   const mine = checks.filter((c) => c.layer === layer);
   const bad = mine.find((c) => c.status === "FAIL") || mine.find((c) => c.status === "UNKNOWN") || mine[0];
   return short(bad?.text || bad?.reason || "", 30);

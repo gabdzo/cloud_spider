@@ -3,7 +3,8 @@
 // classifies the target, then runs the AWS evaluators. Each phase adds its
 // evaluator to EVALUATORS (N3 DNS, N4 CloudFront + ALB, N5 VPC).
 import { awsDnsChecks, classify, recordsFor, zonesFor } from "./aws-dns.js";
-import { albChecks, cloudFrontChecks } from "./aws-edge.js";
+import { albChecks, albRoute, cloudFrontChecks } from "./aws-edge.js";
+import { legTargets, rejectPattern, vpcChecks } from "./aws-vpc.js";
 import { sampleAws } from "./sample-aws.js";
 import { RULES } from "./report.js";
 
@@ -13,10 +14,66 @@ export const EVALUATORS = [
   // N4: CloudFront first (it sets the hand-off), then the ALB.
   (aws, target) => cloudFrontChecks(aws, target),
   (aws, target) => albChecks(aws, target),
+  // N5: the VPC between the load balancer and its targets.
+  (aws, target) => vpcChecks(aws, target),
+];
+
+// Reads that depend on the classification (after Route 53 and CloudFront).
+export const ENRICHERS = [
+  // N5: NACLs, endpoints, free IPs, flow logs of the ALB leg's VPC, and the
+  // flow log REJECTs for up to 4 targets.
+  async (aws, target, src, step) => {
+    if (!aws.graph) return;
+    aws.albLeg = albRoute(aws, target);
+    if (!aws.albLeg || !src.vpc) return;
+    const region = aws.region;
+    const vpcId = aws.albLeg.lb.vpcId;
+    step(`read NACLs, endpoints, free IPs and flow logs of ${vpcId} (read-only)`);
+    const [nacls, endpoints, subnets, flowLogs] = await Promise.all([src.vpc.nacls(region, vpcId), src.vpc.endpoints(region, vpcId), src.vpc.subnets(region, vpcId), src.flowLogs === false ? null : src.vpc.flowLogs(region, [vpcId])]);
+    const vpc = { errors: {} };
+    for (const [key, res] of Object.entries({ nacls, endpoints, subnets, flowLogs })) {
+      if (!res) continue;
+      if (res.error) vpc.errors[key] = res.error;
+      else vpc[key] = res[key];
+    }
+    const log = (vpc.flowLogs || []).find((f) => f.destinationType === "cloud-watch-logs" && f.defaultFormat && f.destination);
+    if (log) {
+      vpc.rejects = {};
+      for (const t of legTargets(aws.graph, aws.albLeg).filter((x) => x.ip).slice(0, 4)) {
+        const res = await src.vpc.rejects(region, log.destination, rejectPattern(t.ip, t.port));
+        if (res.error) {
+          vpc.errors.rejects = res.error;
+          break;
+        }
+        vpc.rejects[`${t.ip}:${t.port}`] = res.records;
+      }
+    }
+    aws.vpc = vpc;
+  },
 ];
 
 // Findings that need AWS facts (inferences across layers).
 RULES.push(
+  (c) => {
+    const sg = c.get("A-VPC-01");
+    const nacl = c.get("A-VPC-02");
+    const blocker = sg?.status === "FAIL" ? sg : nacl?.status === "FAIL" ? nacl : null;
+    if (!blocker) return [];
+    const flow = c.get("A-VPC-05");
+    const seen = flow?.status === "FAIL" ? flow : null;
+    const health = c.get("A-ELB-02");
+    const sick = health && (health.observed?.targetGroups || []).some((tg) => tg.targets.some((t) => t.state !== "healthy")) ? health : null;
+    const what = blocker.id === "A-VPC-01" ? "a security group" : "a network ACL";
+    return [{ statement: `${what} drops the load balancer's traffic to its targets: ${blocker.text.replace(/\.$/, "")}${seen ? `. ${seen.text.replace(/^flow logs: /, "Flow logs saw it: ")}` : ""}${sick ? `. The target fails its health checks because of it` : ""}`, supports: [blocker.id, ...(seen ? [seen.id] : []), ...(sick ? [sick.id] : [])], next: [blocker.command, ...(seen ? [seen.command] : [])], verify: "the target is healthy in describe-target-health and no new REJECT shows up in the flow logs", severity: "high" }];
+  },
+  (c) => {
+    const out = [];
+    for (const id of ["A-VPC-03", "A-VPC-04"]) {
+      const r = c.get(id);
+      if (r?.status === "FAIL") out.push({ statement: r.text, supports: [id], next: [r.command], verify: id === "A-VPC-03" ? "the route tables have the routes the path needs and no blackhole" : "every pod subnet has >= 16 free IPs", severity: r.severity });
+    }
+    return out;
+  },
   (c) => {
     const cf = c.get("A-CF-02");
     if (cf?.status !== "FAIL") return [];
@@ -88,6 +145,7 @@ export async function collectAws(target, local, src, { step = () => {} } = {}) {
     if (aws.privateZone) aws.vpcs = (await src.route53.zoneVpcs(aws.privateZone.id)).vpcs || [];
   }
   aws.classification = classify({ host, cnames: aws.cnames, ips: aws.localIps, records: aws.records || [], graph: aws.graph, distributions: aws.distributions || [] });
+  for (const enrich of ENRICHERS) await enrich(aws, target, src, step);
   return aws;
 }
 
@@ -100,7 +158,7 @@ export function awsChecks(aws, target, local) {
 export function createAwsCollector(live = {}) {
   return async ({ target, evidence, step, body }) => {
     const src = body?.sample ? sampleAws() : live;
-    if (!src.graph && !src.route53 && !src.cloudfront) return null;
+    if (!src.graph && !src.route53 && !src.cloudfront && !src.vpc) return null;
     const aws = await collectAws(target, evidence, src, { step });
     evidence.aws = aws;
     return { checks: awsChecks(aws, target, evidence), from: ["aws"], context: { region: aws.region || undefined, target: aws.classification } };

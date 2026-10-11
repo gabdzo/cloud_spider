@@ -3,6 +3,8 @@
 // normalised to plain objects; errors come back as { error }.
 import { GetHealthCheckStatusCommand, GetHostedZoneCommand, ListHostedZonesCommand, ListResourceRecordSetsCommand, Route53Client, TestDNSAnswerCommand } from "@aws-sdk/client-route-53";
 import { CloudFrontClient, ListDistributionsCommand } from "@aws-sdk/client-cloudfront";
+import { DescribeFlowLogsCommand, DescribeNetworkAclsCommand, DescribeSubnetsCommand, DescribeVpcEndpointsCommand, EC2Client } from "@aws-sdk/client-ec2";
+import { CloudWatchLogsClient, FilterLogEventsCommand } from "@aws-sdk/client-cloudwatch-logs";
 
 const RETRY = { maxAttempts: 4, retryMode: "adaptive" };
 const fail = (err) => ({ error: `${err?.name || "Error"}: ${err?.message || String(err)}`.slice(0, 300) });
@@ -135,5 +137,44 @@ export function createCloudFrontReader({ client = new CloudFrontClient({ region:
         return fail(err);
       }
     },
+  };
+}
+
+// N5: the VPC reads (EC2 Describe*, one bounded FilterLogEvents per target).
+const DEFAULT_FLOW_FORMAT = "${version} ${account-id} ${interface-id} ${srcaddr} ${dstaddr} ${srcport} ${dstport} ${protocol} ${packets} ${bytes} ${start} ${end} ${action} ${log-status}";
+export function naclFrom(n) {
+  return {
+    id: n.NetworkAclId,
+    vpcId: n.VpcId,
+    default: n.IsDefault === true,
+    subnetIds: (n.Associations || []).map((a) => a.SubnetId),
+    // IPv6 entries are not evaluated (the CIDR helpers are IPv4).
+    entries: (n.Entries || []).filter((e) => e.CidrBlock).map((e) => ({ number: e.RuleNumber, egress: e.Egress === true, protocol: String(e.Protocol), action: e.RuleAction, cidr: e.CidrBlock, from: e.PortRange?.From ?? null, to: e.PortRange?.To ?? null })),
+  };
+}
+export function flowLogFrom(f) {
+  return { id: f.FlowLogId, resourceId: f.ResourceId, destinationType: f.LogDestinationType || "cloud-watch-logs", destination: f.LogGroupName || f.LogDestination || "", defaultFormat: !f.LogFormat || f.LogFormat === DEFAULT_FLOW_FORMAT, status: f.FlowLogStatus || "" };
+}
+export function rejectFrom(e) {
+  const f = String(e.message || "").trim().split(/\s+/);
+  return { eni: f[2], src: f[3], dst: f[4], srcPort: Number(f[5]), dstPort: Number(f[6]), at: e.timestamp ?? null };
+}
+
+export function createVpcReader({ ec2 = (region) => new EC2Client({ region, ...RETRY }), logs = (region) => new CloudWatchLogsClient({ region, ...RETRY }), now = Date.now } = {}) {
+  const vpcFilter = (vpcId) => [{ Name: "vpc-id", Values: [vpcId] }];
+  const call = async (fn) => {
+    try {
+      return await fn();
+    } catch (err) {
+      return fail(err);
+    }
+  };
+  return {
+    nacls: (region, vpcId) => call(async () => ({ nacls: ((await ec2(region).send(new DescribeNetworkAclsCommand({ Filters: vpcFilter(vpcId) }))).NetworkAcls || []).map(naclFrom) })),
+    endpoints: (region, vpcId) => call(async () => ({ endpoints: ((await ec2(region).send(new DescribeVpcEndpointsCommand({ Filters: vpcFilter(vpcId) }))).VpcEndpoints || []).map((e) => ({ id: e.VpcEndpointId, vpcId: e.VpcId, service: e.ServiceName, type: e.VpcEndpointType, state: e.State })) })),
+    subnets: (region, vpcId) => call(async () => ({ subnets: ((await ec2(region).send(new DescribeSubnetsCommand({ Filters: vpcFilter(vpcId) }))).Subnets || []).map((s) => ({ id: s.SubnetId, free: s.AvailableIpAddressCount ?? null })) })),
+    flowLogs: (region, resourceIds) => call(async () => ({ flowLogs: ((await ec2(region).send(new DescribeFlowLogsCommand({ Filter: [{ Name: "resource-id", Values: resourceIds }] }))).FlowLogs || []).map(flowLogFrom) })),
+    // One page, 50 events, the last 15 minutes: bounded by design (§4.2).
+    rejects: (region, logGroup, pattern) => call(async () => ({ records: ((await logs(region).send(new FilterLogEventsCommand({ logGroupName: logGroup, startTime: now() - 900_000, filterPattern: pattern, limit: 50 }))).events || []).map(rejectFrom) })),
   };
 }
