@@ -100,7 +100,9 @@ const cluster = new aws.eks.Cluster(
     },
     // Access entries (the EKS API) next to aws-auth, so Cloud Spider's
     // read-only viewer role can be let in without editing a ConfigMap.
-    // Changing the mode updates in place; the creator keeps admin.
+    // bootstrapClusterCreatorAdminPermissions stays unset: the provider
+    // default is false, and setting it would replace the cluster. The
+    // deploying user is granted admin by the access entry below.
     accessConfig: { authenticationMode: "API_AND_CONFIG_MAP" },
     tags,
   },
@@ -160,6 +162,23 @@ new aws.eks.AccessPolicyAssociation("viewer", {
   policyArn: "arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy",
   accessScope: { type: "cluster" },
 }, { dependsOn: [viewerEntry] });
+
+// The kube context cloudspider-up calls the API as this user, with no role.
+// The provider does not bootstrap that user as admin, so kubectl would get
+// Unauthorized until this entry exists.
+const me = aws.getCallerIdentityOutput({});
+const adminEntry = new aws.eks.AccessEntry("admin", {
+  clusterName: cluster.name,
+  principalArn: me.arn,
+  type: "STANDARD",
+  tags,
+});
+new aws.eks.AccessPolicyAssociation("admin", {
+  clusterName: cluster.name,
+  principalArn: me.arn,
+  policyArn: "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy",
+  accessScope: { type: "cluster" },
+}, { dependsOn: [adminEntry] });
 
 export const name = cluster.name;
 export const viewerRoleArn = viewerRole.arn;
