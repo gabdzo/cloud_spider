@@ -28,6 +28,7 @@ import { createScoreApi } from "./score/api.js";
 import { loadCatalog } from "./score/catalog.js";
 import { loadProfiles } from "./score/profiles.js";
 import { createScanHistory } from "./score/history.js";
+import { createScanClients } from "./score/aws-clients.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // cloudspider.yaml (config.js): defaults < file < env < flags. A bad value
@@ -116,6 +117,8 @@ app.score = createScoreApi({
   app,
   pageOrigin,
   history: createScanHistory({ storage }),
+  settings: config.scorecard,
+  aws: { clients: createScanClients(), regions: config.scorecard.regions.length ? config.scorecard.regions : [config.aws.region || process.env.AWS_REGION || "eu-north-1"] },
   catalog: () => loadCatalog(),
   profiles: () => loadProfiles(),
   kubeFor: (name) => (name ? kubeContexts.find((ctx) => ctx.name === name)?.kube : kube) || null,
