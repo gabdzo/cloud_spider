@@ -390,6 +390,21 @@ pulumi destroy && pulumi stack rm kyverno-$CLUSTER    # take it away again
 | 3 | KEDA (`keda`), optional | A `jobs-worker` that scales 0→3 on its own SQS queue `<cluster>-keda-jobs`. | $0 at this volume (SQS free tier) |
 | – | ExternalDNS | Not built: needs a domain and a Route 53 zone ($0.50/month). | – |
 
+**Room for pods** (read this before Kyverno on the demo cluster): every EKS node has a hard pod cap from the VPC CNI (one IP per pod). A **t4g.small holds 11 pods**, and the demo cluster's single node already runs 11 (4 demo + 7 kube-system). Kyverno needs 3 more, so its pods stay Pending, Helm's atomic install times out after 10 minutes, and its rollback hangs on a Pending hook. (That happened on 2026-10-11, and the leftovers were cleaned up.) Now both Cloud Spider's RUN and `pulumi preview`/`up` on the add-on stack count free slots first and refuse with a message like *"Kyverno needs 3 free pod slots on cloudspider-up, and its 1 node has 0 (11/11 in use; t4g.small holds 11 pods)"*. If Karpenter will add the node anyway, `pulumi config set skipRoomCheck true` skips the check.
+
+To make room, pick one:
+- **A second node** (about +$0.02/h, $0.50/day for a t4g.small and its disk): raise the node group's desired size to 2 in the cluster's stack (section 6), `pulumi up` there, and wait for `kubectl --context cloudspider-up get nodes` to show 2 Ready nodes.
+- **A larger instance** (t4g.medium also holds only 17 pods; t4g.large holds 35): only if you also want the CPU.
+
+Then retry Kyverno:
+```bash
+cd upgrades/addons && export CLUSTER=cloudspider-up
+pulumi stack select --create kyverno-$CLUSTER && pulumi config set clusterName $CLUSTER
+pulumi preview --diff        # prints "<n> free pod slots, Kyverno needs 3"
+pulumi up                    # about 2 minutes; then: kubectl --context $CLUSTER get cpol,policyreport -A
+```
+If an up is ever interrupted with Pods Pending, undo it like this (cluster first, then the stack): `helm uninstall kyverno -n kyverno --kube-context $CLUSTER --no-hooks`, `kubectl --context $CLUSTER delete ns kyverno`, check `kubectl --context $CLUSTER get crd | grep -E 'kyverno|wgpolicy'` is empty, then `pulumi cancel -s kyverno-$CLUSTER` (only if a dead run left a lock), `pulumi refresh -s kyverno-$CLUSTER --clear-pending-creates --yes`, `pulumi stack rm -s kyverno-$CLUSTER --force --yes`.
+
 **Watch it scale:**
 ```bash
 pulumi stack select scaling-demo-$CLUSTER && pulumi config set burst on && pulumi config set inflate 3 && pulumi up

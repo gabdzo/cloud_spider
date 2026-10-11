@@ -15,6 +15,7 @@ import { createTelemetry } from "./kube-telemetry.js";
 import { inspectPod } from "./kube-inspect.js";
 import { opsView, sampleOps } from "./kube-ops.js";
 import { refuseUp, sampleAddons } from "./addons.js";
+import { podRoom } from "../upgrades/addons/pod-room.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, watchLine } from "./upgrade-rules.js";
@@ -414,7 +415,12 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       // what it needs (Karpenter before the Pod Identity agent).
       if (addonById(body.module) && body.action === "up" && addons?.view) {
         const view = await addons.view({ fresh: true }).catch(() => null);
-        const refusal = view ? refuseUp(view.tree, body.module, body.params?.clusterName || "cloudspider-up") : "";
+        const cluster = body.params?.clusterName || "cloudspider-up";
+        // Free pod slots from the shared kube read, when it is this cluster.
+        const snap = primary ? await readContext(primary, 30_000).catch(() => null) : null;
+        const same = snap && !snap.error && (snap.clusterName === cluster || String(snap.clusterName || "").endsWith(`/${cluster}`));
+        const room = same && snap.nodes?.length ? podRoom({ nodes: snap.nodes, pods: snap.pods || [] }) : null;
+        const refusal = view ? refuseUp(view.tree, body.module, cluster, room) : "";
         if (refusal) return { error: refusal };
       }
       if (addonById(body.module)) addons?.forget?.();
