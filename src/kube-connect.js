@@ -96,8 +96,10 @@ export function addContextEntry(text, item, { example = "", current = [] } = {})
     doc = parseDocument(`${header}${header ? "\n" : ""}contexts: []\n`);
     const seq = doc.get("contexts");
     seq.flow = false;
+    // cloudspider.yaml's own contexts stay there: copying them would
+    // list them twice (and keep them after they are removed from the yaml).
     for (const ctx of current) {
-      if (ctx.name === item.context) continue;
+      if (ctx.name === item.context || ctx.origin === "config") continue;
       seq.add(doc.createNode(entryOf({ context: ctx.name, label: ctx.label, namespaces: ctx.namespaces, poll: ctx.pollMs ? Math.round(ctx.pollMs / 1000) : undefined })));
     }
   } else {
@@ -166,7 +168,10 @@ export function createConnector({ env = process.env, contextsFile, exampleFile, 
         return { error: `could not back up ${path}: ${failure?.message || failure}`, hint: "Cloud Spider writes the kubeconfig only after a backup. Check the file's permissions." };
       }
     },
-    async addToList(item, current) {
+    async addToList(item, current = []) {
+      if (current.some((ctx) => ctx.name === item.context && ctx.origin === "config")) {
+        return { lines: [`${item.context} is listed in cloudspider.yaml (kube.contexts): nothing to add to ${contextsFile}`] };
+      }
       const text = await read(contextsFile, "utf8").catch(() => null);
       const example = text == null ? await read(exampleFile, "utf8").catch(() => "") : "";
       const next = addContextEntry(text, item, { example, current });
@@ -175,13 +180,14 @@ export function createConnector({ env = process.env, contextsFile, exampleFile, 
       await write(contextsFile, next.text);
       return { lines: [`${text == null ? "made" : "added to"} ${contextsFile}: context ${item.context}, every namespace`] };
     },
-    async removeFromList(context) {
+    async removeFromList(context, current = []) {
       const text = await read(contextsFile, "utf8").catch(() => null);
       const next = removeContextEntry(text, context);
       if (next.error) return { error: next.error };
-      if (!next.removed) return { lines: [`${context} was not in ${contextsFile}`] };
+      const still = current.some((ctx) => ctx.name === context && ctx.origin === "config") ? [`${context} is also in cloudspider.yaml (kube.contexts) and stays listed until you remove it there`] : [];
+      if (!next.removed) return { lines: [`${context} was not in ${contextsFile}`, ...still] };
       await write(contextsFile, next.text);
-      return { lines: [`removed ${context} from ${contextsFile}`] };
+      return { lines: [`removed ${context} from ${contextsFile}`, ...still] };
     },
   };
 }

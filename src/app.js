@@ -225,7 +225,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
     // update-kubeconfig also wrote the cluster entry; without this the
     // kubeconfig kept it after DISCONNECT (live test 2026-10-11).
     if (conn.clusterEntry) steps.push({ cmd: "kubectl", args: ["config", "delete-cluster", conn.clusterEntry], text: `kubectl config delete-cluster ${conn.clusterEntry}` });
-    steps.push({ text: `remove ${conn.alias} from cloudspider.contexts.yaml`, fn: () => connector.removeFromList(conn.alias) });
+    steps.push({ text: `remove ${conn.alias} from cloudspider.contexts.yaml`, fn: () => connector.removeFromList(conn.alias, contexts) });
     steps.push({ text: "reload Cloud Spider's kube contexts (no restart)", fn: async () => {
       const got = await reloadContexts();
       probes.delete(conn.alias);
