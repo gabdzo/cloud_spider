@@ -4,9 +4,10 @@
 |---|---|
 | Status | **Proposal for Gabriel's decision. Nothing is approved and nothing is being implemented.** |
 | Author | Spider (Grok Bot for gabdzo), 2026-10-11 |
+| Second opinion | PR #85 by Gabriel's terminal agent. Gabriel chose this document as the base; the parts of #85 that add value are folded in and credited inline as *(from #85)*. §15 lists what was adopted and rejected. |
 | Method | gstack `/office-hours` (Appendix A) → gstack `/plan-ceo-review` (Appendix B) → Superpowers `brainstorming` and gstack `/plan-eng-review` for the technical design (in `docs/design/production-readiness-scorecard.md`, Appendices A-B there). All run headless: no interactive questions were possible, so each question was answered from the repo and the brief, the assumption is written down, and the recommended option was taken. |
 | Base | `main` at #86 (2026-10-11 14:09 CEST). Inputs read: README, `docs/RUN-ME.md`, `docs/review-2026-10-11.md`, `docs/plan-expansion.md`, `docs/plan-overnight.md`, `docs/cloud-platform/{MVP,ARCHITECTURE,DECISION_LOG}.md`, `TODOS.md`, `docs/live-test-2026-10-11.md` and `docs/disaster-drill-2026-10-11.md` (#86), PRs #78-#84, the code under `src/` and `upgrades/`. |
-| Missing inputs | **`docs/business/monetization-strategy.md` does not exist on `main`.** It exists only on the unmerged branch `docs/platform-readiness-strategy` (PR #85, the terminal agent's work), where I read it for §15. |
+| Missing inputs | **`docs/business/monetization-strategy.md` does not exist on `main`.** It exists only on branch `docs/platform-readiness-strategy` (PR #85, the terminal agent's work, closed in favour of this PR; branch kept). Its useful parts are folded into this document and cited by permalink ([monetization-strategy.md @570aa3f](https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/monetization-strategy.md), [scalable-business-options.md @570aa3f](https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/scalable-business-options.md)) rather than added as a third, conflicting file. |
 | Companion | Technical spec: `docs/design/production-readiness-scorecard.md` (deliverables 5-12, 15). |
 
 > **Labels used in this document.** *Fact (source)* = verified, with link and access date 2026-10-11. *Hypothesis* = an assumption to test, not a finding. *Unverified* = seen in a secondary source or a search snippet and not confirmed on the vendor's own page. No market-size or revenue number in this document is a measurement.
@@ -19,7 +20,7 @@
 
 Cloud Spider is an impressive, working local tool built in three days, but there is **no external user and no demand evidence yet**, and the "unified DevOps/SRE/security platform" vision runs straight into well-funded incumbents (Datadog, Wiz, Komodor, Port, Pulumi Cloud) and strong free tools (Prowler, Kubescape, Polaris, kube-bench, AWS Security Hub, the free AWS Well-Architected Tool). A subscription product is not justified by the fact that competitors charge subscriptions.
 
-The narrow wedge that could work: **an evidence-backed production-readiness assessment for AWS + EKS (OpenShift second), sold first as a fixed-scope paid engagement by Gabriel, delivered with a local, read-only Cloud Spider scanner that produces an honest scorecard (coverage, unknowns, critical gates) and a remediation plan, with Pulumi packs to fix the gaps.** Recurring revenue is tested second, as a re-assessment retainer or a Pro licence, only after paid pilots prove someone pays for the first assessment.
+The narrow wedge that could work: **an evidence-backed production-readiness assessment for AWS + EKS (OpenShift second), sold first as a fixed-scope paid engagement by Gabriel, delivered with a local, read-only Cloud Spider scanner that produces an honest scorecard (coverage, unknowns, critical gates) and a remediation plan, with Pulumi packs to fix the gaps.** Recurring revenue is tested second, as a re-assessment retainer or a self-serve local licence (about €400/year per account, *from #85*; a hypothesis to quote in interviews), only after paid pilots prove someone pays for the first assessment.
 
 **Next 30 days:** 10 customer interviews, a one-page offer, and 2-3 paid assessment pilots quoted. No new code for the first 14 days. The ~20-day AI-assisted build of the scorecard MVP starts only after the build gate in §10 (at least 3 qualified interviews or 1 agreed pilot). Kill and pivot criteria are in §11.
 
@@ -103,6 +104,9 @@ What a solo builder *can* own is a **workflow**, not a category: "tell me honest
 | **Cortex** | IDP + scorecards | Production readiness scorecards | SaaS | AWS Marketplace: $39,000 / 12 months for 50 users (≈$65/user/month) ([listing](https://aws.amazon.com/marketplace/pp/prodview-x56oxtx647o3c)) | **Unverified** (search snippet) |
 | **OpsLevel** | IDP + scorecards | Service maturity scorecards | SaaS | AWS Marketplace / pricing: about $10,000/year up to 20 users ([opslevel.com/pricing](https://www.opslevel.com/pricing)) | **Unverified** (search snippet) |
 | **Spotify Portal / Soundcheck (Backstage)** | Backstage plugins: checks, tracks, Tech Insights | Vault ≈ catalog-info.yaml; scorecards | Self-hosted Backstage | Bundle on AWS Marketplace $100,000 / 12 months, by committed users ([listing](https://aws.amazon.com/marketplace/pp/prodview-vtgmheqo275xc)); OSS Backstage Tech Insights plugins exist | **Unverified** (search snippet) |
+| **Hava** *(from #85)* | Cloud diagrams | The AWS map (a picture, not a verdict) | SaaS / self-hosted | Professional **$59/month** (3 sources, 1 user), Teams **$249/month** (10 sources, unlimited users), +$15 per extra source; Enterprise custom ([hava.io/pricing](https://www.hava.io/pricing)) | Verified on vendor page |
+| **Lens** *(from #85)* | Local Kubernetes IDE | Cluster tab; proof a local K8s tool can charge | Desktop app | Personal free (organisations over $10M revenue or funding must pay); Plus **$25/month billed annually ($300 up front)** or $30 monthly; Pro/Enterprise for teams ([lenshq.io/pricing](https://www.lenshq.io/pricing)) | Verified on vendor page |
+| **Cloudcraft** *(from #85)* | Cloud diagrams | The AWS map | SaaS (Datadog) | Included with a Datadog subscription, per #85 | **Unverified** (not re-checked) |
 | **Robusta** | K8s alert enrichment / AI SRE | Incident context for K8s alerts | OSS + SaaS | Quote only (form on [home.robusta.dev/pricing](https://home.robusta.dev/pricing)) | Verified: no public price |
 | **groundcover** | eBPF observability (BYOC) | Telemetry, K8s health | BYOC SaaS / on-prem | Free tier; **$50 per host/month** (monthly average of monitored nodes) for on-prem; Enterprise priced by host ([groundcover.com/pricing](https://www.groundcover.com/pricing)) | Verified on vendor page |
 
@@ -190,6 +194,8 @@ The Pip-Boy look: a **distribution asset** (memorable demos, screenshots that ge
 | Main risks | Free tier cannibalises; competitors' OSS is stronger | Commodity; piracy; small market | Solo vendor cannot carry enterprise support | Large build before demand; breach risk; competes head-on with funded SaaS | Doesn't scale; becomes "a contractor with a themed tool" |
 | **Verdict** | **Second step** (after E proves pain) | Fold into A as packaging | **Not now** | **Not before 3+ paid pilots and an explicit team ask** | **First step** |
 
+**Prerequisites before model D gets a second customer** *(from #85's scalable-options read)*: a published list of the fields a snapshot may contain (account IDs in hostnames and security-group IDs can be sensitive), a delete button for the customer's data, a visible off switch for the collector, and no Take down or `pulumi up` on the hosted side (the typed-name destroy stays local).
+
 **Recommended combination: E → A (+ optional D later).** E earns money and evidence now with the code that exists. A turns repeated assessments into a product, *if* customers want to re-run scans themselves. D is earned, not assumed.
 
 ### 5.1 Why not a subscription first
@@ -243,6 +249,25 @@ Fixed monthly cost of keeping a paid product alive (catalog updates, releases, C
 **What the model says:** at Pro prices, **support time per customer decides everything**. Self-serve Pro only works if the product is good enough that most customers never need Gabriel (documentation, permission self-check, clear UNKNOWN reasons). That is why the MVP spends effort on honest coverage messages and the permission self-check (spec §3 and §10.1), and why Pro should be sold after assessments have revealed the common support questions.
 
 **Assessment economics:** an assessment priced at N days × day rate has positive margin by construction; the product's job is to **reduce N** (the scanner does the evidence collection and the report draft) while the price is anchored to the value of a launch going right, not to hours. A hypothesis to test: whether buyers accept a fixed price for a 3-5-day scoped engagement.
+
+### 6.4 Alternative offers to test in interviews *(from #85)*
+
+PR #85 and the earlier monetization notes it cites propose software-first offers. They are weaker as the *first* test (§15), but they are good **second questions** in interviews and good fallbacks if buyers refuse services. All are hypotheses; quote them in conversation, never on the website before someone has accepted or refused a spoken price.
+
+| Offer | Price to say out loud | Unit | Anchor | When to use |
+|---|---|---|---|---|
+| **Self-serve local licence** ("the scorecard on your machine, catalog updates for a year") | **≈ €400/year** (≈ €33/month) | per AWS account, with a cluster cap (e.g. 3) | Lens Plus $300/year; inside the brief's €29-49/month band | After an assessment pilot ("would you rather run this yourselves?"), or when the buyer refuses to grant Gabriel access |
+| Shared path diagnosis ("path year": the broken-hop sentence for every load balancer, opened by the on-call rotation, keys stay in their account) | ≈ $1,000/year | per account, up to 5 people | Between Hava ($59-249/month) and Komodor (enterprise) | Pivot test, if interviewees light up on path diagnosis rather than the score |
+| One-time packaged licence | $79 once | per user | earlier monetization note | **Not recommended** (no recurring catalog maintenance funding); recorded so the idea is not lost |
+
+Unit economics of the €400/year licence (same placeholder R = €60/h and 8R fixed as §6.3; annual billing cuts payment fees to ≈ €20.45/year via Paddle, ≈ €1.70/month):
+
+| Support per customer per month (hypothesis) | Contribution per customer per month | Customers to cover €480/month |
+|---|---|---|
+| 0.1 h (€6) | ≈ €25.60 | ≈ 19 |
+| 0.5 h (€30) | ≈ €1.60 | ≈ 300 (not viable) |
+
+Same lesson as §6.3: a self-serve licence only works if the product answers its own support questions.
 
 ---
 
@@ -369,11 +394,20 @@ Each phase ends at a decision gate. "Build" means only after Gabriel approves th
 | E4 | **Disappearance / re-scan test** | 30 days after a pilot, offer the re-scan; ask "would you run this yourselves monthly?" | Retainer or self-serve interest from ≥1 of 3 | low |
 | E5 | **Pro price test** | Offer a specific Pro price (€29 vs €49, per account) to 5 qualified waitlist users; disclose that the core is free. | ≥2 of 5 pay | low |
 | E6 | **Consultancy channel** | Offer 2 DevOps consultancies a white-label report trial | 1 consultancy uses it on a client | low |
+| E8 | **Hand scorecard** *(from #85)* | Before any scorecard code: write 10 findings by hand for one real AWS + EKS setup in the spec's finding shape (control, evidence, result, severity), **including at least one "could not see" (UNKNOWN)**. Show it to one engineer who runs an ALB in front of EKS; quote the assessment and the €400/year licence. Later, the scanner must reproduce the same 10 findings on the same account. | Pay or a specific request to run it again; the scanner matches the hand findings | a few hours |
+| E9 | **Status-quo timing** *(from the earlier monetization notes, via #85)* | On the next real broken path or readiness question, time the console/kubectl/OSS-scanner route against Cloud Spider | Cloud Spider is clearly faster; if not, the wedge is false | low |
+| E10 | **Clone test** *(same source)* | Tell the buyer the repo is public and free to clone. If they still pay, write down what they think they are buying (time, packaging, updates, expertise) | That sentence picks between services (E) and licence (A) | none |
+| E11 | **Second-person test** *(same source)* | Ask whether anyone else on their team would open the report | "No" means: do not design seats or a Team tier | none |
 | E7 | **OpenShift probe** | 3 conversations with OpenShift platform teams (EX280 network) | ≥1 wants an OpenShift assessment | low |
+
+**Scoring every conversation** *(from #85)*: money moved = **pay**; a compliment = refuse; "send me a link when it exists" = refuse; no answer within 7 days = silence. Record one of pay/refuse/silence for each quote. Only "pay" counts toward the gates below.
+
+**Distribution note** *(from #85)*: AWS Marketplace is a procurement channel for a product someone has already paid for, not a discovery channel. List there only after paying customers ask for it.
 
 ### 11.2 Kill / pivot criteria
 
 - **Stop pursuing the product (keep the tool as a personal/LEARN asset):** after 10 interviews, fewer than 3 show pain + budget owner + trigger; **and** 0 paid pilots in 60 days.
+- **Do not build the product** *(trigger from #85)*: interviewees say the AWS Well-Architected Tool plus Polaris/Kubescape (or Security Hub) already cover it and they will not pay for an assessment or a licence.
 - **Pivot to services-only:** pilots sell but nobody wants to re-run the scan themselves (E4/E5 fail). Keep Cloud Spider as Gabriel's internal delivery tool.
 - **Pivot the wedge:** interviewees ignore the scorecard and light up on one slice (path diagnosis / incident triage, cost hygiene, OpenShift upgrades, or LEARN labs). Sell that slice.
 - **Do not build hosted (model D):** unless ≥3 paying customers explicitly ask for shared/team access and accept a hosted data flow.
@@ -414,7 +448,11 @@ Note: Gabriel is a working contractor; calendar time is likely 1.5-2× the ideal
 | R12 | **Standards misrepresentation**: citing CIS/Well-Architected/NIST read as certification | Medium | Medium | "Mapped to" language, control IDs listed, explicit disclaimer |
 | R13 | **Income risk**: time on Cloud Spider reduces contracting income | Medium | Medium | Services-first wedge earns during validation; time box |
 
-**Top 5:** R1, R2, R3, R5, R6.
+| R14 | **UNKNOWN treated as PASS** in code (a denied read or empty list scored as healthy) *(from #85)* | Medium | High (silent false-ready) | Ship-blocking bug class: result enum, empty-list rule, stub controls, property tests (spec §5.3, §6.1, §16) |
+| R15 | **Destructive actions reachable remotely** (Take down / `pulumi up` exposed via a hosted button) *(from #85)* | Low (only if D is built) | High | Typed-name destroy and applies stay local; hosted side is read-only by design (spec §10.5) |
+| R16 | **Blind support for a local app**: no telemetry, so a broken AWS SDK or API change is found when a customer emails *(from #85's scalable-options read)* | Medium | Medium | Opt-in anonymous health ping (off by default) or a `doctor` report users can attach; the permission self-check output doubles as a support bundle |
+
+**Top 5:** R1, R2, R3, R5, R6. In #85's words on R5: rule maintenance is the only reason an annual fee can exist; if nobody pays it, stop adding controls.
 
 ---
 
@@ -431,42 +469,68 @@ Note: Gabriel is a working contractor; calendar time is likely 1.5-2× the ideal
 
 ## 15. Opposing view
 
-**Found.** At the check (2026-10-11, ~14:20 CEST, after `git fetch`), the terminal agent's work exists on branch **`docs/platform-readiness-strategy`**, open as **PR #85** ("Record the platform strategy and local scorecard spec", commit 570aa3f, 14:04 CEST, based on #82). It adds `docs/business/cloud-spider-platform-strategy.md`, `docs/business/monetization-strategy.md`, `docs/business/scalable-business-options.md`, `docs/design/production-readiness-scorecard.md`, `docs/superpowers/plans/2026-10-11-production-readiness-scorecard.md` and a `TODOS.md` section. I read them and did not edit them.
+**Source.** Gabriel's terminal agent wrote a parallel strategy on branch **`docs/platform-readiness-strategy`** (PR #85, "Record the platform strategy and local scorecard spec", commit 570aa3f, 2026-10-11 14:04 CEST, based on #82). It contains `docs/business/cloud-spider-platform-strategy.md`, `docs/business/monetization-strategy.md`, `docs/business/scalable-business-options.md`, `docs/design/production-readiness-scorecard.md`, `docs/superpowers/plans/2026-10-11-production-readiness-scorecard.md` and a `TODOS.md` section. **Gabriel chose this PR (#87) as the base.** #85 is closed with a pointer here; its branch is kept, so every permalink to 570aa3f in this document stays valid. Credit to #85 for the items marked *(from #85)* throughout both documents.
 
-> **Path collision:** PR #85 and this PR both create `docs/business/cloud-spider-platform-strategy.md` and `docs/design/production-readiness-scorecard.md` (both were the paths the brief named). Whichever merges second will conflict. Gabriel should choose one as the base and fold the other in, or merge one and close the other.
+### Where both documents already agreed
 
-### Where we agree
+- **VALIDATE FIRST**, because the "one platform" sentence describes several funded categories, competitors' subscriptions are not evidence of demand for Cloud Spider, and there is no second user.
+- **Wedge:** a local, read-only production-readiness scorecard for one AWS account plus EKS. OpenShift is specified but not built until a real cluster is connected. No hosted control plane in 90 days, and the scorer installs nothing.
+- **Honesty mechanics:** a missing permission never passes. Low coverage gives INSUFFICIENT_EVIDENCE, a critical gate cannot be hidden by the average, and failures are listed even when there is no overall number. Neither document claims certification.
+- **Free vs paid:** essential security findings are never paywalled. History, schedules, a second person and reports are the paid hooks.
+- **Process:** nothing is implemented until Gabriel approves, and a written plan does not authorise coding.
 
-- **VALIDATE FIRST**, and the reasoning: the "one platform" sentence describes several funded categories; competitors' subscriptions are not evidence of demand for Cloud Spider; there is no second user.
-- **Wedge:** a local, read-only production-readiness scorecard for one AWS account + EKS, OpenShift specified but not built until a real cluster is connected, no hosted control plane in 90 days, no installs from the scorer.
-- **Honesty mechanics:** missing permissions never pass; coverage floor → INSUFFICIENT_EVIDENCE; a critical gate the average cannot hide; failures listed even when there is no overall number; never claim certification.
-- **Free vs paid:** essential security findings are never paywalled; history, schedules, second person and reports are the paid hooks.
-- **Risks:** no LICENSE, rules maintenance forever, duplicate monitoring on OpenShift, false-ready.
-- **Process:** nothing is implemented until Gabriel approves; the plan is not authorisation to code.
+### Adopted from #85
 
-### Where I disagree, and why
+| What | Where it landed | Why it is better than what #87 had |
+|---|---|---|
+| **Self-serve local licence at about €400/year** per account with a cluster cap, as an alternative or later offer to quote in interviews. Also the "path year" (~$1,000/account/year) as a pivot offer, and the $79 one-time idea recorded as not recommended | Strategy §6.4, TL;DR, §16 | It gives interviews a concrete software price next to the assessment, anchored on Lens Plus ($300/year) |
+| **Hand scorecard** before code: 10 findings by hand including one "could not see", and later the scanner must reproduce them | §11 E8, §10 gate | It is the cheapest test of whether the findings matter, and it becomes an acceptance test for the scanner |
+| **Conversation scoring:** compliment = refuse, "send me a link" = refuse, 7 days of no answer = silence, money moved = pay | §11.1 | It stops polite interest from counting as demand |
+| Earlier-notes experiments: **status-quo timing, clone test, second-person test** | §11 E9-E11 | They test speed, what people actually pay for, and whether seats are needed |
+| **"Do not build" trigger:** Well-Architected Tool plus Polaris/Kubescape is enough and nobody pays | §11.2 | It is a sharper stop rule than #87's numeric thresholds alone |
+| AWS Marketplace only after someone has paid | §11.1 | Avoids premature channel work |
+| Hosted prerequisites: snapshot field list, delete button, collector off switch, no destructive actions on the hosted side | §5 | These are concrete preconditions for model D |
+| Competitors **Hava, Lens, Cloudcraft** (Hava and Lens re-verified on the vendor pages today) | §2.1 | They cover the "picture" and "local K8s tool" price anchors #87 lacked |
+| Risks: **UNKNOWN coded as PASS** (ship-blocking), **remote destructive buttons**, **blind support without telemetry**, and "maintenance is the only reason for an annual fee" | §13 R14-R16, R5 note | All three were real gaps in #87's risk table |
+| Spec: **stub controls with `blockedBy`** so coverage counts what is not built | Spec §5.3 | Coverage is honest from the first release |
+| Spec: **control-count floors** (overall needs at least 8 assessed controls, a category at least 3) on top of the weight coverage | Spec §6.4-§6.5 | Stops one heavy control from faking coverage |
+| Spec: **empty-list rule** (empty is never a PASS unless declared; zero LBs make ALB controls N/A) | Spec §6.1 | It closes a subtle false-pass path |
+| Spec: **"never show the number without the verdict"**, first-screen order (verdict, coverage, score), and **partial-error / stale (>24 h) states** | Spec §6.5, §13.2 | Clear UX rules that can be tested |
+| Spec: **unset environment defaults to the production profile** and says so | Spec §7 | Fails safe |
+| Spec: controls **world-open admin ports incl. 10250 (kubelet)**, **LB with listeners and zero healthy targets**, **EKS not ACTIVE**, **path-stops-before-pod (informational)**, **HPA without metrics API**, **Kyverno policy failures**, **public admin Route (OCP)**, **etcd backup never PASS from a viewer** | Spec §5.3 | Cheap, high-signal checks using inputs that already exist (verified in `src/`) |
+| Spec: **new kube GET paths (NetworkPolicy, PDB, ResourceQuota…) each as its own reviewable task**. #85's observation that `PATHS` lacks them was verified in `src/kube.js` | Spec §5.3, §16 | Keeps read-scope growth reviewable |
+| Spec: **OpenShift detected only by a live `ClusterVersion` GET**, and a sample drawing is never scored | Spec §4.4 | Prevents scoring a drawing |
+| Spec: **do not recommend what detect already finds** (no "install Kyverno" when it runs, no metrics stack beside healthy OpenShift monitoring) | Spec §9.4 | It removes a class of bad advice |
+| Spec: evidence files mode **0600** | Spec §11.2 | Small hardening |
+| Plan: **task order** (pure score maths under TDD first, then AWS facts, Kubernetes facts, report) | §16 step 3 | A sound first slice for `writing-plans` |
+| #85's 7 eng-review findings, each checked against the spec | Spec Appendix A | They serve as the outside voice |
 
-| Topic | PR #85 | This document | Why I hold my position |
-|---|---|---|---|
-| **First thing to sell** | Speak **€400/year** for the local report to one engineer (WTP test on the artifact); services ("founder hours") are a valid test but "not a software business" | **Paid assessment pilot** (fixed fee) first, then a Pro licence/retainer | €400 from one engineer is a weak signal for a B2B readiness problem whose buyer is a platform lead or CTO with a launch at stake; an assessment tests pain, budget and trust at a realistic price, pays for Gabriel's time, and generates the evidence (and common support questions) the product needs. I agree it is not yet a software business; it is the cheapest way to find out if one exists. Both tests can run together: quote the assessment, offer the self-run report as an add-on. |
-| **No code for 30 days** | Days 1-30: no new code; build only after a pay/refuse answer | Days 0-14 no code; **build gate** at ≥3 qualified interviews or 1 agreed pilot, then build | I moved toward PR #85 here (originally I planned to build in parallel). I keep a shorter window because a credible pilot needs a repeatable scan within weeks, and AI-assisted build cost is low compared with Gabriel's sales time. |
-| **Repo facts** | "Not in the repo: … SLOs, burn rates"; SLO burn rates out of v1 | SLOs and burn rates **exist** (`src/slo.js`, vaults; present at #82, the base of PR #85) and feed the runtime category | Factual: `src/slo.js` exists on PR #85's own base. The drill (#86, merged after PR #85 was written) shows SLO burn caught every hard outage, so runtime evidence is one of the few differentiators and should be in the MVP (with the in-memory ledger and the latency-average flaws fixed). |
-| **403/404 semantics** | 403 or 404 → NOT_ASSESSED | Attempted-but-denied/errored/truncated → **UNKNOWN**; not attempted → NOT_ASSESSED; a 404 on an optional CRD means "add-on absent" and is evaluated by the control (often FAIL or N/A), not automatically unassessed | Separating "we tried and were refused" from "we did not try" tells the user exactly what to grant; treating every CRD 404 as unassessed would hide a real gap (e.g. no policy engine installed). |
-| **Verdict labels** | `NOT_READY` / `READY_WITH_RISK` / `NO_OPEN_HIGH`; single coverage floor 0.60 | INSUFFICIENT_EVIDENCE / BLOCKED / AT RISK / CONDITIONAL / NO KNOWN BLOCKERS; floor 70% for production, 40% for dev/sandbox | Any label containing "READY" will be quoted as approval in a launch meeting. A production verdict on 60% coverage is too generous. Minor difference, but it matters for liability. |
-| **Pricing anchor** | Compares with Lens ($25) and Hava ($59) | Compares with Prowler ($99/account), Pulumi ($40-400), Port ($30-40/seat) and per-assessment fees | Lens and Hava are viewers; the readiness value sits with posture/IDP tools. Neither of us has demand data, so both remain hypotheses. |
-| **Drill evidence & trademarks** | Not covered (written before #86); no trademark risk | Drill results inform controls and the correlator; Pip-Boy/Fallout/Vault trademarks are risk R6 | Commercial launch with Bethesda marks in the UI and demo data (stimpak, nuka-cola) is a concrete, avoidable risk. |
+### Rejected from #85, and why
 
-Net: the two strategies are close. PR #85 is more conservative about writing code; this one is more explicit about services as the first revenue, runtime evidence, and naming risk. A merged version could take PR #85's 30-day "hand scorecard" discipline and this document's paid-pilot offer and verdict semantics.
+| #85 position | Why it was not adopted |
+|---|---|
+| "Not in the repo: … SLOs, burn rates"; SLO burn rates out of v1; "SLOs are not computed" | **Factually wrong.** `src/slo.js` and the vault SLOs exist on #85's own base (#82). The drill (#86) shows the SLO burn caught every hard outage. Runtime evidence stays in the MVP, together with the fixes it needs: a persisted ledger and percentile latency. |
+| The first thing to sell is **€400/year for the local report to one engineer** | Kept as the *alternative* offer (§6.4), not the first test. The buyer of readiness is a platform lead or CTO with a launch at stake. A fixed-fee assessment tests pain, budget and trust at a realistic price, pays for Gabriel's time, and surfaces the support questions the licence would otherwise drown in (§6.3). |
+| **No code for 30 days** | Shortened to 14 days plus a build gate (§10). A credible second pilot needs a repeatable scan within weeks. |
+| **403 or 404 → NOT_ASSESSED** | A denied read is UNKNOWN ("grant this read"). A CRD 404 means the add-on is absent, which the relevant control evaluates. Folding both into NOT_ASSESSED would hide a missing policy engine and blur the user's next step (spec §6.1). |
+| Verdict labels **NOT_READY / READY_WITH_RISK / NO_OPEN_HIGH**; a single coverage floor of 0.60 | Any label containing "READY" will be quoted as approval in a launch meeting. Production keeps a 70 % floor (40 % dev/sandbox). The 8-control floor *was* adopted. |
+| Weights 21/8/3/1 | #87's 40/15/5/2 has the same intent (one critical outweighs many lows) and comes with worked examples. Switching would change every example for no gain. |
+| Pricing anchored on viewers only (Lens $25, Hava $59) | Both are now in the competitor table, but readiness is priced against posture and IDP tools (Prowler $99/account, Pulumi $40-400, Port $30-40/seat) and per-assessment fees. |
+| A third business file (`monetization-strategy.md`) and a separate `scalable-business-options.md` | Folded and cited by permalink instead of adding files that would conflict with this document. Their $79 one-time licence and $300/user/year ideas are recorded in §6.4 (the €400/year per-account licence supersedes the latter). |
+| `TODOS.md` "deferred" section | Not ported (docs-only change to the two agreed files). The same items are in this document's NOT in scope list (Appendix B) and spec §14 "Later". |
+| No trademark risk | Kept as R6. Bethesda marks in the UI and demo data are a concrete risk for a commercial launch. |
+
+Net: the two strategies differed mainly in emphasis. #85 was more disciplined about not writing code and sharper on experiment hygiene and false-pass edge cases. #87 is more explicit about services-first revenue, runtime evidence and naming risk. This document now carries both.
 
 ---
 
 ## 16. Proposed Superpowers workflow (gated on approval)
 
-**Nothing below starts until Gabriel explicitly approves (1) this strategy and (2) the MVP scope in the design spec.** Approval of this PR's merge is not approval to implement. If PR #85 is preferred, the same workflow applies to that spec.
+**Nothing below starts until Gabriel explicitly approves (1) this strategy and (2) the MVP scope in the design spec.** Approval of this PR's merge is not approval to implement. 
 
-1. **Decision meeting (Gabriel):** choose VALIDATE FIRST wedge, model sequence (E → A), MVP scope, verdict semantics (§15 differences), and the PR #85 / this PR merge path.
+1. **Decision meeting (Gabriel):** confirm the VALIDATE FIRST wedge, model sequence (E → A, with the €400/year licence as the alternative to test), MVP scope and verdict semantics. (Base already chosen: this PR; #85 closed.)
 2. **`brainstorming` (done for the design):** `docs/design/production-readiness-scorecard.md` is the approved-pending design. Re-run only for sections Gabriel changes.
-3. **`writing-plans`:** turn the MVP slices (spec §14-§15) into a plan under `docs/superpowers/plans/` with bite-sized tasks, exact files (`src/score/…`), tests first, and a commit per task. One plan for the scorecard core; separate later plans for OpenShift, packs and the correlator.
+3. **`writing-plans`:** reuse #85's task order where it fits this spec (pure score maths first under TDD, then AWS facts, then Kubernetes facts, then the JSON/Markdown report; plan at [`docs/superpowers/plans/2026-10-11-production-readiness-scorecard.md` @570aa3f](https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/superpowers/plans/2026-10-11-production-readiness-scorecard.md)), and turn the MVP slices (spec §14-§15) into a plan under `docs/superpowers/plans/` with bite-sized tasks, exact files (`src/score/…`), tests first, and a commit per task. One plan for the scorecard core; separate later plans for OpenShift, packs and the correlator.
 4. **Plan review:** `/plan-eng-review` on the written plan (complexity gate, test diagram, failure modes); fix before execution.
 5. **`subagent-driven-development`:** one fresh subagent per task, spec-compliance review then code-quality review after each task; `test-driven-development` inside each task; no AWS writes by agents (house rule); Gabriel runs any `pulumi up`.
 6. **Review / QA / ship:** `requesting-code-review` per PR, `/qa` on the UI view with sample data and a live read-only scan, `verification-before-completion` (tests + a real scan showing UNKNOWN for a denied permission), `finishing-a-development-branch` → PR. Gabriel merges.
@@ -482,7 +546,7 @@ Net: the two strategies are close. PR #85 is more conservative about writing cod
 4. Are you willing to rename the Fallout/Pip-Boy/Vault terms before any commercial launch?
 5. What licence for the public repo (Apache-2.0 core + closed Pro modules, or source-available)?
 6. Is a fixed-fee assessment something you can contract as a Czech sole trader (liability cap, NDA/DPA templates)? (Not legal advice; ask your accountant/lawyer.)
-7. Which strategy do you want as the base: PR #85, this PR, or a merge (and do you accept the verdict semantics in §15)?
+7. Do you accept the verdict semantics in §15 (UNKNOWN vs NOT_ASSESSED, no READY label, 70 %/40 % coverage floors plus the 8-control floor adopted from #85)?
 8. Should drill findings 4-9 (ALB latency percentile, metrics refresh for vaults, multi-context SLOs, LBC tag override, persisted ledger, HURTING with no targets) be fixed before any pilot? I recommend 4, 6 and the persisted ledger.
 
 ---
@@ -514,13 +578,24 @@ All accessed 2026-10-11. "Search snippet" means the figure was read from the sea
 - OpsLevel pricing: https://www.opslevel.com/pricing (unverified)
 - Spotify Portal/Soundcheck AWS Marketplace: https://aws.amazon.com/marketplace/pp/prodview-vtgmheqo275xc (unverified)
 
+- Hava pricing: https://www.hava.io/pricing (fetched)
+- Lens pricing: https://www.lenshq.io/pricing (fetched)
+- Cloudcraft: included with Datadog per PR #85 (not re-checked)
+
+**PR #85 (closed in favour of this PR; branch kept)**
+- Strategy: https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/cloud-spider-platform-strategy.md
+- Monetization notes: https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/monetization-strategy.md
+- Scalable options: https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/scalable-business-options.md
+- Spec: https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/design/production-readiness-scorecard.md
+- Plan (not approved): https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/superpowers/plans/2026-10-11-production-readiness-scorecard.md
+
 **Payments**
 - Stripe CZ pricing: https://stripe.com/en-cz/pricing (search snippet)
 - Paddle pricing: https://www.paddle.com/pricing (search snippet)
 
 **Standards** (cited for control mapping in the spec; no compliance or certification is claimed): see the design spec §18 (AWS Well-Architected reliability/security pillars, AWS Security Hub controls reference, CIS Benchmarks (Amazon EKS, Kubernetes), Kubernetes Pod Security Standards, NSA/CISA Kubernetes Hardening Guidance, Google SRE Workbook, OpenShift Container Platform 4.19 documentation).
 
-**Repo evidence:** `docs/live-test-2026-10-11.md`, `docs/disaster-drill-2026-10-11.md` (#86), PRs #78-#84, `spider-shots` branch `drill/` and `livetest/`, PR #85 (terminal agent).
+**Repo evidence:** `docs/live-test-2026-10-11.md`, `docs/disaster-drill-2026-10-11.md` (#86), PRs #78-#84, `spider-shots` branch `drill/` and `livetest/`, PR #85 (terminal agent, closed in favour of this PR).
 
 ---
 

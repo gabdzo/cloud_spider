@@ -5,6 +5,7 @@
 | Status | **Proposed. Not approved. Nothing here is built yet.** Implementation waits for Gabriel's explicit approval of the strategy and the scope (see `docs/business/cloud-spider-platform-strategy.md` §15). |
 | Author | Spider (Grok Bot for gabdzo), 2026-10-11 |
 | Method | Superpowers `brainstorming` run headless (no user available; every question answered from the repo and the brief, assumptions recorded in §1.3). Then gstack `/plan-eng-review` (Appendix A). |
+| Second opinion | PR #85 (Gabriel's terminal agent; closed in favour of #87, branch kept). Ideas taken from it are marked *adopted from PR #85*; strategy doc §15 lists adopted and rejected items. |
 | Base | `main` at `82bc119` / #84 (2026-10-11 13:53 CEST), 482 tests passing per PR #84's description. Docs-only #86 (live test and disaster drill) read afterwards. |
 | Companion | `docs/business/cloud-spider-platform-strategy.md` covers the commercial deliverables (1-4, 13, 14, 16-20). This document covers 5-12 and 15, plus effort (18) on the engineering side. |
 
@@ -287,6 +288,8 @@ Workload-level checks follow the [Pod Security Standards](https://kubernetes.io/
 
 OpenShift 4 ships secure defaults that change what a "finding" is: the default SCC for new pods is `restricted-v2` (drops all capabilities, requires runtime/default seccomp) per [Red Hat OCP 4.19 SCC docs](https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/authentication_and_authorization/managing-pod-security-policies); the platform runs its own monitoring stack; ingress is Routes via the IngressController; upgrades go through the Cluster Version Operator. So:
 
+**Detection (adopted from PR #85).** A cluster is treated as OpenShift only after a successful live GET of `config.openshift.io/v1` `clusterversions/version`. A 404 makes every `OCP-*` control NOT_APPLICABLE (it is plain Kubernetes); a 403 makes them UNKNOWN. The OpenShift sample drawing in `src/cluster.js` and the CRC lab stack are never scored, and an OpenShift card never copies the Kubernetes score. Version-aware text comes from `ClusterVersion.status`, not a hard-coded version list.
+
 | OpenShift area | Reads | Control logic (differs from vanilla K8s because…) | Reference |
 |---|---|---|---|
 | ClusterVersion and upgradeability | `config.openshift.io/v1 clusterversions/version` | `Failing`, `Progressing`, `Upgradeable=False` (blocks minor updates unless forced), channel, history, available updates. A cluster on an unsupported/EUS-mismatched channel is High. | [OCP 4.19 Understanding updates](https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/updating_clusters/understanding-openshift-updates-1) |
@@ -548,6 +551,23 @@ verification: {rescan: [OCP-UPG-001], criteria: "Upgradeable is not False and sp
 
 The MVP ships **about 35-40 controls**: ~15 AWS, ~15 Kubernetes/EKS, ~8 OpenShift (preview). The full Phase 2 list in the brief is around 120+ controls and is the long-term catalog. Choosing which 35 is part of validation: the first three paid assessments decide which findings customers act on.
 
+**Stub controls (adopted from PR #85).** A control that is in the profile but has no collector yet ships as a **stub**: metadata only, `blockedBy: "<API or collector that would assess it>"` (e.g. `blockedBy: "iam:GenerateCredentialReport"`), result always NOT_ASSESSED. Stubs keep the coverage maths honest from day one: an account scanned by an MVP that cannot see IAM shows that gap as missing weight instead of silently leaving it out of the denominator. A stub is not a promise to build the collector; the `blockedBy` text tells the user (and the roadmap) exactly what is missing.
+
+**Controls adopted from PR #85** (ids rewritten to this catalog's scheme; inputs verified on `main`):
+
+| Id | Check | Input that exists today | Notes |
+|---|---|---|---|
+| AWS-SEC-012 | Security group allows `0.0.0.0/0` or `::/0` to an admin port: tcp 22, 3389, **10250 (kubelet)** | `DescribeSecurityGroups` (`src/aws-path.js`) | Critical in AWS Production (gate candidate), High in AWS Sandbox. The kubelet port is easy to forget and #85 was right to list it |
+| AWS-REL-010 | Load balancer has listeners **and zero healthy targets** | target health on the path (`src/path-diagnose.js`) | Runtime, High. Also fixes drill finding 9 (HURTING said "0 of 0 targets" while the ALB served 503s) |
+| AWS-REL-011 | EKS cluster status is not `ACTIVE` | cluster status already on the path | Runtime, High |
+| AWS-INF-001 | Path stops before the pod (no Service/Pod join for this target) | `diagnose()` output | **Informational, weight 0.** Records the boundary so nobody reads path health as pod health (#85 eng finding 3) |
+| K8S-REL-008 | HPA exists but the metrics API answers 404 (metrics-server absent) | `PATHS.hpas`, `PATHS.podMetrics` | Medium. A 403 on the metrics API is UNKNOWN, not FAIL |
+| K8S-SEC-009 | Kyverno PolicyReport has `fail` results | `PATHS.policyReports`, `clusterPolicyReports` | Severity inherited from the policy (`policies.kyverno.io/severity`). If the PolicyReport CRD answers 404, this control is NOT_APPLICABLE and the separate "an admission policy engine is installed" control (K8S-PLT-001, the one the security pack in §9.3 targets) is the one that fails; see §6.1 for why this differs from #85 |
+| OCP-SEC-004 | A Route exposes an admin or console endpoint publicly | `route.openshift.io/v1` Routes | Preview. Routes, not only Ingress |
+| OCP-PLT-003 | etcd backup evidence | operator-provided record or a scoped read | Already in §8.3. Adopted #85's rule: **never PASS from a viewer role**; without evidence it is UNKNOWN |
+
+**Read paths the MVP must add (verified):** `PATHS` in `src/kube.js` has no NetworkPolicy, PodDisruptionBudget, ResourceQuota, LimitRange or RBAC lists today. Each new GET path goes in as **its own small task** in the implementation plan so a reviewer can accept or reject it alone (adopted from #85). Until a path exists, the controls that need it are stubs (NOT_ASSESSED).
+
 ---
 
 ## 6. Scoring methodology (deliverable 6)
@@ -561,6 +581,10 @@ The MVP ships **about 35-40 controls**: ~15 AWS, ~15 Kubernetes/EKS, ~8 OpenShif
 | `UNKNOWN` | Control applies, **we tried** and could not decide: read denied (403/AccessDenied), API error, timeout, truncated list, telemetry missing | **no** (never treated as pass, constraint 1) | no (score); shown in bounds | yes |
 | `NOT_ASSESSED` | Control applies but **was not attempted**: no collector yet, collector disabled by the user, opt-in read not enabled (e.g. drift needs deploy creds), process evidence not provided | no | no (score); shown in bounds | yes |
 | `NOT_APPLICABLE` | Control does not apply: no such resource, profile excludes it, version out of range, platform makes it moot (control-plane file checks on EKS) | no | **no** | **no** (constraint 3) |
+
+**Empty lists (adopted from PR #85).** An empty list is not a PASS unless the control explicitly declares the empty state as healthy (`emptyIs: pass`, e.g. "no IAM users with console access and no MFA"). Otherwise an empty list means the control has nothing to evaluate: zero load balancers makes every ALB control NOT_APPLICABLE (`reason: no-resources`), never PASS.
+
+**403 vs 404.** A 403/AccessDenied on an attempted read is UNKNOWN (the user can fix it by granting the read). A 404 on an optional CRD means "that add-on is not installed" (as `src/kube.js` already comments); the control that needs the CRD becomes NOT_APPLICABLE and the control that asks *whether* such an add-on should exist decides FAIL or PASS. PR #85 folds both into NOT_ASSESSED; this spec keeps them apart because each tells the user a different next step.
 
 The difference between UNKNOWN and NOT_ASSESSED (constraint 4) matters for the fix: UNKNOWN is usually solved by **granting a read** or turning on telemetry; NOT_ASSESSED by **building a collector or enabling an opt-in**. They are reported separately with their own coverage share.
 
@@ -599,7 +623,7 @@ Lower_c    = 100 · earned_c / Σ_{i∈A_c} w_i                        (every un
 Upper_c    = 100 · (earned_c + Σ_{i∈U_c∪N_c} w_i) / Σ_{i∈A_c} w_i  (every unknown would pass)
 ```
 
-The score is shown **with its bounds**, e.g. `83 (59–88)`. The width of the bracket is exactly how much the unknowns could move it (constraint 5). A category with `Coverage_c < minCategoryCoverage` (profile) shows `INSUFFICIENT_EVIDENCE` instead of a number and does not enter the overall score.
+The score is shown **with its bounds**, e.g. `83 (59–88)`. The width of the bracket is exactly how much the unknowns could move it (constraint 5). A category with `Coverage_c < minCategoryCoverage` (profile) **or fewer than 3 assessed controls** shows `INSUFFICIENT_EVIDENCE` instead of a number and does not enter the overall score. The control-count floor (adopted from PR #85) stops one heavy control from giving a category 100 % weight coverage on its own.
 
 ### 6.5 Overall score, verdict and gates
 
@@ -615,13 +639,15 @@ Verdict, evaluated in this order (constraints 7, 8, 10):
 
 | # | Condition | Verdict | Overall number shown? |
 |---|---|---|---|
-| 1 | `Coverage_all < minCoverage` (profile) | **INSUFFICIENT_EVIDENCE** | **No.** Only coverage, the categories that qualify, and the list of reads to grant. |
+| 1 | `Coverage_all < minCoverage` (profile), or fewer than **8** applicable controls assessed in the scope (floor adopted from PR #85) | **INSUFFICIENT_EVIDENCE** | **No.** Only coverage, the categories that qualify, and the list of reads to grant. |
 | 2 | any gate control `FAIL` | **BLOCKED** | Yes, greyed, never green, with "GATED" |
 | 3 | `Overall < 60` | **AT RISK** | Yes |
 | 4 | any gate `UNKNOWN`/`NOT_ASSESSED`, or `Overall < 80`, or (production profile and no runtime evidence: <7 days of SLO data or no SLO defined) | **CONDITIONAL** | Yes |
 | 5 | otherwise | **NO KNOWN BLOCKERS** | Yes |
 
 There is deliberately **no "READY" or "COMPLIANT" verdict** (constraint 8). The best a checklist can say is that it found no blockers in what it could see. Every report carries the line: *"This scorecard checks configuration and recent observed behaviour against a control catalog. It is not proof of production readiness and not a compliance attestation."*
+
+**The number is never shown without the verdict** (adopted from PR #85: "a UI that shows the number without the gate is a bug"). Every surface (overview tile, export, JSON summary, notification) carries verdict + coverage + number together, in that order, and a test enforces it for the exporters.
 
 The score is **not capped** when a gate fails: capping would make the number non-monotonic and hide progress on the other findings. The gate controls the verdict and the colour; the number stays honest.
 
@@ -735,7 +761,7 @@ A profile changes **applicability**, **severity**, **multipliers**, **gates** an
 | Runtime evidence required for best verdict | no | yes (SLO data ≥7 d on vault-owned public endpoints) | no | yes | yes |
 | FinOps emphasis | high (idle spend, budget alert; the repo's own TODOS.md asks for a $10 budget alert) | low | – | – | – |
 
-How a profile is chosen: by the scope's environment mapping (tag `environment=prod`, a vault's `metadata.tags`, or the user picks). Mixed environments in one account (sandbox and prod in the same account) are themselves a Governance finding (AWS-GOV-002) in the production profile.
+How a profile is chosen: by the scope's environment mapping (tag `environment=prod`, a vault's `metadata.tags`, or the user picks). **If no environment is set, the production profile applies and the report says so** (adopted from PR #85): guessing "dev" from a name like `test-eks` would loosen gates on what may be production; the stricter default fails safe. Mixed environments in one account (sandbox and prod in the same account) are themselves a Governance finding (AWS-GOV-002) in the production profile.
 
 ---
 
@@ -887,6 +913,7 @@ ownership: {stack: "security-baseline-<cluster>", tags: {project: security-basel
 | Namespace collision | target namespace exists without our labels | Ask to use another namespace or ADOPT |
 | OpenShift platform component | target in `openshift-*` or a platform CR (IngressController default, cluster-monitoring stack) | Refuse; show the Red Hat-supported path |
 | Pod/node capacity | existing `pod-room.js` check, node allocatable | Block with "needs N pod slots; node has M" (exists for Kyverno today) |
+| Recommendation already satisfied (adopted from PR #85) | catalog `detect` says the add-on is running (e.g. Kyverno), or OCP-PLT monitoring control is PASS | **Do not recommend** installing it (no "install Kyverno" when Kyverno runs; no metrics stack on OpenShift when the platform monitoring stack is healthy); recommend configuring the existing one instead |
 
 ### 9.5 Preview, approval, CRD and destroy safeguards
 
@@ -1012,7 +1039,7 @@ Not part of the MVP. If built later (model D in the strategy doc), the local app
 
 ### 11.2 Storage layout (local, under the repo-independent data dir)
 
-Default `~/.cloudspider/` (override `CLOUDSPIDER_DATA_DIR`), `0700`, never in the git checkout:
+Default `~/.cloudspider/` (override `CLOUDSPIDER_DATA_DIR`), directory `0700`, files `0600` (file mode adopted from PR #85), never in the git checkout; if a user points the data dir inside a repo, the app writes a `.gitignore` there and warns:
 
 ```
 ~/.cloudspider/
@@ -1151,7 +1178,13 @@ Pixel-art Pip-Boy screens consistent with the current app (colours only from `sr
 └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Empty states: no scan yet → "No scan yet. SCAN reads, never writes."; INSUFFICIENT_EVIDENCE → no bar, a "grant these reads" checklist with copyable policy snippets.
+Order of the first screen (adopted from PR #85): **verdict, coverage, then the score or INSUFFICIENT_EVIDENCE**; then gate and Critical/High FAILs; then UNKNOWN and NOT_ASSESSED, so the user sees what was *not* looked at before anything green.
+
+States:
+- **Empty:** no account and no kube context → "No scan yet. SCAN reads, never writes." Nothing is scored.
+- **Insufficient:** no bar; a "grant these reads" checklist with copyable policy snippets.
+- **Partial error:** one AWS/kube call failed → only the controls that needed it turn UNKNOWN, with the sanitised message from the existing `publicError` helper; the rest of the scan still returns (scan marked PARTIAL).
+- **Stale:** the scan carries `scannedAt`; older than 24 h, the tile says "scan is N h old" and the verdict is shown dimmed. The MVP does not rescan by itself (scheduled scans are a paid feature, strategy §9).
 
 **RESOURCE EXPLORER:** a tree `account › region › VPC › …` and `cluster › namespace › workload`, plus `vault ›` and `stack ›` groupings; table with filter (`sev:critical`, `status:unknown`, `cat:reliability`, `ns:shop`, the same grammar as `src/kube-search.js`), sort by priority; selecting a resource draws its relationships on the existing map/path/cluster canvases (reuse `map-focus.js`).
 
@@ -1372,7 +1405,7 @@ Regression rule: every bug found in a live scan gets a fixture before the fix. A
 
 **What already exists:** see §1.1 (reused, not rebuilt).
 
-**Outside voice:** the opposing-view section of the strategy doc serves this role (the terminal agent's work, if any, is compared there).
+**Outside voice:** PR #85 (the terminal agent's spec and its own eng-review pass) served as the second opinion. Its 7 findings were checked against this spec: #1 critical hidden by lows → covered (gates, §6.5); #2 403/missing collector read as healthy → covered (UNKNOWN/NOT_ASSESSED, stubs adopted in §5.3); #3 path health is not pod health → adopted (AWS-INF-001, §12 facts vs inference); #4 NetworkPolicy/PDB not in `PATHS` → verified and adopted as separate tasks (§5.3); #5 OpenShift sample scored as a cluster → covered (OpenShift detection requires a live `ClusterVersion` read, §4.4); #6 install button fighting OpenShift monitoring → covered (§9.4, recommendation suppression adopted); #7 rule drift → covered (§6.9 catalog/revision). Strategy doc §15 lists what was adopted and rejected.
 
 **Verdict:** *Approve the design for writing-plans once the strategy is approved*, MVP limited to AWS + EKS scorecards with honest coverage, history and reports. OpenShift, remediation and the correlator are the next plan, not this one.
 
