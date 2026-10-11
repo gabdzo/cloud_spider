@@ -2932,9 +2932,38 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || !spendOpen) return;
+  event.preventDefault();
   spendOpen = false;
   showSpend();
   spendEl.focus();
+});
+
+// Escape folds the topmost thing that is open, one per press: the ASK
+// terminal (unless a question is running), LEARN, STACKS, then the open pod
+// or building plate. The bill and the vault page handle their own Escape.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || event.defaultPrevented) return;
+  if (event.target instanceof HTMLSelectElement) return;
+  if (terminal.isOpen()) {
+    if (terminal.isRunning()) return;
+    terminal.setOpen(false);
+    askTab.focus();
+  } else if (learnView.isOpen()) {
+    learnView.setOpen(false);
+    document.querySelector("#learn-key").focus();
+  } else if (pipOpen) {
+    toggleUpgrade();
+    upgradeButton.focus();
+  } else if (mode === "cluster" && clusterSelected) {
+    clusterSelected = null;
+    showPod(null);
+    draw();
+  } else if (mode === "map" && ui.selection && !ui.confirmation) {
+    clickGround(ui);
+    renderChrome();
+    draw();
+  } else return;
+  event.preventDefault();
 });
 
 upgradeButton.addEventListener("click", () => {
