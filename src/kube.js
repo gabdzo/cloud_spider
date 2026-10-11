@@ -115,6 +115,8 @@ function eventList(json) {
 }
 
 export const EXEC_TIMEOUT_MS = 20_000;
+// Waits before the two retries of a GET the cluster answered 429.
+export const RETRY_429_MS = [500, 1500];
 
 function runExec(run, exec, env, timeout = EXEC_TIMEOUT_MS) {
   return new Promise((resolve) => {
@@ -178,7 +180,7 @@ export const SCOPED_READS = { pods: "nsPods", services: "nsServices", deployment
 
 // context: the kubeconfig context; namespaces: "*" (the whole cluster) or a
 // list, in which case only namespaced paths in those namespaces are read.
-export function createKube({ env = process.env, run = spawn, read = readFile, get = httpsGet, clock = Date.now, context = "", namespaces = "*" } = {}) {
+export function createKube({ env = process.env, run = spawn, read = readFile, get = httpsGet, clock = Date.now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), context = "", namespaces = "*" } = {}) {
   const contextName = context || env.CLOUDSPIDER_KUBE_CONTEXT || DEFAULT_CONTEXT;
   const scope = Array.isArray(namespaces) ? namespaces.map((ns) => checkName(ns)) : "*";
   const inScope = (ns) => scope === "*" || scope.includes(String(ns || ""));
@@ -227,7 +229,15 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     if (t.error) return { error: t.error, unset: true };
     const tok = await token(t);
     if (tok.error) return { error: tok.error };
-    const res = await get(`${t.server}${path}`, { ca: t.ca, token: tok.token });
+    let res = await get(`${t.server}${path}`, { ca: t.ca, token: tok.token });
+    // 429: the API server's flow control said "later" (it does right after
+    // an add-on install floods it). Try again twice before calling the read
+    // failed, so one busy second does not turn a control UNKNOWN.
+    for (const ms of RETRY_429_MS) {
+      if (res.status !== 429) break;
+      await wait(ms);
+      res = await get(`${t.server}${path}`, { ca: t.ca, token: tok.token });
+    }
     if (res.error) return { error: res.error };
     if (res.status === 401) {
       cred = null;

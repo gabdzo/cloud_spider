@@ -155,3 +155,31 @@ test("ops(): fixed read-only paths; a missing CRD is absent, a 403 is forbidden,
   const none = await createKube({ env: { KUBECONFIG: "/none" }, read: async () => { throw new Error("ENOENT"); } }).ops();
   assert.equal(none.unset, true);
 });
+
+test("a 429 is retried twice before the read fails; other statuses are not", async () => {
+  const waits = [];
+  const make = (answers) => {
+    const seen = [];
+    const kube = createKube({
+      env: { KUBECONFIG: "/kc", PATH: "/bin" },
+      run: fakeRun([]),
+      read: async () => stringify(CONFIG),
+      wait: async (ms) => waits.push(ms),
+      get: async (url) => {
+        seen.push(url);
+        return answers.shift() || { status: 200, body: JSON.stringify({ items: [] }) };
+      },
+    });
+    return { kube, seen };
+  };
+  const ok = make([{ status: 429, body: "" }, { status: 429, body: "" }]);
+  assert.deepEqual((await ok.kube.read("namespaces")).json, { items: [] });
+  assert.equal(ok.seen.length, 3);
+  assert.deepEqual(waits, [500, 1500]);
+  const busy = make([{ status: 429, body: "" }, { status: 429, body: "" }, { status: 429, body: "" }]);
+  assert.equal((await busy.kube.read("namespaces")).error, "the cluster said 429");
+  assert.equal(busy.seen.length, 3);
+  const broken = make([{ status: 500, body: "" }]);
+  assert.equal((await broken.kube.read("namespaces")).error, "the cluster said 500");
+  assert.equal(broken.seen.length, 1);
+});
