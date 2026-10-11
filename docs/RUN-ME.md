@@ -778,6 +778,14 @@ Config: `network.*` in cloudspider.yaml (see cloudspider.example.yaml).
 
 It says what the name points at in this account (A-TGT-01: a CloudFront distribution, the load balancer, an ENI address, or nothing here) and which zone and record answer (A-R53-01). It also reports what Route 53 itself answers (A-R53-02) and whether any record in the zone points at a load balancer or distribution that no longer exists (A-R53-03, subdomain takeover). Failover or weighted records are checked for health checks (A-R53-04), and a private zone owning the name is reported (A-R53-05).
 
+**CloudFront and the ALB (N4):** when CloudFront serves the name, the run also reports:
+- A-CF-01: the distribution, whether it is enabled and Deployed, and whether the name is one of its alternate domain names.
+- A-CF-02: the behaviour the path matches, its origin, protocol policy and timeout. It catches the classic 502s: an https origin on the ALB's `*.elb.amazonaws.com` name, or an origin port with no listener. It also flags an S3 origin without OAC/OAI.
+- A-CF-03: the viewer protocol policy, the minimum TLS and the certificate.
+- A-CF-04: custom error pages and the WAF web ACL.
+
+When the origin is one of the account's load balancers, the run follows it into the ALB. It does the same when the name points straight at the load balancer. PATH's own routing picks the listener and rule (A-ELB-01), and target health explains an empty or unhealthy target group (A-ELB-02). The DEBUG chain then shows CLOUDFRONT and ALB hops. In SAMPLE mode, `cdn.sample.test` shows the CloudFront 502 and `web.sample.test` the ALB 503.
+
 A refused read is UNKNOWN and names the permission to add. Turn the reads off with `network.aws.route53` / `network.aws.cloudfront`. These Route 53 and CloudFront calls cost nothing.
 
 When an AWS load balancer answered, the path diagram follows the same host. In SAMPLE mode the panel debugs fixture answers (try `web.sample.test`, an ALB answering 503; `api.sample.test`, a slow origin; and `google.com`), so nothing leaves the machine.

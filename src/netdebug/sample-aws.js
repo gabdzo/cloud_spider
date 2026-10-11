@@ -1,6 +1,8 @@
 // Sample AWS answers for SAMPLE mode: the sample.test zone in front of the
 // sample ALB (path-sample.js). old.sample.test points at a load balancer
 // that is gone (the dangling-record check has something to find).
+// cdn.sample.test is CloudFront in front of the ALB, with its origin set to
+// the ALB's elb name over https: CloudFront answers 502 (A-CF-02).
 import { samplePathGraph } from "../path-sample.js";
 
 const ZONE = { id: "Z0SAMPLE", name: "sample.test.", private: false, count: 6 };
@@ -9,8 +11,27 @@ export const SAMPLE_RECORDS = [
   { name: "sample.test.", type: "NS", ttl: 172800, values: ["ns-1.awsdns-01.org."], alias: null, policy: "simple", setId: "", healthCheckId: "" },
   { name: "web.sample.test.", type: "A", ttl: null, values: [], alias: { dnsName: ALB, zoneId: "Z23TAZ7LKFBNRK", evaluate: true }, policy: "simple", setId: "", healthCheckId: "" },
   { name: "api.sample.test.", type: "A", ttl: null, values: [], alias: { dnsName: ALB, zoneId: "Z23TAZ7LKFBNRK", evaluate: true }, policy: "simple", setId: "", healthCheckId: "" },
+  { name: "cdn.sample.test.", type: "A", ttl: null, values: [], alias: { dnsName: "d1sample.cloudfront.net.", zoneId: "Z2FDTNDATAQYW2", evaluate: false }, policy: "simple", setId: "", healthCheckId: "" },
   { name: "old.sample.test.", type: "CNAME", ttl: 300, values: ["k8s-shop-old-5f1e2a.eu-north-1.elb.amazonaws.com"], alias: null, policy: "simple", setId: "", healthCheckId: "" },
 ];
+
+const behavior = (pathPattern, targetOriginId, viewerProtocolPolicy = "redirect-to-https") => ({ pathPattern, targetOriginId, viewerProtocolPolicy, cachePolicyId: "", originRequestPolicyId: "", functions: [] });
+export const SAMPLE_DISTRIBUTION = {
+  id: "E1SAMPLE",
+  domain: "d1sample.cloudfront.net",
+  aliases: ["cdn.sample.test"],
+  enabled: true,
+  status: "Deployed",
+  origins: [
+    { id: "api-alb", domain: "api-alb-sample.eu-north-1.elb.amazonaws.com", path: "", s3: false, oai: "", oac: "", protocolPolicy: "https-only", httpPort: 80, httpsPort: 443, readTimeout: 30, sslProtocols: ["TLSv1.2"] },
+    { id: "static", domain: "sample-static.s3.eu-north-1.amazonaws.com", path: "", s3: true, oai: "", oac: "E2OACSAMPLE", protocolPolicy: "", httpPort: null, httpsPort: null, readTimeout: null, sslProtocols: [] },
+  ],
+  defaultBehavior: behavior("*", "api-alb"),
+  behaviors: [behavior("/static/*", "static")],
+  customErrors: [{ code: 503, responseCode: "", page: "", ttl: 10 }],
+  cert: { acm: "arn:aws:acm:us-east-1:000000000000:certificate/sample", iam: "", default: false, minProtocol: "TLSv1.2_2021" },
+  webAclId: "",
+};
 
 export function sampleAws() {
   return {
@@ -26,7 +47,7 @@ export function sampleAws() {
       async testAnswer(zoneId, name, type) {
         const r = SAMPLE_RECORDS.find((x) => x.name === `${String(name).replace(/\.$/, "")}.`);
         if (!r) return { code: "NXDOMAIN", type, values: [] };
-        return r.alias ? { code: "NOERROR", type: "A", values: ["13.48.10.21", "13.53.200.7"], protocol: "UDP" } : { code: "NOERROR", type: r.type, values: r.values, protocol: "UDP" };
+        return r.alias ? { code: "NOERROR", type: "A", values: /cloudfront/.test(r.alias.dnsName) ? ["18.66.2.14", "18.66.2.71"] : ["13.48.10.21", "13.53.200.7"], protocol: "UDP" } : { code: "NOERROR", type: r.type, values: r.values, protocol: "UDP" };
       },
       async healthStatus(id) {
         return { id, status: "Success", reason: "" };
@@ -37,7 +58,7 @@ export function sampleAws() {
     },
     cloudfront: {
       async distributions() {
-        return { distributions: [] };
+        return { distributions: [SAMPLE_DISTRIBUTION] };
       },
     },
   };

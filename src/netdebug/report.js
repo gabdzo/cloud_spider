@@ -25,11 +25,14 @@ export const RULES = [
     const app = http.observed.headers?.["x-amzn-trace-id"] ? [] : ["L-HTTP-03"];
     const tgt = c.get("A-TGT-01")?.observed;
     const lb = tgt?.kind === "alb" ? [`A-TGT-01`] : [];
-    return [{ statement: `the AWS load balancer${tgt?.kind === "alb" ? ` ${tgt.name}` : ""} answered ${status} itself (server: awselb, no app headers): it has no healthy target to send ${t.host} to, or the target failed. The ALB 503 walkthrough asks why.`, supports: ["L-HTTP-01", ...app, ...lb], next: [`aws elbv2 describe-target-health --target-group-arn <tg-arn>`], verify: "HTTP status < 500 and the target group has >= 1 healthy target", walkthrough: "alb-503" }];
+    const health = c.get("A-ELB-02");
+    const dead = health?.status === "FAIL" ? health : null;
+    const why = dead ? `: ${dead.text}` : `: it has no healthy target to send ${t.host} to, or the target failed`;
+    return [{ statement: `the AWS load balancer${tgt?.kind === "alb" ? ` ${tgt.name}` : ""} answered ${status} itself (server: awselb, no app headers)${why}. The ALB 503 walkthrough asks why.`, supports: ["L-HTTP-01", ...app, ...lb, ...(dead ? ["A-ELB-02"] : [])], next: [dead?.command || health?.command || `aws elbv2 describe-target-health --target-group-arn <tg-arn>`], verify: "HTTP status < 500 and the target group has >= 1 healthy target", walkthrough: "alb-503" }];
   },
   (c) => {
     const http = c.get("L-HTTP-03");
-    if (http?.observed?.answeredBy !== "cloudfront-error") return [];
+    if (http?.observed?.answeredBy !== "cloudfront-error" || c.get("A-CF-02")?.status === "FAIL") return [];
     const status = c.get("L-HTTP-01")?.observed?.status;
     return [{ statement: `CloudFront answered ${status ?? "an error"} itself (x-cache: Error from cloudfront): it could not get an answer from the origin, or WAF/geo rules blocked the request`, supports: ["L-HTTP-01", "L-HTTP-03"], next: [], verify: "x-cache is Hit or Miss from cloudfront" }];
   },

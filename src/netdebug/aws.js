@@ -3,16 +3,39 @@
 // classifies the target, then runs the AWS evaluators. Each phase adds its
 // evaluator to EVALUATORS (N3 DNS, N4 CloudFront + ALB, N5 VPC).
 import { awsDnsChecks, classify, recordsFor, zonesFor } from "./aws-dns.js";
+import { albChecks, cloudFrontChecks } from "./aws-edge.js";
 import { sampleAws } from "./sample-aws.js";
 import { RULES } from "./report.js";
 
 export const EVALUATORS = [
   // N3: Route 53 and the classification.
   (aws) => awsDnsChecks(aws),
+  // N4: CloudFront first (it sets the hand-off), then the ALB.
+  (aws, target) => cloudFrontChecks(aws, target),
+  (aws, target) => albChecks(aws, target),
 ];
 
 // Findings that need AWS facts (inferences across layers).
 RULES.push(
+  (c) => {
+    const cf = c.get("A-CF-02");
+    if (cf?.status !== "FAIL") return [];
+    const status = c.get("L-HTTP-01")?.observed?.status;
+    const who = c.get("L-HTTP-03")?.observed?.answeredBy;
+    const seen = [status >= 500 ? "L-HTTP-01" : null, who === "cloudfront-error" ? "L-HTTP-03" : null].filter(Boolean);
+    return [{ statement: `CloudFront cannot use its origin: ${cf.text.split(". ").slice(1).join(". ") || cf.text}`, supports: ["A-CF-02", ...seen], next: [cf.command], verify: "x-cache is Hit or Miss from cloudfront and the status is < 500", severity: cf.severity }];
+  },
+  (c) => {
+    const cf = ["A-CF-01", "A-CF-03"].map((id) => c.get(id)).filter((x) => x?.status === "FAIL");
+    return cf.map((x) => ({ statement: x.text, supports: [x.id, ...(x.id === "A-CF-01" && c.get("L-HTTP-01")?.observed?.status === 403 ? ["L-HTTP-01"] : [])], next: [x.command], verify: x.id === "A-CF-01" ? "the name is an alternate domain name of an enabled distribution" : "viewer policy redirect-to-https or https-only, minimum TLSv1.2_2021", severity: x.severity }));
+  },
+  (c, t) => {
+    const r = c.get("A-ELB-01");
+    if (r?.status !== "FAIL") return [];
+    const status = c.get("L-HTTP-01")?.observed?.status;
+    const same = r.observed?.statusCode && Number(r.observed.statusCode) === status;
+    return [{ statement: `${r.text}${same ? ": that is the answer you got" : ""}`, supports: ["A-ELB-01", ...(same ? ["L-HTTP-01"] : [])], next: [r.command], verify: `a rule of the listener serves ${t.host}${t.path || "/"} and forwards to a target group` }];
+  },
   (c, t) => {
     const d = c.get("A-R53-03");
     if (d?.status !== "FAIL") return [];
