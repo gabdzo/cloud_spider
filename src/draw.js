@@ -612,6 +612,11 @@ function allFixtures(placed) {
   ];
 }
 
+// What the keyboard walks on the map (src/map-focus.js).
+export function focusLists(placed) {
+  return { buildings: allBuildings(placed), fixtures: allFixtures(placed) };
+}
+
 export function fixtureAt(placed, x, y, id) {
   const fixtures = allFixtures(placed);
   if (id) return fixtures.find((item) => item.id === id) || null;

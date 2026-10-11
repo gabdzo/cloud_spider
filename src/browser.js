@@ -1,6 +1,7 @@
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
-import { buildingAt, fixtureAt, paint } from "./draw.js";
+import { buildingAt, fixtureAt, focusLists, paint } from "./draw.js";
+import { mapTargets, stepTarget, targetLine } from "./map-focus.js";
 import { isInstanceId } from "./ids.js";
 import {
   clickBuilding,
@@ -30,7 +31,7 @@ import { costLine } from "./stack-costs.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
 } from "./chrome.js";
-import { FRAME_MS } from "./theme.js";
+import { FRAME_MS, PIP } from "./theme.js";
 import { createVaultState, VPC_FOLD_KEY } from "./vault-state.js";
 import { VAULT, placeVaults, vaultAt } from "./vault-layout.js";
 import { badgeAt, ownedRows, parseVaultHash, vaultSummary, vaultTally } from "./vault-page.js";
@@ -611,6 +612,7 @@ function setKubeLevel(cluster, value) {
 // Opens the Cluster view on an app or pod clicked on the map; the focus is
 // applied when the cluster's diagram arrives.
 function openInCluster(hit) {
+  markHistory();
   mapKube.focus = hit.type === "compound" ? null : { id: hit.id, type: hit.type, ns: hit.ns, app: hit.app || null };
   mapKube.hover = null;
   setClusterScreen("topology");
@@ -1715,6 +1717,7 @@ function draw() {
   placeVaultChrome(placed);
   placeFolds(placed);
   placeViewSwitch(placed);
+  drawMapFocus();
 }
 
 // One real button per VPC camp (top-right of its wall), so Tab and
@@ -2418,8 +2421,8 @@ canvas.addEventListener("click", async (event) => {
   if (!hit) {
     const fixture = fixtureAt(placed, event.offsetX, event.offsetY);
     if (fixture) {
-      clickFixture(ui, fixture, fixtureNote(fixture));
-      setFacts(ui, plateFacts(fixture.id));
+      openFixture(fixture);
+      return;
     } else {
       const camp = foldAt(placed, event.offsetX, event.offsetY);
       if (camp) {
@@ -2432,17 +2435,158 @@ canvas.addEventListener("click", async (event) => {
     draw();
     return;
   }
+  await openBuilding(hit);
+});
+
+// A fixture's plate (load balancer, gateway, vault card): click or Enter.
+function openFixture(fixture) {
+  clickFixture(ui, fixture, fixtureNote(fixture));
+  setFacts(ui, plateFacts(fixture.id));
+  renderChrome();
+  draw();
+}
+
+// A resource's plate, then its last log lines: click or Enter.
+async function openBuilding(hit) {
   const raw = place?.instances.find((item) => item.id === hit.id) || hit;
   clickBuilding(ui, raw, region, place ? blastLine(place, raw.id) : "");
   setFacts(ui, plateFacts(raw.id));
   renderChrome();
   draw();
   if (sample || !isInstanceId(raw.id)) return;
-  const logs = await fetch(`/api/logs?id=${encodeURIComponent(raw.id)}`).then((response) => response.json());
+  const logs = await fetch(`/api/logs?id=${encodeURIComponent(raw.id)}`).then((response) => response.json()).catch(() => ({}));
   if (ui.selection?.id !== raw.id) return;
   setLogs(ui, logs.entries || logs.lines || [], logs.note || "");
   draw();
+}
+
+// ---- KEYBOARD ON THE MAP ----
+// The canvas is one tab stop. Inside it Tab and the arrow keys walk what a
+// click can open (src/map-focus.js); a Pip-Boy ring marks the focused one
+// and #map-say reads it out. Enter or Space presses it, Escape closes the
+// plate (the page's Escape handler). A mouse focus draws no ring.
+const mapSay = document.querySelector("#map-say");
+const MAP_KEYS = new Set(["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", "Home", "End"]);
+let mapFocusKey = "";
+let mapKeyboard = false;
+
+function mapFocusTargets() {
+  if (mode !== "map" || vaultPageOpen() || (!place && !vaultsData.vaults.length)) return [];
+  const placed = placedMap();
+  return mapTargets(placed, focusLists(placed));
+}
+
+function scrollMapTo(rect) {
+  const pad = 24;
+  if (rect.y - pad < map.scrollTop || rect.y + rect.h + pad > map.scrollTop + map.clientHeight) map.scrollTop = Math.max(0, rect.y - map.clientHeight / 3);
+  if (rect.x - pad < map.scrollLeft || rect.x + rect.w + pad > map.scrollLeft + map.clientWidth) map.scrollLeft = Math.max(0, rect.x - map.clientWidth / 3);
+}
+
+function focusMapTarget(targets, index) {
+  const target = targets[index];
+  if (!target) return;
+  mapFocusKey = target.key;
+  mapSay.textContent = targetLine(target, index, targets.length);
+  scrollMapTo(target.rect);
+  draw();
+}
+
+function drawMapFocus() {
+  if (!mapKeyboard || !mapFocusKey || document.activeElement !== canvas) return;
+  const target = mapFocusTargets().find((item) => item.key === mapFocusKey);
+  if (!target) return;
+  const gap = 4;
+  const x = Math.round(target.rect.x) - gap;
+  const y = Math.round(target.rect.y) - gap;
+  const w = Math.round(target.rect.w) + gap * 2;
+  const h = Math.round(target.rect.h) + gap * 2;
+  const arm = Math.min(16, Math.floor(w / 2), Math.floor(h / 2));
+  const t = 4;
+  ctx.save();
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = PIP.ink;
+  ctx.strokeRect(x, y, w, h);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = PIP.bright;
+  ctx.strokeRect(x, y, w, h);
+  // Hot corner brackets, outside the line, so the ring reads on any tile.
+  ctx.fillStyle = PIP.hot;
+  const left = x - t;
+  const top = y - t;
+  const right = x + w;
+  const bottom = y + h;
+  ctx.fillRect(left, top, arm, t);
+  ctx.fillRect(left, top, t, arm);
+  ctx.fillRect(right + t - arm, top, arm, t);
+  ctx.fillRect(right, top, t, arm);
+  ctx.fillRect(left, bottom, arm, t);
+  ctx.fillRect(left, bottom + t - arm, t, arm);
+  ctx.fillRect(right + t - arm, bottom, arm, t);
+  ctx.fillRect(right, bottom + t - arm, t, arm);
+  ctx.restore();
+}
+
+function pressMapTarget(target) {
+  const { item } = target;
+  if (target.kind === "vault") {
+    toggleVault(item.key);
+    mapSay.textContent = `vault ${item.vault?.name || item.key} ${item.open ? "closing" : "opening"}.`;
+    return;
+  }
+  if (target.kind === "app") {
+    openInCluster(item);
+    return;
+  }
+  if (target.kind === "fixture") openFixture(item);
+  else openBuilding(item);
+  mapSay.textContent = `${ui.selection?.name || "the"} plate is open. Escape closes it.`;
+}
+
+canvas.addEventListener("mousedown", () => {
+  mapKeyboard = false;
 });
+
+canvas.addEventListener("focus", () => {
+  if (!canvas.matches(":focus-visible")) return;
+  mapKeyboard = true;
+  const targets = mapFocusTargets();
+  if (!targets.length) {
+    mapSay.textContent = mode === "map" ? "survey map: nothing to walk yet." : "";
+    return;
+  }
+  const index = targets.findIndex((item) => item.key === mapFocusKey);
+  focusMapTarget(targets, index < 0 ? 0 : index);
+});
+
+canvas.addEventListener("blur", () => {
+  if (mode === "map") draw();
+});
+
+canvas.addEventListener("keydown", (event) => {
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  const targets = mapFocusTargets();
+  if (!targets.length) return;
+  mapKeyboard = true;
+  const index = targets.findIndex((item) => item.key === mapFocusKey);
+  if (event.key === "Tab") {
+    const next = index < 0 ? (event.shiftKey ? targets.length - 1 : 0) : index + (event.shiftKey ? -1 : 1);
+    // Past either end, Tab leaves the map as usual.
+    if (next < 0 || next >= targets.length) return;
+    event.preventDefault();
+    focusMapTarget(targets, next);
+    return;
+  }
+  if (event.key === "Enter" || event.key === " ") {
+    if (index < 0) return;
+    event.preventDefault();
+    pressMapTarget(targets[index]);
+    return;
+  }
+  if (!MAP_KEYS.has(event.key)) return;
+  event.preventDefault();
+  focusMapTarget(targets, stepTarget(targets, index, event.key));
+});
+
 
 // A pointer over a door says it can be opened.
 canvas.addEventListener("mousemove", (event) => {
@@ -3212,7 +3356,9 @@ document.addEventListener("keydown", (event) => {
     clusterSelected = null;
     showPod(null);
     draw();
-  } else if (mode === "map" && ui.selection && !ui.confirmation) {
+  } else if (mode === "map" && ui.selection) {
+    // Escape closes the plate; a pending Y/N goes with it, as N would.
+    if (document.activeElement === canvas) mapSay.textContent = "plate closed.";
     clickGround(ui);
     renderChrome();
     draw();
