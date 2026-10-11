@@ -117,7 +117,7 @@ const kubeCtxEl = document.querySelector("#kube-ctx");
 const kubeConnectEl = document.querySelector("#kube-connect");
 const kubeDockEl = document.querySelector("#kube-connect-dock");
 const KC_OPEN_KEY = "cloudspider.kubeConnect.open";
-const KC_TONE = { connected: "ok", "no-access": "fail", error: "fail", "not-connected": "warn", "not-listed": "warn", "clash-same": "warn", "no-cluster": "warn" };
+const KC_TONE = { connected: "ok", "no-access": "fail", error: "fail", "not-connected": "warn", "not-listed": "warn", "clash-same": "warn", "no-cluster": "warn", outside: "warn" };
 let kcChip = null;
 let kcLog = null; // { wrap, bar, pane, open, state, action }
 // CONNECT state (see "CONNECT" below), declared early: views use it on load.
@@ -1561,17 +1561,26 @@ function readingView(name) {
   };
 }
 
+// EKS clusters of the account Cloud Spider has no context for (made outside
+// Stacks, or not CONNECTed yet): dim "+ cluster" entries in the switcher.
+function unconnectedClusters() {
+  return (connectStripBody?.clusters || []).filter((item) => !["connected", "no-access"].includes(item.state));
+}
+
+let contextsBody = null;
 function renderContexts(body) {
+  contextsBody = body;
   if (Array.isArray(body?.contexts) && body.contexts.length) knownContexts = body.contexts;
   const list = mode === "cluster" && !sample && Array.isArray(body?.contexts) ? body.contexts : [];
-  kubeCtxEl.hidden = list.length < 2;
-  if (list.length < 2) {
+  const pending = mode === "cluster" && !sample && list.length ? unconnectedClusters() : [];
+  kubeCtxEl.hidden = list.length < 2 && !pending.length;
+  if (kubeCtxEl.hidden) {
     contextsShown = "";
     placeConnectChip();
     return;
   }
   const current = body.context || list[0].context;
-  const key = JSON.stringify([current, list.map((item) => [item.context, item.label, item.lamp, item.total, item.scope])]);
+  const key = JSON.stringify([current, list.map((item) => [item.context, item.label, item.lamp, item.total, item.scope]), pending.map((item) => [item.cluster, item.state])]);
   if (key === contextsShown) return;
   contextsShown = key;
   const title = vel("b", "", "CONTEXT");
@@ -1586,6 +1595,17 @@ function renderContexts(body) {
     button.addEventListener("click", () => setClusterContext(item.context));
     return button;
   });
+  for (const item of pending) {
+    const button = vel("button", "warn unconnected");
+    button.type = "button";
+    button.title = `EKS ${item.cluster}: ${item.text}${item.hint ? ` · ${item.hint}` : ""} · click: open the EKS panel`;
+    button.append(vel("i"), vel("span", "", `+ ${item.cluster.toUpperCase()}`), vel("small", "", item.state === "clash-same" ? "FOUND · USE IT" : "NOT CONNECTED · CONNECT"));
+    button.addEventListener("click", () => {
+      if (clusterScreen !== "topology") setClusterScreen("topology");
+      setConnectStripOpen(true);
+    });
+    buttons.push(button);
+  }
   kubeCtxEl.replaceChildren(title, ...buttons);
   placeConnectChip();
 }
@@ -3830,7 +3850,7 @@ async function installBundle() {
 // runs as a stack run of the cluster's eks stack, so the card's run pane
 // shows its commands and its ERROR plate.
 
-const CONNECT_WORD = { connected: "CONNECTED", "not-connected": "NOT CONNECTED", "not-listed": "NOT LISTED", "no-access": "NO ACCESS", "no-cluster": "NOT UP", "clash-same": "FOUND", error: "CANNOT CONNECT" };
+const CONNECT_WORD = { connected: "CONNECTED", "not-connected": "NOT CONNECTED", "not-listed": "NOT LISTED", "no-access": "NO ACCESS", "no-cluster": "NOT UP", "clash-same": "FOUND", outside: "NOT CONNECTED", error: "CANNOT CONNECT" };
 
 function connectRow(id) {
   const row = el("div", { id, className: "connect-row", hidden: true, role: "group", ariaLabel: "kube connection" });
@@ -3929,6 +3949,7 @@ async function fetchConnectList(force = false) {
   connectListing = upgradeJson("/api/kube/connect").then((body) => {
     connectStripBody = body;
     for (const item of body.clusters || []) connectState.set(item.cluster, item);
+    if (contextsBody && mode === "cluster") renderContexts(contextsBody);
     return body;
   }).finally(() => {
     connectListing = null;
@@ -3950,7 +3971,7 @@ function kubeChipState(context) {
   if (!connectListing && !sample && Date.now() - connectStripAt > 60_000) fetchConnectList(true).then(() => draw());
   const item = (connectStripBody?.clusters || []).find((entry) => entry.cluster === context) || (connectStripBody?.clusters || []).find((entry) => entry.context === context);
   if (!item) return { label: "KUBE", tone: "unknown", text: `${context}: kube context (no EKS card for it) · click: open the Cluster view`, item: null };
-  const tone = { connected: "ok", "no-access": "fail", "not-listed": "warn", "not-connected": "warn" }[item.state] || "unknown";
+  const tone = { connected: "ok", "no-access": "fail", error: "fail" }[item.state] || (item.state ? "warn" : "unknown");
   return { label: "KUBE", tone, text: `EKS ${item.cluster}: ${item.text}${item.hint ? ` · ${item.hint}` : ""} · click: open its card on Stacks (CONNECT / DISCONNECT)`, item };
 }
 
@@ -3969,7 +3990,10 @@ function kubeFact(cluster, id) {
   const where = "press CONNECT on Stacks › EKS";
   if (item.state === "connected") return { label: "KUBE", text: item.text, tone: "" };
   if (item.state === "no-access") return { label: "KUBE", text: `NO ACCESS · ${item.hint || ""}`.trim(), tone: "fail" };
-  if (item.state === "not-connected" || item.state === "not-listed") return { label: "KUBE", text: `NOT CONNECTED · ${where}`, tone: "warn" };
+  if (item.state === "not-connected" || item.state === "not-listed") return { label: "KUBE", text: `NOT CONNECTED · CONNECT: ${where}`, tone: "warn" };
+  if (item.state === "clash-same") return { label: "KUBE", text: `NOT CONNECTED · ${item.adopt} found: USE IT on Stacks › EKS or the Cluster view's EKS panel`, tone: "warn" };
+  if (item.state === "outside") return { label: "KUBE", text: `NOT CONNECTED · made outside Stacks: ${item.hint || ""}`.trim(), tone: "warn" };
+  if (item.state === "no-cluster") return { label: "KUBE", text: `NOT CONNECTED · ${item.text || ""}`.trim(), tone: "warn" };
   return { label: "KUBE", text: item.text || "unknown", tone: "unknown" };
 }
 
