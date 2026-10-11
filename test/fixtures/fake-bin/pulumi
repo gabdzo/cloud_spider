@@ -1,17 +1,38 @@
 #!/usr/bin/env node
-// Fake pulumi for the CONNECT tests: stack outputs for the stacks listed
-// in FAKE_PULUMI_OUTPUTS (JSON: { "<stack>": { outputs } }); every other
-// stack is missing. Nothing else is faked.
+// Fake pulumi for the CONNECT and ADD-ONS tests. Never touches a backend.
+//   stack output   outputs from FAKE_PULUMI_OUTPUTS ({ "<stack>": {...} });
+//                  any other stack is missing
+//   stack ls       FAKE_PULUMI_STACKS (JSON array) or []
+//   stack select, install, config set: succeed
+//   preview, up    print a short plan; fail (exit 255) for the stack named
+//                  in FAKE_PULUMI_FAIL
+// FAKE_PULUMI_CALLS: a file each call is appended to (one line per call).
+// FAKE_PULUMI_DELAY: ms to wait before answering preview/up.
+import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
-const stack = args[args.indexOf("--stack") + 1];
+const at = args.indexOf("--stack");
+const stack = at >= 0 ? args[at + 1] : args[0] === "stack" && args[1] === "select" ? args[2] : "";
+if (process.env.FAKE_PULUMI_CALLS) appendFileSync(process.env.FAKE_PULUMI_CALLS, `${args.join(" ")}\n`);
 const outputs = JSON.parse(process.env.FAKE_PULUMI_OUTPUTS || "{}");
+const done = (code, out = "", err = "") => {
+  if (out) process.stdout.write(out);
+  if (err) process.stderr.write(err);
+  process.exit(code);
+};
 if (args[0] === "stack" && args[1] === "output") {
-  if (!outputs[stack]) {
-    process.stderr.write(`error: no stack named '${stack}' found\n`);
-    process.exit(255);
-  }
-  process.stdout.write(JSON.stringify(outputs[stack]));
-  process.exit(0);
+  if (!outputs[stack]) done(255, "", `error: no stack named '${stack}' found\n`);
+  done(0, JSON.stringify(outputs[stack]));
 }
-process.stderr.write(`fake pulumi: ${args.join(" ")} is not faked\n`);
-process.exit(2);
+if (args[0] === "stack" && args[1] === "ls") done(0, process.env.FAKE_PULUMI_STACKS || "[]");
+if (args[0] === "stack" && args[1] === "select") done(0, `Created stack '${stack}'\n`);
+if (args[0] === "install") done(0, "Installing dependencies...\nFinished installing dependencies\n");
+if (args[0] === "config" && args[1] === "set") done(0);
+if (args[0] === "preview" || args[0] === "up") {
+  const verb = args[0] === "up" ? "Updating" : "Previewing update";
+  setTimeout(() => {
+    if (process.env.FAKE_PULUMI_FAIL && process.env.FAKE_PULUMI_FAIL === stack) {
+      done(255, `${verb} (${stack}):\n +  pulumi:pulumi:Stack cloudspider-addons-${stack} creating\n`, `error: kubernetes:helm.sh/v3:Release ${stack}: 1 free pod slot on the cluster, 3 needed\n`);
+    }
+    done(0, `${verb} (${stack}):\n +  pulumi:pulumi:Stack cloudspider-addons-${stack} ${args[0] === "up" ? "created" : "create"}\nResources:\n    + 6 ${args[0] === "up" ? "created" : "to create"}\n`);
+  }, Number(process.env.FAKE_PULUMI_DELAY) || 0);
+} else done(2, "", `fake pulumi: ${args.join(" ")} is not faked\n`);

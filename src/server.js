@@ -1608,6 +1608,31 @@ const page = `<!doctype html>
   .connect-row .hint { grid-column: 2 / 4; color: var(--pip-dim); font-size: 11px; line-height: 1.35; }
   .connect-row .hint:empty { display: none; }
   .connect-row button { min-height: 24px; }
+  /* ADD-ONS bundle on the EKS card: a checklist, a slot line, one button. */
+  .bundle { flex-shrink: 0; display: flex; flex-direction: column; gap: 3px; margin-top: 6px; padding: 6px 7px; border: 1px solid var(--pip-dark); background: var(--pip-ink); font-size: 12px; }
+  .bundle > * { flex-shrink: 0; }
+  .bundle .bhead { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; color: var(--pip-dim); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+  .bundle .bhead b { color: var(--pip-bright); letter-spacing: 0.2em; }
+  .bundle .bhead em { flex: 1 0 100%; font-style: normal; text-transform: none; letter-spacing: 0.04em; }
+  .bundle .bhead em:empty { display: none; }
+  .bundle .brow { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto; gap: 2px 8px; align-items: center; min-height: 22px; padding: 1px 2px; border-bottom: 1px dotted var(--pip-dark); }
+  .bundle .brow .name { color: var(--pip-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bundle .brow .cost { color: var(--pip-mid); font-size: 11px; text-align: right; }
+  .bundle .brow .pods { color: var(--pip-dim); font-size: 11px; min-width: 44px; text-align: right; }
+  .bundle .brow .state { grid-column: 2 / 5; color: var(--pip-dim); font-size: 10px; letter-spacing: 0.08em; overflow-wrap: anywhere; }
+  .bundle .brow .state:empty { display: none; }
+  .bundle .brow[data-state="installed"] .name, .bundle .brow[data-state="present"] .name { color: var(--pip-mid); }
+  .bundle .brow[data-state="installed"] .state, .bundle .brow[data-state="present"] .state { color: var(--pip-mid); }
+  .bundle .bline { margin-top: 3px; color: var(--pip-bright); letter-spacing: 0.04em; }
+  .bundle .bline[data-tight="1"] { color: var(--status-hang); }
+  .bundle .bhint { color: var(--pip-dim); font-size: 11px; line-height: 1.35; }
+  .bundle .bhint:empty { display: none; }
+  .bundle .bact { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 3px; }
+  #pip .bundle .bact label { flex: 1 1 200px; justify-content: flex-start; gap: 6px; color: var(--pip-mid); font-size: 10px; line-height: 1.35; cursor: pointer; }
+  #pip .bundle input[type="checkbox"] { flex: 0 0 auto; width: 14px; height: 14px; min-height: 0; margin: 0; padding: 0; accent-color: var(--pip-bright); }
+  .bundle .bact button { margin-left: auto; min-height: 26px; }
+  .bundle .bqueue { color: var(--world-amber); font-size: 11px; }
+  .bundle .bqueue:empty { display: none; }
   /* Stacks cards: cost chip, engine plate, the bill readout, Terraform commands. */
   #pip .card-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #pip .cost-chip {
@@ -2237,6 +2262,19 @@ async function route(app, req, res) {
       return;
     }
     send(res, 200, await app.connectRun(req.headers.origin, body));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/addons/bundle") {
+    send(res, 200, app.bundleStatus ? await app.bundleStatus(url.searchParams.get("cluster") || "", { fresh: url.searchParams.get("fresh") === "1", items: url.searchParams.has("items") ? url.searchParams.get("items").split(",").filter(Boolean) : null }) : { error: "add-ons are not set up" });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/addons/bundle") {
+    const body = await readJson(req).catch(() => null);
+    if (!body || typeof body !== "object") {
+      send(res, 400, { error: "the request was not JSON", hint: "Reload the page and press the button again." });
+      return;
+    }
+    send(res, 200, await app.bundleRun(req.headers.origin, body));
     return;
   }
 

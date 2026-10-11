@@ -11,9 +11,13 @@ export const PROJECT = "cloudspider-addons";
 export const DIR = "upgrades/addons";
 export const CLUSTER_NAME = /^[a-z][a-z0-9-]{1,27}$/;
 
+// pods: how many pods the add-on runs on a one-node cluster (a DaemonSet
+// counts one per node), for the ADD-ONS bundle's slot count. podSlots (only
+// Kyverno) is what its program checks itself before an up (pod-room.js).
 export const ADDONS = [
   {
     id: "pod-identity",
+    pods: 1,
     title: "Pod Identity agent",
     kind: "eks-addon",
     eksAddon: "eks-pod-identity-agent",
@@ -26,6 +30,7 @@ export const ADDONS = [
   },
   {
     id: "metrics-server",
+    pods: 2,
     title: "metrics-server",
     kind: "eks-addon",
     eksAddon: "metrics-server",
@@ -38,6 +43,7 @@ export const ADDONS = [
   },
   {
     id: "kyverno",
+    pods: 3,
     title: "Kyverno",
     kind: "helm",
     chart: "kyverno",
@@ -56,6 +62,7 @@ export const ADDONS = [
   },
   {
     id: "karpenter",
+    pods: 1,
     title: "Karpenter",
     kind: "helm",
     chart: "oci://public.ecr.aws/karpenter/karpenter",
@@ -71,6 +78,7 @@ export const ADDONS = [
   },
   {
     id: "scaling-demo",
+    pods: 0,
     title: "HPA scaling demo",
     kind: "manifests",
     namespace: "scaling-demo",
@@ -82,6 +90,7 @@ export const ADDONS = [
   },
   {
     id: "lbc",
+    pods: 1,
     title: "AWS Load Balancer Controller",
     kind: "helm",
     chart: "aws-load-balancer-controller",
@@ -97,6 +106,7 @@ export const ADDONS = [
   },
   {
     id: "cert-manager",
+    pods: 3,
     title: "cert-manager",
     kind: "helm",
     chart: "cert-manager",
@@ -112,6 +122,7 @@ export const ADDONS = [
   },
   {
     id: "keda",
+    pods: 3,
     title: "KEDA",
     kind: "helm",
     chart: "keda",
@@ -127,6 +138,7 @@ export const ADDONS = [
   },
   {
     id: "external-dns",
+    pods: 1,
     title: "ExternalDNS",
     kind: "helm",
     offered: false,

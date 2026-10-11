@@ -464,6 +464,35 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       if (job?.running) return refuse({ module, action, stack, error: `an upgrade is already running (${job.action} on stack ${job.stack})`, command });
       return startJob({ module, action, stack, directory, where, command, onDone, steps });
     },
+    // INSTALL SELECTED: the add-ons in `ids` (already in order) on one
+    // cluster, each preview then up, as one run in the cluster's EKS pane.
+    // A step that fails stops the rest.
+    addonBatch({ cluster, ids, onDone, legacyName }) {
+      const eksSpec = UPGRADES.find((item) => item.id === "eks");
+      const eksChecked = checkParams(eksSpec, { clusterName: cluster });
+      if (eksChecked.error) return refuse({ module: "eks", action: "add-ons", error: eksChecked.error });
+      const stack = stackFor(eksSpec, eksChecked.values, legacyName);
+      const steps = [];
+      const byHand = [];
+      let installed = false;
+      for (const id of ids) {
+        const spec = UPGRADES.find((item) => item.id === id && item.addon);
+        if (!spec) return refuse({ module: "eks", action: "add-ons", stack, error: `no add-on ${id}` });
+        const checked = checkParams(spec, { clusterName: cluster });
+        if (checked.error) return refuse({ module: "eks", action: "add-ons", stack, error: checked.error });
+        const addonStack = stackFor(spec, checked.values);
+        const dir = join(cwd, spec.dir);
+        const preview = upgradeSteps(spec, addonStack, "preview", checked.values).filter((args) => !(args[0] === "install" && installed));
+        if (preview.some((args) => args[0] === "install")) installed = true;
+        const up = ["up", "--yes", "--non-interactive", "--stack", addonStack];
+        for (const args of [...preview, up]) {
+          steps.push({ args, cwd: dir, text: `${id} · pulumi ${args.join(" ")}` });
+        }
+        byHand.push(...preview, up);
+      }
+      const where = UPGRADES.find((item) => item.id === ids[0])?.dir || "";
+      return this.runSteps({ module: "eks", action: "add-ons", stack, steps, command: rerunCommand(join(cwd, where), byHand), directory: join(cwd, where), where, onDone });
+    },
     busy() {
       return job?.running ? { stack: job.stack, action: job.action, module: job.module } : null;
     },
@@ -677,7 +706,9 @@ function apply(run, directory, job, env, { clock = () => Date.now(), save = () =
       over = true;
       if (code !== 0) {
         step.status = "failed";
-        finish(failureText(args, code, job.lines, errLines, job.stack, cmd));
+        // A batch step names its own stack (an add-on in the EKS pane).
+        const own = args.indexOf("--stack");
+        finish(failureText(args, code, job.lines, errLines, own >= 0 ? args[own + 1] : job.stack, cmd));
         return;
       }
       step.status = "done";
