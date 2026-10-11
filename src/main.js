@@ -24,6 +24,10 @@ import { createStackReader } from "./vault-stacks.js";
 import { createSloStore } from "./slo-store.js";
 import { effectiveConfig, envExports, loadConfig, resolvePath, usage } from "./config.js";
 import { createStorage } from "./storage.js";
+import { createScoreApi } from "./score/api.js";
+import { loadCatalog } from "./score/catalog.js";
+import { loadProfiles } from "./score/profiles.js";
+import { createScanHistory } from "./score/history.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // cloudspider.yaml (config.js): defaults < file < env < flags. A bad value
@@ -103,6 +107,18 @@ const app = createApp({
   write(line) {
     process.stdout.write(line);
   },
+});
+
+// SCORE: scans of the connected cluster, history on the shared storage
+// (scorecard/… keys under storage.path), FIX through the app's Stacks
+// (src/score/api.js).
+app.score = createScoreApi({
+  app,
+  pageOrigin,
+  history: createScanHistory({ storage }),
+  catalog: () => loadCatalog(),
+  profiles: () => loadProfiles(),
+  kubeFor: (name) => (name ? kubeContexts.find((ctx) => ctx.name === name)?.kube : kube) || null,
 });
 
 // SLO history survives a restart (.cloudspider/slo-ledger.json).
