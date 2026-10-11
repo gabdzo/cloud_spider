@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-REL-001
+revision: 1
+title: "Databases are Multi-AZ"
+category: reliability
+target: aws
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: rds-multi-az
+aggregation: proportional
+requires: [aws-rds]
+whyItMatters: "A single-AZ database is down for the whole of an AZ outage or a host failure."
+remediation: { summary: "Modify the instance to Multi-AZ (one short failover during the change).", effort: S }
+verification: "Every RDS instance has MultiAZ=true (sandbox profile: not applicable)."

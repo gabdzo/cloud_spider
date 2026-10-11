@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-REL-002
+revision: 1
+title: "Databases keep at least 7 days of backups"
+category: reliability
+target: aws
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: rds-backups-7d
+aggregation: proportional
+requires: [aws-rds]
+whyItMatters: "Fewer than 7 days of backups means a problem noticed on Monday cannot be undone from last week."
+remediation: { summary: "Set BackupRetentionPeriod to 7 or more.", effort: S }
+verification: "Every RDS instance has BackupRetentionPeriod >= 7."

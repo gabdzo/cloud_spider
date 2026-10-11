@@ -1,0 +1,13 @@
+kind: Control
+id: AWS-SEC-033
+revision: 1
+title: "No customer IAM policy allows *:*"
+category: security
+target: aws
+evidenceType: config
+severity: { default: critical }
+confidence: high
+blockedBy: "iam:GetPolicyVersion (collector not built)"
+whyItMatters: "A *:* policy turns any compromised principal into an administrator."
+remediation: { summary: "Replace *:* with the actions the role needs.", effort: S }
+verification: "No attached customer policy has Action * on Resource *."

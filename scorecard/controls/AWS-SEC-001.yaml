@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-SEC-001
+revision: 1
+title: "No database is public and open to the internet"
+category: security
+target: aws
+evidenceType: config
+severity: { default: critical }
+confidence: high
+evaluator: rds-not-public
+aggregation: all-or-nothing
+requires: [aws-rds, aws-network]
+whyItMatters: "A public RDS instance with an open security group is one leaked password away from a breach."
+remediation: { summary: "Set PubliclyAccessible=false and limit the security group to the app's own groups.", effort: S }
+verification: "No RDS instance has PubliclyAccessible=true with a security group open to 0.0.0.0/0 on its port."

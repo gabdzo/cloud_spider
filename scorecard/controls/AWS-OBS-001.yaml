@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-OBS-001
+revision: 2
+title: "Internet-facing load balancers have a 5XX alarm with an action"
+category: observability
+target: aws
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: lb-5xx-alarm
+aggregation: proportional
+requires: [aws-alarms, aws-elbv2]
+whyItMatters: "Without an alarm, users report the outage before you do."
+remediation: { summary: "Create a CloudWatch alarm on HTTPCode_ELB_5XX_Count and HTTPCode_Target_5XX_Count with an SNS action.", effort: S }
+verification: "DescribeAlarms lists an alarm with an action for each internet-facing ALB."

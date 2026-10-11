@@ -1,0 +1,13 @@
+kind: Control
+id: AWS-SEC-032
+revision: 1
+title: "Customer KMS keys rotate"
+category: security
+target: aws
+evidenceType: config
+severity: { default: medium }
+confidence: high
+blockedBy: "kms:GetKeyRotationStatus (collector not built)"
+whyItMatters: "Unrotated keys widen the blast radius of a leaked key."
+remediation: { summary: "Enable automatic rotation on customer managed keys.", effort: S }
+verification: "GetKeyRotationStatus is true for every customer managed key."

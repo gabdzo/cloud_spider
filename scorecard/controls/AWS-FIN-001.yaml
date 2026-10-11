@@ -1,0 +1,13 @@
+kind: Control
+id: AWS-FIN-001
+revision: 1
+title: "A budget with an alert exists"
+category: finops
+target: aws
+evidenceType: config
+severity: { default: medium }
+confidence: high
+blockedBy: "budgets:DescribeBudgets (collector not built)"
+whyItMatters: "A runaway resource is found on the invoice instead of the same day."
+remediation: { summary: "Create an AWS Budget with an email or SNS alert.", effort: S }
+verification: "DescribeBudgets lists a budget with a notification."

@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-SEC-013
+revision: 1
+title: "EKS API endpoints are not open to the whole internet"
+category: security
+target: aws
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: eks-endpoint-restricted
+aggregation: all-or-nothing
+requires: [aws-eks]
+whyItMatters: "A public endpoint open to 0.0.0.0/0 exposes the API server to every credential-stuffing bot."
+remediation: { summary: "Restrict publicAccessCidrs to your office/VPN ranges, or turn on the private endpoint and turn off the public one.", effort: S }
+verification: "No EKS cluster has endpointPublicAccess with publicAccessCidrs empty or 0.0.0.0/0."

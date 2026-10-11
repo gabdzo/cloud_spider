@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-SEC-012
+revision: 1
+title: "No security group opens SSH, RDP or the kubelet port to the internet"
+category: security
+target: aws
+evidenceType: config
+severity: { default: critical }
+confidence: high
+evaluator: sg-no-open-admin-ports
+aggregation: all-or-nothing
+requires: [aws-network]
+whyItMatters: "An admin port open to 0.0.0.0/0 is scanned within minutes; the kubelet port (10250) gives node-level access."
+remediation: { summary: "Remove the 0.0.0.0/0 and ::/0 rules for tcp 22, 3389 and 10250; use SSM Session Manager instead of SSH.", effort: S }
+verification: "No security group ingress rule open to 0.0.0.0/0 or ::/0 covers tcp 22, 3389 or 10250."

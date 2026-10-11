@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-REL-010
+revision: 1
+title: "Load balancers with listeners have a healthy target"
+category: reliability
+target: aws
+evidenceType: runtime
+severity: { default: high }
+confidence: high
+evaluator: lb-has-healthy-targets
+aggregation: proportional
+requires: [aws-elbv2]
+whyItMatters: "A load balancer with zero healthy targets answers every request with 503."
+remediation: { summary: "Open the target group's health reason (Path view) and fix the target or its health check.", effort: M }
+verification: "Every ALB/NLB with listeners and target groups has at least one healthy target."
