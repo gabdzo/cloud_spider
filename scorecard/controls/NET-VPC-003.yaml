@@ -1,0 +1,18 @@
+kind: Control
+id: NET-VPC-003
+revision: 1
+title: "Kubernetes subnets keep more than 20% of their addresses free"
+category: networking
+target: aws
+evidenceType: runtime
+severity: { default: medium }
+confidence: high
+evaluator: subnet-free-ips
+aggregation: proportional
+requires: [aws-vpc-net, aws-eks]
+params: { minFree: 0.2 }
+whyItMatters: "The VPC CNI gives every pod a VPC address: a full subnet means pods stuck in ContainerCreating and nodes that cannot join."
+remediation: { summary: "Add a secondary CIDR or bigger subnets, turn on prefix delegation, or move pods to custom networking subnets.", effort: M }
+verification: "aws ec2 describe-subnets shows AvailableIpAddressCount above 20% of the usable addresses for every subnet tagged kubernetes.io/cluster/* or kubernetes.io/role/*, or used by a node group."
+references:
+  - { source: "docs/design/network-debugging.md §8 (A-VPC-04)", url: "https://docs.aws.amazon.com/eks/latest/best-practices/ip-opt.html" }

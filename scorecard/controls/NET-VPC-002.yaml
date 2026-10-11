@@ -1,0 +1,17 @@
+kind: Control
+id: NET-VPC-002
+revision: 1
+title: "NACLs let load balancer → target traffic and its return through"
+category: networking
+target: aws
+evidenceType: config
+severity: { default: high }
+confidence: medium
+evaluator: nacl-return-path
+aggregation: proportional
+requires: [aws-lb-edge, aws-vpc-net]
+whyItMatters: "NACLs are stateless: a security group can allow the path while a NACL drops the return packets on ephemeral ports, and the load balancer sees timeouts (504) or unhealthy targets."
+remediation: { summary: "On the target subnets' NACL allow the target port in from the load balancer subnets and 1024-65535 back out to them; on the load balancer subnets the mirror image.", effort: S }
+verification: "aws ec2 describe-network-acls --filters Name=association.subnet-id,Values=<subnet> shows both directions allowed before the final * deny. IP targets are checked on both sides; instance targets on the load balancer side only."
+references:
+  - { source: "docs/design/network-debugging.md §8 (A-VPC-02)", url: "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-network-acls.html#nacl-ephemeral-ports" }

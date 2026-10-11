@@ -21,7 +21,7 @@ test("NET-* ids are valid control ids, and the kube NET controls load and name e
   assert.deepEqual(errors, []);
   const net = controls.filter((c) => c.id.startsWith("NET-") && c.target === "kubernetes").map((c) => c.id).sort();
   assert.deepEqual(net, ["NET-DNS-003", "NET-DNS-004", "NET-K8S-001", "NET-K8S-002"]);
-  for (const c of controls.filter((x) => x.id.startsWith("NET-"))) assert.equal(typeof E[c.evaluator], "function", c.id);
+  for (const c of controls.filter((x) => x.id.startsWith("NET-") && x.evaluator)) assert.equal(typeof E[c.evaluator], "function", c.id);
 });
 
 test("collector: CoreDNS pods with their nodes, metrics, kube-system CNI, services, ingress backends and slices", async () => {

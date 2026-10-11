@@ -1,0 +1,17 @@
+kind: Control
+id: NET-DNS-001
+revision: 1
+title: "No Route 53 record points at a load balancer or CloudFront distribution that is gone"
+category: networking
+target: aws
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: dns-no-dangling
+aggregation: all-or-nothing
+requires: [aws-route53, aws-lb-edge, aws-cloudfront]
+whyItMatters: "A record that still points at a deleted load balancer or distribution is a subdomain takeover waiting to happen: anyone who creates a resource with that name serves your domain."
+remediation: { summary: "Delete the record, or point it at the resource that replaced the old one.", effort: S }
+verification: "aws route53 list-resource-record-sets --hosted-zone-id <zone> shows no alias or CNAME to an *.elb.amazonaws.com or *.cloudfront.net name that aws elbv2 describe-load-balancers / aws cloudfront list-distributions does not list. Load balancers outside scorecard.regions count as gone."
+references:
+  - { source: "docs/design/network-debugging.md §8 (A-R53-03)", url: "https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/routing-to-elb-load-balancer.html" }

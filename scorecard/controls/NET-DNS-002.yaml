@@ -1,0 +1,17 @@
+kind: Control
+id: NET-DNS-002
+revision: 1
+title: "Failover and weighted Route 53 records have health checks"
+category: networking
+target: aws
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: dns-routing-health-checks
+aggregation: proportional
+requires: [aws-route53]
+whyItMatters: "Without a health check (or an alias that evaluates target health), failover never fails over and a weighted record keeps sending its share to a dead endpoint."
+remediation: { summary: "Attach a Route 53 health check to each failover/weighted record, or use an alias with EvaluateTargetHealth.", effort: S }
+verification: "Every failover or weighted record in aws route53 list-resource-record-sets has HealthCheckId or AliasTarget.EvaluateTargetHealth true."
+references:
+  - { source: "docs/design/network-debugging.md §8 (A-R53-04)", url: "https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover.html" }

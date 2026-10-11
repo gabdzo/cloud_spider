@@ -1,0 +1,17 @@
+kind: Control
+id: NET-HTTP-001
+revision: 1
+title: "Plain HTTP redirects to HTTPS"
+category: networking
+target: aws
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: http-to-https
+aggregation: proportional
+requires: [aws-cloudfront, aws-lb-edge]
+whyItMatters: "A viewer that is served over plain HTTP sends cookies and tokens in clear text and can be downgraded."
+remediation: { summary: "CloudFront: viewer protocol policy redirect-to-https on every behavior. ALB: make the HTTP:80 listener's default action a redirect to HTTPS:443 (301).", effort: S }
+verification: "curl -sI http://<host>/ answers 301/308 with Location https://…; aws elbv2 describe-listeners shows a redirect to HTTPS on every internet-facing HTTP listener."
+references:
+  - { source: "docs/design/network-debugging.md §8 (L-HTTP-02, A-CF-03)", url: "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-listeners.html#redirect-actions" }

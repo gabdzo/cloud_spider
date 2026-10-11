@@ -11,7 +11,7 @@ export const EVIDENCE_TYPES = ["config", "runtime", "process"];
 export const AGGREGATIONS = ["all-or-nothing", "proportional"];
 export const CONFIDENCE = ["high", "medium", "low"];
 export const EFFORTS = ["S", "M", "L"];
-export const ID_PATTERN = /^(AWS|K8S|SRE|NET)-[A-Z][A-Z0-9]{2}-\d{3}$/;
+export const ID_PATTERN = /^(AWS|K8S|SRE|NET)-[A-Z][A-Z0-9]{2,3}-\d{3}$/;
 
 // Returns { ok, errors } for one parsed control document. A control has
 // either an `evaluator` (assessed) or a `blockedBy` (stub, always

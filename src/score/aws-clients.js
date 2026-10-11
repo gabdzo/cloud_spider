@@ -7,6 +7,8 @@ import { RDSClient } from "@aws-sdk/client-rds";
 import { CloudTrailClient } from "@aws-sdk/client-cloudtrail";
 import { CloudWatchClient } from "@aws-sdk/client-cloudwatch";
 import { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
+import { Route53Client } from "@aws-sdk/client-route-53";
+import { CloudFrontClient } from "@aws-sdk/client-cloudfront";
 
 const RETRY = { maxAttempts: 5, retryMode: "adaptive" };
 
@@ -25,6 +27,9 @@ export function createScanClients({ extra = {} } = {}) {
     trail: (region) => make("trail", CloudTrailClient, region),
     cw: (region) => make("cw", CloudWatchClient, region),
     logs: (region) => make("logs", CloudWatchLogsClient, region),
+    // Global services: one client, us-east-1.
+    r53: () => make("r53", Route53Client, "us-east-1"),
+    cf: () => make("cf", CloudFrontClient, "us-east-1"),
     ...extra,
   };
 }
