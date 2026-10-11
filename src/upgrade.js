@@ -152,7 +152,7 @@ export const UPGRADES = [
   {
     id: "shopapi",
     title: "Shop API",
-    note: "A sample backend on EKS: a migration Job seeds the shop schema, then PostgREST serves GET /items from shopdb. No load balancer: kubectl -n shop port-forward svc/shopapi 3000:80.",
+    note: "A sample backend on EKS: a migration Job seeds the shop schema, then PostgREST serves GET /items from shopdb. It needs the Postgres cluster (pgcluster) on the cluster first and never makes namespace shop itself. expose=none (default): no load balancer, kubectl -n shop port-forward svc/shopapi 3000:80. expose=alb: an internet-facing ALB in front (Ingress, target type ip, health check /items), made by the AWS Load Balancer Controller add-on (lbc), which must be up; the URL is the stack output url. Take Shop API down before lbc, or the ALB is left behind.",
     dir: "upgrades/shopapi",
     stack: "shopapi",
     project: "cloudspider-shopapi",
@@ -160,8 +160,14 @@ export const UPGRADES = [
     // Where its pods run: the run pane says what they wait on.
     namespaces: ["shop"],
     needs: ["eks", "pgcluster"],
-    cost: [],
-    parameters: [{ name: "clusterName", type: "string", default: "cloudspider-up" }],
+    // expose=alb: the ALB is made by the AWS Load Balancer Controller.
+    needsWhen: [{ param: "expose", value: "alb", needs: ["lbc"] }],
+    // The ALB and its two public IPv4 addresses (one per subnet), only with expose=alb.
+    cost: [{ price: "alb", when: { expose: "alb" } }, { price: "public-ipv4", qty: 2, when: { expose: "alb" } }, { usage: "alb-lcu", when: { expose: "alb" } }],
+    parameters: [
+      { name: "clusterName", type: "string", default: "cloudspider-up" },
+      { name: "expose", type: "string", default: "none", choices: ["none", "alb"] },
+    ],
   },
   {
     id: "demo",
@@ -693,6 +699,32 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       // is not held, but the cluster rule keeps an EKS run out meanwhile.
       const locks = ids.map((id) => stackFor(UPGRADES.find((item) => item.id === id), { clusterName: cluster }));
       return this.runSteps({ module: "eks", action: "add-ons", stack, steps, command: rerunCommand(join(cwd, where), byHand), directory: join(cwd, where), where, onDone, locks, cluster });
+    },
+    // A stack bundle (src/stack-bundles.js) as one run: for each step,
+    // preview then up, in order, stopping at the first failure. Shown on the
+    // last step's card; holds every stack it runs.
+    stackBatch({ cluster, steps: items, onDone, notes = {}, title = "bundle" }) {
+      const steps = [];
+      const byHand = [];
+      const locks = [];
+      let last = null;
+      for (const item of items) {
+        const spec = UPGRADES.find((entry) => entry.id === item.module);
+        if (!spec || spec.id === "eks") return refuse({ module: item.module, action: "bundle", error: `no stack ${item.module} for a bundle` });
+        const checked = checkParams(spec, { ...(item.params || {}), clusterName: cluster });
+        if (checked.error) return refuse({ module: spec.id, action: "bundle", error: checked.error });
+        const stack = stackFor(spec, checked.values);
+        const dir = join(cwd, spec.dir);
+        steps.push(...noteSteps(notes[spec.id] || [], `${spec.id} · `));
+        const preview = upgradeSteps(spec, stack, "preview", checked.values);
+        const up = ["up", "--yes", "--non-interactive", "--stack", stack];
+        for (const args of [...preview, up]) steps.push({ args, cwd: dir, text: `${spec.id} · pulumi ${args.join(" ")}` });
+        byHand.push(`cd ${spec.dir}`, ...[...preview, up].map((args) => `pulumi ${args.join(" ")}`));
+        locks.push(stack);
+        last = { spec, stack };
+      }
+      if (!last) return refuse({ module: "", action: "bundle", error: "nothing to run" });
+      return this.runSteps({ module: last.spec.id, action: title, stack: last.stack, steps, command: byHand.join(" && "), directory: join(cwd, last.spec.dir), where: last.spec.dir, onDone, locks, cluster });
     },
     busy() {
       const first = runningJobs()[0];

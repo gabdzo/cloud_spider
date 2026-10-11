@@ -60,6 +60,7 @@ export const FILES = new Set([
   "run-pane.js",
   "node-labels.js",
   "stack-costs.js",
+  "stack-bundles.js",
   "theme.js",
   "draw-kit.js",
   "chrome.js",
@@ -1734,6 +1735,10 @@ const page = `<!doctype html>
   #pip .need.unknown { opacity: 0.7; }
   #pip .need.ok { color: #7ee08a; border-color: #3f8f4a; }
   #pip .need.missing { color: #ff7a6b; border-color: #b4483c; }
+  #pip .sbundle { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11px; border: 1px dashed var(--case-brass-lo); padding: 4px 6px; }
+  #pip .sbundle b { letter-spacing: 0.14em; color: var(--world-amber); }
+  #pip .sbundle .sb-plan { flex-basis: 100%; color: var(--pip-dim); }
+  #pip .sbundle .sb-plan.refused { color: #ff7a6b; }
   #pip .need-why { flex-basis: 100%; color: #ff7a6b; font-style: normal; letter-spacing: 0.04em; }
   #pip .need::before { content: ""; display: inline-block; width: 5px; height: 5px; margin-right: 4px; vertical-align: 1px; background: var(--world-amber); box-shadow: 0 0 4px var(--world-amber); }
   #pip .pdiv {
@@ -2477,6 +2482,17 @@ async function route(app, req, res) {
       return;
     }
     send(res, 200, await app.bundleRun(req.headers.origin, body));
+    return;
+  }
+
+  // Stack bundles (Shop API, Demo): { bundle, cluster, params, plan }.
+  if (req.method === "POST" && url.pathname === "/api/stacks/bundle") {
+    const body = await readJson(req).catch(() => null);
+    if (!body || typeof body !== "object") {
+      send(res, 400, { error: "the request was not JSON", hint: "Reload the page and press the button again." });
+      return;
+    }
+    send(res, 200, app.stackBundle ? await app.stackBundle(req.headers.origin, body) : { error: "bundles are not set up" });
     return;
   }
 
