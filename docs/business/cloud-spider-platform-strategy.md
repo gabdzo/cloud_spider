@@ -4,10 +4,10 @@
 |---|---|
 | Status | **Proposal for Gabriel's decision. Nothing is approved and nothing is being implemented.** |
 | Author | Spider (Grok Bot for gabdzo), 2026-10-11 |
-| Second opinion | PR #85 by Gabriel's terminal agent. Gabriel chose this document as the base; the parts of #85 that add value are folded in and credited inline as *(from #85)*. §15 lists what was adopted and rejected. |
+| Second opinion | PR #85 by Gabriel's terminal agent. #85 was merged to `main` (c504e67, 14:18 CEST); Gabriel then chose this document as the base, so merging this PR replaces #85's versions of the two shared files. The parts of #85 that add value are folded in and credited inline as *(from #85)*. §15 lists what was adopted and rejected. |
 | Method | gstack `/office-hours` (Appendix A) → gstack `/plan-ceo-review` (Appendix B) → Superpowers `brainstorming` and gstack `/plan-eng-review` for the technical design (in `docs/design/production-readiness-scorecard.md`, Appendices A-B there). All run headless: no interactive questions were possible, so each question was answered from the repo and the brief, the assumption is written down, and the recommended option was taken. |
 | Base | `main` at #86 (2026-10-11 14:09 CEST). Inputs read: README, `docs/RUN-ME.md`, `docs/review-2026-10-11.md`, `docs/plan-expansion.md`, `docs/plan-overnight.md`, `docs/cloud-platform/{MVP,ARCHITECTURE,DECISION_LOG}.md`, `TODOS.md`, `docs/live-test-2026-10-11.md` and `docs/disaster-drill-2026-10-11.md` (#86), PRs #78-#84, the code under `src/` and `upgrades/`. |
-| Missing inputs | **`docs/business/monetization-strategy.md` does not exist on `main`.** It exists only on branch `docs/platform-readiness-strategy` (PR #85, the terminal agent's work, closed in favour of this PR; branch kept). Its useful parts are folded into this document and cited by permalink ([monetization-strategy.md @570aa3f](https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/monetization-strategy.md), [scalable-business-options.md @570aa3f](https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/scalable-business-options.md)) rather than added as a third, conflicting file. |
+| Earlier business notes | `docs/business/monetization-strategy.md` and `docs/business/scalable-business-options.md` were not on `main` when this document was started. They arrived with PR #85, which was merged to `main` at 14:18 CEST (c504e67) shortly before Gabriel chose this document as the base. **Where they differ from this document, this document supersedes them** (pending Gabriel's approval). Their useful parts are folded in here and cited by permalink ([monetization-strategy.md @570aa3f](https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/monetization-strategy.md), [scalable-business-options.md @570aa3f](https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/scalable-business-options.md)) rather than added as a third, conflicting file. |
 | Companion | Technical spec: `docs/design/production-readiness-scorecard.md` (deliverables 5-12, 15). |
 
 > **Labels used in this document.** *Fact (source)* = verified, with link and access date 2026-10-11. *Hypothesis* = an assumption to test, not a finding. *Unverified* = seen in a secondary source or a search snippet and not confirmed on the vendor's own page. No market-size or revenue number in this document is a measurement.
@@ -36,6 +36,7 @@ The narrow wedge that could work: **an evidence-backed production-readiness asse
 6. [Pricing unit and unit-cost model (hypotheses)](#6-pricing-unit-and-unit-cost-model-hypotheses)
 7. [What exists, what is reusable, what is missing, what is long-term](#7-what-exists-what-is-reusable-what-is-missing-what-is-long-term)
 8. [MVP definition (deliverable 16) and the smallest recurring-revenue feature set](#8-mvp-definition-deliverable-16-and-the-smallest-recurring-revenue-feature-set)
+9. `monetization-strategy.md` and `scalable-business-options.md` are on `main` via #85: keep them as history with a "superseded by cloud-spider-platform-strategy.md" note, or remove them?
 9. [Free vs paid matrix (deliverable 13)](#9-free-vs-paid-matrix-deliverable-13)
 10. [30/60/90-day roadmap (deliverable 17)](#10-306090-day-roadmap-deliverable-17)
 11. [Monetization and validation experiments, kill criteria (deliverable 14)](#11-monetization-and-validation-experiments-kill-criteria-deliverable-14)
@@ -469,7 +470,7 @@ Note: Gabriel is a working contractor; calendar time is likely 1.5-2× the ideal
 
 ## 15. Opposing view
 
-**Source.** Gabriel's terminal agent wrote a parallel strategy on branch **`docs/platform-readiness-strategy`** (PR #85, "Record the platform strategy and local scorecard spec", commit 570aa3f, 2026-10-11 14:04 CEST, based on #82). It contains `docs/business/cloud-spider-platform-strategy.md`, `docs/business/monetization-strategy.md`, `docs/business/scalable-business-options.md`, `docs/design/production-readiness-scorecard.md`, `docs/superpowers/plans/2026-10-11-production-readiness-scorecard.md` and a `TODOS.md` section. **Gabriel chose this PR (#87) as the base.** #85 is closed with a pointer here; its branch is kept, so every permalink to 570aa3f in this document stays valid. Credit to #85 for the items marked *(from #85)* throughout both documents.
+**Source.** Gabriel's terminal agent wrote a parallel strategy on branch **`docs/platform-readiness-strategy`** (PR #85, "Record the platform strategy and local scorecard spec", commit 570aa3f, 2026-10-11 14:04 CEST, based on #82). It contains `docs/business/cloud-spider-platform-strategy.md`, `docs/business/monetization-strategy.md`, `docs/business/scalable-business-options.md`, `docs/design/production-readiness-scorecard.md`, `docs/superpowers/plans/2026-10-11-production-readiness-scorecard.md` and a `TODOS.md` section. **#85 was merged to `main` at 14:18 CEST (merge commit c504e67)**; Gabriel then chose this PR (#87) as the base. Merging #87 replaces #85's versions of `docs/business/cloud-spider-platform-strategy.md` and `docs/design/production-readiness-scorecard.md`. #85's other files stay on `main`: `monetization-strategy.md`, `scalable-business-options.md`, the plan and the `TODOS.md` section. This document supersedes them where they differ. Its branch is kept, so the permalinks to 570aa3f stay valid. Credit to #85 for the items marked *(from #85)* throughout both documents.
 
 ### Where both documents already agreed
 
@@ -516,8 +517,8 @@ Note: Gabriel is a working contractor; calendar time is likely 1.5-2× the ideal
 | Verdict labels **NOT_READY / READY_WITH_RISK / NO_OPEN_HIGH**; a single coverage floor of 0.60 | Any label containing "READY" will be quoted as approval in a launch meeting. Production keeps a 70 % floor (40 % dev/sandbox). The 8-control floor *was* adopted. |
 | Weights 21/8/3/1 | #87's 40/15/5/2 has the same intent (one critical outweighs many lows) and comes with worked examples. Switching would change every example for no gain. |
 | Pricing anchored on viewers only (Lens $25, Hava $59) | Both are now in the competitor table, but readiness is priced against posture and IDP tools (Prowler $99/account, Pulumi $40-400, Port $30-40/seat) and per-assessment fees. |
-| A third business file (`monetization-strategy.md`) and a separate `scalable-business-options.md` | Folded and cited by permalink instead of adding files that would conflict with this document. Their $79 one-time licence and $300/user/year ideas are recorded in §6.4 (the €400/year per-account licence supersedes the latter). |
-| `TODOS.md` "deferred" section | Not ported (docs-only change to the two agreed files). The same items are in this document's NOT in scope list (Appendix B) and spec §14 "Later". |
+| A third business file (`monetization-strategy.md`) and a separate `scalable-business-options.md` | Not duplicated here. Both are now on `main` via #85, and this document supersedes them where they differ (§17 asks whether to mark or remove them). Their $79 one-time licence and $300/user/year ideas are recorded in §6.4 (the €400/year per-account licence supersedes the latter). |
+| `TODOS.md` "deferred" section | Left as merged by #85 (it is consistent with this document's NOT in scope list in Appendix B and spec §14 "Later"). |
 | No trademark risk | Kept as R6. Bethesda marks in the UI and demo data are a concrete risk for a commercial launch. |
 
 Net: the two strategies differed mainly in emphasis. #85 was more disciplined about not writing code and sharper on experiment hygiene and false-pass edge cases. #87 is more explicit about services-first revenue, runtime evidence and naming risk. This document now carries both.
@@ -528,7 +529,7 @@ Net: the two strategies differed mainly in emphasis. #85 was more disciplined ab
 
 **Nothing below starts until Gabriel explicitly approves (1) this strategy and (2) the MVP scope in the design spec.** Approval of this PR's merge is not approval to implement. 
 
-1. **Decision meeting (Gabriel):** confirm the VALIDATE FIRST wedge, model sequence (E → A, with the €400/year licence as the alternative to test), MVP scope and verdict semantics. (Base already chosen: this PR; #85 closed.)
+1. **Decision meeting (Gabriel):** confirm the VALIDATE FIRST wedge, model sequence (E → A, with the €400/year licence as the alternative to test), MVP scope and verdict semantics. (Base already chosen: this PR. #85 is already merged, and merging this PR replaces its two shared files.)
 2. **`brainstorming` (done for the design):** `docs/design/production-readiness-scorecard.md` is the approved-pending design. Re-run only for sections Gabriel changes.
 3. **`writing-plans`:** reuse #85's task order where it fits this spec (pure score maths first under TDD, then AWS facts, then Kubernetes facts, then the JSON/Markdown report; plan at [`docs/superpowers/plans/2026-10-11-production-readiness-scorecard.md` @570aa3f](https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/superpowers/plans/2026-10-11-production-readiness-scorecard.md)), and turn the MVP slices (spec §14-§15) into a plan under `docs/superpowers/plans/` with bite-sized tasks, exact files (`src/score/…`), tests first, and a commit per task. One plan for the scorecard core; separate later plans for OpenShift, packs and the correlator.
 4. **Plan review:** `/plan-eng-review` on the written plan (complexity gate, test diagram, failure modes); fix before execution.
@@ -582,7 +583,7 @@ All accessed 2026-10-11. "Search snippet" means the figure was read from the sea
 - Lens pricing: https://www.lenshq.io/pricing (fetched)
 - Cloudcraft: included with Datadog per PR #85 (not re-checked)
 
-**PR #85 (closed in favour of this PR; branch kept)**
+**PR #85 (merged to `main` as c504e67; superseded by this PR for the two shared files; branch kept)**
 - Strategy: https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/cloud-spider-platform-strategy.md
 - Monetization notes: https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/monetization-strategy.md
 - Scalable options: https://github.com/gabdzo/cloud_spider/blob/570aa3f/docs/business/scalable-business-options.md
@@ -595,7 +596,7 @@ All accessed 2026-10-11. "Search snippet" means the figure was read from the sea
 
 **Standards** (cited for control mapping in the spec; no compliance or certification is claimed): see the design spec §18 (AWS Well-Architected reliability/security pillars, AWS Security Hub controls reference, CIS Benchmarks (Amazon EKS, Kubernetes), Kubernetes Pod Security Standards, NSA/CISA Kubernetes Hardening Guidance, Google SRE Workbook, OpenShift Container Platform 4.19 documentation).
 
-**Repo evidence:** `docs/live-test-2026-10-11.md`, `docs/disaster-drill-2026-10-11.md` (#86), PRs #78-#84, `spider-shots` branch `drill/` and `livetest/`, PR #85 (terminal agent, closed in favour of this PR).
+**Repo evidence:** `docs/live-test-2026-10-11.md`, `docs/disaster-drill-2026-10-11.md` (#86), PRs #78-#84, `spider-shots` branch `drill/` and `livetest/`, PR #85 (terminal agent, merged as c504e67, superseded for the shared files).
 
 ---
 

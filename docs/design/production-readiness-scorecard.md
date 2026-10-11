@@ -5,7 +5,7 @@
 | Status | **Proposed. Not approved. Nothing here is built yet.** Implementation waits for Gabriel's explicit approval of the strategy and the scope (see `docs/business/cloud-spider-platform-strategy.md` §15). |
 | Author | Spider (Grok Bot for gabdzo), 2026-10-11 |
 | Method | Superpowers `brainstorming` run headless (no user available; every question answered from the repo and the brief, assumptions recorded in §1.3). Then gstack `/plan-eng-review` (Appendix A). |
-| Second opinion | PR #85 (Gabriel's terminal agent; closed in favour of #87, branch kept). Ideas taken from it are marked *adopted from PR #85*; strategy doc §15 lists adopted and rejected items. |
+| Second opinion | PR #85 (Gabriel's terminal agent; merged to `main` as c504e67, then superseded by #87 for this file per Gabriel; branch kept). Ideas taken from it are marked *adopted from PR #85*; strategy doc §15 lists adopted and rejected items. |
 | Base | `main` at `82bc119` / #84 (2026-10-11 13:53 CEST), 482 tests passing per PR #84's description. Docs-only #86 (live test and disaster drill) read afterwards. |
 | Companion | `docs/business/cloud-spider-platform-strategy.md` covers the commercial deliverables (1-4, 13, 14, 16-20). This document covers 5-12 and 15, plus effort (18) on the engineering side. |
 
@@ -1415,7 +1415,7 @@ Regression rule: every bug found in a live scan gets a fixture before the fix. A
 
 | Checklist step | What happened (headless) |
 |---|---|
-| 1. Explore project context | Read README, RUN-ME, review-2026-10-11, plan-expansion, plan-overnight, cloud-platform MVP/ARCHITECTURE, TODOS, and the modules listed in §1.1; checked PRs #83/#84 for the drill findings. `docs/business/monetization-strategy.md` does **not exist** on `main` (it exists only on the unmerged PR #85 branch). `docs/live-test-2026-10-11.md` and `docs/disaster-drill-2026-10-11.md` landed in #86 and were read. |
+| 1. Explore project context | Read README, RUN-ME, review-2026-10-11, plan-expansion, plan-overnight, cloud-platform MVP/ARCHITECTURE, TODOS, and the modules listed in §1.1; checked PRs #83/#84 for the drill findings. `docs/business/monetization-strategy.md` was **not** on `main` at the time (it arrived later with PR #85). `docs/live-test-2026-10-11.md` and `docs/disaster-drill-2026-10-11.md` landed in #86 and were read. |
 | 2. Visual companion | Not offered (no user present); ASCII wireframes in §13 instead. |
 | 3. Clarifying questions | Answered from the repo/brief; assumptions recorded in §1.3 (a)-(e). |
 | 4. 2-3 approaches | §2: A in-module checks, **B separate core (chosen)**, C wrap OSS scanners (kept as later importers). |
