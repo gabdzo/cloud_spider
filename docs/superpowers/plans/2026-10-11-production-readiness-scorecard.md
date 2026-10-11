@@ -1,5 +1,7 @@
 # Production readiness scorecard implementation plan
 
+> **Superseded (2026-10-11)** by [`2026-10-11-scorecard-mvp.md`](2026-10-11-scorecard-mvp.md), which follows the merged spec (#87): its weights, its verdicts, and FIX through the existing add-on stacks as the acceptance test. This file is kept for history; do not execute it.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Status: NOT APPROVED. Do not start these tasks until the strategy and the spec are explicitly approved. This file is the plan only.**
