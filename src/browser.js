@@ -29,7 +29,7 @@ import { renderTelemetry } from "./tele-view.js";
 import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
 import { addonCommands, confirmPrompt, upgradeSpiderLine } from "./upgrade-rules.js";
-import { liveLine, numberProblem, radioLine, runModel } from "./run-pane.js";
+import { liveLine, noteLines, numberProblem, radioLine, runModel } from "./run-pane.js";
 import { sourceText } from "./node-labels.js";
 import { costFor, costLine, estimate } from "./stack-costs.js";
 import {
@@ -3633,11 +3633,30 @@ function runCardKey() {
   return `${openCard}|${params.clusterName || params.name || ""}`;
 }
 
+// UNLOCK on a lock plate: pulumi cancel for that stack (server: typed name,
+// same origin, a stack a run found locked).
+async function pressUnlock(stack, confirmName, button) {
+  button.disabled = true;
+  const body = await upgradeJson("/api/upgrade/unlock", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ stack, confirmName }),
+  });
+  noteSpider(body?.error ? `UNLOCK ${stack}: ${body.error}` : `UNLOCK ${stack}: pulumi cancel started`, body?.error ? "fail" : "ok");
+  renderRadioPanel();
+  if (body?.error) {
+    button.disabled = false;
+    button.title = `${body.error}${body.hint ? ` · ${body.hint}` : ""}`;
+  }
+  refreshUpgrade(true);
+}
+
 function runPane(id = "pip-run") {
   const pane = el("div", { id, className: "runpane", hidden: true, role: "region", ariaLabel: "stack run" });
   const head = el("div", { className: "run-head" }, el("i", { className: "run-lamp" }), el("b", { className: "run-title" }), el("span", { className: "run-word" }), el("span", { className: "run-time" }));
   const plate = el("div", { className: "run-plate", hidden: true, role: "alert" });
   const offer = el("div", { className: "run-offer", hidden: true });
+  const notes = el("ul", { className: "run-notes", hidden: true, role: "status" });
   const steps = el("ol", { className: "run-steps" });
   const out = el("pre", { className: "run-out", tabIndex: 0, ariaLabel: "run log" });
   if (id === "pip-run") out.id = "pip-out";
@@ -3645,7 +3664,7 @@ function runPane(id = "pip-run") {
     pane.dataset.stick = out.scrollTop + out.clientHeight >= out.scrollHeight - 8 ? "1" : "0";
   });
   const foot = el("div", { className: "run-foot" }, el("span", { className: "run-busy" }), el("a", { className: "run-log", target: "_blank", rel: "noopener" }));
-  pane.append(head, plate, offer, steps, out, foot);
+  pane.append(head, plate, offer, notes, steps, out, foot);
   return pane;
 }
 
@@ -3679,7 +3698,7 @@ function drawRun(pane, body, { local = null, query = null } = {}) {
   pane.dataset.state = model.state;
   if (busy) busy.textContent = model.busy || "";
   if (!model.show) {
-    for (const part of pane.querySelectorAll(".run-head, .run-plate, .run-steps, .run-out, .run-log")) part.hidden = true;
+    for (const part of pane.querySelectorAll(".run-head, .run-plate, .run-notes, .run-steps, .run-out, .run-log")) part.hidden = true;
     return model;
   }
   for (const part of pane.querySelectorAll(".run-head, .run-steps, .run-out")) part.hidden = false;
@@ -3702,7 +3721,33 @@ function drawRun(pane, body, { local = null, query = null } = {}) {
       copy.addEventListener("click", () => copyCommand(model.plate.command, copy));
       parts.push(el("div", { className: "cmdrow plate-cmd" }, el("span", { className: "lbl", textContent: "BY HAND" }), el("code", { textContent: model.plate.command }), copy));
     }
+    // Locked by a live run or another computer: UNLOCK, with the stack's
+    // name typed (the server checks it too).
+    if (model.plate.unlock) {
+      const stack = model.plate.unlock;
+      const typed = el("input", { className: "confirm-name", autocomplete: "off", placeholder: `type ${stack}`, ariaLabel: `type ${stack} to remove its lock` });
+      const press = el("button", { type: "button", className: "cmd danger", textContent: "UNLOCK", title: `pulumi cancel --stack ${stack}: removes the stack's lock. Only when no pulumi runs on it anywhere.` });
+      press.disabled = true;
+      typed.addEventListener("input", () => {
+        press.disabled = typed.value.trim() !== stack;
+      });
+      press.addEventListener("click", () => pressUnlock(stack, typed.value.trim(), press));
+      parts.push(el("div", { className: "cmdrow plate-unlock" }, el("span", { className: "lbl", textContent: "UNLOCK" }), typed, press));
+    }
     plate.replaceChildren(...parts);
+  }
+  const notes = pane.querySelector(".run-notes");
+  if (notes) {
+    notes.hidden = !model.notes?.length;
+    notes.replaceChildren(...(model.notes || []).map((note) => {
+      const item = el("li", { className: `run-note ${note.status}` }, el("b", { textContent: note.status === "warn" ? "NOTE " : "" }), document.createTextNode(note.text));
+      if (note.command) {
+        const copy = el("button", { type: "button", className: "cmd copy", textContent: "COPY", title: "copy the command to run it in a terminal" });
+        copy.addEventListener("click", () => copyCommand(note.command, copy));
+        item.append(el("div", { className: "cmdrow" }, el("span", { className: "lbl", textContent: "BY HAND" }), el("code", { textContent: note.command }), copy));
+      }
+      return item;
+    }));
   }
   const out = pane.querySelector(".run-out");
   if (out.textContent !== model.log) {
@@ -3715,6 +3760,11 @@ function drawRun(pane, body, { local = null, query = null } = {}) {
   if (model.logPath && query) {
     link.href = `/api/upgrade/log?${query}`;
     link.textContent = `log: ${model.logPath}`;
+  }
+  for (const line of noteLines(model)) {
+    if (runRadioSeen.has(line.key)) continue;
+    runRadioSeen.add(line.key);
+    if (noteSpider(line.text, line.status)) renderRadioPanel();
   }
   const radio = radioLine(model);
   if (radio && !runRadioSeen.has(radio.key)) {

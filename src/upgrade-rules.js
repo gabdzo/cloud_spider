@@ -293,7 +293,7 @@ const HINTS = [
   {
     kind: "locked",
     test: /locked by|currently locked|another update is in progress|conflict: Another update/i,
-    hint: "The stack is locked by an earlier run that did not finish. Make sure no pulumi is still running (ps aux | grep pulumi); then in that stack's folder run `pulumi cancel --stack <stack> --yes` and try again.",
+    hint: "Pulumi keeps a lock on the stack while it runs. A lock left by a run that died on this computer (a restart mid-run) is removed by itself on the next RUN. This one is held by a pulumi that is still running, or was taken on another computer: wait for that run to end. If you are sure nothing runs on this stack anywhere, press UNLOCK and type the stack name (it runs pulumi cancel for it).",
   },
   {
     kind: "dependents",

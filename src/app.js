@@ -967,6 +967,13 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         scaling: { desired: live.desired, min: live.min, max: live.max },
       };
     },
+    // UNLOCK on a run that stopped on a stack lock: pulumi cancel for that
+    // stack once its name is typed (upgrade.unlock checks both).
+    async upgradeUnlock(requestOrigin, body = {}) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the unlock did not happen", hint: "Open Cloud Spider at the address npm start printed; another page cannot change stacks." };
+      if (!upgrade?.unlock) return { error: "upgrades are not set up", hint: "" };
+      return upgrade.unlock({ stack: String(body.stack || ""), confirmName: String(body.confirmName || "") });
+    },
     async upgradeRun(requestOrigin, body = {}) {
       if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the upgrade did not happen", hint: "Open Cloud Spider at the address npm start printed (http://127.0.0.1:9241); another page cannot run stacks." };
       if (!upgrade?.run) return { error: "upgrades are not set up", hint: "" };

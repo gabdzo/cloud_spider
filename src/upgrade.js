@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { hostname as osHostname } from "node:os";
+import { judgeLock, lockRefusal, parseLocks, pendingOps, processNameOf, staleNote } from "./pulumi-locks.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { costFor, estimate } from "./stack-costs.js";
@@ -271,13 +273,19 @@ function tailLines(lines, max = SHOW_CHARS) {
 // are kept in memory only (the tests).
 const ALL_UPGRADES = UPGRADES;
 
-export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) => process.kill(pid, signal), cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES } = {}) {
+export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) => process.kill(pid, signal), hostname = osHostname(), processName = processNameOf, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES } = {}) {
   // Every child this server spawned that has not exited yet (pulumi and the
   // odd npm/kubectl step), for a clean shutdown (src/shutdown.js). Each runs
   // detached, in its own process group: a terminal Ctrl-C reaches the server
   // only, and the server asks pulumi to cancel.
   const live = new Map();
   let stopping = false;
+  // Stacks a run found locked (not provably stale): UNLOCK may remove those.
+  const lockedStacks = new Map();
+  const lockGuard = {
+    judge: (lock) => judgeLock(lock, { hostname, processName, ownPids: new Set(children().map((c) => c.pid)) }),
+    locked: (stack, info) => lockedStacks.set(stack, info),
+  };
   const run = (cmd, args, opts) => {
     const child = spawnChild(cmd, args, opts);
     if (child && child.pid) {
@@ -332,7 +340,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       stack: item.stack || "",
       error: item.error || "",
       hint: item.hint || "",
-      head: failed ? errorHead(item.error, item.errLines || [], 4) : [],
+      head: failed ? headOf(item) : [],
       command: item.command || "",
       log: item.log || "",
       startedAt: item.startedAt ?? null,
@@ -340,6 +348,8 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       elapsedMs: item.startedAt == null ? 0 : (ended ?? clock()) - item.startedAt,
       steps: (item.steps || []).map((step) => ({ text: step.text, status: step.status })),
       lines: tailLines(item.lines || []),
+      notes: item.notes || [],
+      ...(item.unlock ? { unlock: item.unlock } : {}),
       ...(item.fromDisk ? { fromDisk: true } : {}),
     };
   }
@@ -362,11 +372,12 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       refused: Boolean(item.refused),
       error: item.error || "",
       hint: item.hint || "",
-      head: item.error ? errorHead(item.error, item.errLines || [], 4) : [],
+      head: item.error ? headOf(item) : [],
       command: item.command || "",
       startedAt: item.startedAt,
       endedAt: item.endedAt ?? null,
       steps: (item.steps || []).map((step) => ({ text: step.text, status: step.status })),
+      notes: item.notes || [],
     });
   }
 
@@ -409,7 +420,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       return {
         ...view({ ...saved, running: false, fromDisk: true, errLines: [], lines: saved.lines, log: saved.log, endedAt: saved.endedAt ?? saved.startedAt }),
         // A run the server never saw end (it was stopped mid-run).
-        ...(saved.running ? { state: "failed", error: saved.error || "the server stopped while this ran; the log ends where it stopped", hint: "Restart left the stack as pulumi had it. If it says it is locked, run pulumi cancel for this stack, then RUN again." } : {}),
+        ...(saved.running ? { state: "failed", error: saved.error || "the server stopped while this ran; the log ends where it stopped", hint: "Restart left the stack as pulumi had it. RUN again: a lock that run left on this computer is removed by itself (the run pane says so), and any half-done resources are listed with the refresh to run." } : {}),
         ...busy,
       };
     }
@@ -461,6 +472,30 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       const items = children();
       for (const item of items) if (!signalOne(-item.pid, "SIGKILL")) signalOne(item.pid, "SIGKILL");
       return items.length;
+    },
+    // UNLOCK on a run's error plate: `pulumi cancel` for a stack a run found
+    // locked, once its name is typed. On a DIY backend that deletes the
+    // stack's lock files (a pulumi that still runs there keeps running).
+    unlock({ stack = "", confirmName = "" } = {}) {
+      const name = String(stack || "");
+      const held = lockedStacks.get(name);
+      if (!held) return { error: `no lock on stack ${name.slice(0, 80) || "(none)"} that Cloud Spider has seen; RUN the stack first`, hint: "UNLOCK is offered on a run that stopped on a lock." };
+      if (String(confirmName || "").trim() !== name) return { error: `type ${name} to remove its lock`, hint: "Only when no pulumi is running on that stack anywhere (another terminal, another computer)." };
+      const args = ["cancel", "--yes", "--non-interactive", "--stack", name];
+      const conflict = conflictFor({ locks: [name], cluster: "", isCluster: false });
+      if (conflict) return refuse({ module: held.module, action: "unlock", stack: name, error: conflict });
+      return startJob({
+        module: held.module,
+        action: "unlock",
+        stack: name,
+        directory: held.dir,
+        where: held.where,
+        command: `cd ${held.dir} && pulumi ${args.join(" ")}`,
+        steps: [{ args, cwd: held.dir, text: `pulumi ${args.join(" ")}`, lockTried: true }],
+        onDone: (done) => {
+          if (!done?.error) lockedStacks.delete(name);
+        },
+      });
     },
     // The cluster the old shared stack really holds, read from its state
     // (the `name` output), not from Pulumi.upgrade.yaml, which the old Stacks
@@ -758,6 +793,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
     apply(run, directory, job, childEnvFor(env), {
       clock,
       stopping: () => stopping,
+      lockGuard: { ...lockGuard, locked: (lockStack, dir) => lockGuard.locked(lockStack, { dir, module, where }) },
       save,
       gate: gateDir,
       done: () => {
@@ -813,9 +849,16 @@ export function upgradeSteps(spec, stack, verb, values) {
   return steps;
 }
 
+// The error lines a plate shows first; a lock refusal leads with who holds
+// the lock, then pulumi's own line.
+function headOf(item) {
+  const head = errorHead(item.error, item.errLines || [], 4);
+  return item.unlock && item.error && !head.includes(item.error) ? [item.error, ...head].slice(0, 4) : head;
+}
+
 const KEEP_LINES = 400;
 
-function apply(run, directory, job, env, { clock = () => Date.now(), save = () => {}, done = () => {}, gate = null, stopping = () => false } = {}) {
+function apply(run, directory, job, env, { clock = () => Date.now(), save = () => {}, done = () => {}, gate = null, stopping = () => false, lockGuard = null } = {}) {
   let index = 0;
   const log = (text) => job.logHandle?.append(text);
   const say = (text, err = false) => {
@@ -848,6 +891,11 @@ function apply(run, directory, job, env, { clock = () => Date.now(), save = () =
       step.release?.();
       step.release = null;
     }
+  };
+  // A note on the run pane (and the page's radio): { status, text, command? }.
+  const note = (status, text, command = "") => {
+    job.notes = [...(job.notes || []), { status, text, ...(command ? { command } : {}) }];
+    say(`note: ${text}`);
   };
   const STOPPED = "the server was stopped (Ctrl-C) while this ran: pulumi was asked to cancel and release the stack lock; the steps after this one did not run";
   const next = () => {
@@ -942,8 +990,18 @@ function apply(run, directory, job, env, { clock = () => Date.now(), save = () =
       }
     };
     const errLines = [];
-    child.stdout.on("data", take([job.lines], "out"));
-    child.stderr.on("data", take([job.lines, errLines, job.errLines], "err"));
+    let stepText = "";
+    const keep = (chunk) => {
+      if (stepText.length < 400_000) stepText += String(chunk);
+    };
+    child.stdout.on("data", (chunk) => {
+      keep(chunk);
+      take([job.lines], "out")(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      keep(chunk);
+      take([job.lines, errLines, job.errLines], "err")(chunk);
+    });
     let over = false;
     child.on("error", (error) => {
       if (over) return;
@@ -965,11 +1023,39 @@ function apply(run, directory, job, env, { clock = () => Date.now(), save = () =
         finish(STOPPED);
         return;
       }
+      const own = args.indexOf("--stack");
+      const stepStack = own >= 0 ? args[own + 1] : job.stack;
+      // Half-done operations from a run that died: pulumi carries on, so say
+      // what they were and the refresh that settles them.
+      const pending = cmd === "pulumi" && !job.pendingNoted ? pendingOps(stepText) : [];
+      if (pending.length) {
+        job.pendingNoted = true;
+        const dir = step.cwd || directory;
+        note("warn", `${pending.length} resource operation(s) were left pending by a run that died: ${pending.slice(0, 6).map((p) => `${p.name} (${p.op})`).join(", ")}${pending.length > 6 ? ", ..." : ""}. Pulumi carried on, but a pending create may exist in AWS without being in the state. Check them, then run the refresh below in a terminal: it asks, for each, to import or drop it (--clear-pending-creates drops them all; delete what exists by hand then).`, `cd ${dir} && pulumi refresh --stack ${stepStack}`);
+      }
+      const locks = code !== 0 && cmd === "pulumi" && lockGuard ? parseLocks(errLines.join("\n")) : [];
+      if (locks.length) {
+        const judged = locks.map((lock) => ({ ...lock, ...lockGuard.judge(lock) }));
+        if (!step.lockTried && judged.every((lock) => lock.stale)) {
+          step.status = "skipped";
+          for (const lock of judged) note("warn", staleNote(lock, lock.why));
+          const cancel = ["cancel", "--yes", "--non-interactive", "--stack", stepStack];
+          job.steps.splice(index, 0, { args: cancel, cwd: step.cwd, text: `pulumi ${cancel.join(" ")}`, status: "waiting", lockTried: true }, { ...step, status: "waiting", lockTried: true });
+          save(job);
+          next();
+          return;
+        }
+        step.status = "failed";
+        job.unlock = { stack: stepStack };
+        lockGuard.locked(stepStack, step.cwd || directory);
+        if (!step.lockTried) job.error = lockRefusal(stepStack, judged, clock());
+        finish(failureText(args, code, job.lines, errLines, stepStack, cmd));
+        return;
+      }
       if (code !== 0) {
         step.status = "failed";
         // A batch step names its own stack (an add-on in the EKS pane).
-        const own = args.indexOf("--stack");
-        finish(failureText(args, code, job.lines, errLines, own >= 0 ? args[own + 1] : job.stack, cmd));
+        finish(failureText(args, code, job.lines, errLines, stepStack, cmd));
         return;
       }
       step.status = "done";
