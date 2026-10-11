@@ -1,0 +1,3 @@
+# Control catalog version. Bump the minor for new controls, the patch for
+# wording; a control's own `revision` bumps when its logic or severity changes.
+version: 2026.10.0
