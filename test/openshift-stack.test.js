@@ -89,3 +89,13 @@ test("openshift stack: c5.metal needs no nested flag; bad config is refused", { 
   await assert.rejects(mocked({ "cloudspider-openshift:instanceType": "t3.micro" }));
   await assert.rejects(mocked({ "cloudspider-openshift:maxHours": "13" }));
 });
+
+// Live test 2026-10-11: the old content-gateway URL answered 404 and first
+// boot stopped there; and `sudo -iu crc crc` found no crc on EL9's secure_path.
+test("first boot fetches crc from the mirror and puts it on sudo's PATH", async () => {
+  const { userData, CRC_URL } = await import("../upgrades/openshift/userdata.js");
+  assert.equal(CRC_URL, "https://mirror.openshift.com/pub/openshift-v4/clients/crc/latest/crc-linux-amd64.tar.xz");
+  const script = userData({ maxHours: 2 });
+  assert.match(script, /ln -sf \/usr\/local\/bin\/crc \/usr\/bin\/crc/);
+  assert.ok(script.indexOf("ln -sf /usr/local/bin/crc") < script.indexOf("sudo -iu crc crc config"));
+});
