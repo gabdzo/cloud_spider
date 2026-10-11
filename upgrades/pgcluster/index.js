@@ -20,6 +20,9 @@ import { inheritTags, stackTags } from "../tags.js";
 // so pick t4g.medium (17 pods) on the EKS card before raising this.
 // Cost on top of EKS: 5 GB gp3, about $0.42/month (docs/plan-expansion.md).
 // Vault: vaults/templates/pgcluster.yaml selects project=pgcluster.
+// Take it down: this stack removes the CSI driver too, so Cloud Spider's
+// run then waits for (and if needed deletes) the volumes tagged
+// project=pgcluster, cluster=<cluster> (src/volume-sweep.js).
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
 const podIdentityAgent = config.get("podIdentityAgent") || "install";

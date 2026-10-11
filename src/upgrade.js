@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { costFor, estimate } from "./stack-costs.js";
 import { ADDONS, DIR as ADDON_DIR, PROJECT as ADDON_PROJECT } from "../upgrades/addons/catalog.js";
 import { LEGACY_CLUSTER, cardName, confirmMatches, errorHead, failureText, historyFact, rerunCommand, resourceFact, runHint, stackFor, tooManyClusters } from "./upgrade-rules.js";
+import { volumeSweepStep } from "./volume-sweep.js";
 import { createRunLog } from "./run-log.js";
 
 
@@ -239,7 +240,7 @@ function tailLines(lines, max = SHOW_CHARS) {
 
 // runsDir: where every run's log goes (.cloudspider/runs). Omitted, runs
 // are kept in memory only (the tests).
-export function createUpgrade({ run = spawn, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null } = {}) {
+export function createUpgrade({ run = spawn, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined } = {}) {
   let job = null;
   let notice = null;
   let campCache = null;
@@ -456,7 +457,7 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
         where: spec.dir,
         command,
         onDone,
-        steps: steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}` })),
+        steps: [...steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}` })), ...afterSteps(spec, verb, checked.values)],
       });
     },
     // Any list of steps as one run in a card's pane (CONNECT, an add-on
@@ -524,6 +525,13 @@ export function createUpgrade({ run = spawn, cwd = root, env = process.env, cloc
       else outputsCache.clear();
     },
   };
+
+  // In-process steps after a stack's own: pgcluster's take it down waits
+  // until its EBS volumes are gone (volume-sweep.js).
+  function afterSteps(spec, verb, values) {
+    if (verb !== "destroy" || !volumes || spec.id !== "pgcluster") return [];
+    return [volumeSweepStep({ volumes, project: "pgcluster", clusterName: values.clusterName || "cloudspider-up", clock, sleep, limits: sweepLimits })];
+  }
 
   function startJob({ module, action, stack, directory, where, command, steps, onDone }) {
     runs += 1;

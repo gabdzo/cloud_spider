@@ -203,6 +203,12 @@ curl -s localhost:3000/items                       # stimpak, rad-away, nuka-col
 
 Tear down in reverse: `pulumi destroy --stack shopapi --yes`, then `pulumi destroy --stack pgcluster --yes` (the StorageClass deletes the EBS volume with the claim). Check no volume is left: `aws ec2 describe-volumes --filters Name=tag:project,Values=pgcluster --query 'Volumes[].VolumeId'`.
 
+TAKE IT DOWN in Cloud Spider does that check for you. After `pulumi destroy`, the pgcluster run waits until the volumes tagged `project=pgcluster, cluster=<cluster>` are gone, and only then says DONE.
+- **Why:** the stack also removes the EBS CSI driver, so a volume the driver had not deleted yet stays `available` with nobody to delete it. That is what the 2026-10-11 drill left behind after its node loss.
+- **What it deletes:** after a 90 s grace period, an `available` leftover that carries the stack's tags **and** the CSI driver's own tag. A tagged volume made by hand is left alone and named.
+- **When it gives up:** a volume still attached after 10 minutes stops the run with the `aws ec2 delete-volume` command to finish by hand.
+- **Permissions:** it uses `ec2:DescribeVolumes` and, for a leftover, `ec2:DeleteVolume`.
+
 ### Static site: about $0 (free tier)
 
 ```sh
