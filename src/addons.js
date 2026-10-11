@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { ADDONS, DIR, displayVersion, parseStack, stackName } from "../upgrades/addons/catalog.js";
 import { roomRefusal } from "../upgrades/addons/pod-room.js";
 import { childEnvFor, capture } from "./upgrade.js";
+import { ownerText } from "../upgrades/eks-addons.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const ADDON_TTL = 60_000;
@@ -64,7 +65,10 @@ function ready(item, kind) {
 //   absent     neither
 //   n/a        not offered (ExternalDNS: needs a domain)
 // plus what it still needs (needs that are not installed or present).
-export function addonTree({ clusters = [], stacks = [], outputs = {}, detected = {}, detectedCluster = "" } = {}) {
+// eksAddons: { cluster: { addonId: { found, project, version } } } from EKS
+// DescribeAddon, for the managed add-ons (any cluster, no kube context
+// needed): one the demo stack made shows as PRESENT with that owner.
+export function addonTree({ clusters = [], stacks = [], outputs = {}, detected = {}, detectedCluster = "", eksAddons = {} } = {}) {
   const byCluster = new Map();
   for (const name of clusters) byCluster.set(name, { live: true });
   const ours = new Map();
@@ -82,7 +86,9 @@ export function addonTree({ clusters = [], stacks = [], outputs = {}, detected =
         const stack = stackName(addon.id, cluster);
         const row = ours.get(`${addon.id}|${cluster}`);
         const resources = Number.isInteger(row?.resourceCount) ? row.resourceCount : 0;
-        const inCluster = seen?.[addon.id];
+        const managed = eksAddons[cluster]?.[addon.id];
+        const fromEks = managed?.found ? { version: managed.version || "", where: `EKS add-on ${addon.eksAddon} from ${ownerText(managed.project, cluster)}`, ready: seen?.[addon.id]?.ready ?? true } : null;
+        const inCluster = fromEks || seen?.[addon.id];
         let state = "absent";
         let version = "";
         let source = "";
@@ -176,6 +182,14 @@ export function createAddons({ run = spawn, cwd = root, env = process.env, clock
       if (answer.error) notes.push(answer.error);
       else clusters = answer.names || [];
     }
+    // Managed add-ons straight from EKS, on every live cluster.
+    const eksAddons = {};
+    if (eks?.describeAddon) {
+      await Promise.all(clusters.flatMap((cluster) => ADDONS.filter((addon) => addon.eksAddon).map(async (addon) => {
+        const got = await eks.describeAddon(cluster, addon.eksAddon).catch(() => null);
+        if (got && !got.error) (eksAddons[cluster] ||= {})[addon.id] = got;
+      })));
+    }
     let detected = {};
     let detectedCluster = "";
     if (kube?.ops) {
@@ -185,7 +199,7 @@ export function createAddons({ run = spawn, cwd = root, env = process.env, clock
         detected = detectAddons(snap);
       }
     }
-    return { tree: addonTree({ clusters, stacks, outputs, detected, detectedCluster }), notes, detectedCluster, at: clock() };
+    return { tree: addonTree({ clusters, stacks, outputs, detected, detectedCluster, eksAddons }), notes, detectedCluster, at: clock() };
   }
   return {
     async view({ fresh = false } = {}) {
