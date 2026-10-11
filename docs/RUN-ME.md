@@ -41,6 +41,7 @@ npm start -- --port 9300 --theme pro --set cost.enabled=false
 - **Features:** `features.ask`, `features.stacksRun` and `features.learn` set to `false` hide the panel and the server refuses it (403).
 - **Cost:** `cost.enabled: false` makes CAPS say "Cost off" with no Cost Explorer calls. `cost.cacheTtlMinutes` (at least 60) sets how long a bill is reused, across restarts.
 - **State:** `storage.path` (default `.cloudspider/`) holds the bill cache, SLO history and run logs. There is no database: see docs/storage.md, which also covers how a DynamoDB backend would map.
+- **Theme:** `ui.theme: pro` (or `--theme pro`) opens the clean dark theme; the gear at the right of the header opens **Settings**, where Pip-Boy / Pro is chosen per browser (kept in localStorage, beats the config; "Use config" forgets it). Settings also lists the effective config. Phase 1 restyles the page chrome, panels and fonts (Inter, JetBrains Mono, bundled); the map, cluster lanes, path, vault doors and radio scope are still drawn in Pip art until the canvas phases.
 - **Host:** `server.host` other than 127.0.0.1 prints a warning, since there is no login. Cross-origin POSTs are still refused unless the page is opened at that exact host.
 
 ## 3. New vaults from templates (PR 20, free, no AWS)

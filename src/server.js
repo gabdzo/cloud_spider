@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { sampleMorning, samplePlace, sampleTrail } from "./sample.js";
 import { samplePathGraph } from "./path-sample.js";
 import { pathResult } from "./path-view.js";
-import { cssVars } from "./theme.js";
+import { THEME_NAMES, cssVars } from "./theme.js";
 import { defaults, effectiveConfig } from "./config.js";
 import { sampleCost } from "./cost.js";
 import { sampleCluster } from "./cluster.js";
@@ -67,6 +67,7 @@ export const FILES = new Set([
   "vault-draw.js",
   "vault-page.js",
   "url-state.js",
+  "settings-view.js",
   "map-focus.js",
   "agent-text.js",
   "terminal.js",
@@ -76,7 +77,14 @@ export const FILES = new Set([
 
 // Self-hosted fonts (SIL OFL 1.1, license in src/fonts/). Served by name
 // only; nothing else under src/fonts is reachable.
-export const FONT_FILES = new Map([["fonts/ShareTechMono-Regular.woff2", "font/woff2"]]);
+export const FONT_FILES = new Map([
+  ["fonts/ShareTechMono-Regular.woff2", "font/woff2"],
+  // The pro theme's faces (SIL OFL 1.1, licenses beside them).
+  ["fonts/inter-latin-400-normal.woff2", "font/woff2"],
+  ["fonts/inter-latin-500-normal.woff2", "font/woff2"],
+  ["fonts/inter-latin-600-normal.woff2", "font/woff2"],
+  ["fonts/jetbrains-mono-latin-400-normal.woff2", "font/woff2"],
+]);
 
 const page = `<!doctype html>
 <html lang="en">
@@ -86,6 +94,11 @@ const page = `<!doctype html>
 <title>Cloud Spider</title>
 <link rel="icon" href="data:,">
 <link rel="preload" href="/fonts/ShareTechMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+  // The theme this browser picked in settings (settings-view.js) wins over
+  // ui.theme from the config; applied before the first paint.
+  try { const t = localStorage.getItem("cloudspider.theme"); if (t === "pip" || t === "pro") document.documentElement.dataset.theme = t; } catch {}
+</script>
 <style>
   /* Share Tech Mono ships with the app (src/fonts, SIL OFL 1.1), so the Mac,
      the box and every screenshot draw the same face. Bold is synthesized.
@@ -97,6 +110,12 @@ const page = `<!doctype html>
     font-style: normal;
     font-display: swap;
   }
+  /* The pro theme: Inter for the UI, JetBrains Mono for aligned text. Only
+     downloaded when a pro page uses them. */
+  @font-face { font-family: "Inter"; src: url("/fonts/inter-latin-400-normal.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+  @font-face { font-family: "Inter"; src: url("/fonts/inter-latin-500-normal.woff2") format("woff2"); font-weight: 500; font-display: swap; }
+  @font-face { font-family: "Inter"; src: url("/fonts/inter-latin-600-normal.woff2") format("woff2"); font-weight: 600 700; font-display: swap; }
+  @font-face { font-family: "JetBrains Mono"; src: url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
   ${cssVars()}
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -1844,6 +1863,7 @@ const page = `<!doctype html>
   }
   .ptitle img { filter: brightness(0); }
   .ptitle span { margin-left: auto; font-size: 11px; letter-spacing: 0.06em; }
+  .ptitle span[data-pro-label] { margin-left: 0; font-size: inherit; letter-spacing: inherit; }
   .scope { position: relative; height: 92px; border: 2px solid var(--pip-dark); background: #010704; }
   #scope { width: 100%; height: 100%; display: block; }
   .dial { position: relative; height: 34px; border-top: 1px solid var(--pip-dark); border-bottom: 1px solid var(--pip-dark); }
@@ -1987,14 +2007,93 @@ const page = `<!doctype html>
     .switch { min-height: 36px; }
     .statusbar { display: none; }
   }
+  /* ---- settings: gear + panel (settings-view.js), both themes, role tokens ---- */
+  .gear { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: 6px; border: 1px solid var(--border); background: var(--raised); color: var(--text-2); cursor: pointer; }
+  .gear:hover, .gear[aria-expanded="true"] { color: var(--text); border-color: var(--border-strong); background: var(--hover); }
+  .gear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #settings { position: fixed; top: 70px; right: 18px; z-index: 60; width: min(580px, calc(100vw - 36px)); max-height: calc(100vh - 96px); overflow: auto; padding: 4px 18px 16px; background: var(--raised); color: var(--text); border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.6); font: 13px/1.45 var(--font-ui); }
+  #settings .st-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 0 6px; border-bottom: 1px solid var(--border); }
+  #settings h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  #settings h3 { margin: 14px 0 8px; font-size: 12px; font-weight: 500; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.06em; }
+  #settings .st-close { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px; background: none; color: var(--text-2); font-size: 18px; line-height: 1; cursor: pointer; }
+  #settings .st-close:hover { color: var(--text); background: var(--hover); }
+  #settings .st-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #settings .st-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+  #settings .st-opt small { color: var(--text-3); }
+  #settings .st-opt:hover { border-color: var(--border-strong); }
+  #settings .st-opt[aria-checked="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  #settings .st-opt:focus-visible, #settings button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  #settings .st-note { margin: 8px 0 0; color: var(--text-2); font-size: 12px; }
+  #settings .st-warn { color: var(--warn); }
+  #settings .st-link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; text-decoration: underline; cursor: pointer; }
+  #settings .st-table { width: 100%; margin-top: 8px; border-collapse: collapse; font: 12px/1.4 var(--font-mono); }
+  #settings .st-table th { text-align: left; font-weight: 500; color: var(--text-3); padding: 5px 6px; border-bottom: 1px solid var(--border); }
+  #settings .st-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); color: var(--text); word-break: break-all; }
+  #settings .st-table td.st-default { color: var(--text-3); }
+  #settings .st-table td.st-set { color: var(--accent); }
+
+  /* ---- pro theme (phase 1): the same page, flat and quiet. Colours come
+     from the role tokens and the remapped ramp (theme.js); this block only
+     takes away the device: bezels, glows, scanlines, lamps and stencils.
+     Canvases still draw the Pip art until the canvas phases. ---- */
+  :root[data-theme="pro"] * { text-shadow: none !important; }
+  :root[data-theme="pro"] body { padding: 0; background: var(--bg); color: var(--text); font: 400 13px/1.45 var(--font-ui); text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+  :root[data-theme="pro"] :is(pre, code, kbd, samp, textarea, output, .lcd, #status, #radio, #k9s, #term, .run-out, #spend-lines) { font-family: var(--font-mono); }
+  :root[data-theme="pro"] .device { padding: 0 12px 10px; gap: 10px; border-radius: 0; background: var(--bg); box-shadow: none; }
+  :root[data-theme="pro"] header { margin: 0 -12px; padding: 8px 16px; gap: 8px 14px; border-radius: 0; background: var(--raised); box-shadow: none; border-bottom: 1px solid var(--border); }
+  :root[data-theme="pro"] :is(.knobs, .plate small, .tab::before, .tab::after, .key .cap::before, .key .cap::after, .switch .well, .switch .marks, #term::after) { display: none; }
+  :root[data-theme="pro"] .plate { padding: 0; gap: 10px; border: 0; background: none; box-shadow: none; }
+  :root[data-theme="pro"] .plate h1 { margin: 0; font: 600 15px/1 var(--font-ui); letter-spacing: -0.01em; color: var(--text); }
+  :root[data-theme="pro"] .porthole { width: 28px; height: 28px; border-radius: 7px; border: 0; background: linear-gradient(135deg, var(--accent), var(--ok)); box-shadow: none; }
+  :root[data-theme="pro"] .porthole:hover { box-shadow: 0 0 0 2px var(--border-strong); }
+  :root[data-theme="pro"] :is(.tabs, .keys, .console, .readout, .gauges) { padding: 0; border: 0; background: none; box-shadow: none; }
+  :root[data-theme="pro"] .tabs { gap: 2px; }
+  :root[data-theme="pro"] :is(.tab, .key) { height: auto; min-height: 0; padding: 6px 10px; border: 1px solid transparent; border-radius: 6px; background: none; box-shadow: none; color: var(--text-2); font: 500 13px/1.2 var(--font-ui); letter-spacing: 0; text-transform: none; transform: none; }
+  :root[data-theme="pro"] .key { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; width: auto; }
+  :root[data-theme="pro"] .key .cap { width: auto; height: auto; padding: 0; border: 0; background: none; box-shadow: none; }
+  :root[data-theme="pro"] .key .tag { position: static; padding: 0; border: 0; background: none; box-shadow: none; color: inherit; font: inherit; letter-spacing: 0; text-transform: none; }
+  :root[data-theme="pro"] :is(.tab, .key):hover { background: var(--hover); color: var(--text); }
+  :root[data-theme="pro"] :is(.tab[aria-pressed="true"], .key[aria-pressed="true"]) { background: var(--surface-2); color: var(--text); border-color: var(--border); box-shadow: none; }
+  :root[data-theme="pro"] :is(.tab, .key, .switch, .lcd, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Pixel icons stay until the icon phase; neutral grey reads as an icon set. */
+  :root[data-theme="pro"] :is(.tab img, .key .cap img, img.px) { width: 16px; height: 16px; opacity: 0.75 !important; filter: grayscale(1) brightness(1.7) !important; }
+  :root[data-theme="pro"] :is(.tab[aria-pressed="true"] img, .key[aria-pressed="true"] .cap img) { opacity: 1; }
+  :root[data-theme="pro"] .switch { width: auto; height: auto; min-height: 0; display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); box-shadow: none; }
+  :root[data-theme="pro"] .switch .name { position: static; transform: none; color: var(--text-2); font: 500 12px var(--font-ui); letter-spacing: 0; }
+  :root[data-theme="pro"] .switch .led { position: static; width: 8px; height: 8px; border: 0; border-radius: 50%; background: var(--text-3); box-shadow: none; }
+  :root[data-theme="pro"] .switch[aria-checked="true"] { border-color: var(--warn); }
+  :root[data-theme="pro"] .switch[aria-checked="true"] .led { background: var(--warn); box-shadow: 0 0 0 3px rgba(245, 184, 74, 0.15); }
+  :root[data-theme="pro"] .lcd { padding: 5px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); box-shadow: none; color: var(--text); font-size: 12px; letter-spacing: 0; }
+  :root[data-theme="pro"] #spend > b { display: none; }
+  :root[data-theme="pro"] #mascot { display: none; }
+  :root[data-theme="pro"] .porthole .pro-mark { display: grid; }
+  .porthole .pro-mark { display: none; place-items: center; width: 100%; height: 100%; color: var(--bg); }
+  :root[data-theme="pro"] .readout { gap: 12px; color: var(--text-2); font: 500 12px var(--font-ui); letter-spacing: 0; }
+  :root[data-theme="pro"] .readout b { color: var(--text-3); font-weight: 500; }
+  :root[data-theme="pro"] select, :root[data-theme="pro"] input { border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: 13px var(--font-ui); box-shadow: none; }
+  :root[data-theme="pro"] :is(.glass, #morning, .m-line, #spend-lines, .sp-head, #vault-page, .vpg-open, .kc-chip, #kube-connect .kc-fold, #kube-ctx button, #learn, .lx-shelf, #pip .eng, #pip .ad-plate, #term, .dial .scale, .runpane .run-out, #pip .meter-cell) { background-image: none; box-shadow: none; }
+  :root[data-theme="pro"] .glass { display: none; }
+  :root[data-theme="pro"] :is(#morning, #spend-lines, #learn, #term, #vault-page) { border-color: var(--border-strong); border-radius: 10px; background-color: var(--raised); }
+  :root[data-theme="pro"] #spend-lines { box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5); }
+  :root[data-theme="pro"] :is(#kube-ctx button[aria-pressed="true"], #k9s-btn[aria-pressed="true"]) { background: var(--surface-2); box-shadow: none; }
+  :root[data-theme="pro"] #sunrise { display: none; }
+  :root[data-theme="pro"] .screen { border-radius: 10px; background: var(--raised); box-shadow: 0 0 0 1px var(--border); }
+  :root[data-theme="pro"] .terminal { border-bottom: 1px solid var(--border); background: none; }
+  :root[data-theme="pro"] .statusbar { border-top: 1px solid var(--border); letter-spacing: 0; }
+  :root[data-theme="pro"] .statusbar span { border-radius: 999px; background: var(--surface-2); color: var(--text-2); font: 500 12px var(--font-ui); }
+  :root[data-theme="pro"] .ptitle { background: var(--raised); color: var(--text); border-bottom: 1px solid var(--border); font: 600 13px var(--font-ui); letter-spacing: 0; text-transform: none; }
+  :root[data-theme="pro"] #radio-panel.issue .ptitle { background: var(--raised); box-shadow: inset 3px 0 0 var(--err); }
+  :root[data-theme="pro"] #radio-panel { border-left: 1px solid var(--border); background-image: none; }
+  :root[data-theme="pro"] #spend.issue b, :root[data-theme="pro"] #tally.issue { box-shadow: inset 3px 0 0 var(--err); }
 </style>
 </head>
 <body>
+<section id="settings" role="dialog" aria-label="settings" tabindex="-1" hidden></section>
 <div class="device">
 <header>
   <div class="plate">
-    <button id="home" class="porthole" type="button" aria-label="overview" title="overview"><canvas id="mascot" width="26" height="24" aria-hidden="true"></canvas></button>
-    <div><h1>CLOUD SPIDER</h1><small>SPIDER-TEC SURVEY UNIT 3000</small></div>
+    <button id="home" class="porthole" type="button" aria-label="overview" title="overview"><canvas id="mascot" width="26" height="24" aria-hidden="true"></canvas><span class="pro-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg></span></button>
+    <div><h1 data-pro-label="Cloud Spider">CLOUD SPIDER</h1><small>SPIDER-TEC SURVEY UNIT 3000</small></div>
   </div>
   <nav class="tabs" aria-label="views">
     <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true">Map</button>
@@ -2004,7 +2103,7 @@ const page = `<!doctype html>
   </nav>
   <div class="console">
     <div class="keys" role="group" aria-label="panels">
-      <button id="tab-radio" class="key" type="button" aria-pressed="true" title="radio: the account's recent calls"><span class="cap" data-icon="radio"></span><span class="tag">Radio</span></button>
+      <button id="tab-radio" class="key" type="button" aria-pressed="true" title="radio: the account's recent calls" data-pro-title="activity: the account's recent calls"><span class="cap" data-icon="radio"></span><span class="tag" data-pro-label="Activity">Radio</span></button>
       <button id="upgrade" class="key" type="button" aria-pressed="false" title="stacks: Pulumi upgrades"><span class="cap" data-icon="stack"></span><span class="tag">Stacks</span></button>
       <button id="learn-key" class="key" type="button" aria-pressed="false" title="learn: holotape labs for Kubernetes and OpenShift"><span class="cap" data-icon="learn"></span><span class="tag">Learn</span></button>
       <button id="ask" class="key" type="button" aria-pressed="false" title="ask your local agent (runs only when you press ASK)"><span class="cap" data-icon="terminal"></span><span class="tag">Ask</span></button>
@@ -2014,7 +2113,7 @@ const page = `<!doctype html>
   <div class="gauges" aria-label="map readouts">
     <p id="tally" class="lcd" hidden><img class="px" data-icon="map" alt=""><span id="tally-text"></span><span id="tally-issue"></span></p>
     <div id="corner">
-      <button id="spend" class="lcd" type="button" aria-expanded="false" aria-controls="spend-lines" hidden><img class="px" data-icon="caps" alt=""><b>CAPS</b><span id="spend-label"></span><i class="caret" aria-hidden="true"></i></button>
+      <button id="spend" class="lcd" type="button" aria-expanded="false" aria-controls="spend-lines" hidden><img class="px" data-icon="caps" alt=""><b data-pro-label="Cost">CAPS</b><span id="spend-label"></span><i class="caret" aria-hidden="true"></i></button>
       <div id="spend-lines" role="region" aria-label="the bill, month to date" tabindex="-1" hidden></div>
     </div>
   </div>
@@ -2023,6 +2122,7 @@ const page = `<!doctype html>
     <span><b>MODE</b> <output id="acct">LIVE</output></span>
     <span><b>TIME</b> <output id="clock">--:--</output></span>
   </div>
+  <button id="settings-key" class="gear" type="button" aria-expanded="false" aria-controls="settings" title="settings: theme and the effective config"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   <div class="knobs" aria-hidden="true"><i class="knob"></i><i class="knob small"></i><i class="power"></i></div>
 </header>
 <main class="screen">
@@ -2083,7 +2183,7 @@ const page = `<!doctype html>
       <section id="learn" aria-label="learn" hidden></section>
     </div>
     <aside id="radio-panel" aria-label="radio">
-      <div class="ptitle"><img class="px" data-icon="radio" alt="">RADIO<span id="station-count"></span></div>
+      <div class="ptitle"><img class="px" data-icon="radio" alt=""><span data-pro-label="Activity">RADIO</span><span id="station-count"></span></div>
       <div class="scope"><canvas id="scope"></canvas></div>
       <div class="dial" aria-hidden="true"><div class="scale"></div><div class="nums"><span>88</span><span>94</span><span>100</span><span>106</span><span>112</span></div><div id="needle"></div></div>
       <ol id="radio" role="listbox" aria-label="radio stations: arrow keys tune"></ol>
@@ -2130,6 +2230,14 @@ export function featureOff(features, method, path) {
   return "";
 }
 
+// The page with the config's theme on <html>: data-theme is what shows (a
+// browser's own choice in settings replaces it before the first paint),
+// data-config-theme is the default "Use config" returns to.
+export function pageFor(theme) {
+  const t = THEME_NAMES.includes(theme) ? theme : "pip";
+  return page.replace('<html lang="en">', `<html lang="en" data-theme="${t}" data-config-theme="${t}">`);
+}
+
 export function listen(app, port = 9241, host = "127.0.0.1") {
   const server = createServer(app);
   return new Promise((resolve, reject) => {
@@ -2149,7 +2257,7 @@ async function route(app, req, res) {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
     });
-    res.end(page);
+    res.end(pageFor(app.settings?.()?.config?.ui?.theme));
     return;
   }
 
