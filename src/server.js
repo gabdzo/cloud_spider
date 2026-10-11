@@ -6,6 +6,7 @@ import { sampleMorning, samplePlace, sampleTrail } from "./sample.js";
 import { samplePathGraph } from "./path-sample.js";
 import { pathResult } from "./path-view.js";
 import { THEME_NAMES, cssVars } from "./theme.js";
+import { SCORE_CSS } from "./score/style.js";
 import { scoreRoute } from "./score/routes.js";
 import { defaults, effectiveConfig } from "./config.js";
 import { sampleCost } from "./cost.js";
@@ -18,6 +19,7 @@ import { sampleTelemetry } from "./kube-telemetry.js";
 const root = dirname(fileURLToPath(import.meta.url));
 export const FILES = new Set([
   "browser.js",
+  "score/view.js",
   "spend-view.js",
   "draw.js",
   "sprites.js",
@@ -118,6 +120,7 @@ const page = `<!doctype html>
   @font-face { font-family: "Inter"; src: url("/fonts/inter-latin-600-normal.woff2") format("woff2"); font-weight: 600 700; font-display: swap; }
   @font-face { font-family: "JetBrains Mono"; src: url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
   ${cssVars()}
+  ${SCORE_CSS}
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; }
@@ -1954,11 +1957,15 @@ const page = `<!doctype html>
     .plate { padding-right: 10px; }
     h1 { letter-spacing: 0.12em; }
     .plate small { letter-spacing: 0.12em; }
-    .tabs { gap: 6px; padding-left: 7px; padding-right: 7px; }
-    .tab { gap: 5px; padding: 0 8px; letter-spacing: 0.06em; }
-    .console { gap: 10px; padding-left: 9px; padding-right: 9px; }
-    .keys { gap: 7px; }
-    #corner { order: 4; flex: 1 1 180px; min-width: 170px; max-width: 320px; margin-left: auto; }
+    .tabs { gap: 4px; padding-left: 7px; padding-right: 7px; }
+    .tab { gap: 5px; padding: 0 6px; letter-spacing: 0.06em; }
+    .console { gap: 8px; padding-left: 7px; padding-right: 7px; }
+    /* Six console keys since SCORE: slightly tighter tabs, console and knobs
+       keep the one row at 1920 with the cost box as wide as before (it
+       already wrapped at 1840 before). */
+    .keys { gap: 4px; }
+    .knobs { gap: 6px; }
+    #corner { order: 4; flex: 1 1 140px; min-width: 130px; max-width: 320px; margin-left: auto; }
     .readout { order: 5; margin-left: 0; }
     .knobs { order: 6; }
     .terminal #tally { order: 20; flex: 0 1 auto; max-width: 52%; height: 30px; margin-left: auto; font-size: 12px; }
@@ -2107,6 +2114,7 @@ const page = `<!doctype html>
       <button id="tab-radio" class="key" type="button" aria-pressed="true" title="radio: the account's recent calls" data-pro-title="activity: the account's recent calls"><span class="cap" data-icon="radio"></span><span class="tag" data-pro-label="Activity">Radio</span></button>
       <button id="upgrade" class="key" type="button" aria-pressed="false" title="stacks: Pulumi upgrades"><span class="cap" data-icon="stack"></span><span class="tag">Stacks</span></button>
       <button id="learn-key" class="key" type="button" aria-pressed="false" title="learn: holotape labs for Kubernetes and OpenShift"><span class="cap" data-icon="learn"></span><span class="tag">Learn</span></button>
+      <button id="score-key" class="key" type="button" aria-pressed="false" title="score: production readiness of the connected cluster (reads only; FIX runs an add-on stack after you approve its preview)"><span class="cap" data-icon="vaults"></span><span class="tag">Score</span></button>
       <button id="ask" class="key" type="button" aria-pressed="false" title="ask your local agent (runs only when you press ASK)"><span class="cap" data-icon="terminal"></span><span class="tag">Ask</span></button>
     </div>
   <button id="sample" class="switch" type="button" role="switch" aria-checked="false" aria-label="Sample mode" title="Sample mode: a made-up account, nothing read from AWS"><span class="well" aria-hidden="true"><span class="nut"></span><span class="lever"></span></span><span class="marks" aria-hidden="true"><span>ON</span><span>OFF</span></span><span class="name" aria-hidden="true">SAMPLE</span><span class="led" aria-hidden="true"></span></button>
@@ -2182,6 +2190,7 @@ const page = `<!doctype html>
       <form id="pip" hidden></form>
       <section id="term" hidden></section>
       <section id="learn" aria-label="learn" hidden></section>
+      <section id="score" aria-label="scorecard" hidden></section>
     </div>
     <aside id="radio-panel" aria-label="radio">
       <div class="ptitle"><img class="px" data-icon="radio" alt=""><span data-pro-label="Activity">RADIO</span><span id="station-count"></span></div>

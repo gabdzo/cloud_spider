@@ -41,6 +41,19 @@ test("without a score api the routes answer an error, not a crash", async () => 
   }
 });
 
+test("the page has the SCORE key and panel", async () => {
+  const server = await listen({}, 0);
+  try {
+    const html = await (await fetch(`http://127.0.0.1:${server.address().port}/`)).text();
+    assert.match(html, /id="score-key"/);
+    assert.match(html, /<section id="score" aria-label="scorecard" hidden>/);
+    assert.match(html, /#score \{ --s-bg: var\(--surface\)/);
+  } finally {
+    server.close();
+  }
+});
+
+
 test("stacksRun off blocks FIX (it runs stacks through upgradeRun) but not SCAN", async () => {
   const { featureOff } = await import("../src/server.js");
   assert.equal(featureOff({ stacksRun: false }, "POST", "/api/score/fix"), "stacksRun");
