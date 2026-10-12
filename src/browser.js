@@ -573,7 +573,10 @@ function hhmm24(time) {
 }
 
 function renderMorning() {
-  const report = mode === "map" ? currentMorning() : null;
+  // On the map; with the map module off (k8s-only) on the Cluster screen,
+  // PODS + LOG ERRORS only (the server gates the AWS lines out).
+  const kubeOnly = !moduleOn("map");
+  const report = mode === "map" || (kubeOnly && mode === "cluster" && moduleOn("kubernetes")) ? currentMorning() : null;
   ui.marks = currentMorning()?.marks || null;
   morningEl.hidden = !report;
   if (!report) return;
@@ -583,7 +586,7 @@ function renderMorning() {
   const key = JSON.stringify([report.hurting, report.changed, report.idle, report.logs, pods, morningFolded]);
   if (key === morningShown) return;
   morningShown = key;
-  const order = ["hurting", "changed", "idle", "logs"];
+  const order = kubeOnly ? ["logs"] : ["hurting", "changed", "idle", "logs"];
   // One PODS line per kube context (kube-health.js), after the three.
   const podLines = pods.map((line, index) => {
     const id = `m-pods-${index}`;
@@ -2508,6 +2511,7 @@ async function pull() {
     const view = await fetch(`/api/view?${query}`).then((response) => response.json());
     // The map module is off: nothing to read, and no error to show.
     if (view.off === "map") {
+      if (!sample) liveMorning = view.morning || null;
       renderChrome();
       return;
     }

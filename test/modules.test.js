@@ -90,7 +90,7 @@ async function boot(profile) {
     await new Promise((done) => (child.exitCode != null ? done() : child.once("exit", done)));
     rmSync(home, { recursive: true, force: true });
   };
-  return { get, stop, out: () => out };
+  return { get, stop, port, out: () => out };
 }
 
 test("k8s-only boots with an empty environment and creates no AWS client", { timeout: 40_000 }, async () => {
@@ -105,6 +105,15 @@ test("k8s-only boots with an empty environment and creates no AWS client", { tim
     assert.equal(cost.body.module, "cost");
     const view = await app.get("/api/view");
     assert.equal(view.body.off, "map");
+    // The morning report lives on without the map: PODS lines, no AWS lines.
+    assert.equal(view.body.morning?.kubeOnly, true);
+    assert.ok(Array.isArray(view.body.morning.pods));
+    assert.equal("hurting" in view.body.morning, false);
+    const page = await fetch(`http://127.0.0.1:${app.port}/`).then((r) => r.text());
+    assert.match(page, /<section id="morning" aria-label="morning report" hidden>/);
+    assert.match(page, /<li id="m-hurting" data-module="map"/);
+    assert.match(page, /<li id="m-idle" data-module="map"/);
+    assert.match(page, /<li id="m-logs"[^>]*data-module="kubernetes"/);
     assert.equal((await app.get("/api/cluster-sample")).status, 200);
     // The primary context is read from Kubernetes alone (no EKS lookup).
     const cluster = await app.get("/api/cluster");

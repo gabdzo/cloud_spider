@@ -631,6 +631,15 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
 
   // The morning: three sentences from reads already made. The bill is the
   // six-hour cache only; this never calls Cost Explorer.
+  // One line per kube context that has been read: counts and the worst pods.
+  function morningPods() {
+    return contexts.filter((ctx) => polledAt.has(ctx.name)).map((ctx) => health.summary(ctx)).filter((sum) => sum.lamp !== "off").map((sum) => ({ context: sum.context, label: sum.label, ...morningLine(sum) }));
+  }
+  // The morning without the map (k8s-only): the PODS lines and LOG ERRORS
+  // only; the AWS lines (hurting, changed, idle) need the map's reads.
+  function morningKube() {
+    return { kubeOnly: true, pods: morningPods() };
+  }
   function morning() {
     if (!place) return null;
     const report = morningReport({
@@ -642,8 +651,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       bill: costCache?.bill || null,
       idleStreak,
     });
-    // One line per kube context that has been read: counts and the worst pods.
-    const pods = contexts.filter((ctx) => polledAt.has(ctx.name)).map((ctx) => health.summary(ctx)).filter((sum) => sum.lamp !== "off").map((sum) => ({ context: sum.context, label: sum.label, ...morningLine(sum) }));
+    const pods = morningPods();
     return pods.length ? { ...report, pods } : report;
   }
 
@@ -711,6 +719,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       report(sink, { call, sentence: error?.message || "the read failed" });
     },
     view,
+    morningKube,
     // Re-read the map when it is older than PLACE_TTL. One read at a time;
     // the caller does not have to wait (the next two-second pull sees it).
     freshen() {

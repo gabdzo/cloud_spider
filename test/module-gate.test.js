@@ -19,7 +19,7 @@ test("pageFor stamps the enabled modules and hides the rest by CSS", () => {
   assert.doesNotMatch(gateStyle(["kubernetes", "graph"]), /data-module~="kubernetes"/);
   assert.equal(gateStyle(MODULE_IDS), '<style id="module-gate"></style>');
   // Every static entry point carries its module.
-  for (const id of ["tab-map", "path", "cluster", "tab-vaults", "tab-radio", "upgrade", "learn-key", "score-key", "ask", "spend", "morning", "m-logs", "k9s-btn", "kube-tabs", "radio-panel"]) {
+  for (const id of ["tab-map", "path", "cluster", "tab-vaults", "tab-radio", "upgrade", "learn-key", "score-key", "ask", "spend", "m-hurting", "m-changed", "m-idle", "m-logs", "k9s-btn", "kube-tabs", "radio-panel"]) {
     assert.match(html, new RegExp(`id="${id}"[^>]*data-module="`), id);
   }
 });
