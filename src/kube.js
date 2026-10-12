@@ -81,6 +81,8 @@ export const PATHS = {
   // The observe bundle (upgrades/observe): its gateway's metrics and Loki's
   // Events, through the service proxy. Fixed names; the query is ours.
   observeMetrics: () => "/api/v1/namespaces/cloudspider-observe/services/otel-collector:metrics/proxy/metrics",
+  // The incident timeline: the newest events of a long window (6-72 h).
+  observeEventsRecent: (startNs, endNs) => `/api/v1/namespaces/cloudspider-observe/services/loki:http/proxy/loki/api/v1/query_range?query=${encodeURIComponent('{service_name="k8s-events"}')}&start=${Math.floor(Number(startNs))}&end=${Math.floor(Number(endNs))}&limit=2000&direction=backward`,
   observeEvents: (startNs, endNs) => `/api/v1/namespaces/cloudspider-observe/services/loki:http/proxy/loki/api/v1/query_range?query=${encodeURIComponent('{service_name="k8s-events"}')}&start=${Math.floor(Number(startNs))}&end=${Math.floor(Number(endNs))}&limit=500&direction=forward`,
   // LOG ERRORS over the bundle's Loki (query string built by log-sources.js).
   observeLokiQuery: (qs) => `/api/v1/namespaces/cloudspider-observe/services/loki:http/proxy/loki/api/v1/query_range?${new URLSearchParams(String(qs))}`,

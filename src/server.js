@@ -3,6 +3,7 @@ import { sampleLogErrors } from "./log-errors-sample.js";
 import { graphScenario } from "./graph-sample.js";
 import { buildGraph } from "./graph-build.js";
 import { readGraph } from "./graph-read.js";
+import { readTimeline } from "./timeline-live.js";
 import { detect as observeDetect, planView as observePlan } from "./observe/plan.js";
 import { mergeLive, readLive as observeLive } from "./observe/live.js";
 import { sampleObserve } from "./observe/sample.js";
@@ -1416,7 +1417,15 @@ const page = `<!doctype html>
   #kube-graph .gv-edge.faint { opacity: 0.3; }
   #kube-graph .gv-edge.quiet { opacity: 0.3; stroke-width: 1px; }
   #kube-graph .gv-arrowhead { fill: var(--pip-mid); }
-  #kube-graph .gv-timeline { padding: 8px 10px 10px; border: 1px solid var(--pip-dark); background: rgba(2, 10, 5, 0.75); }
+  #kube-graph .gv-timeline { padding: 8px 10px 10px; border: 1px solid var(--pip-dark); background: rgba(2, 10, 5, 0.97); }
+  /* Docked: the timeline stays on screen at the bottom of SERVICES however
+     long the graph is; its list scrolls inside, ▾ folds it to one line. */
+  #kube-graph .gv-timeline { position: sticky; bottom: -16px; z-index: 5; flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 34vh; box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.55); }
+  #kube-graph .gv-timeline .gv-events { overflow: auto; min-height: 0; }
+  #kube-graph .gv-timeline.folded { gap: 0; }
+  #kube-graph .gv-tlfold { padding: 0 6px; min-width: 22px; }
+  #kube-graph .gv-tlsrc { color: var(--pip-dim); font-size: 10px; }
+  #kube-graph .gv-tlsrc.s-observe { color: var(--pip-bright); }
   #kube-graph .gv-tlhead { display: flex; gap: 12px; align-items: baseline; color: var(--pip-dim); }
   #kube-graph .gv-tlhead { flex-wrap: wrap; align-items: center; }
   #kube-graph .gv-kinds .gv-btn, #kube-graph .gv-window .gv-btn, #kube-graph .gv-follow { padding: 2px 6px; font-size: 10px; }
@@ -2536,6 +2545,9 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #kube-graph .gv-edge.hot { filter: none; }
   :root[data-theme="pro"] #kube-graph .gv-arrowhead { fill: var(--text-3); }
   :root[data-theme="pro"] #kube-graph .gv-timeline { background: var(--raised); border-color: var(--border); border-radius: 10px; }
+  :root[data-theme="pro"] #kube-graph .gv-timeline { box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.45); }
+  :root[data-theme="pro"] #kube-graph .gv-tlsrc { color: var(--text-3); }
+  :root[data-theme="pro"] #kube-graph .gv-tlsrc.s-observe { color: var(--ok); }
   :root[data-theme="pro"] #kube-graph .gv-tlhead b { color: var(--text); letter-spacing: 0.04em; font-weight: 600; }
   :root[data-theme="pro"] #kube-graph .gv-track { border-bottom-color: var(--border-strong); background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--border) calc(10% - 1px) 10%); }
   :root[data-theme="pro"] #kube-graph .gv-tick { border-radius: 50%; transform: none; border-color: var(--bg); background: var(--text-3); }
@@ -3103,6 +3115,25 @@ async function route(app, req, res) {
     const kube = app.kubeOf?.(url.searchParams.get("context") || "");
     if (!kube) { send(res, 200, { installed: false, note: "no kube context" }); return; }
     send(res, 200, await observeLive(kube).catch((error) => ({ installed: true, error: error.message })));
+    return;
+  }
+  // INCIDENT REVIEW: Events for a window (timeline-live.js): the observe
+  // bundle's Loki when installed, else the API server's. Read-only.
+  if (req.method === "GET" && url.pathname === "/api/cluster/timeline") {
+    const windowMin = Number(url.searchParams.get("windowMin")) || 360;
+    if (url.searchParams.get("sample") === "1") {
+      const scene = graphScenario(url.searchParams.get("scenario") === "bundle" ? "bundle" : "bare");
+      send(res, 200, { source: "sample", windowMin, events: scene.events, window: scene.window, note: "sample events" });
+      return;
+    }
+    const context = url.searchParams.get("context") || "";
+    const kube = app.kubeOf?.(context);
+    if (!kube) {
+      send(res, 200, { error: "no kube context", unset: true, events: [] });
+      return;
+    }
+    const scene = await liveGraph(kube, context);
+    send(res, 200, await readTimeline(kube, { scene: scene?.error ? {} : scene, windowMin }).catch((error) => ({ error: error.message, events: [] })));
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/cluster/graph") {

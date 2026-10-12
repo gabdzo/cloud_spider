@@ -41,8 +41,24 @@ export function createGraphView(root) {
   let shown = false;
   // Incident review filters: event kinds, the window (live only), and
   // whether the list follows the focused group (tlAll: every group).
-  Object.assign(state, { kinds: new Set(EVENT_KINDS), windowMin: null, tlAll: false });
-  const tlOpts = () => ({ kinds: state.kinds, windowMin: state.windowMin, group: state.tlAll ? null : state.focus });
+  Object.assign(state, { kinds: new Set(EVENT_KINDS), windowMin: null, tlAll: false, tlOpen: true });
+  // Live: the events come from /api/cluster/timeline for the picked window
+  // (the observe bundle's Loki, else the API server); the server trims.
+  let tlData = null;
+  const tlScene = () => (live.on && tlData?.events ? { ...scene, events: tlData.events, window: { ...scene.window, startAt: tlData.window?.startAt, endAt: tlData.window?.endAt } } : scene);
+  const tlOpts = () => ({ kinds: state.kinds, windowMin: live.on ? null : state.windowMin, group: state.tlAll ? null : state.focus });
+  async function loadTimeline() {
+    if (!live.on) return;
+    const q = new URLSearchParams({ windowMin: String(state.windowMin || 360) });
+    if (live.context) q.set("context", live.context);
+    try {
+      const body = await fetch(`/api/cluster/timeline?${q}`).then((r) => r.json());
+      tlData = body.error ? { events: null, note: body.error } : body;
+    } catch {
+      tlData = null;
+    }
+    if (shown) render();
+  }
   // live: the selected kube context's graph (/api/cluster/graph); otherwise
   // the SAMPLE scenarios.
   const live = { on: false, context: "", loading: false, error: "", at: 0 };
@@ -170,6 +186,7 @@ export function createGraphView(root) {
       } else {
         const first = !scene || scene.id !== "live" || !scene.groups.length;
         scene = body;
+        loadTimeline();
         if (first) Object.assign(state, { expanded: initialExpanded(scene), layers: initialLayers(scene) });
       }
       live.at = Date.now();
@@ -185,6 +202,7 @@ export function createGraphView(root) {
     live.context = context;
     if (!changed) return;
     Object.assign(state, { query: "", focus: null, selected: null, event: null });
+    tlData = null;
     if (on) {
       scene = emptyScene();
       state.expanded = new Set();
@@ -221,7 +239,7 @@ export function createGraphView(root) {
   }
 
   function renderDetail() {
-    const ev = state.event !== null ? timeline(scene).events.find((x) => x.index === state.event) : null;
+    const ev = state.event !== null ? timeline(tlScene()).events.find((x) => x.index === state.event) : null;
     if (state.selected) {
       const node = scene.nodes.find((n) => n.id === state.selected);
       const out = scene.edges.filter((e) => e.from === state.selected && state.layers.has(e.source));
@@ -242,7 +260,7 @@ export function createGraphView(root) {
   }
 
   function renderTimeline() {
-    const tl = timeline(scene, tlOpts());
+    const tl = timeline(tlScene(), tlOpts());
     const track = h("div", { className: "gv-track" });
     const [a, b] = tl.incident;
     if (b > a) track.append(h("span", { className: "gv-incident", style: `left:${a * 100}%;width:${(b - a) * 100}%`, title: "incident window" }));
@@ -263,25 +281,29 @@ export function createGraphView(root) {
         render();
       } }));
     }
-    const head = h("div", { className: "gv-tlhead" }, h("b", { text: "INCIDENT REVIEW" }), h("span", { text: `${tl.start} – ${tl.end}` }), kinds);
-    if (tl.live) {
+    const fold = h("button", { type: "button", className: "gv-btn gv-tlfold", "aria-expanded": String(state.tlOpen), title: state.tlOpen ? "fold the timeline" : "open the timeline", text: state.tlOpen ? "▾" : "▸", onclick: () => ((state.tlOpen = !state.tlOpen), render()) });
+    const head = h("div", { className: "gv-tlhead" }, fold, h("b", { text: "INCIDENT REVIEW" }), h("span", { text: `${tl.start} – ${tl.end}` }), kinds);
+    if (live.on) {
       const win = h("div", { className: "gv-seg gv-window", role: "group", "aria-label": "window" });
-      for (const [min, label] of [[30, "30M"], [60, "1H"], [360, "6H"], [null, "ALL"]]) {
-        win.append(h("button", { type: "button", className: "gv-btn", "aria-pressed": String(state.windowMin === min), text: label, onclick: () => ((state.windowMin = min), render()) }));
+      const cur = tlData?.windowMin || state.windowMin || 360;
+      for (const [min, label] of [[60, "1H"], [360, "6H"], [1440, "24H"], [4320, "72H"]]) {
+        win.append(h("button", { type: "button", className: "gv-btn", "aria-pressed": String(cur === min), text: label, onclick: () => ((state.windowMin = min), loadTimeline()) }));
       }
       head.append(win);
+      if (tlData?.note) head.append(h("small", { className: `gv-tlsrc s-${tlData.source || "none"}`, text: tlData.note }));
     }
     if (state.focus) {
       const group = scene.groups.find((g) => g.id === state.focus);
       head.append(h("button", { type: "button", className: "gv-btn gv-follow", "aria-pressed": String(!state.tlAll), title: "the list follows the focused group", text: state.tlAll ? "ALL GROUPS" : `ONLY ${group?.label || state.focus}`, onclick: () => ((state.tlAll = !state.tlAll), render()) }));
     }
     head.append(h("small", { className: "gv-tlkeys", text: "← → step through events" }));
-    els.tl.replaceChildren(head, h("div", { className: "gv-axis" }, h("span", { text: tl.start }), track, h("span", { text: tl.end })), rows);
+    els.tl.classList.toggle("folded", !state.tlOpen);
+    els.tl.replaceChildren(head, ...(state.tlOpen ? [h("div", { className: "gv-axis" }, h("span", { text: tl.start }), track, h("span", { text: tl.end })), rows] : []));
   }
 
   // ← / → walk the kept events (graph focus follows each one).
   function stepTimeline(dir) {
-    const next = stepEvent(timeline(scene, tlOpts()), state.event, dir);
+    const next = stepEvent(timeline(tlScene(), tlOpts()), state.event, dir);
     if (!next) return;
     state.event = next.index;
     state.focus = next.group;
@@ -308,11 +330,29 @@ export function createGraphView(root) {
     // chip is an obstacle, so lines no longer cross cards or labels.
     const obstacles = [...at.values()];
     const lanes = new Map();
+    // Ports: the edges at one box are spread across its width, ordered by
+    // where the other end is (left to right), so fan-in does not bunch.
+    const ports = new Map();
+    const addPort = (id, other, key) => {
+      if (!ports.has(id)) ports.set(id, []);
+      ports.get(id).push({ key, x: at.get(other)?.x ?? 0 });
+    };
+    for (const edge of view.edges) {
+      if (!at.get(edge.from) || !at.get(edge.to)) continue;
+      addPort(edge.from, edge.to, `${edge.from}>${edge.to}`);
+      addPort(edge.to, edge.from, `${edge.from}>${edge.to}`);
+    }
+    const portOf = new Map();
+    for (const [id, list] of ports) {
+      list.sort((p, q) => p.x - q.x);
+      list.forEach((p, i) => portOf.set(`${id}|${p.key}`, { i, n: list.length }));
+    }
     for (const edge of view.edges) {
       const a = at.get(edge.from);
       const b = at.get(edge.to);
       if (!a || !b) continue;
-      const { d } = routeEdge(a, b, obstacles, { gap: 12, lanes });
+      const key = `${edge.from}>${edge.to}`;
+      const { d } = routeEdge(a, b, obstacles, { gap: 12, lanes, aPort: portOf.get(`${edge.from}|${key}`), bPort: portOf.get(`${edge.to}|${key}`) });
       const src = edge.sources.includes("trace") ? "trace" : edge.sources.includes("flow") ? "flow" : edge.sources[0];
       const touch = hot && (edge.from === hot || edge.to === hot);
       const cls = `gv-edge s-${src}${edge.quiet ? " quiet" : ""}${edge.kinds.includes("owns") ? " owns" : ""}${edge.errors >= 1 ? " err" : ""}${touch ? " hot" : ""}${hot && !touch ? " faint" : ""}`;
@@ -373,5 +413,6 @@ export function createGraphView(root) {
     pick,
     render,
     stepTimeline,
+    loadTimeline,
   };
 }
