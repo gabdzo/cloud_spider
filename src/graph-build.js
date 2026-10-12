@@ -311,7 +311,7 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
     nodes: [...nodes.values()],
     edges,
     events: recent,
-    window: { start: hhmm(start), end: hhmm(now), incident: bad.length ? [bad[0].t, bad[bad.length - 1].t] : [hhmm(now), hhmm(now)] },
+    window: { start: hhmm(start), end: hhmm(now), startAt: start, endAt: now, incident: bad.length ? [bad[0].t, bad[bad.length - 1].t] : [hhmm(now), hhmm(now)] },
     crds: crds.length,
   };
 }

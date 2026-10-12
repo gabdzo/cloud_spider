@@ -6,7 +6,7 @@
 
 import { graphScenario } from "./graph-sample.js";
 import { routeEdge } from "./graph-route.js";
-import { LAYERS, initialExpanded, initialLayers, sceneStats, timeline, visibleGraph } from "./graph-model.js";
+import { EVENT_KINDS, LAYERS, initialExpanded, initialLayers, sceneStats, stepEvent, timeline, visibleGraph } from "./graph-model.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const LAYER_LABEL = { static: "STATIC", flow: "FLOWS", trace: "TRACES", owner: "OWNERS" };
@@ -39,6 +39,10 @@ export function createGraphView(root) {
   state.expanded = initialExpanded(scene);
   let view = null;
   let shown = false;
+  // Incident review filters: event kinds, the window (live only), and
+  // whether the list follows the focused group (tlAll: every group).
+  Object.assign(state, { kinds: new Set(EVENT_KINDS), windowMin: null, tlAll: false });
+  const tlOpts = () => ({ kinds: state.kinds, windowMin: state.windowMin, group: state.tlAll ? null : state.focus });
   // live: the selected kube context's graph (/api/cluster/graph); otherwise
   // the SAMPLE scenarios.
   const live = { on: false, context: "", loading: false, error: "", at: 0 };
@@ -84,7 +88,7 @@ export function createGraphView(root) {
     if (state.scenario === id) return;
     state.scenario = id;
     scene = graphScenario(id);
-    Object.assign(state, { expanded: initialExpanded(scene), layers: initialLayers(scene), query: "", focus: null, selected: null, event: null });
+    Object.assign(state, { expanded: initialExpanded(scene), layers: initialLayers(scene), query: "", focus: null, selected: null, event: null, kinds: new Set(EVENT_KINDS), windowMin: null, tlAll: false });
     els.search.value = "";
     render();
   }
@@ -217,7 +221,7 @@ export function createGraphView(root) {
   }
 
   function renderDetail() {
-    const ev = state.event !== null ? timeline(scene).events[state.event] : null;
+    const ev = state.event !== null ? timeline(scene).events.find((x) => x.index === state.event) : null;
     if (state.selected) {
       const node = scene.nodes.find((n) => n.id === state.selected);
       const out = scene.edges.filter((e) => e.from === state.selected && state.layers.has(e.source));
@@ -238,23 +242,52 @@ export function createGraphView(root) {
   }
 
   function renderTimeline() {
-    const tl = timeline(scene);
+    const tl = timeline(scene, tlOpts());
     const track = h("div", { className: "gv-track" });
     const [a, b] = tl.incident;
-    track.append(h("span", { className: "gv-incident", style: `left:${a * 100}%;width:${(b - a) * 100}%`, title: "incident window" }));
-    for (const ev of tl.events) {
+    if (b > a) track.append(h("span", { className: "gv-incident", style: `left:${a * 100}%;width:${(b - a) * 100}%`, title: "incident window" }));
+    for (const ev of tl.shown) {
       track.append(h("button", { type: "button", className: `gv-tick e-${ev.kind}${state.event === ev.index ? " sel" : ""}`, style: `left:${ev.x * 100}%`, title: `${ev.t} ${ev.text}`, "aria-label": `${ev.t} ${EVENT_TAG[ev.kind]}: ${ev.text}`, onclick: () => pickEvent(ev) }));
     }
     const rows = h("ol", { className: "gv-events" });
-    for (const ev of tl.events) {
-      rows.append(h("li", {}, h("button", { type: "button", className: `gv-ev e-${ev.kind}${state.event === ev.index ? " sel" : ""}`, onclick: () => pickEvent(ev) },
+    for (const ev of tl.shown) {
+      rows.append(h("li", {}, h("button", { type: "button", className: `gv-ev e-${ev.kind}${state.event === ev.index ? " sel" : ""}`, dataset: { index: String(ev.index) }, onclick: () => pickEvent(ev) },
         h("time", { text: ev.t }), h("small", { className: "gv-etag", text: EVENT_TAG[ev.kind] }), h("span", { text: ev.text }))));
     }
-    els.tl.replaceChildren(
-      h("div", { className: "gv-tlhead" }, h("b", { text: "INCIDENT REVIEW" }), h("span", { text: `${tl.start} – ${tl.end} · events, restarts, rollouts, alarms` })),
-      h("div", { className: "gv-axis" }, h("span", { text: tl.start }), track, h("span", { text: tl.end })),
-      rows,
-    );
+    if (!tl.shown.length) rows.append(h("li", { className: "gv-noev", text: tl.events.length ? "no events match these filters" : live.on ? "no events in this window (Kubernetes keeps about an hour; the observe bundle keeps more)" : "no events" }));
+    const kinds = h("div", { className: "gv-seg gv-kinds", role: "group", "aria-label": "event kinds" });
+    for (const kind of EVENT_KINDS) {
+      kinds.append(h("button", { type: "button", className: `gv-btn gv-kind e-${kind}`, "aria-pressed": String(state.kinds.has(kind)), dataset: { kind }, text: `${EVENT_TAG[kind]} ${tl.counts[kind]}`, onclick: () => {
+        if (state.kinds.has(kind)) state.kinds.delete(kind);
+        else state.kinds.add(kind);
+        render();
+      } }));
+    }
+    const head = h("div", { className: "gv-tlhead" }, h("b", { text: "INCIDENT REVIEW" }), h("span", { text: `${tl.start} – ${tl.end}` }), kinds);
+    if (tl.live) {
+      const win = h("div", { className: "gv-seg gv-window", role: "group", "aria-label": "window" });
+      for (const [min, label] of [[30, "30M"], [60, "1H"], [360, "6H"], [null, "ALL"]]) {
+        win.append(h("button", { type: "button", className: "gv-btn", "aria-pressed": String(state.windowMin === min), text: label, onclick: () => ((state.windowMin = min), render()) }));
+      }
+      head.append(win);
+    }
+    if (state.focus) {
+      const group = scene.groups.find((g) => g.id === state.focus);
+      head.append(h("button", { type: "button", className: "gv-btn gv-follow", "aria-pressed": String(!state.tlAll), title: "the list follows the focused group", text: state.tlAll ? "ALL GROUPS" : `ONLY ${group?.label || state.focus}`, onclick: () => ((state.tlAll = !state.tlAll), render()) }));
+    }
+    head.append(h("small", { className: "gv-tlkeys", text: "← → step through events" }));
+    els.tl.replaceChildren(head, h("div", { className: "gv-axis" }, h("span", { text: tl.start }), track, h("span", { text: tl.end })), rows);
+  }
+
+  // ← / → walk the kept events (graph focus follows each one).
+  function stepTimeline(dir) {
+    const next = stepEvent(timeline(scene, tlOpts()), state.event, dir);
+    if (!next) return;
+    state.event = next.index;
+    state.focus = next.group;
+    state.selected = next.node;
+    render();
+    els.tl.querySelector(`.gv-ev[data-index="${next.index}"]`)?.scrollIntoView?.({ block: "nearest" });
   }
 
   function drawEdges() {
@@ -291,6 +324,11 @@ export function createGraphView(root) {
   }
 
   root.addEventListener("keydown", (event) => {
+    if ((event.key === "ArrowRight" || event.key === "ArrowLeft") && !/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName || "")) {
+      event.preventDefault();
+      stepTimeline(event.key === "ArrowRight" ? 1 : -1);
+      return;
+    }
     if (event.key !== "Escape") return;
     if (state.selected || state.focus || state.event !== null) {
       Object.assign(state, { selected: null, focus: null, event: null });
@@ -334,5 +372,6 @@ export function createGraphView(root) {
     loadLive,
     pick,
     render,
+    stepTimeline,
   };
 }
