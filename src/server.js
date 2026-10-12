@@ -1393,7 +1393,7 @@ const page = `<!doctype html>
   #kube-graph .gv-btn:hover { color: var(--pip-mid); border-color: var(--pip-dim); }
   #kube-graph .gv-btn[aria-pressed="true"] { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); box-shadow: 0 0 10px var(--glow-soft); }
   #kube-graph .gv-layer[aria-pressed="false"] { text-decoration: line-through; opacity: 0.7; }
-  #kube-graph .gv-search { flex: 1 1 200px; min-width: 150px; max-width: 320px; font: inherit; font-size: 12px; padding: 5px 9px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
+  #kube-graph .gv-search { flex: 1 1 160px; min-width: 130px; max-width: 280px; font: inherit; font-size: 12px; padding: 5px 9px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
   #kube-graph .gv-search:focus { border-color: var(--pip-bright); box-shadow: 0 0 8px var(--glow-soft); }
   #kube-graph .gv-groupby { align-items: center; gap: 6px; }
   #kube-graph .gv-gblabel { white-space: nowrap; font-size: 10px; letter-spacing: 0.16em; color: var(--pip-dim-text); }
@@ -1466,7 +1466,7 @@ const page = `<!doctype html>
   #kube-graph .gv-gtop { flex-wrap: wrap; }
   #kube-graph .gv-gsum { display: inline-flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
   #kube-graph .gv-meta { color: var(--pip-mid); font-size: 11px; }
-  #kube-graph .gv-talk { font-size: 11px; letter-spacing: 0.03em; }
+  #kube-graph .gv-talk { font-size: 11px; letter-spacing: 0.03em; display: inline-flex; align-items: center; gap: 5px; }
   #kube-graph .gv-talk.t-live { color: var(--pip-bright); }
   #kube-graph .gv-talk.t-err { color: var(--status-broken); }
   #kube-graph .gv-talk.t-none { color: var(--pip-mid); opacity: 0.85; }
@@ -1547,9 +1547,12 @@ const page = `<!doctype html>
   #kube-graph { overflow: hidden; }
   #kube-graph > .gv-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
   #kube-graph > .gv-head { flex: none; }
-  #kube-graph .gv-timeline { position: relative; z-index: 5; flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 28vh; box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.55); }
+  #kube-graph .gv-timeline { position: relative; z-index: 5; flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 25vh; box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.55); }
   #kube-graph .gv-timeline .gv-events { overflow: auto; min-height: 0; }
-  #kube-graph .gv-timeline.folded { gap: 0; }
+  #kube-graph .gv-timeline.folded { gap: 0; padding-top: 4px; padding-bottom: 4px; }
+  #kube-graph .gv-timeline.folded :is(.gv-window, .gv-tlkeys, .gv-tlsrc) { display: none; }
+  #kube-graph .gv-tltitle { all: unset; cursor: pointer; font-weight: 700; letter-spacing: 0.08em; }
+  #kube-graph .gv-tltitle:hover, #kube-graph .gv-tltitle:focus-visible { text-decoration: underline; }
   #kube-graph .gv-tlfold { padding: 0 6px; min-width: 22px; }
   #kube-graph .gv-tlsrc { color: var(--pip-dim-text); font-size: 10px; }
   #kube-graph .gv-tlsrc.s-observe { color: var(--pip-bright); }
@@ -2801,7 +2804,7 @@ const page = `<!doctype html>
   #kube-graph .gv-cardgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px 18px; padding: 4px 2px 8px; }
   #kube-graph .gv-card { width: 100%; max-width: none; min-width: 0; }
   #kube-graph .gv-card .gv-cmeta, #kube-graph .gv-card .gv-cep, #kube-graph .gv-card .gv-cname { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
-  #kube-graph .gv-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-right: 2px; background: var(--pip-dark); box-shadow: 0 0 0 1px var(--pip-dim); }
+  #kube-graph .gv-dot { flex: none; display: inline-block; vertical-align: middle; width: 8px; height: 8px; border-radius: 50%; margin-right: 2px; background: var(--pip-dark); box-shadow: 0 0 0 1px var(--pip-mid); }
   #kube-graph .gv-dot.d-live { background: var(--pip-bright); box-shadow: 0 0 6px var(--glow-bright); }
   #kube-graph .gv-dot.d-err { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
   #kube-graph .gv-empty { margin: 4px 0 8px; padding: 6px 10px; border-left: 3px solid var(--pip-dim); color: var(--pip-mid); }

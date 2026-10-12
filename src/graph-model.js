@@ -62,6 +62,7 @@ export function visibleGraph(scene, state = {}) {
     got.kinds.add(edge.kind);
     got.sources.add(edge.source);
     got.rps += edge.rps || 0;
+    if (edge.warming && edge.seen) Object.assign(got, { warming: true, seen: true });
     got.errors = Math.max(got.errors, edge.errors || 0);
     merged.set(key, got);
   }
