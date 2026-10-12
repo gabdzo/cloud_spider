@@ -3180,6 +3180,7 @@ const terminal = createTerminal({
 termReady = true;
 askTab.addEventListener("click", () => {
   if (learnView.isOpen()) learnView.setOpen(false);
+  if (!terminal.isOpen() && scoreApi?.isOpen()) scoreApi.setOpen(false);
   terminal.toggle();
 });
 
@@ -3220,9 +3221,16 @@ function openScoreCard(card, cluster) {
 }
 const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key"), context: () => clusterData?.context || clusterContext, openCard: openScoreCard, onChange: () => syncUrl() });
 scoreApi = scoreView;
+// SCORE covers the map like LEARN: one big panel at a time. Opening it folds
+// LEARN, STACKS and ASK; opening any of those folds SCORE (before, SCORE
+// stayed on top and their keys lit with nothing to see).
 document.querySelector("#score-key").addEventListener("click", () => {
   markHistory();
-  if (!scoreView.isOpen() && learnView.isOpen()) learnView.setOpen(false);
+  if (!scoreView.isOpen()) {
+    if (learnView.isOpen()) learnView.setOpen(false);
+    if (pipOpen) toggleUpgrade();
+    if (terminal.isOpen() && !terminal.isRunning()) terminal.setOpen(false);
+  }
   scoreView.toggle();
 });
 document.querySelector("#learn-key").addEventListener("click", () => {
@@ -3230,6 +3238,7 @@ document.querySelector("#learn-key").addEventListener("click", () => {
   if (!learnView.isOpen()) {
     if (terminal.isOpen()) terminal.setOpen(false);
     if (pipOpen) toggleUpgrade();
+    if (scoreView.isOpen()) scoreView.setOpen(false);
   }
   learnView.toggle();
 });
@@ -4598,6 +4607,7 @@ upgradeButton.addEventListener("click", () => {
   markHistory();
   // One side panel at a time, as the LEARN key already does for Stacks.
   if (!pipOpen && learnView.isOpen()) learnView.setOpen(false);
+  if (!pipOpen && scoreApi?.isOpen()) scoreApi.setOpen(false);
   toggleUpgrade();
 });
 pipEl.addEventListener("submit", (event) => event.preventDefault());
