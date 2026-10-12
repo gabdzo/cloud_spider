@@ -82,6 +82,8 @@ export const PATHS = {
   // Events, through the service proxy. Fixed names; the query is ours.
   observeMetrics: () => "/api/v1/namespaces/cloudspider-observe/services/otel-collector:metrics/proxy/metrics",
   observeEvents: (startNs, endNs) => `/api/v1/namespaces/cloudspider-observe/services/loki:http/proxy/loki/api/v1/query_range?query=${encodeURIComponent('{service_name="k8s-events"}')}&start=${Math.floor(Number(startNs))}&end=${Math.floor(Number(endNs))}&limit=500&direction=forward`,
+  // LOG ERRORS over the bundle's Loki (query string built by log-sources.js).
+  observeLokiQuery: (qs) => `/api/v1/namespaces/cloudspider-observe/services/loki:http/proxy/loki/api/v1/query_range?${new URLSearchParams(String(qs))}`,
   otelMetrics: (ns, name) => `/api/v1/namespaces/${checkName(ns)}/services/${checkName(name)}/proxy/metrics`,
   podLog: (ns, name, container, tail = 80, previous = false) =>
     `/api/v1/namespaces/${checkName(ns)}/pods/${checkName(name)}/log?tailLines=${Math.min(500, Math.max(1, Number(tail) || 80))}${container ? `&container=${checkName(container)}` : ""}${previous ? "&previous=true" : ""}`,

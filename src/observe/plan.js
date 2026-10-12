@@ -45,6 +45,7 @@ export function planView(options = {}, { nodes = 1 } = {}) {
     blocked,
     notes: bundle.notes,
     footprint: footprint({ ...bundle.options, nodes }),
+    reduced: !!bundle.reduced,
     yaml: items.map((i) => `# ${i.why}${i.privileged ? " [PRIVILEGED]" : ""}\n${stringify(i.obj)}`).join("---\n"),
     uninstall: uninstallOrder(items),
   };

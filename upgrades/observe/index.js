@@ -10,7 +10,8 @@ import { extraPolicies, footprint, renderBundle } from "./render.js";
 // context kept apart from the app's read-only viewer context. Stack:
 // observe-<context>. Nothing here touches AWS.
 // Config (cloudspider-observe:*): context, platform (kubernetes|openshift),
-// allowPrivileged (off|on: Beyla is privileged; refuses without it),
+// allowPrivileged (off|on: off = the reduced bundle, no Beyla, no container logs),
+// viewerUser (a user bound to the service-proxy read Role besides the cloudspider-viewers group),
 // profile (crc|standard), kubeStateMetrics (install|skip), logs (on|off:
 // Loki + the file_log agent), lokiStorage (5Gi), lokiRetention (72h),
 // storageClass (cluster default), nodeCidr (the node network for the
@@ -22,7 +23,7 @@ const config = new pulumi.Config();
 const context = config.get("context") || "";
 if (!context || !/^[A-Za-z0-9._:/@-]{1,253}$/.test(context)) throw new Error("context: the kubeconfig context to install into (a write context, not cloudspider-viewer)");
 if (context === "cloudspider-viewer") throw new Error("context cloudspider-viewer is read-only by design: name a write context for the install");
-const opts = Object.fromEntries(["platform", "allowPrivileged", "profile", "kubeStateMetrics", "logs", "lokiStorage", "lokiRetention", "storageClass", "nodeCidr"].map((k) => [k, config.get(k) || undefined]));
+const opts = Object.fromEntries(["platform", "allowPrivileged", "profile", "kubeStateMetrics", "logs", "lokiStorage", "lokiRetention", "storageClass", "nodeCidr", "viewerUser"].map((k) => [k, config.get(k) || undefined]));
 const bundle = renderBundle(opts);
 
 const provider = new k8s.Provider("observe", { context, enableServerSideApply: true });
@@ -36,6 +37,8 @@ const KINDS = {
   "apps/v1/StatefulSet": k8s.apps.v1.StatefulSet,
   "rbac.authorization.k8s.io/v1/ClusterRole": k8s.rbac.v1.ClusterRole,
   "rbac.authorization.k8s.io/v1/ClusterRoleBinding": k8s.rbac.v1.ClusterRoleBinding,
+  "rbac.authorization.k8s.io/v1/Role": k8s.rbac.v1.Role,
+  "rbac.authorization.k8s.io/v1/RoleBinding": k8s.rbac.v1.RoleBinding,
 };
 const [nsItem, ...rest] = bundle.items;
 const ns = new k8s.core.v1.Namespace("observe-ns", { metadata: nsItem.obj.metadata }, { provider });
@@ -57,6 +60,7 @@ for (const { name, spec } of extraPolicies()) {
 export const namespace = bundle.namespace;
 export const privileged = bundle.privileged;
 export const notes = bundle.notes;
-export const resources = footprint({ profile: bundle.options.profile, logs: bundle.options.logs, kubeStateMetrics: bundle.options.kubeStateMetrics });
+export const resources = footprint({ profile: bundle.options.profile, logs: bundle.options.logs, kubeStateMetrics: bundle.options.kubeStateMetrics, allowPrivileged: bundle.options.allowPrivileged });
+export const reduced = bundle.reduced;
 // No AWS resources: the tags only name the vault this stack belongs to.
 export const tags = stackTags("observe");
