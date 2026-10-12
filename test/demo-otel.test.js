@@ -103,3 +103,17 @@ test("collector ConfigMaps are auto-named and the workloads mount them by output
   const source = readFileSync(join(root, "upgrades/demo/index.js"), "utf8");
   assert.doesNotMatch(source, /deleteBeforeReplace|replaceOnChanges/, "nothing forces a workload replace");
 });
+
+// 2026-10-12: podinfo logged "traces export: failed to exit idle mode: dns
+// resolver: missing address" every few seconds; X-Ray had no trace at all.
+test("podinfo's OTLP traces endpoint is a URL with a scheme and the collector's host and gRPC port", { skip: ready }, async () => {
+  const resources = await demo();
+  for (const name of ["api", "web"]) {
+    const env = one(resources, "Deployment", name).spec.template.spec.containers[0].env;
+    const endpoint = env.find((e) => e.name === "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT").value;
+    const url = new URL(endpoint);
+    assert.equal(url.protocol, "http:", `${name}: plaintext gRPC needs http://, a bare host:port has no host`);
+    assert.equal(url.hostname, "otel-collector");
+    assert.equal(url.port, "4317");
+  }
+});
