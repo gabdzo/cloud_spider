@@ -269,7 +269,7 @@ export function logErrors({ entries = [], before = null, restarts = [], window =
       return { ...group, pods: [...group.pods].sort(), yesterday: was, new: isNew, spike: Boolean(spike) };
     }).sort((a, b) => Number(b.new || b.spike) - Number(a.new || a.spike) || b.count - a.count);
     const mine = (restarts || []).filter((item) => item.service === svc.service && (item.namespace || "") === svc.namespace);
-    const node = nodeOf ? nodeOf(svc.service, svc.namespace) : "";
+    const node = nodeOf ? nodeOf(svc.service, svc.namespace, [...svc.pods, ...mine.map((r) => r.pod).filter(Boolean)]) || "" : "";
     const firstSeen = groups.length ? Math.min(...groups.map((g) => g.firstSeen)) : mine.length ? Math.min(...mine.map((r) => r.time || Infinity)) : null;
     // When it went wrong: the first NEW/SPIKE error (a nightly one-off
     // earlier on does not count), else the first restart, else the first error.

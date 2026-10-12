@@ -1,5 +1,8 @@
 import { EC2Client } from "@aws-sdk/client-ec2";
 import { createLogReport } from "./log-report.js";
+import { nodeLookup } from "./graph-lookup.js";
+import { buildGraph } from "./graph-build.js";
+import { readGraph } from "./graph-read.js";
 import { awsInsights } from "./log-sources.js";
 import { RDSClient } from "@aws-sdk/client-rds";
 import { readPeerWorld } from "./peer-path-read.js";
@@ -139,9 +142,19 @@ const app = createApp({
 });
 // LOG ERRORS (log-report.js): Loki when logs.loki.url is set, else Logs
 // Insights over logs.cloudwatch.logGroups (aws module only), plus restarts.
+// Links to SERVICES: the live graph's node lookup (graph-lookup.js), read
+// at most once a minute (the same GETs as Cluster › SERVICES).
+let nodeIndexCache = null;
 app.logErrors = createLogReport({
   logs: config.logs,
   kube,
+  nodeIndex: mods.has("graph") && kube ? async () => {
+    if (nodeIndexCache && Date.now() - nodeIndexCache.at < 60_000) return nodeIndexCache.fn;
+    const reads = await readGraph(kube);
+    if (reads.error) return null;
+    nodeIndexCache = { at: Date.now(), fn: nodeLookup(buildGraph(reads, { title: reads.clusterName, namespaces: reads.scope, withPodNodes: true })) };
+    return nodeIndexCache.fn;
+  } : null,
   insights: mods.has("aws") ? () => awsInsights(config.aws.region || process.env.AWS_REGION || "eu-north-1") : null,
 });
 
