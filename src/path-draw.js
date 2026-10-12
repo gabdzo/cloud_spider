@@ -2,7 +2,7 @@ import { FONT_PX } from "./layout.js";
 import { campfireFrame } from "./pixel-art.js";
 import { icon } from "./sprites/icons.js";
 import { INK, STATUS, inkFont, rgba, syncCanvasTheme } from "./theme.js";
-import { brackets, canMakeLayer, clip, crtBackdrop, dprOf, drawSprite, newLayer, pipPanel } from "./draw-kit.js";
+import { brackets, canMakeLayer, clip, clipMiddle, crtBackdrop, dprOf, drawSprite, newLayer, pipPanel } from "./draw-kit.js";
 
 // Fonts and text colours follow the theme (syncCanvasTheme at each paint).
 let FONT = inkFont(FONT_PX, false);
@@ -216,7 +216,7 @@ function drawProNode(ctx, node, selected, glyph) {
   const room = node.w - (compact ? 20 : big ? 64 : 46) - (node.status && node.status !== "ok" ? 16 : 0);
   ctx.font = FONT;
   ctx.fillStyle = text();
-  ctx.fillText(clip(node.label, Math.max(6, Math.floor(room / 7.2))), left, node.y + 27);
+  ctx.fillText(clipMiddle(node.label, Math.max(6, Math.floor(room / 7.2))), left, node.y + 27);
   ctx.font = SMALL;
   ctx.fillStyle = muted();
   ctx.fillText(clip(`${node.kind.toUpperCase()} · ${node.caption || ""}`, Math.max(6, Math.floor(room / 6.4))), left, node.y + 45);
@@ -250,7 +250,7 @@ function drawNode(ctx, node, selected, glyph, phase) {
   const room = node.w - (compact ? 22 : big ? 64 : 46) - (node.status === "broken" ? 22 : 0);
   ctx.font = FONT;
   ctx.fillStyle = text();
-  ctx.fillText(clip(node.label, Math.max(6, Math.floor(room / 8.5))), left, node.y + 26);
+  ctx.fillText(clipMiddle(node.label, Math.max(6, Math.floor(room / 8.5))), left, node.y + 26);
   ctx.font = SMALL;
   ctx.fillStyle = muted();
   ctx.fillText(clip(`${node.kind.toUpperCase()}  ${node.caption || ""}`, Math.max(6, Math.floor(room / 7.5))), left, node.y + 46);
@@ -348,4 +348,10 @@ export function drawPanHint(ctx, view) {
   if (out.right) edge(left + width, -1, PRO ? "more →" : "MORE →");
   if (out.left) edge(left, 1, PRO ? "← back" : "← BACK");
   return out;
+}
+
+// Hover text for a path node: the full name and caption the card clipped.
+export function nodeTitle(node) {
+  if (!node) return "";
+  return [node.label, [String(node.kind || "").toUpperCase(), node.caption].filter(Boolean).join(" · "), node.sentence].filter(Boolean).join("\n");
 }

@@ -21,7 +21,7 @@ import {
   switchRegion,
 } from "./ui.js";
 import { layoutDiagram, layoutPath, nodeAt } from "./path-layout.js";
-import { drawPanHint, paintDiagram, paintPath, sentenceRect } from "./path-draw.js";
+import { drawPanHint, nodeTitle, paintDiagram, paintPath, sentenceRect } from "./path-draw.js";
 import { CLUSTER_COLUMNS } from "./cluster.js";
 import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
@@ -3267,6 +3267,15 @@ canvas.addEventListener("mousemove", (event) => {
       if (canvas.style.cursor !== "pointer") canvas.style.cursor = "pointer";
       return;
     }
+  }
+  if (mode === "path") {
+    // Narrow windows clip the cards: the full label rides in the tooltip.
+    const hit = nodeAt(placedPath(), event.offsetX, event.offsetY);
+    const title = nodeTitle(hit);
+    if (canvas.title !== title) canvas.title = title;
+    const cursor = hit ? "pointer" : "";
+    if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
+    return;
   }
   if (canvas.title) canvas.title = "";
   if (mode !== "map" || !vaultsData.vaults.length) {
