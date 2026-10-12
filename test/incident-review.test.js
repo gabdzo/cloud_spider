@@ -54,6 +54,9 @@ test("live events use epoch `at`: the window picker trims, the incident spans th
   assert.equal(tl.live, true);
   assert.equal(tl.shown.length, 3);
   assert.ok(tl.incident[1] > tl.incident[0]);
+  assert.doesNotMatch(tl.start, /^[A-Z]/, "under a day: HH:MM only");
+  const day = timeline({ ...scene, window: { ...scene.window, startAt: base - 30 * 3600_000 } });
+  assert.match(day.start, /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d\d:\d\d$/);
   const last30 = timeline(scene, { windowMin: 30 });
   assert.equal(last30.shown.length, 2);
   assert.equal(last30.counts.rollout, 0);
@@ -69,7 +72,9 @@ test("the live builder's events carry `at` and a window in epoch ms", () => {
 test("the view wires kind chips, the window picker, follow-focus and arrow keys", () => {
   const view = readFileSync(new URL("../src/graph-view.js", import.meta.url), "utf8");
   assert.match(view, /gv-kind e-\$\{kind\}/);
-  assert.match(view, /\[\[30, "30M"\], \[60, "1H"\], \[360, "6H"\], \[null, "ALL"\]\]/);
+  assert.match(view, /\[\[60, "1H"\], \[360, "6H"\], \[1440, "24H"\], \[4320, "72H"\]\]/);
+  assert.match(view, /\/api\/cluster\/timeline\?/);
+  assert.match(view, /els\.tl\.classList\.toggle\("folded", !state\.tlOpen\)/);
   assert.match(view, /group: state\.tlAll \? null : state\.focus/);
   assert.match(view, /event\.key === "ArrowRight" \|\| event\.key === "ArrowLeft"/);
 });

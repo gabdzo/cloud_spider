@@ -115,6 +115,12 @@ const hhmmOf = (ms) => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
+// A window edge label: HH:MM, with the weekday once the window spans a day.
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function stamp(ms, span) {
+  return span >= 20 * 3600_000 ? `${DAYS[new Date(ms).getDay()]} ${hhmmOf(ms)}` : hhmmOf(ms);
+}
+
 // Events placed on the review window, 0..1, oldest first. `index` is the
 // place in the full sorted list (stable across filters, so a selection
 // survives a filter change). opts: { kinds: Set, group, windowMin }.
@@ -153,8 +159,8 @@ export function timeline(scene, opts = {}) {
     incident = bad.length ? [bad[0].x, bad[bad.length - 1].x] : [0, 0];
   }
   return {
-    start: useAt ? hhmmOf(a) : scene.window.start,
-    end: useAt ? hhmmOf(b) : scene.window.end,
+    start: useAt ? stamp(a, b - a) : scene.window.start,
+    end: useAt ? stamp(b, b - a) : scene.window.end,
     incident,
     events,
     shown,

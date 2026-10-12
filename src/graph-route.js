@@ -71,15 +71,23 @@ export function pathOf(points) {
 
 // One edge. `obstacles` are all cards; the ones holding a or b are left out
 // (an edge may leave its own card). lanes: a Map shared by one draw.
-export function routeEdge(a, b, obstacles = [], { gap = 10, lanes = new Map() } = {}) {
+// aPort / bPort: { i, n } spreads the n edges leaving or entering one box
+// across its width (fan-in no longer stacks on the centre point).
+export function portX(box, port) {
+  if (!port || port.n <= 1) return box.x + box.w / 2;
+  const margin = Math.min(8, box.w / 4);
+  return box.x + margin + ((box.w - 2 * margin) * (port.i + 0.5)) / port.n;
+}
+
+export function routeEdge(a, b, obstacles = [], { gap = 10, lanes = new Map(), aPort = null, bPort = null } = {}) {
   const blockers = obstacles.filter((o) => !contains(o, a) && !contains(o, b) && o !== a && o !== b);
   const lane = (key) => {
     const n = lanes.get(key) || 0;
     lanes.set(key, n + 1);
     return (n % 2 ? -1 : 1) * Math.ceil(n / 2) * LANE;
   };
-  const ax = a.x + a.w / 2;
-  const bx = b.x + b.w / 2;
+  const ax = portX(a, aPort);
+  const bx = portX(b, bPort);
   const sameRow = Math.abs(a.y - b.y) < Math.min(a.h, b.h) / 2;
   let points;
   if (sameRow) {
