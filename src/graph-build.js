@@ -131,8 +131,9 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
     }
     const kind = svc.spec?.type === "LoadBalancer" || EDGE_NS.test(name) ? "ingress" : /webhook/.test(name) ? "webhook" : ports.some((p) => DB_PORTS.has(p)) ? "db" : OPERATOR_NAME.test(name) ? "operator" : "service";
     const sel = svc.spec?.selector;
-    const firstPod = sel && Object.keys(sel).length ? podsIn(ns).find((pod) => selects(sel, meta(pod).labels)) : null;
-    const id = node(`${ns}/${name}`, { group: ns, kind, label: name, ns, ports, labels: nodeLabels(firstPod && meta(firstPod).labels, meta(svc).labels) });
+    const chosen = sel && Object.keys(sel).length ? podsIn(ns).filter((pod) => selects(sel, meta(pod).labels)) : [];
+    const firstPod = chosen[0] || null;
+    const id = node(`${ns}/${name}`, { group: ns, kind, label: name, ns, ports, labels: nodeLabels(firstPod && meta(firstPod).labels, meta(svc).labels), ...(chosen.length ? { pods: { ready: chosen.filter((p) => podState(p) === "ok").length, total: chosen.length } } : {}) });
     if (!sel || !Object.keys(sel).length) continue;
     for (const pod of podsIn(ns)) {
       if (!selects(sel, meta(pod).labels)) continue;
@@ -152,7 +153,7 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
       continue;
     }
     const k = OPERATOR_NAME.test(name) ? "operator" : /webhook/.test(name) ? "webhook" : "workload";
-    workloadNode.set(key, node(`${ns}/${kind.toLowerCase()}:${name}`, { group: ns, kind: k, label: name, ns, labels: nodeLabels(w.spec?.template?.metadata?.labels, meta(w).labels) }));
+    workloadNode.set(key, node(`${ns}/${kind.toLowerCase()}:${name}`, { group: ns, kind: k, label: name, ns, labels: nodeLabels(w.spec?.template?.metadata?.labels, meta(w).labels), ...((podsOf.get(key) || []).length ? { pods: { ready: podsOf.get(key).filter((p) => podState(p) === "ok").length, total: podsOf.get(key).length } } : {}) }));
   }
   const nodeOfPod = (pod) => serviceOfPod.get(`${nsOf(pod)}/${meta(pod).name}`) || workloadNode.get(`${nsOf(pod)}/${workloadOf(pod)}`) || "";
 

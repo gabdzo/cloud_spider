@@ -70,6 +70,7 @@ export const FILES = new Set([
   "graph-model.js",
   "graph-view.js",
   "graph-group.js",
+  "graph-layers.js",
   "kube-group.js",
   "log-errors-view.js",
   "kube-empty.js",
@@ -1435,6 +1436,74 @@ const page = `<!doctype html>
   #kube-graph .gv-edge.hot { opacity: 1; filter: drop-shadow(0 0 3px var(--glow-bright)); }
   #kube-graph .gv-edge.faint { opacity: 0.3; }
   #kube-graph .gv-edge.quiet { opacity: 0.3; stroke-width: 1px; }
+  /* SERVICES v2 (graph-layers.js): opened groups take a full row, layered cards, talking vs not */
+  #kube-graph .gv-main { display: flex; gap: 12px; align-items: flex-start; }
+  #kube-graph .gv-main .gv-stage { flex: 1 1 auto; min-width: 0; }
+  #kube-graph .gv-group.open { flex: 1 1 100%; width: 100%; max-width: 100%; padding: 10px 12px 14px; }
+  #kube-graph .gv-gtop { flex-wrap: wrap; }
+  #kube-graph .gv-gsum { display: inline-flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; }
+  #kube-graph .gv-meta { color: var(--pip-mid); font-size: 11px; }
+  #kube-graph .gv-talk { font-size: 11px; letter-spacing: 0.03em; }
+  #kube-graph .gv-talk.t-live { color: var(--pip-bright); }
+  #kube-graph .gv-talk.t-err { color: var(--status-broken); }
+  #kube-graph .gv-talk.t-none { color: var(--pip-mid); opacity: 0.85; }
+  #kube-graph .gv-group:not(.open) .gv-gtop { flex-wrap: wrap; }
+  #kube-graph .gv-group:not(.open) .gv-gsum { flex-basis: 100%; order: 3; flex-direction: column; gap: 2px; }
+  #kube-graph .gv-layered { display: flex; gap: 72px; align-items: flex-start; padding: 14px 6px 4px; border-top: 1px dashed var(--pip-dark); overflow-x: auto; }
+  #kube-graph .gv-col { display: flex; flex-direction: column; gap: 16px; min-width: 210px; }
+  #kube-graph .gv-colhead { font-size: 10px; letter-spacing: 0.18em; color: var(--pip-dim); }
+  #kube-graph .gv-card { display: flex; flex-direction: column; align-items: stretch; gap: 3px; width: 240px; max-width: 240px; padding: 8px 10px; font-size: 13px; text-align: left; }
+  #kube-graph .gv-crow { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  #kube-graph .gv-cname { font-size: 14px; color: var(--pip-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #kube-graph .gv-cmeta { font-size: 11px; color: var(--pip-mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #kube-graph .gv-crate { font-size: 11.5px; letter-spacing: 0.03em; }
+  #kube-graph .gv-card.t-live { border-left: 3px solid var(--pip-bright); }
+  #kube-graph .gv-card.t-live .gv-crate { color: var(--pip-bright); }
+  #kube-graph .gv-card.t-err { border-left: 3px solid var(--status-broken); }
+  #kube-graph .gv-card.t-err .gv-crate { color: var(--status-broken); }
+  #kube-graph .gv-card.t-none { border-left: 3px dashed var(--pip-dim); }
+  #kube-graph .gv-card.t-none .gv-crate { color: var(--pip-dim); }
+  #kube-graph .gv-card .gv-ntag { font-size: 10px; padding: 1px 5px; }
+  #kube-graph .gv-edges path.gv-edge { pointer-events: visibleStroke; cursor: help; }
+  #kube-graph .gv-edge.st-config { stroke: var(--pip-dim); stroke-dasharray: 6 5; opacity: 0.8; }
+  #kube-graph .gv-edge.st-live { stroke: var(--pip-bright); stroke-dasharray: 12 6; animation: gv-flow 0.9s linear infinite; opacity: 0.95; }
+  #kube-graph .gv-edge.st-error { stroke: var(--status-broken); stroke-dasharray: 12 6; animation: gv-flow 0.9s linear infinite; opacity: 1; }
+  #kube-graph .gv-edge.st-owner { stroke: var(--world-amber); stroke-dasharray: 1 5; stroke-linecap: round; }
+  @keyframes gv-flow { to { stroke-dashoffset: -18; } }
+  @media (prefers-reduced-motion: reduce) { #kube-graph .gv-edge { animation: none !important; } }
+  #kube-graph .gv-key.st-live i { border-top: 4px solid var(--pip-bright); }
+  #kube-graph .gv-key.st-error i { border-top: 4px solid var(--status-broken); }
+  #kube-graph .gv-key.st-config i { border-top: 2px dashed var(--pip-dim); }
+  #kube-graph .gv-key.st-owner i { border-top: 2px dotted var(--world-amber); }
+  #kube-graph .gv-legend { font-size: 12px; color: var(--pip-bright); }
+  #kube-graph .gv-badgekey { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 4px; font-size: 11px; color: var(--pip-mid); }
+  #kube-graph .gv-bk { display: inline-flex; align-items: center; gap: 5px; cursor: help; }
+  #kube-graph .gv-ntag.t-DB { background: #5ab0ff; }
+  #kube-graph .gv-ntag.t-OP { background: var(--pip-bright); }
+  #kube-graph .gv-ntag.t-CR { background: var(--world-amber); }
+  #kube-graph .gv-ntag.t-HOOK { background: #c79bff; }
+  #kube-graph .gv-ntag.t-ING { background: #7fe0d0; }
+  #kube-graph .gv-side { flex: 0 0 320px; position: sticky; top: 8px; z-index: 5; padding: 10px 12px; color: var(--pip-bright); background: rgba(2, 10, 5, 0.96); border: 1px solid var(--pip-bright); box-shadow: 0 0 14px var(--glow-soft); }
+  #kube-graph .gv-side[hidden] { display: none; }
+  #kube-graph .gv-side header { display: flex; align-items: center; gap: 8px; }
+  #kube-graph .gv-side header b { flex: 1; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #kube-graph .gv-smeta { margin: 4px 0 8px; color: var(--pip-mid); font-size: 11px; }
+  #kube-graph .gv-calls h5 { margin: 10px 0 4px; font-size: 11px; letter-spacing: 0.16em; color: var(--pip-dim); font-weight: normal; }
+  #kube-graph .gv-calls ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  #kube-graph .gv-calls li { display: grid; grid-template-columns: 10px 1fr auto; grid-template-rows: auto auto; column-gap: 7px; align-items: center; padding: 4px 6px; border: 1px solid var(--pip-dark); }
+  #kube-graph .gv-cdot { grid-row: span 2; width: 9px; height: 9px; border-radius: 50%; background: var(--pip-dim); }
+  #kube-graph .c-live .gv-cdot { background: var(--pip-bright); box-shadow: 0 0 6px var(--pip-bright); }
+  #kube-graph .c-error .gv-cdot { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
+  #kube-graph .c-error { border-color: var(--status-broken); }
+  #kube-graph .c-owner .gv-cdot { background: var(--world-amber); }
+  #kube-graph .gv-cpeer { font: inherit; font-size: 12.5px; text-align: left; color: var(--pip-bright); background: none; border: 0; padding: 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #kube-graph .gv-ckind { grid-column: 2; font-size: 10px; color: var(--pip-dim); }
+  #kube-graph .gv-calls .gv-crate { grid-row: 1 / span 2; grid-column: 3; }
+  #kube-graph .c-live .gv-crate { color: var(--pip-bright); }
+  #kube-graph .c-error .gv-crate { color: var(--status-broken); }
+  #kube-graph .c-config .gv-crate { color: var(--pip-dim); }
+  #kube-graph .gv-cnone { margin: 0; color: var(--pip-dim); font-size: 11px; }
+  #kube-graph .gv-side .gv-inside { display: inline-block; margin-top: 10px; }
   #kube-graph .gv-badge rect { fill: var(--bg, #041a0c); stroke: var(--pip-bright); stroke-width: 1px; opacity: 0.92; }
   #kube-graph .gv-badge text { font: 10px/1 inherit; font-family: inherit; letter-spacing: 0.04em; fill: var(--pip-bright); }
   #kube-graph .gv-badge.err rect { stroke: var(--status-broken); }
@@ -2576,6 +2645,40 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #kube-graph .gv-edge.owns { stroke: var(--warn); }
   :root[data-theme="pro"] #kube-graph .gv-edge.err { stroke: var(--err); }
   :root[data-theme="pro"] #kube-graph .gv-edge.hot { filter: none; }
+  :root[data-theme="pro"] #kube-graph .gv-meta { color: var(--text-2); }
+  :root[data-theme="pro"] #kube-graph .gv-talk.t-live { color: var(--accent); }
+  :root[data-theme="pro"] #kube-graph .gv-talk.t-err { color: var(--err); }
+  :root[data-theme="pro"] #kube-graph .gv-talk.t-none { color: var(--text-2); }
+  :root[data-theme="pro"] #kube-graph .gv-colhead { color: var(--text-3); font-family: var(--font-ui); letter-spacing: 0.08em; }
+  :root[data-theme="pro"] #kube-graph .gv-card { border-radius: 8px; background: var(--raised); border: 1px solid var(--border); font-family: var(--font-ui); }
+  :root[data-theme="pro"] #kube-graph .gv-cname { color: var(--text); font-weight: 600; }
+  :root[data-theme="pro"] #kube-graph .gv-cmeta { color: var(--text-2); }
+  :root[data-theme="pro"] #kube-graph .gv-card.t-live { border-left: 3px solid var(--accent); }
+  :root[data-theme="pro"] #kube-graph .gv-card.t-live .gv-crate { color: var(--accent); }
+  :root[data-theme="pro"] #kube-graph .gv-card.t-err { border-left: 3px solid var(--err); }
+  :root[data-theme="pro"] #kube-graph .gv-card.t-err .gv-crate { color: var(--err); }
+  :root[data-theme="pro"] #kube-graph .gv-card.t-none { border-left: 3px dashed var(--text-3); }
+  :root[data-theme="pro"] #kube-graph .gv-card.t-none .gv-crate { color: var(--text-3); }
+  :root[data-theme="pro"] #kube-graph .gv-edge.st-config { stroke: var(--text-3); }
+  :root[data-theme="pro"] #kube-graph .gv-edge.st-live { stroke: var(--accent); }
+  :root[data-theme="pro"] #kube-graph .gv-edge.st-error { stroke: var(--err); }
+  :root[data-theme="pro"] #kube-graph .gv-edge.st-owner { stroke: var(--warn); }
+  :root[data-theme="pro"] #kube-graph .gv-key.st-live i { border-top-color: var(--accent); }
+  :root[data-theme="pro"] #kube-graph .gv-key.st-error i { border-top-color: var(--err); }
+  :root[data-theme="pro"] #kube-graph .gv-key.st-config i { border-top-color: var(--text-3); }
+  :root[data-theme="pro"] #kube-graph .gv-key.st-owner i { border-top-color: var(--warn); }
+  :root[data-theme="pro"] #kube-graph .gv-legend { color: var(--text); }
+  :root[data-theme="pro"] #kube-graph .gv-badgekey { color: var(--text-2); font-family: var(--font-ui); }
+  :root[data-theme="pro"] #kube-graph .gv-side { color: var(--text); background: var(--raised); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); font-family: var(--font-ui); }
+  :root[data-theme="pro"] #kube-graph .gv-smeta, :root[data-theme="pro"] #kube-graph .gv-calls h5, :root[data-theme="pro"] #kube-graph .gv-ckind, :root[data-theme="pro"] #kube-graph .gv-cnone { color: var(--text-2); letter-spacing: 0.04em; }
+  :root[data-theme="pro"] #kube-graph .gv-calls li { border-color: var(--border); border-radius: 6px; }
+  :root[data-theme="pro"] #kube-graph .gv-cpeer { color: var(--text); font-family: var(--font-ui); }
+  :root[data-theme="pro"] #kube-graph .c-live .gv-cdot { background: var(--accent); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph .c-error .gv-cdot { background: var(--err); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph .c-error { border-color: var(--err); }
+  :root[data-theme="pro"] #kube-graph .c-live .gv-crate { color: var(--accent); }
+  :root[data-theme="pro"] #kube-graph .c-error .gv-crate { color: var(--err); }
+  :root[data-theme="pro"] #kube-graph .c-config .gv-crate { color: var(--text-3); }
   :root[data-theme="pro"] #kube-graph .gv-badge rect { fill: var(--raised); stroke: var(--accent); }
   :root[data-theme="pro"] #kube-graph .gv-badge text { fill: var(--accent); font-family: var(--font-ui); font-weight: 600; }
   :root[data-theme="pro"] #kube-graph .gv-badge.err rect { stroke: var(--err); }

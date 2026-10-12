@@ -28,9 +28,9 @@ export function bareScenario() {
   const L = (app, partOf, instance) => ({ app, ...(partOf ? { "app.kubernetes.io/part-of": partOf } : {}), ...(instance ? { "app.kubernetes.io/instance": instance, "app.kubernetes.io/managed-by": "Helm" } : {}), ...(partOf === "shop" ? { team: "payments" } : {}) });
   const nodes = [
     n("ingress-nginx", "controller", "ingress", "ingress-nginx-controller", L("ingress-nginx", "ingress-nginx", "ingress-nginx")),
-    n("demo", "web", "service", "web", L("web", "shop", "shop")),
-    n("demo", "api", "service", "api", L("api", "shop", "shop")),
-    n("demo", "redis", "db", "redis", L("redis", "shop", "shop-redis")),
+    { ...n("demo", "web", "service", "web", L("web", "shop", "shop")), pods: { ready: 2, total: 2 } },
+    { ...n("demo", "api", "service", "api", L("api", "shop", "shop")), pods: { ready: 1, total: 2 } },
+    { ...n("demo", "redis", "db", "redis", L("redis", "shop", "shop-redis")), pods: { ready: 1, total: 1 } },
     n("demo", "demo-tls", "cr", "Certificate demo-tls"),
     n("cert-manager", "controller", "operator", "cert-manager"),
     n("cert-manager", "webhook", "webhook", "cert-manager-webhook"),

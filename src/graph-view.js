@@ -7,6 +7,7 @@
 import { graphScenario } from "./graph-sample.js";
 import { routeEdge } from "./graph-route.js";
 import { GROUP_BY, GROUP_BY_KEY, cleanGroupBy, regroup } from "./graph-group.js";
+import { BADGES, KIND_BADGE, KIND_NAME, STATUS_TEXT, callsOf, edgeStatus, groupTalk, layerNodes, nodeTraffic, rateText } from "./graph-layers.js";
 import { EVENT_KINDS, LAYERS, initialExpanded, initialLayers, sceneStats, stepEvent, timeline, visibleGraph } from "./graph-model.js";
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -18,24 +19,24 @@ const LAYER_HINT = {
   owner: "ownerReferences: operator → custom resources → what they own",
 };
 // Edge source marks: what each line style means (legend under the stats).
+// Edge styles: is it talking or not (legend under the stats).
 const EDGE_LEGEND = [
-  ["s-trace", "LIVE · Beyla/OTel", "measured L7 traffic from Beyla eBPF via the OTel collector, with req/s and errors"],
-  ["s-flow", "LIVE · FLOW", "measured L3/L4 flows (VPC CNI flow logs or Hubble)"],
-  ["s-static", "STATIC · config", "declared by Services, Ingress/Routes, NetworkPolicies: may talk, not measured"],
-  ["owns", "OWNER", "ownerReferences: operator → custom resources → what they own"],
-  ["err", "ERRORS ≥ 1%", "a live edge with at least 1% failed requests"],
+  ["st-live", "TALKING · live traffic (moving line, req/s)", "measured traffic: Beyla eBPF via the OTel collector (L7) or flow logs/Hubble (L4); the label shows req/s and errors"],
+  ["st-error", "TALKING WITH ERRORS (≥ 1%)", "live traffic where at least 1% of requests fail"],
+  ["st-config", "CONFIG ONLY · not seen talking", "declared by a Service, Ingress/Route or NetworkPolicy: allowed to talk, but no live traffic was measured"],
+  ["st-owner", "OWNER", "ownerReferences: operator → custom resources → what they own"],
 ];
 // Live trace edges get an on-line badge; past this many only the busiest
 // (and the selected node's) keep theirs, so the graph stays readable.
 const BADGE_MAX = 12;
 export function edgeBadge(edge) {
   const src = edge.sources.includes("trace") ? "trace" : edge.sources.includes("flow") ? "flow" : "";
-  if (!src) return "";
+  if (!src || !(edge.rps > 0)) return "";
   const rate = edge.rps ? ` ${edge.rps}/s` : "";
   const err = edge.errors ? ` · ${edge.errors}% err` : "";
   return `${src === "trace" ? "LIVE · Beyla/OTel" : "LIVE · FLOW"}${rate}${err}`;
 }
-const KIND_TAG = { operator: "OP", webhook: "HOOK", service: "SVC", db: "DB", cr: "CR", ingress: "ING", external: "API", workload: "WL", namespace: "NS" };
+const KIND_TAG = KIND_BADGE;
 const EVENT_TAG = { rollout: "ROLLOUT", restart: "RESTART", warning: "WARN", alarm: "ALARM", ok: "OK" };
 
 function h(tag, props = {}, ...kids) {
@@ -146,6 +147,8 @@ export function createGraphView(root) {
     els.detail = h("p", { className: "gv-detail", "aria-live": "polite" });
     els.legend = h("p", { className: "gv-legend", "aria-label": "edge sources" });
     for (const [cls, text, hint] of EDGE_LEGEND) els.legend.append(h("span", { className: `gv-key ${cls}`, title: hint }, h("i", { "aria-hidden": "true" }), h("span", { text })));
+    els.badgeKey = h("p", { className: "gv-badgekey", "aria-label": "badge key" });
+    for (const [tag, text] of Object.entries(BADGES)) els.badgeKey.append(h("span", { className: "gv-bk", title: text }, h("small", { className: `gv-ntag t-${tag}`, text: tag }), h("span", { text: text.split(/[:(]/)[0].trim() })));
     els.stage = h("div", { className: "gv-stage" });
     els.svg = document.createElementNS(SVG, "svg");
     els.svg.setAttribute("class", "gv-edges");
@@ -159,8 +162,9 @@ export function createGraphView(root) {
         els.scen, els.liveBox, els.groupBox, els.search, els.layers, els.fold),
       els.stats,
       els.legend,
+      els.badgeKey,
       els.detail,
-      els.stage,
+      h("div", { className: "gv-main" }, els.stage, (els.side = h("aside", { className: "gv-side", "aria-label": "calls of the selected service", hidden: true }))),
       els.tl,
     );
     resize?.observe(els.stage);
@@ -208,31 +212,69 @@ export function createGraphView(root) {
 
   function groupCard(group) {
     const tag = group.kind === "operator" ? "OP" : group.kind === "label" ? (group.unlabeled ? "—" : "LBL") : "NS";
+    const talk = groupTalk(group.id, scene);
     const card = h("div", {
-      className: `gv-group${group.kind === "label" ? " by-label" : ""}${group.unlabeled ? " unlabeled" : ""}${group.open ? " open" : ""}${group.dim ? " dim" : ""}${group.match ? " match" : ""}${group.neighbor ? " neighbor" : ""}${state.focus === group.id ? " focus" : ""}`,
+      className: `gv-group${group.kind === "label" ? " by-label" : ""}${group.unlabeled ? " unlabeled" : ""}${group.open ? " open" : ""}${group.dim ? " dim" : ""}${group.match ? " match" : ""}${group.neighbor ? " neighbor" : ""}${state.focus === group.id ? " focus" : ""}${talk.errors ? " talk-err" : talk.live ? " talk-live" : ""}`,
       dataset: { id: `g:${group.id}`, health: group.health || "ok" },
     });
     const head = h("button", { type: "button", className: "gv-ghead", title: state.focus === group.id ? "leave focus" : "focus: only this group and who it talks to", onclick: () => focusGroup(group.id) },
       h("i", { className: "gv-lamp", "aria-hidden": "true" }),
       h("b", { className: "gv-glabel", text: group.label }),
-      h("small", { className: "gv-tag", text: tag }));
+      h("small", { className: "gv-tag", text: tag, title: tag === "OP" ? BADGES.OP : tag === "NS" ? BADGES.NS : tag === "LBL" ? BADGES.LBL : "resources without the Group by label" }));
     const meta = h("span", { className: "gv-meta", text: [group.namespaces ? `${group.namespaces} ns` : "", group.crds ? `${group.crds} CRDs` : "", group.pods ? `${group.pods} pods` : ""].filter(Boolean).join(" · ") });
-    const toggle = h("button", { type: "button", className: "gv-open", "aria-expanded": String(group.open), title: group.open ? "fold" : "open: its services, webhooks and CRs", text: group.open ? "−" : "+", onclick: (ev) => toggleOpen(group.id, ev) });
-    card.append(h("div", { className: "gv-gtop" }, head, toggle), meta);
+    const talkEl = h("span", { className: `gv-talk ${talk.errors ? "t-err" : talk.live ? "t-live" : "t-none"}`, title: "live links: measured traffic touching this group; config links are only declared", text: talk.text });
+    const toggle = h("button", { type: "button", className: "gv-open", "aria-expanded": String(group.open), title: group.open ? "fold" : "open: its services, how they call each other, live or not", text: group.open ? "−" : "+", onclick: (ev) => toggleOpen(group.id, ev) });
+    card.append(h("div", { className: "gv-gtop" }, head, h("span", { className: "gv-gsum" }, meta, talkEl), toggle));
     if (group.open) {
-      const list = h("div", { className: "gv-nodes" });
-      for (const node of group.nodes) {
-        list.append(h("button", {
-          type: "button",
-          className: `gv-node k-${node.kind}${node.match ? " match" : ""}${state.selected === node.id ? " sel" : ""}`,
-          dataset: { id: node.id },
-          title: `${node.label}\n${node.ns}`,
-          onclick: (ev) => selectNode(node.id, ev),
-        }, h("small", { className: "gv-ntag", text: KIND_TAG[node.kind] || "·" }), h("span", { text: node.label })));
-      }
-      card.append(list);
+      const cols = layerNodes(group.nodes, scene.edges);
+      const row = h("div", { className: "gv-layered" });
+      cols.forEach((col, i) => {
+        const colEl = h("div", { className: "gv-col" }, h("small", { className: "gv-colhead", text: i === 0 && col.every((n) => n.kind === "ingress") ? "ENTRY" : i === cols.length - 1 && col.every((n) => n.kind === "db" || n.kind === "cr") ? "DATA / RESOURCES" : `STEP ${i + (cols[0].every((n) => n.kind === "ingress") ? 0 : 1)}` }));
+        for (const node of col) colEl.append(nodeCard(node));
+        row.append(colEl);
+      });
+      card.append(row);
     }
     return card;
+  }
+
+  function nodeCard(node) {
+    const t = nodeTraffic(node.id, scene.edges);
+    const badge = KIND_TAG[node.kind] || "·";
+    const pods = node.pods && typeof node.pods === "object" ? node.pods : null;
+    return h("button", {
+      type: "button",
+      className: `gv-node gv-card k-${node.kind}${node.match ? " match" : ""}${state.selected === node.id ? " sel" : ""}${t.errors >= 1 ? " t-err" : t.talking ? " t-live" : " t-none"}`,
+      dataset: { id: node.id },
+      title: `${node.label} · ${KIND_NAME[node.kind] || node.kind} · ${node.ns}\n${t.talking ? `talking: ${t.live} live link${t.live === 1 ? "" : "s"}` : "not seen talking"} — click for its calls`,
+      onclick: (ev) => selectNode(node.id, ev),
+    },
+      h("span", { className: "gv-crow" }, h("small", { className: `gv-ntag t-${badge}`, title: BADGES[badge] || node.kind, text: badge }), h("b", { className: "gv-cname", text: node.label })),
+      h("span", { className: "gv-cmeta", text: [KIND_NAME[node.kind] || node.kind, node.ns, pods ? `${pods.ready}/${pods.total} ready` : ""].filter(Boolean).join(" · ") }),
+      h("span", { className: "gv-crate", text: t.talking ? `${t.rps}/s${t.errors ? ` · ${t.errors}% err` : ""}` : "not seen talking" }));
+  }
+
+  function renderSide() {
+    const node = state.selected && scene.nodes.find((n) => n.id === state.selected);
+    els.side.hidden = !node;
+    if (!node) return els.side.replaceChildren();
+    const calls = callsOf(node.id, scene, state.layers);
+    const list = (title, rows) => h("section", { className: "gv-calls" },
+      h("h5", { text: `${title} · ${rows.length}` }),
+      rows.length ? h("ul", {}, ...rows.map((r) => h("li", { className: `c-${r.status}`, title: STATUS_TEXT[r.status] },
+        h("i", { className: "gv-cdot", "aria-hidden": "true" }),
+        h("button", { type: "button", className: "gv-cpeer", text: r.label, title: `${r.ns} · select`, onclick: (ev) => selectNode(r.peer, ev) }),
+        h("small", { className: "gv-ckind", text: r.kind }),
+        h("span", { className: "gv-crate", text: rateText(r) })))) : h("p", { className: "gv-cnone", text: "none" }));
+    const svcName = String(node.label || "").split(/[\s:]/)[0];
+    els.side.replaceChildren(
+      h("header", {}, h("small", { className: `gv-ntag t-${KIND_TAG[node.kind] || "x"}`, title: BADGES[KIND_TAG[node.kind]] || "", text: KIND_TAG[node.kind] || "·" }), h("b", { text: node.label }),
+        h("button", { type: "button", className: "gv-btn gv-sclose", text: "×", title: "close (Esc)", "aria-label": "close", onclick: (ev) => selectNode(node.id, ev) })),
+      h("p", { className: "gv-smeta", text: `${KIND_NAME[node.kind] || node.kind} · ${node.ns}` }),
+      list("CALLED BY", calls.inbound),
+      list("CALLS", calls.outbound),
+      node.ns && /^[a-z0-9-]+$/.test(svcName) ? h("a", { className: "gv-inside", href: `#path?debug=${encodeURIComponent(`${svcName}.${node.ns}:`)}&inside=1`, text: "DEBUG FROM INSIDE ›", title: "SNIFF › FROM INSIDE: a short-lived debug pod checks DNS, TCP, HTTP, hops and NetworkPolicy to this Service" }) : null,
+    );
   }
 
   function emptyScene() {
@@ -333,6 +375,7 @@ export function createGraphView(root) {
     els.bands.replaceChildren(...view.bands.filter((band) => band.groups.length).map((band) =>
       h("section", { className: "gv-band", dataset: { band: band.id } }, h("h4", { className: "gv-blabel", text: `${band.label} · ${band.groups.length}` }), h("div", { className: "gv-grid" }, ...band.groups.map(groupCard)))));
     renderDetail();
+    renderSide();
     renderTimeline();
     drawEdges();
   }
@@ -345,10 +388,7 @@ export function createGraphView(root) {
       const inn = scene.edges.filter((e) => e.to === state.selected && state.layers.has(e.source));
       const label = (id) => scene.nodes.find((n) => n.id === id)?.label || id;
       const fmt = (e, other) => `${label(other)} ${e.kind}${e.rps ? ` ${e.rps}/s` : ""}${e.errors ? ` ${e.errors}% err` : ""} (${e.source})`;
-      els.detail.textContent = `${ev ? `${ev.t} ${ev.text}  ▸  ` : ""}${node?.label} (${node?.ns}) · calls ${out.map((e) => fmt(e, e.to)).join(", ") || "nothing"} · called by ${inn.map((e) => fmt(e, e.from)).join(", ") || "nothing"}`;
-      // FROM INSIDE: probe this Service from a debug pod (SNIFF), prefilled.
-      const svcName = String(node?.label || "").split(/[\s:]/)[0];
-      if (node?.ns && /^[a-z0-9-]+$/.test(svcName)) els.detail.append(" ", h("a", { className: "gv-inside", href: `#path?debug=${encodeURIComponent(`${svcName}.${node.ns}:`)}&inside=1`, text: "DEBUG FROM INSIDE ›", title: "SNIFF › FROM INSIDE: a short-lived debug pod checks DNS, TCP, HTTP, hops and NetworkPolicy to this Service" }));
+      els.detail.textContent = `${ev ? `${ev.t} ${ev.text}  ▸  ` : ""}${node?.label} (${node?.ns}): its calls are listed on the right · Esc or × closes`;
     } else if (state.focus) {
       const group = scene.groups.find((g) => g.id === state.focus);
       els.detail.textContent = `FOCUS ${group?.label}: ${view.total} links to ${view.bands.flatMap((b) => b.groups).filter((g) => g.neighbor).length} groups · click a service for its calls · Esc leaves focus`;
@@ -414,13 +454,35 @@ export function createGraphView(root) {
     els.tl.querySelector(`.gv-ev[data-index="${next.index}"]`)?.scrollIntoView?.({ block: "nearest" });
   }
 
+  function groupOfId(id) {
+    return scene.nodes.find((n) => n.id === id)?.group;
+  }
+  function sideCurve(a, b, ap, bp) {
+    const spread = (p, h) => (p && p.n > 1 ? (h * (p.i + 1)) / (p.n + 1) : h / 2);
+    if (b.x >= a.x + a.w - 1) {
+      const x1 = a.x + a.w;
+      const y1 = a.y + spread(ap, a.h);
+      const x2 = b.x - 2;
+      const y2 = b.y + spread(bp, b.h);
+      const dx = Math.max(24, (x2 - x1) / 2);
+      return { d: `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}` };
+    }
+    // same column or backwards: out of the bottom, back in from below
+    const x1 = a.x + a.w / 2;
+    const y1 = a.y + a.h;
+    const x2 = b.x + b.w / 2;
+    const y2 = b.y + b.h + 2;
+    const low = Math.max(y1, y2) + 26;
+    return { d: `M${x1},${y1} C${x1},${low} ${x2},${low} ${x2},${y2}` };
+  }
+
   function drawEdges() {
     const svg = els.svg;
     if (!svg || !view) return;
     const box = els.stage.getBoundingClientRect();
     svg.setAttribute("width", String(els.stage.scrollWidth));
     svg.setAttribute("height", String(els.stage.scrollHeight));
-    const marker = `<defs><marker id="gv-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" class="gv-arrowhead"/></marker></defs>`;
+    const marker = `<defs><marker id="gv-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" class="gv-arrowhead"/></marker></defs>`;
     const at = new Map();
     for (const el of els.stage.querySelectorAll("[data-id]")) {
       const r = el.getBoundingClientRect();
@@ -455,14 +517,22 @@ export function createGraphView(root) {
       const b = at.get(edge.to);
       if (!a || !b) continue;
       const key = `${edge.from}>${edge.to}`;
-      const { d } = routeEdge(a, b, obstacles, { gap: 12, lanes, aPort: portOf.get(`${edge.from}|${key}`), bPort: portOf.get(`${edge.to}|${key}`) });
+      // Inside one opened group (layered columns): left to right, side to
+      // side, a smooth curve; backwards calls loop under the cards.
+      const rowOf = (id) => els.stage.querySelector(`[data-id="${CSS.escape(id)}"]`)?.closest(".gv-layered");
+      const rowA = rowOf(edge.from);
+      const sameRow = !!rowA && rowA === rowOf(edge.to);
+      const { d } = sameRow ? sideCurve(a, b, portOf.get(`${edge.from}|${key}`), portOf.get(`${edge.to}|${key}`)) : routeEdge(a, b, obstacles, { gap: 12, lanes, aPort: portOf.get(`${edge.from}|${key}`), bPort: portOf.get(`${edge.to}|${key}`) });
       const src = edge.sources.includes("trace") ? "trace" : edge.sources.includes("flow") ? "flow" : edge.sources[0];
       const touch = hot && (edge.from === hot || edge.to === hot);
-      const cls = `gv-edge s-${src}${edge.quiet ? " quiet" : ""}${edge.kinds.includes("owns") ? " owns" : ""}${edge.errors >= 1 ? " err" : ""}${touch ? " hot" : ""}${hot && !touch ? " faint" : ""}`;
-      const width = Math.min(3.2, 1 + Math.log10(1 + edge.rps) * 0.9).toFixed(2);
-      const title = `${edge.from.replace(/^g:/, "")} → ${edge.to.replace(/^g:/, "")}: ${edge.count} link${edge.count > 1 ? "s" : ""} · ${edge.kinds.join("/")} · ${edge.sources.join("+")}${edge.rps ? ` · ${edge.rps}/s` : ""}${edge.errors ? ` · ${edge.errors}% errors` : ""}`;
+      const st = edgeStatus(edge);
+      const inner = !edge.from.startsWith("g:") && !edge.to.startsWith("g:");
+      const cls = `gv-edge s-${src} st-${st}${inner ? " inner" : ""}${edge.quiet ? " quiet" : ""}${edge.kinds.includes("owns") ? " owns" : ""}${edge.errors >= 1 ? " err" : ""}${touch ? " hot" : ""}${hot && !touch ? " faint" : ""}`;
+      const width = (st === "live" || st === "error" ? Math.min(6, 2.5 + Math.log10(1 + edge.rps) * 1.2) : inner ? 2 : 1.5).toFixed(2);
+      const name = (id) => scene.nodes.find((n) => n.id === id)?.label || scene.groups.find((g) => `g:${g.id}` === id)?.label || id.replace(/^g:/, "");
+      const title = `${name(edge.from)} → ${name(edge.to)} · ${STATUS_TEXT[st]}${edge.rps && st !== "config" ? ` · ${edge.rps}/s` : ""}${edge.errors ? ` · ${edge.errors}% errors` : ""} · ${edge.kinds.join("/")} · from ${edge.sources.map((x) => ({ trace: "Beyla/OTel", flow: "flow logs", static: "config", owner: "ownerReferences" })[x] || x).join(" + ")}${edge.count > 1 ? ` · ${edge.count} links` : ""}`;
       paths.push(`<path class="${cls}" d="${d}" stroke-width="${width}" marker-end="url(#gv-arrow)" data-src="${src}"><title>${title.replace(/[<&]/g, "")}</title></path>`);
-      if (src === "trace") badges.push({ i: paths.length - 1, text: edgeBadge(edge), rps: edge.rps, touch, err: edge.errors >= 1 });
+      if ((st === "live" || st === "error") && edgeBadge(edge)) badges.push({ i: paths.length - 1, text: edgeBadge(edge), rps: edge.rps, touch, err: edge.errors >= 1 });
     }
     svg.innerHTML = marker + paths.join("");
     // Badges at each live edge's midpoint (needs SVG geometry; skipped without it).

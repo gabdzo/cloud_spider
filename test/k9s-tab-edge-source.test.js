@@ -21,11 +21,11 @@ test("edgeBadge: live trace edges say Beyla/OTel with rps and errors; flows LIVE
   assert.equal(edgeBadge({ sources: ["owner"], rps: 0, errors: 0 }), "");
 });
 
-test("graph legend names every edge source, styled in both themes", async () => {
+test("graph legend names every edge style, styled in both themes", async () => {
   const view = await readFile(new URL("../src/graph-view.js", import.meta.url), "utf8");
-  for (const s of ["LIVE · Beyla/OTel", "LIVE · FLOW", "STATIC · config", "OWNER"]) assert.ok(view.includes(s), s);
+  for (const s of ["TALKING · live traffic", "TALKING WITH ERRORS", "CONFIG ONLY · not seen talking", "OWNER"]) assert.ok(view.includes(s), s);
   const server = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
   assert.match(server, /#kube-graph \.gv-badge rect/);
   assert.match(server, /:root\[data-theme="pro"\] #kube-graph \.gv-badge rect/);
-  assert.match(server, /:root\[data-theme="pro"\] #kube-graph \.gv-key\.s-trace i/);
+  assert.match(server, /:root\[data-theme="pro"\] #kube-graph \.gv-key\.st-live i/);
 });
