@@ -1,0 +1,54 @@
+# Template: one service on Kubernetes (any cluster, no AWS needed): the
+# workloads it is, who owns it, its SLOs and what it depends on. This is the
+# file the onboarding prompt (docs/agent-onboarding.md) has a coding agent
+# write, one per service. Make one by hand with:
+#   npm run vaults:new -- k8s-service <name>
+# Check with:  npm run validate-vaults [-- --graph http://127.0.0.1:9241/api/cluster/graph?context=<ctx>]
+# JSON schema (editor completion): schemas/vault.schema.json
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: k8s-service
+  number: 209
+  title: Orders API
+  description: The orders REST API; takes orders from the web shop and writes them to Postgres, publishes order events.
+  owner: team-checkout            # a team or a person
+  contact: "#checkout-oncall"     # where to ask: an email or a chat channel
+  tags: [service, kubernetes]
+spec:
+  type: api                       # static-site, service, api, cluster, worker, data, other
+  cluster: sandbox                # the cluster it runs in (a name, for grouping)
+  # The Kubernetes objects this vault is. Node ids in SERVICES: namespace/name.
+  workloads:
+    - namespace: shop
+      kind: Deployment
+      name: orders-api
+    - namespace: shop
+      kind: Service
+      name: orders-api
+  # What it needs. One of: vault (another vault file), service (a SERVICES
+  # node id), database, queue, external (a host or URL outside the cluster).
+  dependsOn:
+    - vault: payments
+      protocol: http
+      critical: true
+    - database: orders-db
+      protocol: sql
+      critical: true
+    - queue: order-events
+      protocol: kafka
+    - external: https://api.stripe.com
+      protocol: http
+      note: card payments; only via payments
+  links:
+    repo: https://github.com/example/orders-api
+    docs: https://github.com/example/orders-api#readme
+    runbook: https://github.com/example/orders-api/blob/main/RUNBOOK.md
+  # SLOs: sli availability | latency | error-rate; source from what Cloud
+  # Spider reads (kube:restarts:<ns>/<workload>, checks, alb, ...). See docs/RUN-ME.md §17.
+  slos:
+    - name: restarts
+      sli: error-rate
+      source: kube:restarts:shop/orders-api
+      target: 99.5%
+      window: 30d

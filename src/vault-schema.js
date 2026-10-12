@@ -9,7 +9,13 @@ export const KIND = "Vault";
 // kind: Perk is a Vault that is one of a cluster vault's perks (vault-perks.js).
 export const KINDS = ["Vault", "Perk"];
 export const VAULT_TYPES = ["static-site", "service", "api", "cluster", "worker", "data", "other"];
-export const LINK_KEYS = ["view", "repo", "docs", "dashboard"];
+export const LINK_KEYS = ["view", "repo", "docs", "dashboard", "runbook"];
+// spec.workloads: the Kubernetes objects the vault is (graph node ids,
+// plan §4.5). spec.dependsOn: what it needs (agent onboarding, §7.4).
+export const WORKLOAD_KINDS = ["Deployment", "StatefulSet", "DaemonSet", "CronJob", "Job", "Service", "Rollout", "DeploymentConfig"];
+export const DEPENDENCY_TYPES = ["vault", "service", "database", "queue", "external"];
+export const PROTOCOLS = ["http", "grpc", "tcp", "sql", "amqp", "kafka", "other"];
+const K8S_NAME = /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/;
 export const CHECK_TIMEOUT = { default: 5000, min: 100, max: 30000 };
 const NAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 // spec.stack binds a living vault to a Pulumi stack in this repo: the folder
@@ -64,7 +70,8 @@ export function validateVault(doc) {
   if (!meta) errors.push("metadata: is required");
   const name = text(meta?.name);
   if (meta) {
-    unknownKeys(meta, ["name", "number", "description", "owner", "tags", "title"], "metadata.", warnings);
+    unknownKeys(meta, ["name", "number", "description", "owner", "contact", "tags", "title"], "metadata.", warnings);
+    if (meta.contact !== undefined && (typeof meta.contact !== "string" || !meta.contact.trim())) errors.push("metadata.contact: must be text (an email, a chat channel)");
     if (!name) errors.push("metadata.name: is required");
     else if (!NAME.test(name)) errors.push("metadata.name: use lowercase letters, digits and dashes (max 63)");
     if (meta.number === undefined || meta.number === null || meta.number === "") {
@@ -86,7 +93,9 @@ export function validateVault(doc) {
   if (!spec) errors.push("spec: is required");
   const out = { resources: { tags: {}, ids: [] }, links: {}, checks: [], stack: null, slos: [] };
   if (spec) {
-    unknownKeys(spec, ["type", "resources", "links", "checks", "stack", "slos", "perkOf", "perkId", "cluster"], "spec.", warnings);
+    unknownKeys(spec, ["type", "resources", "links", "checks", "stack", "slos", "perkOf", "perkId", "cluster", "workloads", "dependsOn"], "spec.", warnings);
+    out.workloads = validateWorkloads(spec.workloads, errors);
+    out.dependsOn = validateDependsOn(spec.dependsOn, errors, warnings);
     // Where it shows in VAULTS (vault-perks.js): perkOf <cluster> (a perk of
     // that cluster vault) or none (stays a vault), perkId the perk, cluster
     // the cluster an app lives in.
@@ -222,10 +231,60 @@ export function validateVault(doc) {
       ...(out.perkOf ? { perkOf: out.perkOf } : {}),
       ...(out.perkId ? { perkId: out.perkId } : {}),
       ...(out.cluster ? { cluster: out.cluster } : {}),
+      ...(out.workloads?.length ? { workloads: out.workloads } : {}),
+      ...(out.dependsOn?.length ? { dependsOn: out.dependsOn } : {}),
+      ...(text(meta.contact) ? { contact: text(meta.contact) } : {}),
     },
     errors: [],
     warnings,
   };
+}
+
+function validateWorkloads(list, errors) {
+  if (list === undefined) return [];
+  if (!Array.isArray(list)) {
+    errors.push("spec.workloads: must be a list of {namespace, kind, name}");
+    return [];
+  }
+  const out = [];
+  list.forEach((item, index) => {
+    const at = `spec.workloads[${index}]`;
+    if (!isObject(item)) return errors.push(`${at}: must be a mapping with namespace, kind and name`);
+    const ns = text(item.namespace);
+    const name = text(item.name);
+    if (!ns || !NAME.test(ns)) errors.push(`${at}.namespace: must be a namespace name`);
+    if (!WORKLOAD_KINDS.includes(item.kind)) errors.push(`${at}.kind: must be one of ${WORKLOAD_KINDS.join(", ")}`);
+    if (!name || !K8S_NAME.test(name)) errors.push(`${at}.name: must be a Kubernetes object name`);
+    if (item.context !== undefined && (typeof item.context !== "string" || !item.context.trim())) errors.push(`${at}.context: must be a kube context name`);
+    for (const key of Object.keys(item)) if (!["namespace", "kind", "name", "context"].includes(key)) errors.push(`${at}.${key}: unknown key`);
+    out.push({ namespace: ns, kind: item.kind, name, ...(item.context ? { context: text(item.context) } : {}) });
+  });
+  return out;
+}
+
+function validateDependsOn(list, errors, warnings) {
+  if (list === undefined) return [];
+  if (!Array.isArray(list)) {
+    errors.push("spec.dependsOn: must be a list");
+    return [];
+  }
+  const out = [];
+  list.forEach((item, index) => {
+    const at = `spec.dependsOn[${index}]`;
+    if (!isObject(item)) return errors.push(`${at}: must be a mapping with one of ${DEPENDENCY_TYPES.join(", ")}`);
+    const types = DEPENDENCY_TYPES.filter((key) => item[key] !== undefined);
+    if (types.length !== 1) return errors.push(`${at}: needs exactly one of ${DEPENDENCY_TYPES.join(", ")}`);
+    const type = types[0];
+    const target = text(item[type]);
+    if (!target) return errors.push(`${at}.${type}: must be text`);
+    if (type === "vault" && !NAME.test(target)) errors.push(`${at}.vault: must be a vault name`);
+    if (type === "service" && !/^[a-z0-9-]+\/[a-z0-9:.*\/-]+$/i.test(target)) errors.push(`${at}.service: must be a graph node id like shop/orders-api`);
+    if (item.protocol !== undefined && !PROTOCOLS.includes(item.protocol)) errors.push(`${at}.protocol: must be one of ${PROTOCOLS.join(", ")}`);
+    if (item.critical !== undefined && typeof item.critical !== "boolean") errors.push(`${at}.critical: must be true or false`);
+    for (const key of Object.keys(item)) if (![...DEPENDENCY_TYPES, "protocol", "critical", "note"].includes(key)) warnings.push(`${at}.${key}: unknown key, ignored`);
+    out.push({ type, target, ...(item.protocol ? { protocol: item.protocol } : {}), critical: item.critical === true, ...(text(item.note) ? { note: text(item.note) } : {}) });
+  });
+  return out;
 }
 
 export function plateText(number) {
