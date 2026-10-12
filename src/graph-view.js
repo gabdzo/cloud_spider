@@ -96,6 +96,7 @@ export function createGraphView(root) {
     if (!els.groupSel) return;
     const known = GROUP_BY.some((g) => g.id === state.groupBy);
     els.groupSel.value = known ? state.groupBy : "custom";
+    els.groupSel.title = `group by ${state.groupBy}`;
     els.groupCustom.hidden = known;
     if (!known) els.groupCustom.value = state.groupBy;
   }

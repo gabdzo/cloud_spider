@@ -1395,7 +1395,7 @@ const page = `<!doctype html>
   #kube-empty .ke-btn.ke-ghost { color: var(--pip-bright); background: transparent; }
   #kube-empty .ke-note { color: var(--pip-dim-text); }
   #kube-graph > * { flex-shrink: 0; }
-  #kube-graph .gv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  #kube-graph .gv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 8px; }
   #kube-graph .gv-title { display: flex; align-items: baseline; gap: 8px; margin-right: 4px; }
   #kube-graph .gv-title b { font-size: 15px; letter-spacing: 0.2em; color: var(--pip-bright); text-shadow: 0 0 8px var(--glow-bright); }
   #kube-graph .gv-proto { font-size: 10px; letter-spacing: 0.16em; color: var(--world-amber); border: 1px solid rgba(255, 204, 51, 0.5); padding: 1px 6px; }
@@ -1404,9 +1404,12 @@ const page = `<!doctype html>
   #kube-graph .gv-btn:hover { color: var(--pip-mid); border-color: var(--pip-dim); }
   #kube-graph .gv-btn[aria-pressed="true"] { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); box-shadow: 0 0 10px var(--glow-soft); }
   #kube-graph .gv-layer[aria-pressed="false"] { text-decoration: line-through; opacity: 0.7; }
-  #kube-graph .gv-search { flex: 1 1 160px; min-width: 130px; max-width: 280px; font: inherit; font-size: 12px; padding: 5px 9px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
+  #kube-graph .gv-search { flex: 1 1 130px; min-width: 110px; max-width: 280px; font: inherit; font-size: 12px; padding: 5px 9px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
   #kube-graph .gv-search:focus { border-color: var(--pip-bright); box-shadow: 0 0 8px var(--glow-soft); }
   #kube-graph .gv-groupby { align-items: center; gap: 6px; }
+  /* one toolbar row at 1440 (Pip's wide mono font): the Group by select and
+     the search give way first, the full key/name stays in the tooltip */
+  #kube-graph .gv-groupby select { max-width: 170px; text-overflow: ellipsis; }
   #kube-graph .gv-gblabel { white-space: nowrap; font-size: 10px; letter-spacing: 0.16em; color: var(--pip-dim-text); }
   #kube-graph :is(.gv-gbsel, .gv-gbcustom) { font: inherit; font-size: 12px; padding: 4px 6px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
   #kube-graph .gv-gbcustom { width: 150px; }
@@ -2639,6 +2642,20 @@ const page = `<!doctype html>
     :root[data-theme="pro"] .key { padding: 6px 8px; }
     :root[data-theme="pro"] .readout > span { display: none; }
     :root[data-theme="pro"] header { gap: 6px 8px; padding: 6px 10px; }
+  }
+  /* Pro 1001-1199: the readout + gear sat alone on a third row. Row one:
+     brand, view tabs, readout, gear (REGION label as an aria-label only);
+     row two: console keys and the gauges. */
+  @media (min-width: 1001px) and (max-width: 1199px) {
+    :root[data-theme="pro"] header { gap: 6px 10px; }
+    :root[data-theme="pro"] header > .plate { order: 1; }
+    :root[data-theme="pro"] header > .tabs { order: 2; }
+    :root[data-theme="pro"] header > .readout { order: 3; margin-left: auto; gap: 10px; }
+    :root[data-theme="pro"] header > #settings-key { order: 4; flex: none; }
+    :root[data-theme="pro"] header > .console { order: 5; }
+    :root[data-theme="pro"] header > .gauges { order: 6; flex: 1 1 200px; }
+    :root[data-theme="pro"] .readout label { font-size: 0; gap: 0; }
+    :root[data-theme="pro"] .readout select { font-size: 12px; }
   }
   /* <=900 the base narrow rule (review R3) gives the tally 240px and the
      bill 230px after the readout, so in pro (slim keys) the bill wrapped to
