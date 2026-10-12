@@ -1,4 +1,71 @@
 import { idleCandidates, morningReport } from "./layout.js";
+import { ingressRoutes, openApiRoutes, rootRoute } from "./alb-routes.js";
+
+const SHOP_DNS = "k8s-shop-shopapi-5a1e0c.eu-north-1.elb.amazonaws.com";
+export const SAMPLE_SHOP_ALB = {
+  id: "alb-sample-shop",
+  vpcId: "sample-eks-vpc",
+  kind: "alb",
+  lbType: "application",
+  name: "k8s-shop-shopapi-5a1e0c",
+  status: "ok",
+  state: "active",
+  scheme: "internet-facing",
+  public: true,
+  dns: SHOP_DNS,
+  zones: ["sample-a", "sample-b"],
+  lbSubnetIds: ["sample-public-a", "sample-public-b"],
+  cluster: "sample-cluster",
+  ingress: "shop/shopapi",
+  url: `http://${SHOP_DNS}/items`,
+  targetCount: 2,
+  healthyCount: 2,
+  targetZones: ["sample-a", "sample-b"],
+  targetHealth: "healthy",
+  tags: { project: "shopapi" },
+};
+
+// What the Shop API's Ingresses and PostgREST's root OpenAPI say (sample).
+const SAMPLE_INGRESSES = [
+  {
+    metadata: { namespace: "shop", name: "shopapi" },
+    spec: {
+      rules: [
+        { http: { paths: [{ path: "/", pathType: "Prefix", backend: { service: { name: "shopapi", port: { number: 3000 } } } }] } },
+        { host: "shop.example.com", http: { paths: [{ path: "/", pathType: "Prefix", backend: { service: { name: "shopapi", port: { number: 3000 } } } }, { path: "/admin", pathType: "Prefix", backend: { service: { name: "shop-admin", port: { number: 8080 } } } }] } },
+      ],
+    },
+    status: { loadBalancer: { ingress: [{ hostname: SHOP_DNS }] } },
+  },
+  {
+    metadata: { namespace: "shop", name: "shop-health" },
+    spec: { rules: [{ http: { paths: [{ path: "/healthz", pathType: "Exact", backend: { service: { name: "shopapi", port: { number: 3000 } } } }] } }] },
+    status: { loadBalancer: { ingress: [{ hostname: SHOP_DNS }] } },
+  },
+];
+const SAMPLE_OPENAPI = {
+  swagger: "2.0",
+  paths: Object.fromEntries([
+    ["/", { get: {} }],
+    ["/items", { get: {}, post: {}, patch: {}, delete: {} }],
+    ["/orders", { get: {}, post: {} }],
+    ["/order_lines", { get: {}, post: {} }],
+    ["/customers", { get: {} }],
+    ["/stock", { get: {} }],
+    ["/rpc/health", { get: {}, post: {} }],
+    ["/rpc/place_order", { post: {} }],
+  ]),
+};
+
+export function sampleAlbRoutes(id) {
+  if (id !== SAMPLE_SHOP_ALB.id) return { id, error: "only public load balancers list routes", routes: [] };
+  const alb = SAMPLE_SHOP_ALB;
+  const rules = ingressRoutes(alb, SAMPLE_INGRESSES);
+  const api = openApiRoutes(alb, SAMPLE_OPENAPI, rootRoute(rules));
+  const ms = [38, 41, 44, 52, 47, 39, 61, 43, 40, 45, 58, 42];
+  const routes = [...rules, ...api].map((r, i) => (r.probe ? { ...r, seen: { ok: true, status: r.path === "/rpc/place_order" ? 405 : 200, ms: ms[i % ms.length], url: r.url, sample: true } } : r));
+  return { id, from: "ingress", openapi: api.length > 0, routes, sample: true, seen: { ok: true, status: 200, ms: 41, url: alb.url, sample: true } };
+}
 
 export function samplePlace() {
   const vpc = { id: "sample-vpc", cidr: "10.0.0.0/16", name: "sample" };
@@ -73,6 +140,9 @@ export function samplePlace() {
       { id: "cdn-sample", vpcId: "", kind: "cdn", global: true, name: "sample-landing-cdn", status: "ok", tags: { project: "landing" } },
       { id: "alb-sample", vpcId: vpc.id, kind: "alb", name: "sample-gate", status: "ok" },
       { id: "alb-sample-old", vpcId: vpc.id, kind: "alb", name: "sample-old-gate", status: "ok" },
+      // The Shop API's ALB, as the AWS Load Balancer Controller builds it:
+      // public, both zones, both targets healthy (ROUTES, the PUBLIC badge).
+      SAMPLE_SHOP_ALB,
       { id: "camp-bucket", vpcId: "", kind: "bucket", name: "cloudspider-camp", status: "ok", tags: { project: "camp" } },
       {
         id: "camp-function",

@@ -236,6 +236,11 @@ function rowOfCards(items, x, y, room) {
   return { items: placed, bottom: placed.length ? bottom : y, right: placed.length ? Math.max(...placed.map((item) => item.x + item.w)) : x };
 }
 
+// Room under the edge row for a public ALB's dock (browser.js): the reach
+// lamp, OPEN ↗ and the folded ROUTES, hung under its card, not over subnets.
+export const DOCK_ROOM = 28;
+export const hasDock = (item) => item?.kind === "alb" && item.public === true && Boolean(item.url);
+
 // ---- edges ----
 
 function centre(item) {
@@ -299,7 +304,7 @@ export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fi
   if (edge.some((item) => item.public || item.exposedBy?.length)) cursorY += BADGE_ROOM;
   const edgeRow = rowOfCards(edge.sort((a, b) => KIND_ORDER(a) - KIND_ORDER(b) || byId(a, b)), left, cursorY, Math.max(inner, A.CARD_MAX));
   if (edgeRow.items.length) {
-    cursorY = edgeRow.bottom + A.GAP;
+    cursorY = edgeRow.bottom + A.GAP + (edge.some(hasDock) ? DOCK_ROOM : 0);
     right = Math.max(right, edgeRow.right);
   }
   const columnsOut = [];

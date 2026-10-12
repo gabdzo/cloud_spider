@@ -3,7 +3,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sampleMorning, samplePlace, sampleTrail } from "./sample.js";
+import { sampleAlbRoutes, sampleMorning, samplePlace, sampleTrail } from "./sample.js";
 import { samplePathGraph } from "./path-sample.js";
 import { pathResult } from "./path-view.js";
 import { THEME_NAMES, cssVars } from "./theme.js";
@@ -77,6 +77,7 @@ export const FILES = new Set([
   "vault-draw.js",
   "vault-page.js",
   "vault-perks.js",
+  "alb-routes.js",
   "perk-view.js",
   "url-state.js",
   "settings-view.js",
@@ -1669,13 +1670,51 @@ const page = `<!doctype html>
     .lx-top .ptitle { padding: 4px 8px; }
   }
   /* ---- end learn ---- */
-  /* Public endpoints: what the internet can reach, with OPEN and a lamp. */
-  #public-strip { position: absolute; z-index: 3; left: 50%; transform: translateX(-50%); bottom: 10px; display: flex; flex-direction: column; gap: 4px; max-width: min(92%, 980px); }
-  #public-strip .ps-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--pip-ink); border: 1px solid var(--status-hang); box-shadow: 0 0 10px color-mix(in srgb, var(--status-hang) 45%, transparent); font-size: 12px; letter-spacing: 0.06em; }
-  #public-strip .ps-tag { background: var(--status-hang); color: var(--pip-ink); padding: 1px 6px; font-weight: 700; letter-spacing: 0.12em; }
-  #public-strip .ps-name { color: var(--pip-bright); white-space: nowrap; }
-  #public-strip .ps-url { color: var(--pip-mid, var(--pip-bright)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
-  #public-strip a.cmd { min-height: 22px; padding: 0 8px; font-size: 11px; text-decoration: none; }
+  /* Public ALBs: a dock hung under the card (lamp, OPEN ↗, ROUTES), never over the subnets. */
+  #alb-docks { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 3; }
+  .alb-dock { position: absolute; min-width: 0; font-size: 11px; letter-spacing: 0.04em; }
+  .alr-bar {
+    display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 4px 0 6px; white-space: nowrap;
+    color: var(--pip-mid); background: linear-gradient(180deg, #2a1f08, var(--pip-ink));
+    border: 1px solid var(--world-amber); border-top: 0; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55), inset 0 -1px 0 rgba(255, 204, 51, 0.25);
+  }
+  .alr-bar .reach-lamp { flex: 1 0 auto; }
+  .reach-lamp::before { flex: none; }
+  .alr-bar a.cmd, .alr-bar .cmd { min-height: 18px; padding: 0 6px; font-size: 10px; letter-spacing: 0.08em; text-decoration: none; white-space: nowrap; }
+  .alr-routes-toggle[aria-expanded="true"] { color: var(--pip-ink); background: var(--world-amber); border-color: var(--world-amber); }
+  .alr-panel {
+    position: absolute; left: 0; top: 24px; z-index: 6; width: max(100%, 420px); max-width: min(560px, 92vw);
+    background: linear-gradient(180deg, rgba(42, 31, 8, 0.97), rgba(2, 10, 5, 0.98) 60px); border: 2px solid var(--world-amber);
+    box-shadow: 0 0 0 1px var(--pip-ink), 0 10px 24px rgba(0, 0, 0, 0.7), 0 0 14px rgba(255, 204, 51, 0.25);
+  }
+  .alr-head { display: flex; align-items: baseline; gap: 10px; padding: 5px 8px; border-bottom: 1px solid rgba(255, 204, 51, 0.35); }
+  .alr-head b { color: var(--world-amber); letter-spacing: 0.18em; }
+  .alr-src { color: var(--pip-dim); font-size: 10px; letter-spacing: 0.1em; }
+  .alr-search { display: block; width: calc(100% - 16px); margin: 6px 8px 0; padding: 3px 6px; font: inherit; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dark); }
+  .alr-list { max-height: 260px; overflow: auto; padding: 2px 0 6px; }
+  .alr-list:focus-visible { outline: 2px solid var(--pip-hot); outline-offset: -2px; }
+  .alr-host { margin: 6px 8px 2px; color: var(--pip-dim); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; }
+  .alr-list ul { list-style: none; margin: 0; padding: 0; }
+  .alr-route { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 3px 8px; border-top: 1px dotted rgba(20, 255, 106, 0.15); }
+  .alr-route:hover { background: rgba(20, 255, 106, 0.06); }
+  .alr-where { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+  .alr-path { color: var(--pip-bright); font: inherit; overflow-wrap: anywhere; }
+  .alr-svc { color: var(--pip-mid); overflow-wrap: anywhere; }
+  .alr-tags { display: inline-flex; gap: 6px; }
+  .alr-methods { color: var(--pip-dim); font-size: 10px; }
+  .alr-from { padding: 0 4px; font-size: 9px; letter-spacing: 0.1em; color: var(--pip-ink); background: var(--pip-dim); }
+  .alr-note { color: var(--pip-dim); font-size: 10px; }
+  .alr-route.openapi .alr-path { color: var(--pip-mid); }
+  .alr-route .reach-lamp { font-size: 10px; }
+  .reach-lamp.skip { color: var(--pip-dim); }
+  .alr-route a.cmd { min-height: 18px; padding: 0 6px; font-size: 11px; text-decoration: none; }
+  .alr-empty { margin: 6px 8px; color: var(--pip-dim); }
+  .alb-exposed {
+    position: absolute; height: 22px; padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer;
+    font: inherit; font-size: 11px; letter-spacing: 0.06em; color: var(--world-amber);
+    background: linear-gradient(180deg, #2a1f08, var(--pip-ink)); border: 1px solid rgba(255, 204, 51, 0.55); border-top: 0;
+  }
+  .alb-exposed:hover, .alb-exposed:focus-visible { outline: none; color: var(--pip-ink); background: var(--world-amber); }
   .choice-note.warn { color: var(--status-hang); }
   .choice-note.warn::before { content: "⚠ "; }
   .card-open { display: flex; align-items: center; gap: 8px; margin: 6px 0; padding: 4px 6px; border: 1px solid var(--status-hang); flex-wrap: wrap; }
@@ -2269,6 +2308,21 @@ const page = `<!doctype html>
   :root[data-theme="pro"] .pk-fact dd { color: var(--text); font: 13px var(--font-ui); }
   :root[data-theme="pro"] .pk-actions .pk-primary { background: var(--accent); border-color: var(--accent); color: var(--bg); }
   @media (max-width: 760px) { :root[data-theme="pro"] .pk-open { grid-template-columns: 24px 1fr auto; row-gap: 2px; } :root[data-theme="pro"] .pk-effect { grid-column: 2 / -1; grid-row: 2; } :root[data-theme="pro"] .pk-rank { grid-column: 3; } :root[data-theme="pro"] .pk-state { grid-column: 2 / -1; grid-row: 3; } }
+  :root[data-theme="pro"] :is(.alr-bar, .alr-panel, .alb-exposed) { background: var(--raised); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35); border: 1px solid var(--border-strong); color: var(--text-2); font: 12px var(--font-ui); letter-spacing: 0; }
+  :root[data-theme="pro"] .alr-bar { border-top: 0; border-radius: 0 0 6px 6px; }
+  :root[data-theme="pro"] .alb-exposed { border-top: 0; border-radius: 0 0 6px 6px; }
+  :root[data-theme="pro"] .alb-exposed:hover { background: var(--hover); color: var(--text); }
+  :root[data-theme="pro"] .alr-panel { border-radius: 8px; }
+  :root[data-theme="pro"] .alr-head { border-color: var(--border); }
+  :root[data-theme="pro"] .alr-head b { color: var(--text); letter-spacing: 0.02em; font-weight: 600; }
+  :root[data-theme="pro"] :is(.alr-src, .alr-host, .alr-methods, .alr-note) { color: var(--text-3); letter-spacing: 0; text-transform: none; }
+  :root[data-theme="pro"] .alr-route { border-color: var(--border); }
+  :root[data-theme="pro"] .alr-route:hover { background: var(--hover); }
+  :root[data-theme="pro"] .alr-path { color: var(--text); font-family: ui-monospace, monospace; }
+  :root[data-theme="pro"] .alr-svc { color: var(--text-2); }
+  :root[data-theme="pro"] .alr-from { background: var(--surface-2); color: var(--text-2); border-radius: 4px; letter-spacing: 0; }
+  :root[data-theme="pro"] .alr-routes-toggle[aria-expanded="true"] { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+  :root[data-theme="pro"] .alr-search { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; }
   :root[data-theme="pro"] #radio-panel { border-left: 1px solid var(--border); background-image: none; }
   :root[data-theme="pro"] #spend.issue b, :root[data-theme="pro"] #tally.issue { box-shadow: inset 3px 0 0 var(--err); }
 </style>
@@ -2345,7 +2399,7 @@ const page = `<!doctype html>
           <option value="fine">fine</option>
         </select>
         <div id="vpc-folds"></div>
-        <div id="public-strip" role="region" aria-label="public endpoints" hidden></div>
+        <div id="alb-docks"></div>
         <div id="map-view" role="group" aria-label="map view" hidden>
           <button id="view-arch" class="cmd" type="button" aria-pressed="true" title="VPCs, zones and subnets, like an AWS diagram">ARCH</button>
           <button id="view-tag" class="cmd" type="button" aria-pressed="false" title="one walled camp per tag value">BY TAG</button>
@@ -2826,6 +2880,17 @@ async function route(app, req, res) {
       app.kickLinks();
     }
     send(res, 200, app.view());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/alb-routes") {
+    const id = url.searchParams.get("id") || "";
+    if (url.searchParams.get("sample") === "1") {
+      send(res, 200, sampleAlbRoutes(id));
+      return;
+    }
+    await app.boot();
+    send(res, 200, app.albRoutes ? await app.albRoutes(id) : { id, error: "routes are not set up", routes: [] });
     return;
   }
 
