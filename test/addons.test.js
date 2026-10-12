@@ -63,8 +63,13 @@ test("add-on cards: nested, previewable, priced, and named <addon>-<cluster>", (
     assert.ok(spec.needs.includes("eks"), `${spec.id} needs a cluster`);
     const vault = parse(readFileSync(join(root, `vaults/templates/${spec.vault}.yaml`), "utf8"));
     assert.equal(vault.spec.resources.tags.project, spec.id);
-    assert.equal(vault.spec.stack.dir, "upgrades/addons");
-    assert.equal(vault.spec.stack.name, `${spec.id}-cloudspider-up`);
+    // The Pod Identity agent is the EKS stack's add-on now: its vault follows
+    // that resource (stack.resource), the rest their own add-on stack.
+    if (vault.spec.stack.resource) assert.deepEqual(vault.spec.stack, { dir: "upgrades/eks", name: "*", resource: "eks-pod-identity-agent" });
+    else {
+      assert.equal(vault.spec.stack.dir, "upgrades/addons");
+      assert.equal(vault.spec.stack.name, `${spec.id}-cloudspider-up`);
+    }
   }
   for (const name of ["policy", "scale", "addon"]) assert.equal(icon(name).length, 16, `${name} icon is 16 rows`);
 });

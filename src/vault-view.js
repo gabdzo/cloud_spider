@@ -47,6 +47,7 @@ export async function autoVaults(fileVaults, templates, stacks) {
     try {
       const info = await stacks.read(entry.stack);
       return !info?.error && (info?.stacks || []).some((item) => !item.missing) && info.count > 0;
+      // (with stack.resource, count is that one resource: up when the stack has it)
     } catch {
       return false;
     }
@@ -57,6 +58,11 @@ export async function autoVaults(fileVaults, templates, stacks) {
 // An auto-listed vault whose template names no SLO still gets one: its owned
 // resources healthy on each map read.
 export const DEFAULT_SLO = { name: "resources-healthy", sli: "availability", source: "resources", target: 99, window: "7d", threshold: null, percentile: null, description: "default for an auto-listed vault: its owned resources healthy on each read" };
+
+function eventTime(event) {
+  const t = typeof event?.time === "number" ? event.time : Date.parse(event?.time || "");
+  return Number.isFinite(t) ? t : 0;
+}
 
 export function createVaultView({ store, checker, stacks = null, clock = Date.now }) {
   // The folder's vaults plus the auto-discovered ones, in number order.
@@ -96,6 +102,7 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
             ? {
                 stacks: (info?.stacks || []).filter((item) => !item.missing).map((item) => item.name),
                 resources: info?.count || 0,
+                updated: info?.updated || 0,
                 error: info?.error || "",
                 waiting: resolved.waiting,
               }
@@ -147,7 +154,11 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
       const vaults = bound.map((entry) => {
         const checks = entry.damaged ? [] : checker.peek(entry.checks);
         const mine = owned.get(entry.key) || [];
-        const trouble = entry.damaged ? [] : vaultTrouble(vaultHandles(entry, mine, resources), failures);
+        // A failed call from before the stack's last run is history: that
+        // run is what came after it (the demo vault's TROUBLE of 2026-10-12).
+        const since = entry.stackInfo?.updated || 0;
+        const current = since ? failures.filter((event) => !(eventTime(event) && eventTime(event) < since)) : failures;
+        const trouble = entry.damaged ? [] : vaultTrouble(vaultHandles(entry, mine, resources), current);
         const functions = mine.map((id) => resources.get(id)).filter((item) => item?.kind === "function").map((item) => item.name);
         const slos = entry.damaged || !entry.slos?.length
           ? []
