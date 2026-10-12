@@ -250,12 +250,60 @@ export function eventLine(event) {
   return null;
 }
 
+// Rollouts: a Deployment whose scale events touch two or more ReplicaSets
+// within ROLLOUT_MS is rolling out (the new one up, the old one down to 0).
+// The radio says "rolled out shop/shopapi (rev 7)" once instead of "scaled
+// down shop/shopapi 1→0", and a readiness warning from a pod of an old
+// ReplicaSet is that rollout's noise, labelled as such, not a failure.
+export const ROLLOUT_MS = 15 * 60_000;
+const RS_OF = /Scaled (?:up|down) replica set (\S+?) /;
+const podReplicaSet = (pod) => String(pod || "").replace(/-[a-z0-9]{5}$/, "");
+
+export function rolloutsOf(events = [], deployments = []) {
+  const rev = new Map(deployments.map((d) => [`${d?.metadata?.namespace || ""}/${d?.metadata?.name || ""}`, d?.metadata?.annotations?.["deployment.kubernetes.io/revision"] || ""]));
+  const byDeploy = new Map();
+  for (const event of events) {
+    if (event.tag !== "scale" || event.kind !== "Deployment") continue;
+    const rs = RS_OF.exec(event.message || "")?.[1];
+    if (!rs) continue;
+    const key = where(event);
+    if (!byDeploy.has(key)) byDeploy.set(key, []);
+    byDeploy.get(key).push({ time: event.time, rs, down: /Scaled down/.test(event.message), to: Number(/ to (\d+)/.exec(event.message)?.[1] ?? -1) });
+  }
+  const out = new Map();
+  for (const [key, list] of byDeploy) {
+    const newest = Math.max(...list.map((e) => e.time));
+    const recent = list.filter((e) => newest - e.time <= ROLLOUT_MS);
+    const sets = new Set(recent.map((e) => e.rs));
+    if (sets.size < 2) continue;
+    const ups = recent.filter((e) => !e.down).sort((a, b) => b.time - a.time);
+    const current = ups[0]?.rs || "";
+    out.set(key, { key, time: newest, from: newest - ROLLOUT_MS, rev: rev.get(key) || "", current, old: new Set([...sets].filter((rs) => rs !== current)) });
+  }
+  return out;
+}
+
 // Radio rows (newest first) for events after `since`, folded like the trail.
-export function kubeRadioRows(events = [], { since = 0, limit = 3 } = {}) {
+export function kubeRadioRows(events = [], { since = 0, limit = 3, rollouts = new Map(), livePods = null } = {}) {
   const rows = [];
+  const saidRollout = new Set();
+  const oldSets = new Map();
+  for (const r of rollouts.values()) for (const rs of r.old) oldSets.set(`${r.key.split("/")[0]}/${rs}`, r);
   for (const event of events) {
     if (event.time <= since || event.tag === "info") continue;
-    const line = eventLine(event);
+    if (event.tag === "scale" && event.kind === "Deployment" && rollouts.has(where(event)) && event.time >= rollouts.get(where(event)).from) {
+      const r = rollouts.get(where(event));
+      if (saidRollout.has(r.key)) continue;
+      saidRollout.add(r.key);
+      rows.push({ time: r.time, status: "ok", text: `rolled out ${r.key}${r.rev ? ` (rev ${r.rev})` : ""}`, issue: "", count: 1, kube: true });
+      if (rows.length >= limit) break;
+      continue;
+    }
+    let line = eventLine(event);
+    const gone = event.kind === "Pod" && event.tag === "warn" && oldSets.get(`${event.namespace}/${podReplicaSet(event.name)}`);
+    const vanished = event.kind === "Pod" && event.tag === "warn" && livePods?.names && event.time < livePods.at && !livePods.names.has(where(event));
+    if (line && gone) line = { status: "ok", text: `rollout ${gone.key}: old pod ${event.name} ${event.reason.toLowerCase()} (transient, pod replaced)`, issue: "" };
+    else if (line && vanished) line = { status: "ok", text: `${event.reason} pod ${where(event)} (transient: the pod is gone)`, issue: "" };
     if (!line) continue;
     const same = rows.find((row) => row.text === line.text && row.status === line.status);
     if (same) {
@@ -268,7 +316,9 @@ export function kubeRadioRows(events = [], { since = 0, limit = 3 } = {}) {
   return rows;
 }
 
-export function opsView(ops, { now = Date.now() } = {}) {
+// livePods: { names: Set of "namespace/name", at } from the latest snapshot,
+// when known: a pod warned about before `at` and absent then is gone.
+export function opsView(ops, { now = Date.now(), livePods = null } = {}) {
   if (!ops || ops.error) return { error: ops?.error || "the cluster did not answer", unset: Boolean(ops?.unset) };
   const events = kubeEvents(ops);
   return {
@@ -276,7 +326,7 @@ export function opsView(ops, { now = Date.now() } = {}) {
     policy: policySummary(ops),
     scaling: scalingSummary(ops),
     events,
-    radio: kubeRadioRows(events, { since: now - 30 * 60_000 }),
+    radio: kubeRadioRows(events, { since: now - 30 * 60_000, rollouts: rolloutsOf(events, ops.deployments || []), livePods }),
     notes: [...(ops.forbidden || []).map((name) => `${name}: forbidden for the viewer role`), ...(ops.errors || [])],
     at: now,
   };
