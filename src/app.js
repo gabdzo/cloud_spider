@@ -1492,7 +1492,11 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       if (!opsFlights.has(key)) {
         opsFlights.set(key, client.ops()
           .then((ops) => {
-            const value = { ...opsView(ops, { now: at }), ...facts, limits };
+            // Pods seen by the last snapshot (no extra read): a readiness
+            // warning from a pod that is gone is a rollout's noise.
+            const cachedSnap = pick.ctx?.name ? kubeCaches.get(pick.ctx.name) : null;
+            const livePods = cachedSnap?.snap?.pods && !cachedSnap.snap.error ? { at: cachedSnap.at, names: new Set(cachedSnap.snap.pods.map((p) => `${p?.metadata?.namespace || ""}/${p?.metadata?.name || ""}`)) } : null;
+            const value = { ...opsView(ops, { now: at, livePods }), ...facts, limits };
             if (!value.error) opsCaches.set(key, { at, client, value });
             return value;
           })

@@ -797,6 +797,7 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
   // ALB with traffic is never idle.
   const busy = new Set();
   const trafficBits = [];
+  const recovered = [];
   for (const lb of balancers) {
     const seen = recentTraffic(metrics?.targets?.[lb.id]);
     if (!seen || !seen.requests) continue;
@@ -804,6 +805,13 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
     const share = seen.bad / seen.requests;
     if (!seen.bad || (share < 0.05 && seen.bad < 50)) continue;
     const counts = place?.linksRead && !place?.linkNote ? place.targetCounts?.[lb.id] : null;
+    // Every target healthy on this read: the 5XX were (a rollout, a restart)
+    // and are over. Said, but not HURTING (2026-10-12: the line stayed red
+    // after the Shop API rollout with 2/2 healthy and 200s).
+    if (counts?.total && counts.healthy === counts.total && !counts.unhealthy) {
+      recovered.push(`${lb.name || lb.id} had ${seen.bad} 5XX in the last ${seen.minutes} min, all ${counts.total} targets healthy now`);
+      continue;
+    }
     const why = seen.elb && counts && !counts.healthy ? `, ${counts.total ? "no healthy target" : "no target"}: the ALB answers 503 itself` : "";
     trafficBits.push({ id: lb.id, text: `API ${lb.name || lb.id}: ${seen.bad} of ${seen.requests} requests got a 5XX in the last ${seen.minutes} min (${Math.round(share * 100)}%)${why}` });
   }
@@ -842,7 +850,7 @@ export function morningReport({ place, events = [], trail = { read: false }, bil
     else if (!balancers.length) hurting = { status: "ok", text: "Nothing is hurting. No balancer on the map to check." };
     else {
       const which = balancers.length === 1 ? ` behind ${balancers[0].name || balancers[0].id}` : "";
-      hurting = { status: "ok", text: `Nothing is hurting: ${healthy} of ${total} targets${which} healthy.` };
+      hurting = { status: "ok", text: `Nothing is hurting: ${healthy} of ${total} targets${which} healthy.${recovered.length ? ` Over: ${recovered.join("; ")}.` : ""}` };
     }
   }
 
