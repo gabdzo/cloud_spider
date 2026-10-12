@@ -24,6 +24,8 @@ export const VIEWS = {
   "cl-logs": [click("#cluster"), sub("LOG ERRORS")],
   k9s: [click("#cluster"), click("#k9s-btn")],
   vaults: [click("#tab-vaults")],
+  // a vault's page, scrolled to HOW IT CONNECTS (the relation diagram)
+  "vault-open": [click("#tab-vaults"), async (p) => { await wait(1500); await p.evaluate(() => [...document.querySelectorAll("#vault-page .vpg-open")].find((x) => /Shop API/.test(x.textContent))?.click()); await wait(1200); await p.evaluate(() => document.querySelector("#vault-page .vpg-rel")?.scrollIntoView()); await wait(600); }],
   stacks: [click("#upgrade")],
   // a stack opened: the bill, fields and buttons inside the wider panel
   "stacks-open": [click("#upgrade"), async (p) => { await wait(800); await p.evaluate(() => document.querySelector("#pip .card .card-head")?.click()); await wait(1500); }],
