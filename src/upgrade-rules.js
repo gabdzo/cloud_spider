@@ -328,7 +328,7 @@ const HINTS = [
   {
     kind: "replace-nodegroup",
     test: /REPLACES the node group/,
-    hint: "Nothing ran. The card's INSTANCETYPE or MAXPODS is not what the cluster's node group runs, and changing it replaces the node group. Set it back to the live one (the LIVE line on the card), or press RUN and confirm the replace.",
+    hint: "Nothing ran. The card's INSTANCETYPE, MAXPODS or CAPACITYTYPE is not what the cluster's node group runs, and changing it replaces the node group. Set it back to the live one (the LIVE line on the card), or press RUN and confirm the replace.",
   },
   {
     kind: "preflight",
@@ -399,6 +399,10 @@ export function maskKubeconfig(text) {
 export function nodeGroupChange(live, values) {
   const was = live?.instanceType
   if (was && values?.instanceType && was !== values.instanceType) return `instanceType ${values.instanceType} is not the live node group's ${was}: this REPLACES the node group${live.nodeGroup ? ` ${live.nodeGroup}` : ""} (new nodes, every pod restarts). Set INSTANCETYPE to ${was} to keep it, or confirm the replace`
+  // capacityType is fixed at creation too; a group made before the setting is ON_DEMAND.
+  const cap = live?.capacityType || ""
+  const wantCap = String(values?.capacityType || "ON_DEMAND").toUpperCase()
+  if (cap && cap !== wantCap) return `capacityType ${wantCap} is not the live node group's ${cap}: this REPLACES the node group${live.nodeGroup ? ` ${live.nodeGroup}` : ""} (a new ${wantCap === "SPOT" ? "spot" : "on-demand"} group comes up first, then the old one drains and goes; every pod restarts once). Set CAPACITYTYPE to ${cap} to keep it, or confirm the replace`
   // maxPods: a live node group without the setting in its stack is "auto".
   const pods = live?.maxPods || (live?.nodeGroup ? "auto" : "")
   const want = String(values?.maxPods || "auto")

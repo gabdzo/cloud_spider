@@ -1097,7 +1097,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         ...got,
         source: `node group ${group}`,
         nodeGroup: group,
-        values: { ...got.values, ...(live.instanceType ? { instanceType: live.instanceType } : {}), ...(Number.isInteger(live.desired) ? { nodeCount: String(live.desired) } : {}) },
+        values: { ...got.values, ...(live.instanceType ? { instanceType: live.instanceType } : {}), ...(live.capacityType ? { capacityType: live.capacityType } : {}), ...(Number.isInteger(live.desired) ? { nodeCount: String(live.desired) } : {}) },
         scaling: { desired: live.desired, min: live.min, max: live.max },
       };
     },
@@ -1137,7 +1137,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
             this.upgradeLive("eks", { clusterName: body.params?.clusterName || "cloudspider-up" }).catch(() => null),
             new Promise((done) => setTimeout(done, LIVE_MS, null).unref?.()),
           ]);
-          const change = nodeGroupChange({ instanceType: live?.values?.instanceType, maxPods: live?.values?.maxPods, nodeGroup: live?.nodeGroup }, body.params || {});
+          const change = nodeGroupChange({ instanceType: live?.values?.instanceType, maxPods: live?.values?.maxPods, capacityType: live?.values?.capacityType, nodeGroup: live?.nodeGroup }, body.params || {});
           if (change) return no(change);
         }
         // NEEDS (src/stack-needs.js): a stack on the cluster refuses before

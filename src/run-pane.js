@@ -97,7 +97,11 @@ export function liveLine(live, values = {}) {
   const v = live?.values || {};
   if (!v.instanceType && !v.nodeCount) return { text: "", warn: "" };
   const nodes = v.nodeCount ? ` · ${v.nodeCount} node${v.nodeCount === "1" ? "" : "s"}` : "";
-  const text = `LIVE · ${v.instanceType || "?"}${nodes} (${live.source || "stack config"})`;
-  const warn = v.instanceType && values.instanceType && values.instanceType !== v.instanceType ? `instanceType ${values.instanceType} REPLACES the node group (live: ${v.instanceType})` : "";
+  const spot = v.capacityType === "SPOT" ? " · spot" : "";
+  const text = `LIVE · ${v.instanceType || "?"}${spot}${nodes} (${live.source || "stack config"})`;
+  const wantCap = String(values.capacityType || "").toUpperCase();
+  const warn = v.instanceType && values.instanceType && values.instanceType !== v.instanceType
+    ? `instanceType ${values.instanceType} REPLACES the node group (live: ${v.instanceType})`
+    : v.capacityType && wantCap && wantCap !== v.capacityType ? `capacityType ${wantCap} REPLACES the node group (live: ${v.capacityType})` : "";
   return { text, warn };
 }
