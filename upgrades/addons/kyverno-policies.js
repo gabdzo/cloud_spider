@@ -105,7 +105,9 @@ export const DEFAULT_DENY_POLICY = {
     background: true,
     rules: [
       {
-        name: "default-deny",
+        // v2: Kyverno refuses edits to a generate rule's match or
+        // preconditions, so a changed rule gets a new name (in place).
+        name: "default-deny-v2",
         match: { any: [{ resources: { kinds: ["Namespace"] } }] },
         preconditions: { all: [{ key: `{{ time_after('{{request.object.metadata.creationTimestamp}}', '${DEFAULT_DENY_SINCE}') }}`, operator: "Equals", value: true }] },
         exclude: { any: [{ resources: { names: DEFAULT_DENY_SKIP } }, { resources: { selector: { matchLabels: { [ALLOW_OPEN_LABEL]: "true" } } } }] },
