@@ -101,9 +101,9 @@ test("demo: every workload and its pods carry app.kubernetes.io/name; every host
   assert.deepEqual(hostPath.map((w) => w.name), ["otel-collector"]);
   for (const w of hostPath) {
     const kind = w.type.split(":").pop();
-    const covered = EXCEPTIONS.some((e) => e.spec.exceptions.some((x) => x.policyName === "disallow-host-path" && x.ruleNames.includes("autogen-disallow-host-path") && x.ruleNames.includes("disallow-host-path"))
-      && e.spec.match.any.some((m) => m.resources.kinds.includes(kind) && m.resources.namespaces.includes("demo") && m.resources.names.includes(w.name))
-      && e.spec.match.any.some((m) => m.resources.kinds.includes("Pod") && m.resources.names.some((n) => n === `${w.name}-*`) && selectorMatches(m.resources.selector, w.inputs.spec.template.metadata.labels)));
+    const covered = EXCEPTIONS.some((e) => e.spec.policyRefs.some((r) => r.kind === "ValidatingPolicy" && r.name === "disallow-host-path")
+      && e.spec.matchConditions.some((c) => c.expression.includes(`object.kind == '${kind}' && object.metadata.name == '${w.name}'`) && c.expression.includes("== 'demo'")
+        && c.expression.includes(`o.kind == '${kind}' && o.name == '${w.name}'`) && c.expression.includes(`labels.app.orValue('') == '${w.inputs.spec.template.metadata.labels.app}'`)));
     assert.ok(covered, `${kind} demo/${w.name} uses hostPath and has a disallow-host-path exception (workload and pods)`);
   }
 });

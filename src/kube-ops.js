@@ -13,6 +13,8 @@ const short = (text, n = 160) => {
 // ---- Kyverno ---------------------------------------------------------------
 
 function policyMode(policy) {
+  // ValidatingPolicy (CEL): spec.validationActions [Deny|Audit|Warn].
+  if (Array.isArray(policy?.spec?.validationActions)) return policy.spec.validationActions.includes("Deny") ? "Enforce" : "Audit";
   const rules = policy?.spec?.rules || [];
   const actions = rules.map((rule) => rule?.validate?.failureAction || policy?.spec?.validationFailureAction || "Audit");
   return actions.some((action) => /enforce/i.test(action)) ? "Enforce" : "Audit";
@@ -43,12 +45,14 @@ export function ownedByReported(reports = []) {
 
 export function policySummary(ops = {}) {
   const absent = new Set(ops.absent || []);
-  const installed = !(absent.has("policyReports") && absent.has("clusterPolicies"));
-  const all = [...(ops.policyReports || []), ...(ops.clusterPolicyReports || [])];
+  const installed = !(absent.has("policyReports") && absent.has("clusterPolicies")) || (ops.validatingPolicies || []).length > 0 || (ops.openReports || []).length > 0;
+  // Both report formats: wgpolicyk8s.io PolicyReports and openreports.io Reports (same shape).
+  const all = [...(ops.policyReports || []), ...(ops.clusterPolicyReports || []), ...(ops.openReports || []), ...(ops.openClusterReports || [])];
   const repeated = ownedByReported(all);
   const reports = all.filter((report) => !repeated(report));
   const policies = new Map();
-  for (const item of ops.clusterPolicies || []) {
+  // Validate policies only: a ClusterPolicy that only generates (generate-default-deny) has no results.
+  for (const item of [...(ops.clusterPolicies || []).filter((p) => !(p?.spec?.rules || []).length || (p.spec.rules || []).some((r) => r?.validate)), ...(ops.validatingPolicies || [])]) {
     const name = item?.metadata?.name || "";
     const notes = item?.metadata?.annotations || {};
     policies.set(name, { name, title: notes["policies.kyverno.io/title"] || name, severity: notes["policies.kyverno.io/severity"] || "", mode: policyMode(item), pass: 0, fail: 0, warn: 0 });

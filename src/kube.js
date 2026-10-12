@@ -66,6 +66,11 @@ export const PATHS = {
   policyReports: () => "/apis/wgpolicyk8s.io/v1alpha2/policyreports",
   clusterPolicyReports: () => "/apis/wgpolicyk8s.io/v1alpha2/clusterpolicyreports",
   clusterPolicies: () => "/apis/kyverno.io/v1/clusterpolicies",
+  // Kyverno 1.19 CEL policies, and the OpenReports format Kyverno writes
+  // instead of wgpolicyk8s.io when --openreportsEnabled is on.
+  validatingPolicies: () => "/apis/policies.kyverno.io/v1/validatingpolicies",
+  openReports: () => "/apis/openreports.io/v1alpha1/reports",
+  openClusterReports: () => "/apis/openreports.io/v1alpha1/clusterreports",
   nodePools: () => "/apis/karpenter.sh/v1/nodepools",
   nodeClaims: () => "/apis/karpenter.sh/v1/nodeclaims",
   scaledObjects: () => "/apis/keda.sh/v1alpha1/scaledobjects",
@@ -360,7 +365,7 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
         const jobs = scope.flatMap((ns) => Object.keys(lists).map((name) => ({ ns, name, path: PATHS[lists[name]](ns) })));
         const results = await Promise.all(jobs.map((job) => getPath(job.path)));
         if (results.every((r) => r.error && !r.forbidden && !r.missing)) return { error: results[0]?.error || "the cluster did not answer", clusterName: t.clusterName };
-        const out = { clusterName: t.clusterName, scope, absent: ["policyReports", "clusterPolicyReports", "clusterPolicies", "nodePools", "nodeClaims", "scaledObjects"], forbidden: [], errors: [], nodes: [], policyReports: [], clusterPolicyReports: [], clusterPolicies: [], nodePools: [], nodeClaims: [], scaledObjects: [] };
+        const out = { clusterName: t.clusterName, scope, absent: ["policyReports", "clusterPolicyReports", "clusterPolicies", "validatingPolicies", "openReports", "openClusterReports", "nodePools", "nodeClaims", "scaledObjects"], forbidden: [], errors: [], nodes: [], policyReports: [], clusterPolicyReports: [], clusterPolicies: [], validatingPolicies: [], openReports: [], openClusterReports: [], nodePools: [], nodeClaims: [], scaledObjects: [] };
         for (const name of Object.keys(lists)) out[name] = [];
         jobs.forEach((job, i) => {
           const r = results[i];
@@ -370,7 +375,7 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
         });
         return out;
       }
-      const names = ["events", "hpas", "deployments", "daemonsets", "nodes", "policyReports", "clusterPolicyReports", "clusterPolicies", "nodePools", "nodeClaims", "scaledObjects"];
+      const names = ["events", "hpas", "deployments", "daemonsets", "nodes", "policyReports", "clusterPolicyReports", "clusterPolicies", "validatingPolicies", "openReports", "openClusterReports", "nodePools", "nodeClaims", "scaledObjects"];
       const results = await Promise.all(names.map((name) => getPath(PATHS[name]())));
       const fatal = results.find((r) => r.error && !r.forbidden && !r.missing);
       if (fatal && results.every((r) => r.error)) return { error: fatal.error, clusterName: t.clusterName };
