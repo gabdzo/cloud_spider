@@ -247,6 +247,9 @@ export function createGraphView(root) {
       const label = (id) => scene.nodes.find((n) => n.id === id)?.label || id;
       const fmt = (e, other) => `${label(other)} ${e.kind}${e.rps ? ` ${e.rps}/s` : ""}${e.errors ? ` ${e.errors}% err` : ""} (${e.source})`;
       els.detail.textContent = `${ev ? `${ev.t} ${ev.text}  ▸  ` : ""}${node?.label} (${node?.ns}) · calls ${out.map((e) => fmt(e, e.to)).join(", ") || "nothing"} · called by ${inn.map((e) => fmt(e, e.from)).join(", ") || "nothing"}`;
+      // FROM INSIDE: probe this Service from a debug pod (SNIFF), prefilled.
+      const svcName = String(node?.label || "").split(/[\s:]/)[0];
+      if (node?.ns && /^[a-z0-9-]+$/.test(svcName)) els.detail.append(" ", h("a", { className: "gv-inside", href: `#path?debug=${encodeURIComponent(`${svcName}.${node.ns}:`)}&inside=1`, text: "DEBUG FROM INSIDE ›", title: "SNIFF › FROM INSIDE: a short-lived debug pod checks DNS, TCP, HTTP, hops and NetworkPolicy to this Service" }));
     } else if (state.focus) {
       const group = scene.groups.find((g) => g.id === state.focus);
       els.detail.textContent = `FOCUS ${group?.label}: ${view.total} links to ${view.bands.flatMap((b) => b.groups).filter((g) => g.neighbor).length} groups · click a service for its calls · Esc leaves focus`;

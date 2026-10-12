@@ -40,6 +40,7 @@ export const SCHEMA = {
     contexts: { type: "contexts", default: [], doc: "contexts and namespace allowlists; merged with cloudspider.contexts.yaml (these first)" },
     contextsFile: { type: "string", default: "cloudspider.contexts.yaml", env: "CLOUDSPIDER_KUBE_CONTEXTS_FILE", doc: "the contexts file CONNECT writes (still read, merged after kube.contexts)" },
     autoConnect: { type: "boolean", default: true, env: "CLOUDSPIDER_KUBE_AUTO_CONNECT", doc: "CONNECT a cluster after its EKS RUN on Stacks, DISCONNECT it after TAKE IT DOWN (the current context is never changed)" },
+    writeContexts: { type: "list", items: CONTEXT, default: [], env: "CLOUDSPIDER_KUBE_WRITE_CONTEXTS", doc: "contexts where Cloud Spider may create its network debug pod (a separate identity with the netdebug Role); [] = none, ppf-* need a typed confirm" },
   },
   ui: {
     theme: { type: "enum", values: ["pip", "pro"], default: "pip", env: "CLOUDSPIDER_THEME", flag: "theme", doc: "pip (Pip-Boy) or pro (clean dark); a choice in the settings panel overrides it per browser" },
@@ -91,6 +92,15 @@ export const SCHEMA = {
       cloudfront: { type: "boolean", default: true, doc: "read CloudFront distributions when debugging a URL" },
       vpc: { type: "boolean", default: true, doc: "read NACLs, VPC endpoints, subnet free IPs and flow log settings of the load balancer's VPC" },
       flowLogs: { type: "boolean", default: true, doc: "search the VPC flow log group for REJECTs to the targets (last 15 min, 50 events, one call per target, max 4)" },
+    },
+    pod: {
+      enabled: { type: "boolean", default: false, env: "CLOUDSPIDER_NETDEBUG_POD", doc: "FROM INSIDE in SNIFF: a short-lived netshoot pod probes DNS, TCP, HTTP, hops and MTU (needs a context in kube.writeContexts)" },
+      namespace: { type: "string", pattern: /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/, default: "cloudspider-debug", doc: "where the debug pod runs by default" },
+      sourceNamespaces: { type: "list", items: /^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$/, default: [], doc: "more namespaces it may run in (to test NetworkPolicy from that source)" },
+      image: { type: "string", pattern: /^[a-z0-9./:-]+@sha256:[a-f0-9]{64}$/, default: "docker.io/nicolaka/netshoot@sha256:a20c2531bf35436ed3766cd6cfe89d352b050ccc4d7005ce6400adf97503da1b", doc: "probe image, pinned by digest (netshoot v0.13)" },
+      ttlSeconds: { type: "integer", min: 30, max: 1800, default: 300, doc: "activeDeadlineSeconds and the sweeper's expiry" },
+      allowRawTrace: { type: "boolean", default: false, doc: "tcptraceroute (netpol-friendly hops): the pod runs as root with only NET_RAW, no escalation" },
+      openshiftScc: { type: "boolean", default: false, doc: "OpenShift + allowRawTrace: an admin applied the cloudspider-netdebug SCC shown in the plan" },
     },
     reports: {
       keep: { type: "integer", min: 1, max: 500, default: 50, doc: "debug reports kept under storage.path/netdebug" },

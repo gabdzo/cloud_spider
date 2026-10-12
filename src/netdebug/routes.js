@@ -17,6 +17,21 @@ export async function netdebugRoute(req, res, url, netdebug, { send, readJson })
     send(res, status(out), out);
     return true;
   }
+  // FROM INSIDE: the plan (nothing created) and the run (POST, origin-checked).
+  if (req.method === "GET" && url.pathname === "/api/netdebug/pod/config") {
+    send(res, 200, netdebug.podConfig ? netdebug.podConfig() : { enabled: false });
+    return true;
+  }
+  if (req.method === "POST" && (url.pathname === "/api/netdebug/pod/plan" || url.pathname === "/api/netdebug/pod")) {
+    const body = await readJson(req).catch(() => null);
+    if (!body || typeof body !== "object") {
+      send(res, 400, { error: "the request was not JSON" });
+      return true;
+    }
+    const out = url.pathname.endsWith("/plan") ? await netdebug.podPlan(body) : await netdebug.startPod(req.headers.origin, body);
+    send(res, status(out), out);
+    return true;
+  }
   if (req.method === "GET" && url.pathname === "/api/netdebug") {
     send(res, 200, await netdebug.list());
     return true;

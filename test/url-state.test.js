@@ -5,11 +5,11 @@ import { parseVaultHash } from "../src/vault-page.js";
 
 test("url state round-trips every piece", () => {
   const cases = [
-    { view: "", vault: null, sample: false, learn: "", stacks: "", score: false, lb: "", host: "", debug: "", why: false },
-    { view: "path", vault: null, sample: true, learn: "", stacks: "", score: false, lb: "arn:aws:elasticloadbalancing:eu-central-1:1:loadbalancer/app/web/abc", host: "shop.example.com", debug: "", why: false },
-    { view: "cluster", vault: null, sample: false, learn: "k8s/01-pods", stacks: "", score: false, lb: "", host: "", debug: "", why: false },
-    { view: "vaults", vault: "shop/api", sample: true, learn: "", stacks: "eks", score: true, lb: "", host: "", debug: "", why: false },
-    { view: "", vault: null, sample: false, learn: "", stacks: "1", score: false, lb: "", host: "", debug: "", why: false },
+    { view: "", vault: null, sample: false, learn: "", stacks: "", score: false, lb: "", host: "", debug: "", why: false, inside: false, ns: "" },
+    { view: "path", vault: null, sample: true, learn: "", stacks: "", score: false, lb: "arn:aws:elasticloadbalancing:eu-central-1:1:loadbalancer/app/web/abc", host: "shop.example.com", debug: "", why: false, inside: false, ns: "" },
+    { view: "cluster", vault: null, sample: false, learn: "k8s/01-pods", stacks: "", score: false, lb: "", host: "", debug: "", why: false, inside: false, ns: "" },
+    { view: "vaults", vault: "shop/api", sample: true, learn: "", stacks: "eks", score: true, lb: "", host: "", debug: "", why: false, inside: false, ns: "" },
+    { view: "", vault: null, sample: false, learn: "", stacks: "1", score: false, lb: "", host: "", debug: "", why: false, inside: false, ns: "" },
   ];
   for (const state of cases) assert.deepEqual(parseUrlState(formatUrlState(state)), state);
 });

@@ -164,7 +164,7 @@ export const EXEC_TIMEOUT_MS = 20_000;
 // Waits before the two retries of a GET the cluster answered 429.
 export const RETRY_429_MS = [500, 1500];
 
-function runExec(run, exec, env, timeout = EXEC_TIMEOUT_MS) {
+export function runExec(run, exec, env, timeout = EXEC_TIMEOUT_MS) {
   return new Promise((resolve) => {
     let out = "";
     let err = "";

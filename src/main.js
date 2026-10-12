@@ -35,6 +35,8 @@ import { loadCatalog } from "./score/catalog.js";
 import { loadProfiles } from "./score/profiles.js";
 import { createScanHistory } from "./score/history.js";
 import { createScanClients } from "./score/aws-clients.js";
+import { createPodWriter } from "./netdebug/pod-kube.js";
+import { readLive as readObserveLive } from "./observe/live.js";
 import { createNetdebug } from "./netdebug/api.js";
 import { createAwsCollector } from "./netdebug/aws.js";
 import { createKubeCollector } from "./netdebug/kube-collect.js";
@@ -163,7 +165,23 @@ app.score = createScoreApi({
 
 // Network debugging (PATH › DEBUG): local probes of a URL the user typed,
 // reports under storage.path/netdebug, probes in the audit log.
-app.netdebug = createNetdebug({ settings: config.network, pageOrigin, dir: join(stateDir, "netdebug"), auditFile: join(stateDir, "audit.jsonl") });
+// FROM INSIDE (N9): the debug pod, only with network.pod.enabled and a
+// context in kube.writeContexts. Reads use the viewer of that cluster (the
+// write context itself when it is also listed, else the first context).
+const viewerFor = (ctx) => (app.contextNames().includes(ctx) ? app.kubeOf(ctx) : app.kubeOf(app.contextNames()[0]));
+const podWriters = new Map();
+app.netdebug = createNetdebug({ settings: config.network, pageOrigin, dir: join(stateDir, "netdebug"), auditFile: join(stateDir, "audit.jsonl"), pod: mods.has("kubernetes") ? {
+  cfg: config.network.pod,
+  writeContexts: config.kube.writeContexts || [],
+  kubeFor: viewerFor,
+  writerFor: (ctx) => ((config.kube.writeContexts || []).includes(ctx) ? podWriters.get(ctx) || podWriters.set(ctx, createPodWriter({ context: ctx })).get(ctx) : null),
+  liveFor: async (ctx) => { const k = viewerFor(ctx); return k ? readObserveLive(k) : null; },
+} : null });
+if (mods.has("kubernetes") && config.network.pod?.enabled && (config.kube.writeContexts || []).length) {
+  const sweep = () => app.netdebug.sweep().catch(() => []);
+  sweep();
+  setInterval(sweep, 5 * 60_000).unref();
+}
 if (mods.has("aws")) app.netdebug.addCollector(createAwsCollector({
   graph: () => app.pathGraph(),
   route53: config.network.aws.route53 ? awsMake("route53", () => createRoute53Reader()) : null,

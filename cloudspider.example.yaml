@@ -24,6 +24,7 @@ kube:
   context: cloudspider-viewer          # env CLOUDSPIDER_KUBE_CONTEXT: used when no contexts are listed
   contextsFile: cloudspider.contexts.yaml  # env CLOUDSPIDER_KUBE_CONTEXTS_FILE: the file CONNECT writes
   autoConnect: true                    # env CLOUDSPIDER_KUBE_AUTO_CONNECT: CONNECT after an EKS RUN on Stacks, DISCONNECT after TAKE IT DOWN
+  writeContexts: []                    # env CLOUDSPIDER_KUBE_WRITE_CONTEXTS: contexts where the network debug pod may be created (none by default)
   # Contexts and namespace allowlists. Listed here first; entries of the
   # contexts file are added after them (a name in both keeps this entry).
   # env CLOUDSPIDER_KUBE_CONTEXTS="ctxA:ns1,ns2;ctxB:*" replaces both.
@@ -94,6 +95,14 @@ network:
     cloudfront: true       # distributions: behaviour, origin, viewer policy, TLS, WAF
     vpc: true              # NACLs, VPC endpoints, subnet free IPs, flow log settings
     flowLogs: true         # REJECTs to the targets in the flow log group (15 min, bounded)
+  pod:                     # FROM INSIDE in SNIFF: a short-lived netshoot debug pod (opt-in)
+    enabled: false         # env CLOUDSPIDER_NETDEBUG_POD; needs a context in kube.writeContexts
+    namespace: cloudspider-debug
+    sourceNamespaces: []   # more namespaces it may run in (NetworkPolicy source)
+    image: docker.io/nicolaka/netshoot@sha256:a20c2531bf35436ed3766cd6cfe89d352b050ccc4d7005ce6400adf97503da1b
+    ttlSeconds: 300        # activeDeadlineSeconds and the sweeper's expiry
+    allowRawTrace: false   # tcptraceroute: root with only NET_RAW
+    openshiftScc: false    # OpenShift + allowRawTrace: the cloudspider-netdebug SCC is applied
   reports:
     keep: 50               # reports kept under storage.path/netdebug
 

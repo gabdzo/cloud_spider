@@ -14,6 +14,7 @@ import * as local from "./probes.js";
 import { localChecks } from "./checks.js";
 import { buildReport, findingsFor, reportMarkdown } from "./report.js";
 import { sampleProbes } from "./sample.js";
+import { createPodRunner } from "./pod-run.js";
 
 export const NETWORK_DEFAULTS = {
   enabled: true,
@@ -133,7 +134,7 @@ export async function collectLocal(target, { settings = NETWORK_DEFAULTS, probes
   return ev;
 }
 
-export function createNetdebug({ settings = NETWORK_DEFAULTS, pageOrigin = "", dir = "", auditFile = "", now = () => Date.now(), probes, resolver, fetch, ca, collectors = [], limiter } = {}) {
+export function createNetdebug({ settings = NETWORK_DEFAULTS, pageOrigin = "", dir = "", auditFile = "", now = () => Date.now(), probes, resolver, fetch, ca, collectors = [], limiter, pod = null } = {}) {
   const cfg = { ...NETWORK_DEFAULTS, ...settings, local: { ...NETWORK_DEFAULTS.local, ...(settings.local || {}) }, reports: { ...NETWORK_DEFAULTS.reports, ...(settings.reports || {}) } };
   const rate = limiter || createRateLimiter({ ...NETWORK_DEFAULTS.local.rateLimit, ...(cfg.local.rateLimit || {}), now });
   const jobs = new Map();
@@ -195,6 +196,7 @@ export function createNetdebug({ settings = NETWORK_DEFAULTS, pageOrigin = "", d
     }
   }
 
+  const podRunner = createPodRunner({ ...(pod || {}), now });
   const api = {
     settings: cfg,
     addCollector(fn) {
@@ -241,6 +243,50 @@ export function createNetdebug({ settings = NETWORK_DEFAULTS, pageOrigin = "", d
       return format === "md"
         ? { type: "text/markdown; charset=utf-8", filename: `${id}.md`, body: reportMarkdown(got.report) }
         : { type: "application/json; charset=utf-8", filename: `${id}.json`, body: `${JSON.stringify(got.report, null, 2)}\n` };
+    },
+    // FROM INSIDE (pod-run.js): the plan to confirm, then the run.
+    podConfig() {
+      const c = pod?.cfg || {};
+      return { enabled: c.enabled === true, namespace: c.namespace || "cloudspider-debug", sourceNamespaces: c.sourceNamespaces || [], writeContexts: pod?.writeContexts || [], allowRawTrace: c.allowRawTrace === true, ttlSeconds: c.ttlSeconds || 300 };
+    },
+    async podPlan(body = {}) {
+      return podRunner.plan(body);
+    },
+    async startPod(requestOrigin, body = {}) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { status: 403, error: "no pod was started", hint: "Open Cloud Spider at the address npm start printed." };
+      const id = newId();
+      const job = { id, state: "running", target: { input: String(body.target || "").slice(0, 300) }, steps: [{ text: "planning", state: "running" }], context: {} };
+      const out = await podRunner.prepare(body, { runId: id.toLowerCase() });
+      if (out.error) return { status: out.status || 400, error: out.error, hint: out.hint || "" };
+      job.target = { input: job.target.input, host: out.plan.target.host, port: out.plan.target.port };
+      jobs.set(id, job);
+      while (jobs.size > 20) jobs.delete(jobs.keys().next().value);
+      const stepper = (text) => {
+        const last = job.steps.at(-1);
+        if (last && last.state === "running") last.state = "done";
+        job.steps.push({ text, state: "running" });
+      };
+      job.done = (async () => {
+        const t0 = now();
+        try {
+          const r = await podRunner.execute(out, { step: stepper, audit });
+          if (r.error) throw new Error(r.error);
+          job.report = { ...buildReport({ id, target: { kind: "pod", input: job.target.input, host: job.target.host, port: job.target.port }, startedAt: zoned(t0), durationMs: now() - t0, from: r.from, context: r.context, checks: r.checks, findings: r.findings, audit: [] }), path: r.path, pod: r.pod };
+          job.state = "done";
+          const last = job.steps.at(-1);
+          if (last) last.state = "done";
+          await save(job.report).catch(() => {});
+        } catch (err) {
+          job.state = "failed";
+          job.error = err?.message || String(err);
+          const last = job.steps.at(-1);
+          if (last) last.state = "failed";
+        }
+      })();
+      return { id, running: true, target: job.target };
+    },
+    async sweep() {
+      return podRunner.sweep({ audit });
     },
     // Tests: wait for a run.
     async settle(id) {
