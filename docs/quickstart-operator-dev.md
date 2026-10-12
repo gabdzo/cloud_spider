@@ -117,6 +117,9 @@ npm start            # http://127.0.0.1:9241   (another port: npm start -- --por
 
 The start log prints the config file and the modules, for example:
 `modules: k8s-only (network, stacks, kubernetes, graph, timeline, observe, score, learn, ask)`.
+`k8s-only` itself is `network, kubernetes, graph, timeline, score, learn, ask`; `observe` is there because the
+example config enables it, and `stacks` comes with it (the observe bundle is a Pulumi stack, so `observe` needs
+`stacks`). Without `enable: [observe]` neither appears. `pulumi` is only needed when you install the bundle.
 To see the effective config, with where each value came from, open `http://127.0.0.1:9241/api/config`.
 
 ## 7. What to expect
