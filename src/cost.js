@@ -321,6 +321,11 @@ export function sampleCost(now = new Date()) {
     resources,
     resourceErrors: {},
     lines: ["sample, not the account."],
+    hints: [
+      { tone: "warn", label: "IDLE·BILLED", text: "sample-old-gate: an ALB with no healthy target, $0.13/day ($1.82 in 14 days). Take it down or give it a target." },
+      { tone: "", label: "SPOT", text: "cloudspider-up's node group runs SPOT (t4g.medium pool): about $0.022/h a node instead of $0.0336, ~$16 a month saved on 2 nodes." },
+      { tone: "", label: "IDLE", text: "sample-stopped: stopped, its 8 GiB gp3 volume still bills about $0.64 a month." },
+    ],
   };
 }
 

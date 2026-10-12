@@ -1,3 +1,4 @@
+import { samplePreview } from "./stack-sample.js";
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, focusLists, paint } from "./draw.js";
@@ -4298,6 +4299,14 @@ async function refreshUpgrade(fresh) {
 async function postUpgrade(action) {
   const spec = openSpec();
   if (!spec) return;
+  if (sample && action === "preview") {
+    runLocal = null;
+    const body = samplePreview(spec.id, spec.title);
+    noteSpider(`PREVIEW ${spec.title} (sample): ${body.counts.create} to create, ${body.counts.update} to update, ${body.counts.replace} to replace${body.blocked ? ", 1 blocked" : ""}`, "ok");
+    renderRadioPanel();
+    paintRun(body);
+    return;
+  }
   if (sample) {
     const line = upgradeSpiderLine({ action, title: spec.title, sample: true });
     noteSpider(line.text, line.status);

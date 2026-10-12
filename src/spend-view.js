@@ -95,6 +95,12 @@ function spark(series, credit) {
   return box;
 }
 
+// Idle-but-billed resources and spot savings, when the bill carries them
+// (bill.hints: [{ tone, label, text }]); text only, never a link to act.
+export function spendHints(bill) {
+  return (bill?.hints || []).filter((hint) => hint?.label && hint?.text).map((hint) => ({ tone: hint.tone === "warn" ? "warn" : "", label: String(hint.label), text: String(hint.text) }));
+}
+
 export function renderSpend(container, bill, { iconURL } = {}) {
   const model = spendModel(bill);
   container.replaceChildren();
@@ -181,5 +187,16 @@ export function renderSpend(container, bill, { iconURL } = {}) {
   }
   for (const err of model.errors) res.append(el("p", "sp-warn", `${err.service}: ${err.text}`));
   container.append(res);
+  const hints = spendHints(bill);
+  if (hints.length) {
+    const sec = el("section", "sp-sec sp-hints");
+    sec.append(el("h3", "", "WORTH A LOOK"));
+    for (const hint of hints) {
+      const p = el("p", hint.tone === "warn" ? "sp-warn" : "sp-note");
+      p.append(el("b", "", `${hint.label}  `), document.createTextNode(hint.text));
+      sec.append(p);
+    }
+    container.append(sec);
+  }
   return model;
 }
