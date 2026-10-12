@@ -79,7 +79,11 @@ export function createPodRunner({ cfg = {}, writeContexts = [], kubeFor = () => 
     async plan(body = {}) {
       const p = await prepare(body);
       if (p.error) return p;
-      return { context: p.context, sample: p.sample, plan: p.plan, spec: p.spec, scc: p.scc, needs: p.guard.ok ? [] : [p.guard.error, p.guard.hint].filter(Boolean), work: Boolean(p.guard.work), confirmWith: p.plan.source.namespace };
+      // needs: what blocks the run once the page's typed confirmation is
+      // given ("not confirmed" is what the confirm row is for, not a blocker;
+      // listing it kept CREATE POD AND RUN disabled for every live run).
+      const typed = podGuard({ context: p.context, plan: p.plan, writeContexts, cfg: c, confirm: { context: p.context, namespace: p.plan.source.namespace }, openshift: p.reads.openshift, sample: p.sample });
+      return { context: p.context, sample: p.sample, plan: p.plan, spec: p.spec, scc: p.scc, needs: typed.ok ? [] : [typed.error, typed.hint].filter(Boolean), work: Boolean(p.guard.work || typed.work), confirmWith: p.plan.source.namespace };
     },
     async prepare(body, opts) {
       const p = await prepare(body, opts);
