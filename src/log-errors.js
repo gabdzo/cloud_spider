@@ -34,6 +34,18 @@ export function nightWindow(now = Date.now(), { start = "22:00", end = "07:00" }
   return { start: startAt, end: endAt, running: false };
 }
 
+// LOG ERRORS windows: the morning report reads "night"; the panel can also
+// read the last hour or day (a fresh namespace has nothing from last night).
+export const LOG_WINDOWS = ["1h", "24h", "night"];
+export const LOG_WINDOW_LABEL = { "1h": "LAST 1H", "24h": "LAST 24H", night: "NIGHT" };
+export function cleanLogWindow(kind, fallback = "night") {
+  return kind === "auto" || LOG_WINDOWS.includes(kind) ? kind : fallback;
+}
+export function logWindow(kind = "night", now = Date.now(), night = {}) {
+  if (kind === "1h" || kind === "24h") return { start: now - (kind === "1h" ? 3_600_000 : 86_400_000), end: now, running: true, kind };
+  return { ...nightWindow(now, night), kind: "night" };
+}
+
 export function dayBefore(window) {
   return { start: window.start - 86_400_000, end: window.end - 86_400_000 };
 }

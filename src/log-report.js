@@ -3,7 +3,7 @@
 // one before, restarts from the pods, and hands it all to log-errors.js.
 // Read-only throughout; cached for five minutes (Insights is billed per GB
 // scanned, so it is never polled faster).
-import { dayBefore, logErrors, nightWindow, serviceOf } from "./log-errors.js";
+import { cleanLogWindow, dayBefore, logErrors, logWindow, serviceOf } from "./log-errors.js";
 import { readBundleLoki, readInsights, readLoki } from "./log-sources.js";
 import { sampleLogErrors } from "./log-errors-sample.js";
 
@@ -34,11 +34,20 @@ export function restartsFromPods(pods, window) {
   return out;
 }
 
+export function hasErrors(report) {
+  return (report?.services || []).some((s) => s.total || s.restarts);
+}
+// Which window answered and how it was picked (the panel shows it).
+export function withWindow(report, asked, why = "") {
+  const kind = report?.window?.kind || "night";
+  return { ...report, windowKind: kind, windowAsked: asked, ...(why ? { windowWhy: why } : {}) };
+}
+
 // nodeIndex: async () => nodeOf, read once per build (main.js: the live
 // SERVICES graph), so LOG ERRORS can link a service to its graph node.
 export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights = null, kube = null, clock = Date.now, nodeOf: fixedNodeOf = null, nodeIndex = null } = {}) {
-  let cache = null;
-  let flight = null;
+  const cache = new Map(); // window kind -> { at, value }
+  const flights = new Map();
 
   function sourceName() {
     if (logs.loki?.url) return "loki";
@@ -54,9 +63,9 @@ export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights 
     return readInsights({ insights: await insights(), groups: logs.cloudwatch.logGroups, window });
   }
 
-  async function build() {
+  async function build(kind = "night") {
     const now = clock();
-    const window = nightWindow(now, logs.window || {});
+    const window = logWindow(kind, now, logs.window || {});
     const source = sourceName();
     let restarts = [];
     let notes = [];
@@ -83,15 +92,28 @@ export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights 
     return { ...logErrors({ entries: tonight.entries, before: before.error ? null : before.entries, restarts, window, source, nodeOf }), notes };
   }
 
+  async function one(kind, fresh) {
+    const hit = cache.get(kind);
+    if (!fresh && hit && clock() - hit.at < TTL) return hit.value;
+    if (!flights.has(kind)) flights.set(kind, build(kind).finally(() => flights.delete(kind)));
+    const value = await flights.get(kind);
+    cache.set(kind, { at: clock(), value });
+    return value;
+  }
+
   return {
     source: sourceName,
-    async report({ sample = false, scenario = "bare", fresh = false } = {}) {
-      if (sample) return sampleLogErrors(scenario, clock());
-      if (!fresh && cache && clock() - cache.at < TTL) return cache.value;
-      flight ||= build().finally(() => (flight = null));
-      const value = await flight;
-      cache = { at: clock(), value };
-      return value;
+    // window: "night" (the morning report, default), "1h", "24h", or
+    // "auto" (the LOG ERRORS panel): night when it has errors, else 1h.
+    async report({ sample = false, scenario = "bare", fresh = false, window = "night" } = {}) {
+      const kind = cleanLogWindow(window);
+      if (sample) return withWindow(sampleLogErrors(scenario, clock(), kind === "auto" ? "night" : kind), kind);
+      if (kind === "auto") {
+        const night = await one("night", fresh);
+        if (hasErrors(night) || night.error) return withWindow(night, "auto");
+        return withWindow(await one("1h", fresh), "auto", "night had no errors");
+      }
+      return withWindow(await one(kind, fresh), kind);
     },
   };
 }

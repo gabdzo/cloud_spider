@@ -1,5 +1,6 @@
 import { MODULE_IDS, gateStyle, moduleOff, stackModule } from "./modules.js";
 import { sampleLogErrors } from "./log-errors-sample.js";
+import { cleanLogWindow } from "./log-errors.js";
 import { graphScenario } from "./graph-sample.js";
 import { buildGraph } from "./graph-build.js";
 import { readGraph } from "./graph-read.js";
@@ -3214,8 +3215,10 @@ async function route(app, req, res) {
   if (req.method === "GET" && url.pathname === "/api/morning/logs") {
     const sample = url.searchParams.get("sample") === "1";
     const scenario = url.searchParams.get("scenario") === "bundle" ? "bundle" : "bare";
-    if (!app.logErrors) send(res, 200, sample ? sampleLogErrors(scenario) : { services: [], line: { status: "unknown", text: "LOG ERRORS is not set up." } });
-    else send(res, 200, await app.logErrors.report({ sample, scenario, fresh: url.searchParams.get("fresh") === "1" }));
+    // window: night (the morning report, default) | 1h | 24h | auto (panel).
+    const logWin = cleanLogWindow(url.searchParams.get("window") || "night");
+    if (!app.logErrors) send(res, 200, sample ? sampleLogErrors(scenario, Date.now(), logWin === "auto" ? "night" : logWin) : { services: [], line: { status: "unknown", text: "LOG ERRORS is not set up." } });
+    else send(res, 200, await app.logErrors.report({ sample, scenario, fresh: url.searchParams.get("fresh") === "1", window: logWin }));
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/cluster/telemetry") {
