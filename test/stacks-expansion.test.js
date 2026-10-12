@@ -64,7 +64,7 @@ test("every Stacks card has a cost, a vault, a project folder and needs that exi
     if (spec.addon) assert.match(read(`${spec.dir}/common.js`), /stackTags\(addon\.id/);
     else if (spec.id !== "eks") assert.match(program, new RegExp(`stackTags\\("${spec.vault}"`), `${spec.dir} tags project=${spec.vault}`);
     const pkg = JSON.parse(read(`${spec.dir}/package.json`));
-    assert.equal(pkg.dependencies["@pulumi/pulumi"], "3.144.1");
+    assert.equal(pkg.dependencies["@pulumi/pulumi"], "3.268.0");
     assert.ok(existsSync(join(root, `${spec.dir}/package-lock.json`)), `${spec.dir} has a lockfile`);
   }
   const listed = createUpgrade({ run() { throw new Error("must not run"); } }).list();
