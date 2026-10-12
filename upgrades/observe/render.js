@@ -45,14 +45,17 @@ export const PROFILES = {
     // Beyla held 420-464Mi on busy nodes (96Mi requested let the scheduler
     // overcommit), the collector 139Mi.
     // Beyla grows with the processes it instruments: 320Mi was OOMKilled on an EKS node with ~40 pods.
-    beyla: { requests: { cpu: "10m", memory: "384Mi" }, limits: { cpu: "300m", memory: "640Mi" } },
+    // crc is the laptop/single-node profile: Beyla asks for little and may
+    // burst to its limit. A busy cluster (Beyla held 420-464Mi per node on
+    // cloudspider-up) wants profile=standard, which requests that.
+    beyla: { requests: { cpu: "10m", memory: "128Mi" }, limits: { cpu: "300m", memory: "640Mi" } },
     agent: { requests: { cpu: "15m", memory: "64Mi" }, limits: { cpu: "200m", memory: "160Mi" } },
     collector: { requests: { cpu: "25m", memory: "160Mi" }, limits: { cpu: "300m", memory: "256Mi" } },
     ksm: { requests: { cpu: "5m", memory: "24Mi" }, limits: { cpu: "100m", memory: "96Mi" } },
     loki: { requests: { cpu: "15m", memory: "96Mi" }, limits: { cpu: "500m", memory: "320Mi" } },
   },
   standard: {
-    beyla: { requests: { cpu: "50m", memory: "192Mi" }, limits: { cpu: "500m", memory: "768Mi" } },
+    beyla: { requests: { cpu: "50m", memory: "448Mi" }, limits: { cpu: "500m", memory: "768Mi" } },
     agent: { requests: { cpu: "50m", memory: "128Mi" }, limits: { cpu: "500m", memory: "384Mi" } },
     collector: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "768Mi" } },
     ksm: { requests: { cpu: "20m", memory: "64Mi" }, limits: { cpu: "200m", memory: "256Mi" } },
@@ -311,7 +314,13 @@ export function renderBundle(raw = {}) {
   if (o.nodeCidr === "0.0.0.0/0") notes.push("nodeCidr not set: the API server / kubelet / service-proxy rules allow those ports from any address; set it to the node network (CRC: 192.168.126.0/24) to tighten them");
 
   const privileged = items.filter((i) => i.privileged).map((i) => `${i.obj.kind}/${i.obj.metadata.name}`);
-  return { namespace: ns, items, notes, privileged, options: o, reduced: !full, warning: PRIVILEGED_WARNING };
+  // Said loudly by the stack (pulumi.log.warn in preview and up): the two
+  // choices a newcomer makes by leaving a key unset.
+  const warnings = [
+    ...(full ? [] : ["allowPrivileged is off: NO Beyla, so NO live edges, rates or errors in SERVICES and no container logs. Set allowPrivileged=on for live traffic."]),
+    ...(o.nodeCidr === "0.0.0.0/0" ? ["nodeCidr is not set (0.0.0.0/0): the bundle's NetworkPolicies let the API server / kubelet / service-proxy ports in from ANY address. Set nodeCidr to your node network."] : []),
+  ];
+  return { namespace: ns, items, notes, warnings, privileged, options: o, reduced: !full, warning: PRIVILEGED_WARNING };
 }
 
 // Footprint of a profile: requests and limits summed (DaemonSets × nodes).

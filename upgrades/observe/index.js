@@ -25,6 +25,7 @@ if (!context || !/^[A-Za-z0-9._:/@-]{1,253}$/.test(context)) throw new Error("co
 if (context === "cloudspider-viewer") throw new Error("context cloudspider-viewer is read-only by design: name a write context for the install");
 const opts = Object.fromEntries(["platform", "allowPrivileged", "profile", "kubeStateMetrics", "logs", "lokiStorage", "lokiRetention", "storageClass", "nodeCidr", "viewerUser"].map((k) => [k, config.get(k) || undefined]));
 const bundle = renderBundle(opts);
+for (const w of bundle.warnings) pulumi.log.warn(w);
 
 const provider = new k8s.Provider("observe", { context, enableServerSideApply: true });
 const KINDS = {
