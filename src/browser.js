@@ -311,6 +311,17 @@ async function probeReach(urls) {
 }
 // The public endpoints a stack made: public load balancers on the map tagged
 // with its project (Shop API: project=shopapi).
+function renderCardOpen() {
+  for (const row of document.querySelectorAll(".card-open[data-project]")) {
+    const list = cardEndpoints({ id: row.dataset.project });
+    const key = JSON.stringify(list.map((item) => item.url));
+    if (row.dataset.key === key) continue;
+    row.dataset.key = key;
+    row.hidden = !list.length;
+    row.replaceChildren(...list.flatMap((item) => [el("span", { className: "ps-tag", textContent: "PUBLIC" }), el("span", { className: "ps-url", textContent: item.url }), reachLamp(item.url), openLink(item.url)]));
+    if (list.length && !sample) probeReach(list.map((item) => item.url).filter((url) => !reachSeen.has(url)));
+  }
+}
 function cardEndpoints(spec) {
   const project = spec.vault || spec.id;
   const mine = (place?.fixtures || []).filter((item) => (item.tags || []).some((tag) => (tag.Key ?? tag.key) === "project" && (tag.Value ?? tag.value) === project));
@@ -353,6 +364,7 @@ function renderPublicStrip() {
 function renderChrome() {
   renderChromeParts();
   renderPublicStrip();
+  renderCardOpen();
   syncUrl();
 }
 
@@ -3498,13 +3510,12 @@ function cardBody(spec, preset = {}) {
   const watch = el("div", { id: "pip-watch" });
   watch.hidden = true;
   body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), needsRow(spec, preset), bundleRows(spec, preset));
-  const endpoints = cardEndpoints(spec);
-  if (endpoints.length) {
-    const row = el("div", { className: "card-open" });
-    for (const item of endpoints) row.append(el("span", { className: "ps-tag", textContent: "PUBLIC" }), el("span", { className: "ps-url", textContent: item.url }), reachLamp(item.url), openLink(item.url));
-    body.append(row);
-    if (!sample) probeReach(endpoints.map((item) => item.url).filter((url) => !reachSeen.has(url)));
-  }
+  // PUBLIC · URL · lamp · OPEN, filled when the map knows the stack's public
+  // load balancers (renderCardOpen, on every chrome render).
+  const openRow = el("div", { className: "card-open" });
+  openRow.dataset.project = spec.vault || spec.id;
+  openRow.hidden = true;
+  body.append(openRow);
   if (spec.nodeCost) body.append(nodeCostBlock(spec.nodeCost));
   body.append(watch);
   if (spec.id === "eks") body.append(connectRow("pip-connect"), el("div", { id: "pip-live", className: "live-line", hidden: true }, el("span", { className: "live-what" }), el("em", { className: "field-note live-warn" })));
@@ -3527,7 +3538,8 @@ function cardBody(spec, preset = {}) {
     const fixed = preset[parameter.name];
     // What was typed stays when the panel redraws (and CONNECT can open the
     // card on a cluster).
-    const kept = pipKept[spec.id]?.[parameter.name];
+    // Else what the stack runs with now (Pulumi.<stack>.yaml), else the default.
+    const kept = pipKept[spec.id]?.[parameter.name] ?? spec.current?.[parameter.name];
     if (parameter.choices) {
       field = el("select");
       for (const choice of parameter.choices) {

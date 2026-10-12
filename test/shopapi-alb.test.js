@@ -116,3 +116,11 @@ test("the shopapi vault owns the ALB by its project tag", () => {
   const owned = matchVaults([{ key: "lbc", resources: { tags: { project: "lbc" } } }, { key: "shopapi", resources: { tags: { project: "shopapi" } } }], place);
   assert.deepEqual(owned.get("shopapi"), [ALB]);
 });
+
+test("the card starts from what the stack runs with (Pulumi.<stack>.yaml), so RUN never quietly turns expose=alb back to none", async () => {
+  const { stackConfig } = await import("../src/upgrade.js");
+  const yaml = "encryptionsalt: v1:x\nconfig:\n  cloudspider-shopapi:clusterName: cloudspider-up\n  cloudspider-shopapi:expose: alb\n  cloudspider-shopapi:dbSecret:\n    secure: v1:abc\n  other:expose: none\n";
+  assert.deepEqual(stackConfig(spec, "/x", () => yaml), { clusterName: "cloudspider-up", expose: "alb" });
+  assert.deepEqual(stackConfig(spec, "/x", () => { throw new Error("ENOENT"); }), {});
+  assert.deepEqual(stackConfig({ ...spec, stack: "lbc-{cluster}" }, "/x", () => yaml), {});
+});

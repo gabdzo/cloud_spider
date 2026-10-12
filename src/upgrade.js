@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { parse as parseYaml } from "yaml";
 import { hostname as osHostname } from "node:os";
 import { judgeLock, lockRefusal, parseLocks, pendingOps, processNameOf, staleNote } from "./pulumi-locks.js";
 import { dirname, join } from "node:path";
@@ -502,6 +504,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
         ...(spec.nodeCost ? { nodeCost: estimate(spec.nodeCost) } : {}),
         ...(spec.addon ? { addon: true } : {}),
         parameters: spec.parameters,
+        current: stackConfig(spec, cwd),
       }));
     },
     status,
@@ -908,6 +911,27 @@ function clusterOf(spec, values = {}) {
 // A preflight's findings as run-log steps: "$ <text>" then its lines.
 function noteSteps(notes = [], prefix = "") {
   return (notes || []).filter((note) => note?.text).map((note) => ({ text: `${prefix}${note.text}`, fn: () => ({ lines: note.lines || [] }) }));
+}
+
+// What the stack runs with now: its card parameters as Pulumi.<stack>.yaml
+// says (a RUN writes them there with config set). Plain values only; a
+// secret is an object and stays out. The card starts from these, so RUN
+// with the defaults never quietly undoes a choice (Shop API expose=alb
+// back to none would delete its ALB).
+export function stackConfig(spec, cwd = root, read = (file) => readFileSync(file, "utf8")) {
+  if (!spec?.dir || !spec?.stack || !spec?.project || /[*{]/.test(spec.stack)) return {};
+  let doc;
+  try {
+    doc = parseYaml(read(join(cwd, spec.dir, `Pulumi.${spec.stack}.yaml`)));
+  } catch {
+    return {};
+  }
+  const out = {};
+  for (const parameter of spec.parameters || []) {
+    const value = doc?.config?.[`${spec.project}:${parameter.name}`];
+    if (["string", "number", "boolean"].includes(typeof value)) out[parameter.name] = String(value);
+  }
+  return out;
 }
 
 export function upgradeSteps(spec, stack, verb, values) {
