@@ -113,8 +113,17 @@ test("collector helpers: agents by image, LB hosts, alarm scope, app vaults", ()
   assert.equal(alarmScope({ name: "x", dimensions: { ClusterName: "c1" } }, "c1", []), "cluster");
   assert.equal(alarmScope({ name: "x", dimensions: { LoadBalancer: "app/a/1" } }, "c1", ["app/a/1"]), "lb:app/a/1");
   assert.equal(alarmScope({ name: "other", dimensions: { LoadBalancer: "app/z/9" } }, "c1", ["app/a/1"]), "");
-  const vs = appVaults([{ key: "eks", type: "eks", owned: [1] }, { key: "pi", kind: "perk", perkOf: "eks", owned: [1] }, { key: "shop", type: "service", owned: [{ type: "elasticloadbalancing:loadbalancer" }], slos: [{ name: "a", sli: "availability", source: "alb", flag: "ok" }] }], "c1");
-  assert.deepEqual(vs.map((v) => [v.key, v.alb]), [["shop", true]]);
+  const vs = appVaults([
+    { key: "eks", type: "cluster", stack: { dir: "upgrades/eks" } },
+    { key: "pi", kind: "perk", perkOf: "eks", stack: { dir: "upgrades/eks" } },
+    { key: "kyverno", type: "other", stack: { dir: "upgrades/addons" } },
+    { key: "camp", type: "static-site", stack: { dir: "upgrades/camp" } },
+    { key: "cloudspider", type: "other", stack: { dir: "infra" } },
+    { key: "other-cluster", type: "api", cluster: "c2", stack: { dir: "upgrades/shopapi" } },
+    { key: "shopapi", type: "api", stack: { dir: "upgrades/shopapi" }, slos: [{ name: "a", sli: "availability", source: "alb", flag: "ok" }] },
+    { key: "demo", type: "service", stack: { dir: "upgrades/demo" }, slos: [] },
+  ], "c1");
+  assert.deepEqual(vs.map((v) => [v.key, v.alb]), [["shopapi", true], ["demo", false]]);
 });
 
 test("collector: reads fake kube + AWS, no AWS keeps aws:false", async () => {

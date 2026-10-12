@@ -10,6 +10,7 @@ import { DescribeLoadBalancersCommand } from "@aws-sdk/client-elastic-load-balan
 import { GetTraceSummariesCommand } from "@aws-sdk/client-xray";
 import { awsFailure, evidence, pageAll } from "../evidence.js";
 import { kubeStatus } from "./kube-workloads.js";
+import { UPGRADES } from "../../upgrade.js";
 
 // Agent kinds by container image.
 export const AGENTS = [
@@ -144,13 +145,14 @@ export const kubeObs = {
   },
 };
 
-// Infrastructure vaults (the cluster, the account, add-on perks) carry no
-// app SLOs; the rest are apps.
-const INFRA = /^(eks|cluster|account|network|vpc|addon|perk|log|signal)$/i;
-export function appVaults(list, cluster) {
+// The apps on the cluster: vaults whose stack is a Stacks card that runs on
+// the EKS cluster (needs eks), not the cluster itself or its add-ons (those
+// are platform, scored elsewhere), or a vault that names the cluster.
+const CLUSTER_APP_DIRS = new Set(UPGRADES.filter((u) => (u.needs || []).includes("eks") && u.dir !== "upgrades/addons").map((u) => u.dir));
+export function appVaults(list, cluster, dirs = CLUSTER_APP_DIRS) {
   return list
-    .filter((v) => v && v.kind !== "perk" && !v.perkOf && !v.damaged && !INFRA.test(String(v.type || "")) && (!v.cluster || SHORT(v.cluster) === cluster))
-    .filter((v) => (v.owned || []).length || v.stack || (v.slos || []).length)
+    .filter((v) => v && v.kind !== "perk" && !v.perkOf && !v.damaged && v.type !== "cluster")
+    .filter((v) => (v.cluster ? SHORT(v.cluster) === cluster : dirs.has(v.stack?.dir || "")))
     .map((v) => ({
       key: v.key || v.name || "",
       title: v.title || v.name || "",
