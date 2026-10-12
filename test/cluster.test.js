@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { createApp } from "../src/app.js";
 import { listen } from "../src/server.js";
 import { CLUSTER_COLUMNS, diagramFromClusters, sampleCluster } from "../src/cluster.js";
@@ -111,6 +112,11 @@ test("the cluster tab is its own route and sample does not list clusters", async
     const sample = await fetch(`${base}/api/cluster-sample`);
     const body = await sample.json();
     assert.equal(body.sample, true);
+    // SAMPLE's Cluster view is the kube picture (lanes, K9S, TELEMETRY, OPS),
+    // not the old OpenShift placeholder (overnight UI test 2026-10-12).
+    assert.equal(body.diagram.layout, "kube");
+    assert.ok(body.diagram.nodes.some((n) => n.kind === "pod" && n.label.startsWith("loadgen-")));
+    assert.match(body.note, /^sample, not the account\./);
     assert.equal(reads, 0);
     const live = await fetch(`${base}/api/cluster`);
     const listed = await live.json();
@@ -119,4 +125,9 @@ test("the cluster tab is its own route and sample does not list clusters", async
   } finally {
     server.close();
   }
+});
+
+test("the status line keeps the view's sentence and the trouble apart", () => {
+  const src = readFileSync(new URL("../src/browser.js", import.meta.url), "utf8");
+  assert.match(src, /ui\.status\.replace\(\/\[\.!\?:\]\?\\s\*\$\/, "\."\)/);
 });

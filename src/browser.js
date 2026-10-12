@@ -288,7 +288,8 @@ function renderChromeParts() {
   renderMorning();
   const names = troubleNames().filter((name) => !(ui.status || "").includes(name));
   const who = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
-  statusEl.textContent = names.length ? `${ui.status ? `${ui.status}  ` : ""}${who} ${names.length > 1 ? "are" : "is"} in trouble` : ui.status;
+  // Two sentences, not run together ("sample, not the account demo/…").
+  statusEl.textContent = names.length ? `${ui.status ? `${ui.status.replace(/[.!?:]?\s*$/, ".")} ` : ""}${who} ${names.length > 1 ? "are" : "is"} in trouble` : ui.status;
   const words = `${statusEl.textContent} ${!errorEl.hidden ? errorEl.textContent : ""}`;
   statusEl.classList.toggle("issue", hasTrouble() || /did not|cannot|fail|denied|broken|trouble/i.test(words));
   renderRadioPanel();

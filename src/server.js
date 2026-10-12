@@ -13,8 +13,7 @@ import { scoreRoute } from "./score/routes.js";
 import { netdebugRoute } from "./netdebug/routes.js";
 import { defaults, effectiveConfig } from "./config.js";
 import { sampleCost } from "./cost.js";
-import { sampleCluster } from "./cluster.js";
-import { sampleMapSnapshot, samplePodDetail, samplePodInspect } from "./kube-sample.js";
+import { sampleKubeSnapshot, sampleMapSnapshot, samplePodDetail, samplePodInspect } from "./kube-sample.js";
 import { diagramFromKube } from "./kube-diagram.js";
 import { inspectPod } from "./kube-inspect.js";
 import { sampleTelemetry } from "./kube-telemetry.js";
@@ -2572,7 +2571,11 @@ async function route(app, req, res) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/cluster-sample") {
-    send(res, 200, sampleCluster());
+    // SAMPLE's Cluster view: the demo app inside the sample EKS cluster, the
+    // same kube picture a live context draws (lanes, search, K9S, TELEMETRY,
+    // OPS and pod details all have sample answers). It used to be a
+    // six-box OpenShift placeholder from before the kube view existed.
+    send(res, 200, sampleKubeCluster());
     return;
   }
 
@@ -2700,6 +2703,18 @@ async function route(app, req, res) {
   }
 
   send(res, 404, { status: "not found" });
+}
+
+export function sampleKubeCluster() {
+  const snap = sampleKubeSnapshot();
+  return {
+    sample: true,
+    error: "",
+    region: "sample",
+    headline: "",
+    diagram: diagramFromKube(snap, { cluster: { name: snap.clusterName, version: "1.32", status: "ACTIVE" } }),
+    note: `sample, not the account. Inside ${snap.clusterName}: the demo app and the system pods on one node`,
+  };
 }
 
 function send(res, status, body) {
