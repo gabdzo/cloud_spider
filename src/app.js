@@ -1,5 +1,6 @@
 import { originAllowed } from "./origin.js";
-import { createReach, reachAllowed } from "./reach.js";
+import { createReach, fetchOpenApi, reachAllowed } from "./reach.js";
+import { ingressRoutes, listenerRoutes, openApiRoutes, rootRoute } from "./alb-routes.js";
 import { isInstanceId } from "./ids.js";
 import { report } from "./report.js";
 import { pickRegion, readPlace } from "./map.js";
@@ -72,6 +73,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   let regions = [];
   let place = null;
   const reachProbe = createReach();
+  const routeCache = new Map();
+  const openApiCache = new Map();
   let placeAt = 0;
   let placeFlight = null;
   let error = "";
@@ -806,6 +809,52 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       const allowed = reachAllowed(url, place?.fixtures || []);
       if (!allowed) return { ok: false, status: 0, error: "only a public load balancer on the map can be probed" };
       return reachProbe(allowed.url);
+    },
+    // ALB ROUTES: the Ingress rules behind a public ALB on the map (read
+    // through the kube context), else its listener rules; plus PostgREST's
+    // root OpenAPI paths. Reads only; cached 60 s, the OpenAPI 5 min.
+    async albRoutes(id) {
+      const alb = (place?.fixtures || []).find((item) => item.id === id && item.kind === "alb");
+      if (!alb) return { id, error: "no such load balancer on the map", routes: [] };
+      if (!alb.public) return { id, error: "only public load balancers list routes", routes: [] };
+      const hit = routeCache.get(id);
+      if (hit && now() - hit.at < 60_000) return hit.value;
+      let routes = [];
+      let from = "";
+      const notes = [];
+      if (kube) {
+        try {
+          const snap = await readKube(KUBE_VIEW_TTL);
+          if (!snap.error) routes = ingressRoutes(alb, snap.ingresses || []);
+          if (routes.length) from = "ingress";
+        } catch (err) {
+          notes.push(`Ingress read: ${err?.message || err}`);
+        }
+      }
+      if (!routes.length && path?.listeners && region) {
+        const listeners = await path.listeners(region, alb.id);
+        if (listeners.error) notes.push(`DescribeListeners: ${listeners.error}`);
+        const rules = [];
+        for (const listener of listeners.items || []) {
+          const out = await path.rules(region, listener.arn);
+          if (out.error) notes.push(`DescribeRules: ${out.error}`);
+          rules.push(...(out.items || []));
+        }
+        const groups = rules.length && path.targetGroups ? await path.targetGroups(region) : { items: [] };
+        routes = listenerRoutes(alb, { listeners: listeners.items || [], rules, targetGroups: groups.items || [] });
+        if (routes.length) from = "listener";
+      }
+      const base = rootRoute(routes);
+      let api = [];
+      if (base) {
+        const cached = openApiCache.get(base.url);
+        const doc = cached && now() - cached.at < 300_000 ? cached.doc : await fetchOpenApi(base.url, place?.fixtures || []);
+        if (!cached || cached.doc !== doc) openApiCache.set(base.url, { doc, at: now() });
+        api = openApiRoutes(alb, doc, base);
+      }
+      const value = { id, from, openapi: api.length > 0, routes: [...routes, ...api], notes };
+      routeCache.set(id, { value, at: now() });
+      return value;
     },
     async logsFor(id) {
       const result = await readLogs({ logs, logGroup, region, id });

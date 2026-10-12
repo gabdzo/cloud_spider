@@ -1,6 +1,8 @@
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, focusLists, paint } from "./draw.js";
+import { FILTER_AT, filterRoutes, groupRoutes, ruleCount } from "./alb-routes.js";
+import { hasDock } from "./arch-layout.js";
 import { mapTargets, stepTarget, targetLine } from "./map-focus.js";
 import { isInstanceId } from "./ids.js";
 import {
@@ -284,9 +286,10 @@ const EMPTY_PLACE = { region: "", vpcs: [], subnets: [], instances: [], fixtures
 // Cache for layout to avoid recomputing every frame
 const layoutCache = createLayoutCache(layout);
 
-// PUBLIC strip on the map: every internet-facing load balancer, its URL,
-// OPEN (a new tab) and a reachability lamp (the server GETs it, 30 s).
-const publicStrip = document.querySelector("#public-strip");
+// Public load balancers on the map: a dock hung under each ALB card (the
+// reach lamp, OPEN ↗, the folded ROUTES list) and "exposed: N routes via"
+// under the EKS cluster it fronts. The PUBLIC tab is drawn on the card.
+const albDocksEl = document.querySelector("#alb-docks");
 const reachSeen = new Map();
 let reachTimer = 0;
 function publicEndpoints(fixtures = []) {
@@ -354,28 +357,8 @@ function openLink(url, label = "OPEN ↗") {
   a.title = `open ${url} in a new tab`;
   return a;
 }
-function renderPublicStrip() {
-  if (!publicStrip) return;
-  const list = mode === "map" ? publicEndpoints(place?.fixtures || []) : [];
-  const key = JSON.stringify(list);
-  publicStrip.hidden = !list.length;
-  if (publicStrip.dataset.key === key) return;
-  publicStrip.dataset.key = key;
-  publicStrip.replaceChildren(...list.map((item) => {
-    const row = vel("div", "ps-row");
-    row.append(vel("span", "ps-tag", "PUBLIC"), vel("span", "ps-name", item.name), vel("span", "ps-url", item.url), vel("span", "ps-zones", `${item.zones.length} AZ · ${item.healthy}/${item.targets} healthy`), reachLamp(item.url), openLink(item.url));
-    return row;
-  }));
-  clearInterval(reachTimer);
-  if (!list.length || sample) return;
-  const urls = list.map((item) => item.url);
-  probeReach(urls);
-  reachTimer = setInterval(() => probeReach(urls), 30_000);
-}
-
 function renderChrome() {
   renderChromeParts();
-  renderPublicStrip();
   renderCardOpen();
   syncUrl();
 }
@@ -2069,8 +2052,172 @@ function draw() {
   placeGrain(placed);
   placeVaultChrome(placed);
   placeFolds(placed);
+  placeAlbDocks(placed);
   placeViewSwitch(placed);
   drawMapFocus();
+}
+
+// ---- ALB docks and ROUTES ----
+const albRoutes = new Map(); // id → { at, body, pending, sample }
+const dockOpen = new Set();
+const dockQuery = new Map();
+const routeTimers = new Map();
+let docksKey = "";
+
+function placedFixtures(placed) {
+  return [...(placed?.settlements || []).flatMap((item) => item.fixtures || []), ...(placed?.zones || []).flatMap((zone) => zone.nodes || [])];
+}
+
+async function pullRoutes(id) {
+  const had = albRoutes.get(id);
+  if (had?.pending || (had && had.sample === sample && Date.now() - had.at < 60_000)) return;
+  const wasSample = sample;
+  albRoutes.set(id, { ...(had || {}), pending: true });
+  const body = await fetch(`/api/alb-routes?id=${encodeURIComponent(id)}${wasSample ? "&sample=1" : ""}`).then((r) => r.json()).catch(() => null);
+  albRoutes.set(id, { at: Date.now(), body: body || { routes: [], error: "routes could not be read" }, pending: false, sample: wasSample });
+  if (wasSample) {
+    if (body?.seen) reachSeen.set(body.seen.url, body.seen);
+    for (const r of body?.routes || []) if (r.seen) reachSeen.set(r.url, r.seen);
+  }
+  docksKey = "";
+  placeAlbDocks(placedMap());
+}
+
+// Probe the open list's rows, one at a time: only rows the reach allowlist
+// can GET (the ALB's own name), at most 12, again each minute while open.
+function probeRoutes(id) {
+  clearInterval(routeTimers.get(id));
+  routeTimers.delete(id);
+  if (sample || !dockOpen.has(id)) return;
+  const urls = () => [...new Set((albRoutes.get(id)?.body?.routes || []).filter((r) => r.probe && r.url).map((r) => r.url))].slice(0, 12);
+  probeReach(urls());
+  routeTimers.set(id, setInterval(() => (dockOpen.has(id) ? probeReach(urls()) : probeRoutes(id)), 60_000));
+}
+
+function routeList(id, list) {
+  const query = dockQuery.get(id) || "";
+  const rows = filterRoutes(list, query);
+  const box = vel("div", "alr-list");
+  box.tabIndex = 0;
+  box.setAttribute("aria-label", "routes");
+  if (!rows.length) box.append(vel("p", "alr-empty", query ? `nothing matches "${query}"` : "no routes read"));
+  for (const group of groupRoutes(rows)) {
+    box.append(vel("h5", "alr-host", group.label));
+    const ul = vel("ul");
+    for (const r of group.rows) {
+      const li = vel("li", `alr-route ${r.source}`);
+      const where = vel("span", "alr-where");
+      where.append(vel("code", "alr-path", r.path), vel("span", "alr-svc", r.service ? `→ ${r.service}` : ""));
+      const tags = vel("span", "alr-tags");
+      if (r.methods?.length) tags.append(vel("span", "alr-methods", r.methods.join(" ")));
+      if (r.source === "openapi") tags.append(vel("span", "alr-from", "from OpenAPI"));
+      else if (r.note) tags.append(vel("span", "alr-note", r.note));
+      where.append(tags);
+      let lamp;
+      if (r.probe && r.url) lamp = reachLamp(r.url);
+      else {
+        lamp = vel("span", "reach-lamp skip", "—");
+        lamp.title = r.host ? `answers on ${r.host}: the reach probe only GETs the ALB's own name` : "nothing to probe";
+      }
+      li.append(where, lamp, r.url ? openLink(r.url, "↗") : vel("span"));
+      ul.append(li);
+    }
+    box.append(ul);
+  }
+  return box;
+}
+
+function albDock(alb) {
+  const state = albRoutes.get(alb.id);
+  const list = state?.body?.routes || [];
+  const rules = ruleCount(list);
+  const open = dockOpen.has(alb.id);
+  const dock = vel("div", `alb-dock${open ? " open" : ""}`);
+  dock.dataset.id = alb.id;
+  dock.style.left = `${alb.x}px`;
+  dock.style.top = `${alb.y + alb.h + 4}px`;
+  dock.style.minWidth = `${alb.w}px`;
+  const bar = vel("div", "alr-bar");
+  bar.title = `${alb.url}\nGET from this machine every 30 s`;
+  const toggle = vel("button", "cmd alr-routes-toggle", state?.body ? `${open ? "▾" : "▸"} ${rules} route${rules === 1 ? "" : "s"}` : "▸ routes…");
+  toggle.type = "button";
+  toggle.dataset.focus = `routes:${alb.id}`;
+  toggle.setAttribute("aria-expanded", String(open));
+  toggle.setAttribute("aria-label", `${open ? "Hide" : "Show"} the routes of ${alb.ingress || alb.name}`);
+  toggle.addEventListener("click", () => {
+    if (dockOpen.has(alb.id)) dockOpen.delete(alb.id);
+    else dockOpen.add(alb.id);
+    docksKey = "";
+    placeAlbDocks(placedMap());
+    probeRoutes(alb.id);
+    albDocksEl.querySelector(`[data-focus="routes:${CSS.escape(alb.id)}"]`)?.focus();
+  });
+  bar.append(reachLamp(alb.url), openLink(alb.url), toggle);
+  dock.append(bar);
+  if (open) {
+    const panel = vel("div", "alr-panel");
+    panel.setAttribute("role", "region");
+    panel.setAttribute("aria-label", `routes of ${alb.ingress || alb.name}`);
+    const head = vel("div", "alr-head");
+    head.append(vel("b", "", "ROUTES"), vel("span", "alr-src", state?.body?.from === "listener" ? "from listener rules" : state?.body?.from === "ingress" ? `from Ingress${state.body.openapi ? " + OpenAPI" : ""}` : state?.body?.error || "reading…"));
+    panel.append(head);
+    let listEl = routeList(alb.id, list);
+    if (list.length > FILTER_AT) {
+      const search = vel("input", "alr-search");
+      search.type = "search";
+      search.placeholder = `filter ${list.length} routes`;
+      search.setAttribute("aria-label", "filter routes");
+      search.value = dockQuery.get(alb.id) || "";
+      search.addEventListener("input", () => {
+        dockQuery.set(alb.id, search.value);
+        const next = routeList(alb.id, list);
+        listEl.replaceWith(next);
+        listEl = next;
+      });
+      panel.append(search);
+    }
+    panel.append(listEl);
+    dock.append(panel);
+  }
+  return dock;
+}
+
+function exposedLine(eks, albs) {
+  const mine = albs.filter((alb) => alb.cluster && alb.cluster === eks.name);
+  if (!mine.length) return null;
+  const count = mine.reduce((n, alb) => n + ruleCount(albRoutes.get(alb.id)?.body?.routes || []), 0);
+  const via = mine.length === 1 ? mine[0].ingress || mine[0].name : `${mine.length} ALBs`;
+  const b = vel("button", "alb-exposed", `exposed: ${count} route${count === 1 ? "" : "s"} via ${via} ▸`);
+  b.type = "button";
+  b.dataset.focus = `exposed:${eks.id}`;
+  b.title = "show the load balancer on the map";
+  b.style.left = `${eks.x}px`;
+  b.style.top = `${eks.y + eks.h + 4}px`;
+  b.style.maxWidth = `${eks.w}px`;
+  b.addEventListener("click", () => {
+    showOnMap(mine[0].id);
+    albDocksEl.querySelector(`[data-focus="routes:${CSS.escape(mine[0].id)}"]`)?.focus({ preventScroll: true });
+  });
+  return b;
+}
+
+function placeAlbDocks(placed) {
+  if (!albDocksEl) return;
+  const fixtures = mode === "map" ? placedFixtures(placed) : [];
+  const albs = fixtures.filter(hasDock);
+  const clusters = fixtures.filter((item) => item.kind === "eks");
+  const key = JSON.stringify([sample, albs.map((a) => [a.id, a.x, a.y, a.w, a.h, a.url, albRoutes.get(a.id)?.at]), clusters.map((c) => [c.id, c.x, c.y, c.w, c.h]), [...dockOpen]]);
+  for (const alb of albs) pullRoutes(alb.id);
+  if (key === docksKey) return;
+  docksKey = key;
+  const focused = albDocksEl.contains(document.activeElement) ? document.activeElement.dataset.focus : "";
+  albDocksEl.replaceChildren(...albs.map(albDock), ...clusters.map((c) => exposedLine(c, albs)).filter(Boolean));
+  if (focused) albDocksEl.querySelector(`[data-focus="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
+  clearInterval(reachTimer);
+  if (!albs.length || sample) return;
+  const urls = albs.map((item) => item.url);
+  probeReach(urls.filter((url) => !reachSeen.has(url)));
+  reachTimer = setInterval(() => probeReach(urls), 30_000);
 }
 
 // One real button per VPC camp (top-right of its wall), so Tab and
