@@ -254,3 +254,76 @@ test("FROM INSIDE checkboxes undo the page's generic input box (Pip-Boy regressi
   assert.match(css, /\.nd-insiderow \.nd-check input\[type="checkbox"\] \{[^}]*min-height: 0;[^}]*padding: 0;[^}]*border: 0;/);
   assert.match(css, /\.nd-insiderow input\.nd-node-in \{ flex: none; width: 9em; \}/);
 });
+
+// tcp:// and tls:// targets and the Service picker.
+import { listServices, serviceTarget } from "../src/netdebug/pod-run.js";
+import { podPath } from "../src/netdebug/pod-result.js";
+
+test("tcp:// targets: connect only, no HTTP, port required, metadata refused", () => {
+  const t = parsePodTarget("tcp://shopdb.shop:5432", { namespaces: ["shop"] });
+  assert.equal(t.kind, "service");
+  assert.equal(t.scheme, "tcp");
+  assert.equal(t.http, false);
+  assert.equal(t.port, 5432);
+  assert.match(parsePodTarget("tcp://shopdb.shop", { namespaces: ["shop"] }).error, /needs a port/);
+  assert.match(parsePodTarget("tcp://169.254.169.254:80").error, /metadata/);
+  assert.match(parsePodTarget("tcp://169.254.10.1:5432").error, /link-local/);
+  assert.match(parsePodTarget("postgres://db:5432").error, /http:\/\/, https:\/\/, tcp:\/\/ or tls:\/\//);
+  assert.match(parsePodTarget("tcp://db.shop:5432/x", { namespaces: ["shop"] }).error, /./);
+  assert.equal(parsePodTarget("tls://cache.shop:6380", { namespaces: ["shop"] }).tls, true);
+  const plan = buildPlan({ target: "tcp://shopdb.shop:5432", http: true }, { namespaces: ["shop"], runId: "r1" });
+  assert.equal(plan.checks.http, false, "the HTTP box never sends HTTP to a tcp:// target");
+  assert.equal(plan.checks.tls, false);
+  const script = probeScript(plan);
+  assert.doesNotMatch(script, /curl|openssl/);
+  assert.match(script, /nc -z -v -w 3 'shopdb\.shop\.svc\.cluster\.local' 5432/);
+});
+
+test("tcp:// with TLS: handshake, STARTTLS for Postgres, parsed into P-TLS-01", () => {
+  const plan = buildPlan({ target: "tcp://shopdb.shop:5432", tls: true, trace: false }, { namespaces: ["shop"], runId: "r2" });
+  assert.equal(plan.checks.tls, true);
+  assert.equal(plan.checks.starttls, "postgres");
+  assert.match(probeScript(plan), /\[ "\$tcprc" = 0 \] && run P-TLS-01 target timeout 6 openssl s_client -brief -verify_quiet -starttls postgres -connect 'shopdb\.shop\.svc\.cluster\.local:5432'/);
+  const tls = buildPlan({ target: "tls://cache.shop:6380" }, { namespaces: ["shop"], runId: "r3" });
+  assert.doesNotMatch(probeScript(tls), /starttls/);
+  const log = "@@BEGIN P-TCP-01 target\nok\n@@END P-TCP-01 target rc=0 ms=2\n@@BEGIN P-TLS-01 target\nCONNECTION ESTABLISHED\nProtocol version: TLSv1.3\nCiphersuite: TLS_AES_256_GCM_SHA384\n@@END P-TLS-01 target rc=0 ms=9\n@@DONE";
+  const checks = podChecks(plan, parseProbeLog(log));
+  const c = checks.find((x) => x.id === "P-TLS-01");
+  assert.equal(c.status, "PASS");
+  assert.match(c.text, /STARTTLS postgres handshake TLSv1\.3/);
+  assert.ok(podPath(plan, checks).some((hop) => hop.layer === "tls" && hop.status === "PASS"));
+  const bad = podChecks(plan, parseProbeLog("@@BEGIN P-TLS-01 target\n\n@@END P-TLS-01 target rc=124 ms=6000\n@@DONE")).find((x) => x.id === "P-TLS-01");
+  assert.equal(bad.status, "FAIL");
+  assert.match(bad.text, /timed out/);
+  const skipped = podChecks(plan, parseProbeLog("@@BEGIN P-TCP-01 target\nnc: timed out\n@@END P-TCP-01 target rc=1 ms=3000\n@@DONE")).find((x) => x.id === "P-TLS-01");
+  assert.equal(skipped.status, "NOT_ASSESSED");
+  assert.match(skipped.text, /connect failed/);
+});
+
+test("the Service picker: scheme and port per Service port", async () => {
+  assert.equal(serviceTarget({ name: "pg-rw", namespace: "shop", ports: [{ port: 5432, name: "postgres" }] }), "tcp://pg-rw.shop:5432");
+  assert.equal(serviceTarget({ name: "api", namespace: "b", ports: [{ port: 9898, name: "http" }] }), "http://api.b:9898");
+  assert.equal(serviceTarget({ name: "web", namespace: "b", ports: [{ port: 443, name: "" }] }), "https://web.b:443");
+  assert.equal(serviceTarget({ name: "r", namespace: "b", ports: [{ port: 6379, name: "redis" }] }), "tcp://r.b:6379");
+  assert.equal(serviceTarget({ name: "x", namespace: "b", ports: [{ port: 7000, name: "" }] }), "tcp://x.b:7000");
+  const kube = { async read(name, ns) {
+    if (name === "services") return { json: { items: [
+      { metadata: { name: "pg-rw", namespace: "shop" }, spec: { ports: [{ port: 5432, name: "postgres" }] } },
+      { metadata: { name: "dns", namespace: "kube-system" }, spec: { ports: [{ port: 53, protocol: "UDP" }] } },
+      { metadata: { name: "ext", namespace: "shop" }, spec: { type: "ExternalName", ports: [{ port: 80 }] } },
+    ] } };
+    if (name === "endpointSlicesAll") return { json: { items: [{ metadata: { namespace: "shop", labels: { "kubernetes.io/service-name": "pg-rw" } }, endpoints: [{ conditions: { ready: true } }, { conditions: { ready: false } }] }] } };
+    return { error: `unexpected ${name} ${ns}` };
+  } };
+  const got = await listServices(kube);
+  assert.equal(got.scope, "cluster");
+  assert.deepEqual(got.services.map((s) => [s.name, s.ready, s.total]), [["pg-rw", 1, 2]]);
+  const nsOnly = { async read(name, ns) {
+    if (name === "nsServices" && ns === "shop") return { json: { items: [{ metadata: { name: "api", namespace: "shop" }, spec: { ports: [{ port: 80 }] } }] } };
+    if (name === "nsEndpointSlices") return { json: { items: [] } };
+    return { status: 403, error: "forbidden" };
+  } };
+  const got2 = await listServices(nsOnly, { namespaces: ["shop", "other"] });
+  assert.equal(got2.scope, "namespaces");
+  assert.equal(got2.services[0].name, "api");
+});

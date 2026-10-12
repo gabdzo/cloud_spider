@@ -30,28 +30,38 @@ const port = (p, d) => {
 // The text typed in SNIFF's FROM INSIDE field → one target.
 //   shopapi:3000 · shopapi.shop:3000 · shopapi.shop.svc.cluster.local
 //   10.128.0.12:8080 · api.example.com · https://api.example.com/healthz
+//   tcp://pg-rw.shop:5432 (DNS + TCP connect, no payload)
+//   tls://redis.cache:6380 (the same plus a TLS handshake)
 // Two labels are a Service only when the second is a known namespace.
 export function parsePodTarget(text, { sourceNs = "default", namespaces = [], clusterDomain = "cluster.local" } = {}) {
   let input = String(text || "").trim();
   if (!input) return { error: "type a Service (name.namespace:port), a pod IP:port or an outside host" };
   let scheme = "";
   let path = "/";
-  const url = input.match(/^(https?):\/\/([^/?#]+)(\/[^?#]*)?$/i);
-  if (url) {
+  const raw = input.match(/^(tcp|tls):\/\/([^/?#]+)\/?$/i);
+  const url = raw ? null : input.match(/^(https?):\/\/([^/?#]+)(\/[^?#]*)?$/i);
+  if (raw) {
+    scheme = raw[1].toLowerCase();
+    input = raw[2];
+    if (!/:\d{1,5}$/.test(input)) return { error: `${scheme}:// needs a port (${scheme}://pg-rw.shop:5432)` };
+  } else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(input) && !url) return { error: "a target starts with http://, https://, tcp:// or tls://" };
+  else if (url) {
     scheme = url[1].toLowerCase();
     input = url[2];
     path = url[3] || "/";
     if (!PATH.test(path)) return { error: "the path may only have letters, digits and . _ ~ / -" };
-  } else if (/[/?#]/.test(input)) return { error: "a URL starts with http:// or https://" };
+  } else if (/[/?#]/.test(input)) return { error: "a URL starts with http://, https://, tcp:// or tls://" };
   const m = input.match(/^(.+?)(?::(\d{1,5}))?$/);
   const host = m[1].toLowerCase();
   const p = port(m[2], scheme === "http" ? 80 : scheme === "https" ? 443 : null);
   if (m[2] && p == null) return { error: `port ${m[2]} is not 1-65535` };
-  const http = Boolean(scheme);
+  const rawTcp = scheme === "tcp" || scheme === "tls";
+  const http = Boolean(scheme) && !rawTcp;
+  const tls = scheme === "tls";
   if (IP4.test(host)) {
     if (METADATA.includes(host) || host.startsWith("169.254.")) return { error: `${host} is link-local or metadata: refused` };
     if (p == null) return { error: "an IP needs a port (10.128.0.12:8080)" };
-    return { kind: "ip", host, ip: host, port: p, http, scheme: scheme || "http", path };
+    return { kind: "ip", host, ip: host, port: p, http, tls, scheme: scheme || "http", path };
   }
   if (!HOST.test(host)) return { error: `${host} is not a host name` };
   const labels = host.split(".");
@@ -64,9 +74,9 @@ export function parsePodTarget(text, { sourceNs = "default", namespaces = [], cl
   else if (labels.length === 2 && namespaces.includes(labels[1])) [name, ns] = labels;
   if (name && NAME.test(name) && NAME.test(ns)) {
     if (p == null) return { error: `${name}.${ns} needs a port (${name}.${ns}:80)` };
-    return { kind: "service", name, namespace: ns, host: `${name}.${ns}.svc.${clusterDomain}`, short: labels.length === 1 ? name : `${name}.${ns}`, port: p, http, scheme: scheme || "http", path };
+    return { kind: "service", name, namespace: ns, host: `${name}.${ns}.svc.${clusterDomain}`, short: labels.length === 1 ? name : `${name}.${ns}`, port: p, http, tls, scheme: scheme || "http", path };
   }
-  return { kind: "host", host, port: p ?? 443, http, scheme: scheme || (p === 80 ? "http" : "https"), path };
+  return { kind: "host", host, port: p ?? 443, http, tls, scheme: scheme || (p === 80 ? "http" : "https"), path };
 }
 
 // body → plan, or { error }. Every value that reaches the script is checked
@@ -91,7 +101,12 @@ export function buildPlan(body = {}, { cfg = POD_DEFAULTS, namespaces = [], runI
   if (target.error) return target;
   const raw = body.rawTrace === true;
   if (target.kind === "service") target.endpoints = (endpoints || []).filter((e) => IP4.test(String(e.ip)) && port(e.port) != null).slice(0, 3).map((e) => ({ ip: e.ip, port: Number(e.port), pod: NAME.test(String(e.pod || "")) ? e.pod : "", node: HOST.test(String(e.node || "")) ? e.node : "" }));
-  const checks = { dns: target.kind !== "ip", tcp: true, http: target.http || body.http === true, trace: body.trace !== false, mtu: body.mtu !== false };
+  const rawTcp = target.scheme === "tcp" || target.scheme === "tls";
+  // tcp:// never sends a payload (no HTTP even with the HTTP box); TLS is a
+  // bare handshake, STARTTLS for Postgres on 5432 (it speaks TLS only then).
+  if (rawTcp && body.tls === true) target.tls = true;
+  const starttls = target.tls && target.port === 5432 ? "postgres" : "";
+  const checks = { dns: target.kind !== "ip", tcp: true, tls: Boolean(target.tls), starttls, http: !rawTcp && (target.http || body.http === true), trace: body.trace !== false, mtu: body.mtu !== false };
   if (!LABEL.test(runId)) return { error: "bad run id" };
   return { runId, source: { namespace: ns, node, labels: asLabels }, target, checks, raw, image: c.image, ttlSeconds: Math.min(1800, Math.max(30, Number(c.ttlSeconds) || 300)) };
 }
@@ -113,8 +128,9 @@ export function probeScript(plan) {
     if (t.short) lines.push(`run P-DNS-02 short dig +search +short +time=2 +tries=1 ${q(t.short)}`);
     lines.push(`run P-DNS-02 fqdn dig +short +time=2 +tries=1 ${q(t.host)}`);
   }
-  if (plan.checks.tcp) lines.push(`run P-TCP-01 target nc -z -v -w 3 ${q(t.host)} ${t.port}`);
+  if (plan.checks.tcp) lines.push(`run P-TCP-01 target nc -z -v -w 3 ${q(t.host)} ${t.port}; tcprc=$rc`);
   (t.endpoints || []).forEach((e, i) => plan.checks.tcp && lines.push(`run P-TCP-02 ep${i} nc -z -v -w 3 ${e.ip} ${e.port}`));
+  if (plan.checks.tls) lines.push(`[ "$tcprc" = 0 ] && run P-TLS-01 target timeout 6 openssl s_client -brief -verify_quiet${plan.checks.starttls ? ` -starttls ${plan.checks.starttls}` : ""} -connect ${q(`${t.host}:${t.port}`)} -servername ${q(t.host)} </dev/null`);
   const traceTo = t.endpoints?.[0]?.ip || t.host;
   if (plan.checks.http) lines.push(`run P-HTTP-01 target curl -sS -o /dev/null -m 5 -k -w '%{http_code} %{time_namelookup} %{time_connect} %{time_starttransfer} %{time_total} %{remote_ip}' ${q(`${t.scheme}://${t.host}:${t.port}${t.path}`)}`);
   if (plan.checks.trace) lines.push(plan.raw ? `run P-TRACE-01 target tcptraceroute -n -w 1 -q 1 -m 16 ${q(traceTo)} ${t.endpoints?.[0]?.port || t.port}` : `run P-TRACE-01 target tracepath -n -m 16 ${q(traceTo)}`);

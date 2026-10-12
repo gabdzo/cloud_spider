@@ -22,6 +22,11 @@ export async function netdebugRoute(req, res, url, netdebug, { send, readJson })
     send(res, 200, netdebug.podConfig ? netdebug.podConfig() : { enabled: false });
     return true;
   }
+  if (req.method === "GET" && url.pathname === "/api/netdebug/pod/services") {
+    const out = netdebug.podServices ? await netdebug.podServices({ context: url.searchParams.get("context") || "", sample: url.searchParams.get("sample") === "1" }) : { services: [] };
+    send(res, status(out), out);
+    return true;
+  }
   if (req.method === "POST" && (url.pathname === "/api/netdebug/pod/plan" || url.pathname === "/api/netdebug/pod")) {
     const body = await readJson(req).catch(() => null);
     if (!body || typeof body !== "object") {

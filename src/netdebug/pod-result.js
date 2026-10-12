@@ -82,6 +82,19 @@ export function podChecks(plan, parsed) {
     const b = pick(blocks, "P-TCP-02", `ep${i}`);
     if (b) out.push(check("P-TCP-02", "transport", b.rc === 0 ? "PASS" : "FAIL", b.rc === 0 ? `pod ${e.pod || e.ip} ${e.ip}:${e.port} connected in ${b.ms} ms` : `pod ${e.pod || e.ip} ${e.ip}:${e.port} ${tcpWhy(b.out)}`, { observed: { ...e, ok: b.rc === 0 }, command: `nc -zv -w 3 ${e.ip} ${e.port}`, ms: b.ms, key: `ep${i}`, tool: "nc" }));
   });
+  if (plan.checks.tls) {
+    const b = pick(blocks, "P-TLS-01");
+    const o = String(b?.out || "");
+    const proto = o.match(/Protocol version:\s*(\S+)/)?.[1] || "";
+    const cipher = o.match(/Ciphersuite:\s*(\S+)/)?.[1] || "";
+    const peer = o.match(/Peer certificate:\s*(.+)/)?.[1]?.trim() || "";
+    const verify = o.match(/Verification(?: error)?:\s*(.+)/)?.[1]?.trim() || "";
+    const ok = Boolean(proto) || /CONNECTION ESTABLISHED/.test(o);
+    const why = b ? (b.rc === 124 ? "the handshake timed out" : o.split("\n").map((l) => l.trim()).find((l) => /error|refused|unexpected|wrong|alert/i.test(l))?.slice(0, 120) || "no TLS answer") : "";
+    const how = plan.checks.starttls ? `STARTTLS ${plan.checks.starttls}` : "TLS";
+    if (b) out.push(check("P-TLS-01", "tls", ok ? "PASS" : "FAIL", ok ? `${how} handshake ${proto || "ok"}${cipher ? ` · ${cipher}` : ""}${peer ? ` · ${peer.slice(0, 80)}` : ""} in ${b.ms} ms` : `${how} handshake failed: ${why}`, { observed: { ok, protocol: proto, cipher, peer, verify, starttls: plan.checks.starttls || "" }, command: `openssl s_client -brief${plan.checks.starttls ? ` -starttls ${plan.checks.starttls}` : ""} -connect ${t.host}:${t.port}`, ms: b.ms, tool: "openssl" }));
+    else na("P-TLS-01", "tls", tcp && tcp.rc !== 0 ? "not tried: the TCP connect failed" : "no TLS handshake ran");
+  }
   if (plan.checks.http) {
     const b = pick(blocks, "P-HTTP-01");
     const [code, tn, tc, ts, tt, ip] = String(b?.out || "").split("\n").pop().split(/\s+/);
@@ -187,7 +200,7 @@ export function podPath(plan, checks, { pod = {}, live = null } = {}) {
     const trace = by("P-TRACE-01")[0]?.observed?.hops || [];
     const show = trace.length > 4 ? [...trace.slice(0, 2), { gap: trace.length - 4 }, ...trace.slice(-2)] : trace;
     for (const h of show) hops.push(h.gap ? { layer: "route", label: `… ${h.gap} HOPS`, status: "PASS", fact: "" } : { layer: "route", label: `HOP ${h.n}`, status: h.ip ? "PASS" : "UNKNOWN", fact: h.ip ? `${h.ip}${h.ms != null ? ` · ${h.ms} ms` : ""}` : "no reply" });
-    const end = [...by("P-TCP-01"), ...by("P-HTTP-01")];
+    const end = [...by("P-TCP-01"), ...by("P-TLS-01"), ...by("P-HTTP-01")];
     hops.push({ layer: by("P-HTTP-01").length ? "http" : "transport", label: t.host.toUpperCase(), status: worst(end), fact: end.map((c) => c.text.split(" (")[0]).join(" · ").slice(0, 60) });
     return hops;
   }
@@ -202,5 +215,7 @@ export function podPath(plan, checks, { pod = {}, live = null } = {}) {
     const ok = eps.filter((c) => c.status === "PASS").length;
     hops.push({ layer: http.length ? "http" : "transport", label: eps.length === 1 ? `POD ${eps[0].observed.pod || eps[0].observed.ip}` : `${eps.length} PODS`, status: worst([...eps, ...http]), fact: `${ok}/${eps.length} connect${http[0]?.status === "PASS" ? ` · ${http[0].text.split(" (")[0]}` : ""}${eps[0].observed.node ? ` · ${eps[0].observed.node}` : ""}` });
   } else if (http.length) hops.push({ layer: "http", label: "APP", status: worst(http), fact: http[0].text.split(" (")[0] });
+  const tls = by("P-TLS-01");
+  if (tls.length) hops.push({ layer: "tls", label: plan.checks.starttls ? `STARTTLS ${plan.checks.starttls.toUpperCase()}` : "TLS", status: worst(tls), fact: tls[0].text.replace(/ in \d+ ms$/, "").slice(0, 60) });
   return hops;
 }
