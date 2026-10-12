@@ -2364,6 +2364,8 @@ const page = `<!doctype html>
   :root[data-theme="pro"] .vpg-stack.live { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
   :root[data-theme="pro"] .vpg-stack.down { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
   :root[data-theme="pro"] .vpg-stack.error { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, transparent); }
+  /* The CAPS head is sticky: in pro it lost its gradient and went see-through, so the pace line showed under the total. */
+  :root[data-theme="pro"] .sp-head { background-color: var(--raised); }
   :root[data-theme="pro"] .vpg-templates h4 { color: var(--text-2); background: var(--surface-2); border-bottom: 1px solid var(--border); letter-spacing: 0.04em; font-weight: 600; font-size: 12px; padding: 7px 12px; }
   @media (max-width: 640px) {
     :root[data-theme="pro"] .tab { padding: 6px 8px; font-size: 12px; }

@@ -54,3 +54,8 @@ test("pro pass 3: vault pages lose the corner brackets, LIVE is a badge; DEBUG f
   const nd = readFileSync(new URL("../src/netdebug/style.js", import.meta.url), "utf8");
   assert.match(nd, /#netdebug \.nd-bar > \.nd-fold \{ margin-left: auto; \}/);
 });
+
+test("pro: the sticky CAPS head is opaque", () => {
+  const css = readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
+  assert.match(css, /:root\[data-theme="pro"\] \.sp-head \{ background-color: var\(--raised\); \}/);
+});
