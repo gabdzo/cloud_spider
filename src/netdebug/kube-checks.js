@@ -97,7 +97,10 @@ export function cniEnforcer(daemonsets) {
     if (/^calico-node$/.test(n)) return "Calico";
     if (/^cilium$/.test(n)) return "Cilium";
     if (n === "aws-node") {
-      const agent = (ds.spec?.template?.spec?.containers || []).find((c) => c.name === "aws-network-policy-agent");
+      // The EKS managed add-on names the agent container aws-eks-nodeagent
+      // (seen live on vpc-cni v1.22.4, 2026-10-12); the upstream manifest
+      // names it aws-network-policy-agent.
+      const agent = (ds.spec?.template?.spec?.containers || []).find((c) => ["aws-eks-nodeagent", "aws-network-policy-agent"].includes(c.name));
       if (agent && (agent.args || []).some((a) => a === "--enable-network-policy=true")) return "VPC CNI network policy agent";
     }
   }

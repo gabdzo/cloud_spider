@@ -117,8 +117,8 @@ so after pgcluster is up, RUN Shop API again (or the bundle): it converges.
 The VPC CNI ignores NetworkPolicy objects unless its node agent enforces
 them. The EKS stack sets `enableNetworkPolicy: "true"` in the vpc-cni add-on's
 configurationValues, next to prefix delegation (card `networkPolicy`, default
-`on`; vpc-cni v1.14+ ships the agent as the `aws-network-policy-agent`
-container of aws-node). Turning it on or off is an in-place add-on update:
+`on`; vpc-cni v1.14+ ships the agent as a container of aws-node: `aws-eks-nodeagent` in the
+EKS managed add-on, `aws-network-policy-agent` upstream). Turning it on or off is an in-place add-on update:
 aws-node restarts, pods keep their IPs, nothing is replaced. A cluster with no
 NetworkPolicy objects behaves as before; once it is on, every policy is
 enforced, so a default deny without its allows cuts traffic. The scorecard's
