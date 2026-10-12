@@ -290,7 +290,7 @@ test("every add-on under mocks: tagged project=<id> and cluster=<name>, viewer R
   const by = Object.fromEntries(all);
   // Kyverno: four baseline policies plus two demo ones, all Audit.
   const policies = kind(by.kyverno, "ClusterPolicy");
-  assert.deepEqual(policies.map((p) => p.metadata.name).sort(), ["disallow-host-path", "disallow-latest-tag", "disallow-privileged-containers", "require-app-name-label", "require-readiness-probe", "require-requests"]);
+  assert.deepEqual(policies.map((p) => p.metadata.name).sort(), ["disallow-host-path", "disallow-latest-tag", "disallow-privileged-containers", "generate-default-deny", "require-app-name-label", "require-readiness-probe", "require-requests"]);
   assert.equal(policies.filter((p) => /demo/.test(p.metadata.annotations["policies.kyverno.io/category"])).length, 2);
   for (const policy of policies) for (const rule of policy.spec.rules) assert.equal(rule.validate.failureAction, "Audit");
   // Karpenter: a capped arm64 pool, tagged encrypted IMDSv2 nodes.
