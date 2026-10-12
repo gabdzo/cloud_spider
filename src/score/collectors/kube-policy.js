@@ -8,7 +8,7 @@ const ns = (item) => item?.metadata?.namespace || "";
 const name = (item) => item?.metadata?.name || "";
 const SHAPE = {
   networkPolicies: (i) => ({ namespace: ns(i), name: name(i), podSelector: i?.spec?.podSelector || {}, policyTypes: i?.spec?.policyTypes || [], ingress: (i?.spec?.ingress || []).length, egress: (i?.spec?.egress || []).length }),
-  pdbs: (i) => ({ namespace: ns(i), name: name(i), selector: i?.spec?.selector?.matchLabels || {} }),
+  pdbs: (i) => ({ namespace: ns(i), name: name(i), selector: i?.spec?.selector?.matchLabels || {}, expressions: i?.spec?.selector?.matchExpressions || [] }),
   hpas: (i) => ({ namespace: ns(i), name: name(i), target: i?.spec?.scaleTargetRef?.name || "", kind: i?.spec?.scaleTargetRef?.kind || "" }),
   policyReports: (i) => ({ namespace: ns(i), name: name(i), fails: (i?.results || []).filter((r) => r.result === "fail").map((r) => ({ policy: r.policy || "", rule: r.rule || "", severity: r.severity || "", resource: r.resources?.[0] ? `${r.resources[0].kind}/${r.resources[0].name}` : "" })) }),
 };

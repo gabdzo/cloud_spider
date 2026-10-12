@@ -35,7 +35,7 @@ test("collector: CoreDNS pods with their nodes, metrics, kube-system CNI, servic
   };
   const kube = fakeKube(world);
   const got = byKey(await kubeNetwork.collect({ kube }));
-  assert.deepEqual(got.get("kube-coredns").fields.pods, [{ name: "coredns-a", node: "n1", ready: true }, { name: "coredns-b", node: "n2", ready: false }]);
+  assert.deepEqual(got.get("kube-coredns").fields.pods, [{ name: "coredns-a", node: "n1", ready: true, labels: { "k8s-app": "kube-dns" } }, { name: "coredns-b", node: "n2", ready: false, labels: { "k8s-app": "kube-dns" } }]);
   assert.equal(got.get("kube-coredns-metrics").fields.servfail, 10);
   assert.equal(got.get("kube-coredns-metrics").fields.total, 1000);
   assert.equal(got.get("kube-cni").fields.enforcer, "VPC CNI network policy agent");
@@ -106,4 +106,43 @@ test("NET-* controls join the networking category, which every profile weighs", 
   for (const c of controls.filter((x) => x.id.startsWith("NET-"))) assert.equal(c.category, "networking", c.id);
   const { loadProfiles } = await import("../src/score/profiles.js");
   for (const p of (await loadProfiles()).profiles) assert.ok(p.categoryWeights.networking > 0, p.id);
+});
+
+// Live 2026-10-12 (cloudspider-up): kube-system/coredns PDB exists
+// (maxUnavailable 1) but NET-DNS-003 said "no PodDisruptionBudget". The EKS
+// CoreDNS add-on's PDB selects { eks.amazonaws.com/component: coredns,
+// k8s-app: kube-dns }; the evaluator matched it against { k8s-app: kube-dns }.
+const EKS_DNS = { "eks.amazonaws.com/component": "coredns", "k8s-app": "kube-dns" };
+test("NET-DNS-003: the EKS add-on's CoreDNS PDB (two matchLabels) counts, matched on the pods' own labels", async () => {
+  const pods = [{ name: "coredns-a", node: "n1", ready: true, labels: EKS_DNS }, { name: "coredns-b", node: "n2", ready: true, labels: EKS_DNS }];
+  const run = (pdbs, p = pods) => E["coredns-resilient"]({ data: { "kube-coredns": { pods: p }, "kube-pdbs": { items: pdbs } } });
+  const eks = { namespace: "kube-system", name: "coredns", selector: EKS_DNS, expressions: [] };
+  const out = run([eks]);
+  assert.deepEqual(out.items.map((i) => i.pass), [true]);
+  assert.match(out.items[0].detail, /2 ready on 2 nodes, PDB coredns/);
+  // matchExpressions are honoured; a PDB for something else or in another namespace is not CoreDNS's.
+  assert.equal(run([{ namespace: "kube-system", name: "dns-x", selector: {}, expressions: [{ key: "k8s-app", operator: "In", values: ["kube-dns"] }] }]).items[0].pass, true);
+  assert.match(run([{ ...eks, selector: { ...EKS_DNS, extra: "x" } }]).items[0].detail, /no PodDisruptionBudget/);
+  assert.match(run([{ ...eks, namespace: "default" }]).items[0].detail, /no PodDisruptionBudget/);
+  assert.match(run([{ ...eks, selector: {} }]).items[0].detail, /no PodDisruptionBudget/, "an empty selector is not a CoreDNS PDB");
+  // A stored scan without pod labels still matches the plain selector.
+  assert.equal(run([{ namespace: "kube-system", name: "coredns", selector: { "k8s-app": "kube-dns" } }], pods.map(({ labels, ...p }) => p)).items[0].pass, true);
+  // End to end through the collectors: the PDB shape keeps matchExpressions, pods keep labels.
+  const { kubePolicy } = await import("../src/score/collectors/kube-policy.js");
+  const rec = (await kubePolicy.collect({ kube: fakeKube({ pdbs: [{ metadata: meta("kube-system", "coredns"), spec: { maxUnavailable: 1, selector: { matchLabels: EKS_DNS } } }] }) })).find((r) => r.key === "kube-pdbs");
+  assert.deepEqual(rec.fields.items, [{ namespace: "kube-system", name: "coredns", selector: EKS_DNS, expressions: [] }]);
+  assert.equal(run(rec.fields.items).items[0].pass, true);
+});
+
+test("NET-DNS-003: a scanner that may not list PDBs scores UNKNOWN (denied), not a failure", async () => {
+  const { kubePolicy } = await import("../src/score/collectors/kube-policy.js");
+  const rec = (await kubePolicy.collect({ kube: fakeKube({ pdbs: { forbidden: true, error: "poddisruptionbudgets.policy is forbidden" } }) })).find((r) => r.key === "kube-pdbs");
+  assert.equal(rec.status, "denied");
+  const { runControls } = await import("../src/score/engine.js");
+  const { controls } = await loadCatalog();
+  const control = controls.find((c) => c.id === "NET-DNS-003");
+  const dns = { key: "kube-coredns", status: "ok", read: "GET corednsPods", fields: { pods: [{ name: "a", node: "n1", ready: true, labels: EKS_DNS }, { name: "b", node: "n2", ready: true, labels: EKS_DNS }] } };
+  const [out] = runControls({ controls: [control], evaluators: E, evidence: new Map([["kube-coredns", dns], ["kube-pdbs", rec]]), profile: { id: "p", overrides: {}, gates: [] }, target: "kubernetes" });
+  assert.equal(out.status, "UNKNOWN");
+  assert.match(out.reason, /^denied: GET pdbs/);
 });

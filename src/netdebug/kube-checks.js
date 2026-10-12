@@ -13,6 +13,17 @@ const sel = (m) => Object.entries(m || {}).map(([k, v]) => `${k}=${v}`).join(","
 const denied = (r) => r?.forbidden;
 
 // matchLabels and matchExpressions (In, NotIn, Exists, DoesNotExist).
+// The PodDisruptionBudget (of { name, selector }) that selects a CoreDNS pod.
+// Matched against the pods' real labels, not just k8s-app=kube-dns: the EKS
+// CoreDNS add-on's PDB also requires eks.amazonaws.com/component=coredns.
+// An empty selector selects nothing here (it is not a CoreDNS PDB).
+export function corednsPdb(pdbs, podLabels) {
+  const known = (podLabels || []).filter((l) => l && Object.keys(l).length);
+  const labels = known.length ? known : [{ "k8s-app": "kube-dns" }];
+  const nonEmpty = (s) => Object.keys(s?.matchLabels || {}).length > 0 || (s?.matchExpressions || []).length > 0;
+  return (pdbs || []).find((p) => nonEmpty(p.selector) && labels.some((l) => selectorMatches(p.selector, l))) || null;
+}
+
 export function selectorMatches(selector, labels) {
   if (!selector) return false;
   const ml = selector.matchLabels || (selector.matchExpressions ? {} : selector);
@@ -194,7 +205,8 @@ export function kubeChecks(ev) {
     const readyN = dep.status?.readyReplicas || 0;
     const dnsPods = (ev.coredns?.pods?.json?.items || []).filter(ready);
     const nodes = [...new Set(dnsPods.map((p) => p.spec?.nodeName).filter(Boolean))];
-    const pdb = (ev.coredns?.pdbs?.json?.items || []).find((p) => selectorMatches(p.spec?.selector, { "k8s-app": "kube-dns" }));
+    const pdbItem = corednsPdb((ev.coredns?.pdbs?.json?.items || []).map((p) => ({ item: p, selector: p.spec?.selector })), [...(ev.coredns?.pods?.json?.items || []).map((p) => p.metadata?.labels), dep.spec?.template?.metadata?.labels]);
+    const pdb = pdbItem?.item;
     const issues = [];
     if (readyN < 2) issues.push(`${readyN} ready replica${readyN === 1 ? "" : "s"}`);
     if (dnsPods.length >= 2 && nodes.length === 1) issues.push(`${dnsPods.length === 2 ? "both" : `all ${dnsPods.length}`} pods run on ${nodes[0]}: losing that node takes cluster DNS down`);
