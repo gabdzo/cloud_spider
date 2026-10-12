@@ -1178,6 +1178,8 @@ let urlPush = false;
 let applyingUrl = false;
 let urlLb = "";
 let learnApi = null;
+let scoreApi = null;
+let settingsApi = null;
 let urlQueue = Promise.resolve();
 // Nothing writes the hash until the first URL has been applied, so the
 // boot renders cannot wipe a reloaded or pasted link.
@@ -1192,6 +1194,7 @@ function urlState() {
     sample,
     learn: learnApi?.isOpen() ? learnApi.current() || "1" : "",
     stacks: pipOpen ? openCard || "1" : "",
+    score: Boolean(scoreApi?.isOpen()),
     lb: path ? lbSelect.value || urlLb : "",
     host: path ? hostInput.value.trim() : "",
   };
@@ -1258,6 +1261,7 @@ async function applyUrl() {
       }
     }
     if (learnApi && Boolean(want.learn) !== learnApi.isOpen()) await learnApi.setOpen(Boolean(want.learn));
+    if (scoreApi && want.score !== scoreApi.isOpen()) await scoreApi.setOpen(want.score);
     if (learnApi?.isOpen() && want.learn !== "1" && want.learn !== learnApi.current()) learnApi.select(want.learn);
   } finally {
     applyingUrl = false;
@@ -3212,8 +3216,10 @@ function openScoreCard(card, cluster) {
   liveWant = { cluster, values: Object.fromEntries(Object.entries(card.params || {}).map(([k, v]) => [k, String(v)])) };
   openEksCard(cluster);
 }
-const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key"), context: () => clusterData?.context || clusterContext, openCard: openScoreCard });
+const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key"), context: () => clusterData?.context || clusterContext, openCard: openScoreCard, onChange: () => syncUrl() });
+scoreApi = scoreView;
 document.querySelector("#score-key").addEventListener("click", () => {
+  markHistory();
   if (!scoreView.isOpen() && learnView.isOpen()) learnView.setOpen(false);
   scoreView.toggle();
 });
@@ -4554,13 +4560,21 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || event.defaultPrevented) return;
   if (event.target instanceof HTMLSelectElement) return;
-  if (terminal.isOpen()) {
+  if (settingsApi?.isOpen()) {
+    // Settings closes on its own Escape when the key is inside it; this is
+    // the gear pressed and the focus still outside (render not back yet).
+    settingsApi.setOpen(false);
+  } else if (terminal.isOpen()) {
     if (terminal.isRunning()) return;
     terminal.setOpen(false);
     askTab.focus();
   } else if (learnView.isOpen()) {
     learnView.setOpen(false);
     document.querySelector("#learn-key").focus();
+  } else if (scoreView.isOpen()) {
+    markHistory();
+    scoreView.setOpen(false);
+    document.querySelector("#score-key").focus();
   } else if (pipOpen) {
     toggleUpgrade();
     upgradeButton.focus();
@@ -4767,7 +4781,7 @@ pull().then(() => {
 // Theme and the effective config: the gear opens settings (settings-view.js).
 // Canvases keep the Pip palette in phase 1; a switch repaints them once the
 // page's colours around them have changed.
-createSettings({
+settingsApi = createSettings({
   root: document.querySelector("#settings"),
   button: document.querySelector("#settings-key"),
   storage: (() => {
