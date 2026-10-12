@@ -29,7 +29,8 @@ export const PRICES = {
 
 // Spot: EC2 spot in eu-north-1 for the t4g/c7g/m7g mediums ran at roughly a
 // third of on-demand in 2026 (it moves by the hour and the zone). A line with
-// `spot: "<param>"` is priced at this share when that parameter is SPOT; the
+// `spot: "<param>"` is priced at this share when that parameter is SPOT
+// (costFor turns it into spot: true for estimate); the
 // card says the figure is rough.
 export const SPOT_SHARE = 0.35;
 
@@ -59,10 +60,10 @@ export function estimate(lines = []) {
     const price = PRICES[line.price];
     if (!price) throw new Error(`unknown price ${line.price}`);
     const qty = line.qty ?? 1;
-    const share = line.spot ? SPOT_SHARE : 1;
+    const share = line.spot === true ? SPOT_SHARE : 1;
     const perHour = (price.per === "hour" ? price.usd * qty : (price.usd * qty) / HOURS_PER_MONTH) * share;
     hourly += perHour;
-    const text = line.spot ? `${price.text} spot (~${Math.round(SPOT_SHARE * 100)}% of on-demand, varies)` : price.text;
+    const text = line.spot === true ? `${price.text} spot (~${Math.round(SPOT_SHARE * 100)}% of on-demand, varies)` : price.text;
     items.push({ text: qty === 1 ? text : `${qty} × ${text}`, month: round(perHour * HOURS_PER_MONTH, 2) });
   }
   return {
