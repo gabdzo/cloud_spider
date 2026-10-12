@@ -5,7 +5,8 @@
 // overlay measured from the cards, so both themes style it with CSS.
 
 import { graphScenario } from "./graph-sample.js";
-import { LAYERS, initialExpanded, sceneStats, timeline, visibleGraph } from "./graph-model.js";
+import { routeEdge } from "./graph-route.js";
+import { LAYERS, initialExpanded, initialLayers, sceneStats, timeline, visibleGraph } from "./graph-model.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const LAYER_LABEL = { static: "STATIC", flow: "FLOWS", trace: "TRACES", owner: "OWNERS" };
@@ -83,7 +84,7 @@ export function createGraphView(root) {
     if (state.scenario === id) return;
     state.scenario = id;
     scene = graphScenario(id);
-    Object.assign(state, { expanded: initialExpanded(scene), query: "", focus: null, selected: null, event: null });
+    Object.assign(state, { expanded: initialExpanded(scene), layers: initialLayers(scene), query: "", focus: null, selected: null, event: null });
     els.search.value = "";
     render();
   }
@@ -165,7 +166,7 @@ export function createGraphView(root) {
       } else {
         const first = !scene || scene.id !== "live" || !scene.groups.length;
         scene = body;
-        if (first) state.expanded = initialExpanded(scene);
+        if (first) Object.assign(state, { expanded: initialExpanded(scene), layers: initialLayers(scene) });
       }
       live.at = Date.now();
     } catch (error) {
@@ -270,32 +271,18 @@ export function createGraphView(root) {
     }
     const paths = [];
     const hot = state.selected;
+    // Orthogonal routes through the gaps (graph-route.js); every card and
+    // chip is an obstacle, so lines no longer cross cards or labels.
+    const obstacles = [...at.values()];
+    const lanes = new Map();
     for (const edge of view.edges) {
       const a = at.get(edge.from);
       const b = at.get(edge.to);
       if (!a || !b) continue;
-      const down = b.y > a.y + a.h / 2;
-      const up = b.y + b.h < a.y + a.h / 2;
-      let d;
-      if (down || up) {
-        const x1 = a.x + a.w / 2;
-        const y1 = down ? a.y + a.h : a.y;
-        const x2 = b.x + b.w / 2;
-        const y2 = down ? b.y : b.y + b.h;
-        const bend = Math.max(24, Math.abs(y2 - y1) / 2);
-        d = `M${x1},${y1} C${x1},${y1 + (down ? bend : -bend)} ${x2},${y2 - (down ? bend : -bend)} ${x2},${y2}`;
-      } else {
-        const right = b.x > a.x;
-        const x1 = right ? a.x + a.w : a.x;
-        const x2 = right ? b.x : b.x + b.w;
-        const y1 = a.y + a.h / 2;
-        const y2 = b.y + b.h / 2;
-        const lift = Math.min(40, 12 + Math.abs(x2 - x1) / 8);
-        d = `M${x1},${y1} C${x1 + (right ? lift : -lift)},${y1 - lift} ${x2 - (right ? lift : -lift)},${y2 - lift} ${x2},${y2}`;
-      }
+      const { d } = routeEdge(a, b, obstacles, { gap: 12, lanes });
       const src = edge.sources.includes("trace") ? "trace" : edge.sources.includes("flow") ? "flow" : edge.sources[0];
       const touch = hot && (edge.from === hot || edge.to === hot);
-      const cls = `gv-edge s-${src}${edge.kinds.includes("owns") ? " owns" : ""}${edge.errors >= 1 ? " err" : ""}${touch ? " hot" : ""}${hot && !touch ? " faint" : ""}`;
+      const cls = `gv-edge s-${src}${edge.quiet ? " quiet" : ""}${edge.kinds.includes("owns") ? " owns" : ""}${edge.errors >= 1 ? " err" : ""}${touch ? " hot" : ""}${hot && !touch ? " faint" : ""}`;
       const width = Math.min(3.2, 1 + Math.log10(1 + edge.rps) * 0.9).toFixed(2);
       const title = `${edge.from.replace(/^g:/, "")} → ${edge.to.replace(/^g:/, "")}: ${edge.count} link${edge.count > 1 ? "s" : ""} · ${edge.kinds.join("/")} · ${edge.sources.join("+")}${edge.rps ? ` · ${edge.rps}/s` : ""}${edge.errors ? ` · ${edge.errors}% errors` : ""}`;
       paths.push(`<path class="${cls}" d="${d}" stroke-width="${width}" marker-end="url(#gv-arrow)"><title>${title.replace(/[<&]/g, "")}</title></path>`);

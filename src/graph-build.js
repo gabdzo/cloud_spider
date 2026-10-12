@@ -9,6 +9,8 @@
 //   NetworkPolicy allow from → to  tcp|http, static
 //   CSV → CR, CR → workload, CSV → its deployments   owns, owner
 
+// A NetworkPolicy namespaceSelector wider than this is drawn as one source.
+export const WIDE_NS = 8;
 const DB_PORTS = new Set([5432, 3306, 6379, 27017, 9042, 5672, 9092, 11211]);
 const HTTP_PORTS = new Set([80, 443, 8080, 8443, 3000, 5000, 8000, 9090]);
 const PLATFORM_NS = /^(kube-|openshift|olm$|operators$|cert-manager|monitoring|istio|linkerd|kyverno|karpenter|keda|calico|cilium|tigera|ingress-|gatekeeper|external-secrets|argocd|flux)/;
@@ -67,6 +69,12 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
   const list = (key) => (reads[key] || []).filter((o) => !nsOf(o) || allow(nsOf(o)));
   const nsLabels = new Map((reads.namespaces || []).map((n) => [meta(n).name, meta(n).labels || {}]));
   const pods = list("pods");
+  const podsByNs = new Map();
+  for (const pod of pods) {
+    if (!podsByNs.has(nsOf(pod))) podsByNs.set(nsOf(pod), []);
+    podsByNs.get(nsOf(pod)).push(pod);
+  }
+  const podsIn = (ns) => podsByNs.get(ns) || [];
   const services = list("services");
   const workloads = [
     ...list("deployments").map((o) => ["Deployment", o]),
@@ -114,8 +122,8 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
     const id = node(`${ns}/${name}`, { group: ns, kind, label: name, ns, ports });
     const sel = svc.spec?.selector;
     if (!sel || !Object.keys(sel).length) continue;
-    for (const pod of pods) {
-      if (nsOf(pod) !== ns || !selects(sel, meta(pod).labels)) continue;
+    for (const pod of podsIn(ns)) {
+      if (!selects(sel, meta(pod).labels)) continue;
       serviceOfPod.set(`${ns}/${meta(pod).name}`, serviceOfPod.get(`${ns}/${meta(pod).name}`) || id);
       const w = workloadOf(pod);
       if (w && !fronted.has(`${ns}/${w}`)) fronted.set(`${ns}/${w}`, id);
@@ -153,7 +161,7 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
   // "ns (all)" node; ipBlocks and allow-all rules say nothing about who.
   const nodesSelected = (ns, selector) => {
     const out = new Set();
-    for (const pod of pods) if (nsOf(pod) === ns && selects(selector || {}, meta(pod).labels)) {
+    for (const pod of podsIn(ns)) if (selects(selector || {}, meta(pod).labels)) {
       const id = nodeOfPod(pod);
       if (id) out.add(id);
     }
@@ -169,6 +177,14 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
       for (const from of rule.from || []) {
         if (from.ipBlock) continue;
         const nsMatch = from.namespaceSelector ? [...nsLabels.keys()].filter((n) => allow(n) && selects(from.namespaceSelector, { ...nsLabels.get(n), "kubernetes.io/metadata.name": n })) : [ns];
+        // A selector that matches many namespaces is one source, not one
+        // per namespace: "tier=edge (94 ns)".
+        if (nsMatch.length > WIDE_NS) {
+          const label = Object.entries(from.namespaceSelector.matchLabels || {}).map(([k, v]) => `${k}=${v}`).join(",") || "namespaces";
+          const src = node(`${ns}/sel:${label}`, { group: ns, kind: "namespace", label: `${label} (${nsMatch.length} ns)`, ns });
+          for (const t of targets) edge(src, t, kind, "static");
+          continue;
+        }
         for (const srcNs of nsMatch) {
           const sources = from.podSelector ? nodesSelected(srcNs, from.podSelector) : [node(`${srcNs}/*`, { group: srcNs, kind: "namespace", label: `${srcNs} (all)`, ns: srcNs })];
           for (const s of sources) for (const t of targets) edge(s, t, kind, "static");
@@ -203,24 +219,60 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
     }
   }
 
-  // Groups: one per namespace that has something in it.
-  const groupIds = [...new Set([...nodes.values()].map((n) => n.group))].sort();
+  // OLM across namespaces: a namespace whose custom resources all belong to
+  // one CSV, and at least half of whose other nodes those CRs own, is that
+  // operator's operand: it folds into the operator's card.
+  const foldInto = new Map(); // ns → csv's namespace
+  const byNs = new Map();
+  for (const n of nodes.values()) {
+    if (!byNs.has(n.group)) byNs.set(n.group, []);
+    byNs.get(n.group).push(n);
+  }
+  const csvNsSet = new Set(csvs.map(nsOf));
+  const csvOwnerOf = new Map(); // CR node → CSV node
+  const ownedBy = new Map(); // CR node → nodes it owns
+  for (const e of edges) {
+    if (e.kind !== "owns") continue;
+    if (e.from.includes("/csv:")) csvOwnerOf.set(e.to, e.from);
+    if (!ownedBy.has(e.from)) ownedBy.set(e.from, []);
+    ownedBy.get(e.from).push(e.to);
+  }
+  for (const [ns, mine] of byNs) {
+    if (csvNsSet.has(ns)) continue;
+    const crs = mine.filter((n) => n.kind === "cr");
+    if (!crs.length) continue;
+    const ops = new Set(crs.map((n) => csvOwnerOf.get(n.id) || ""));
+    if (ops.size !== 1 || ops.has("")) continue;
+    const owned = new Set(crs.flatMap((c) => ownedBy.get(c.id) || []));
+    const rest = mine.filter((n) => n.kind !== "cr");
+    if (rest.length && owned.size * 2 < rest.length) continue;
+    foldInto.set(ns, nodes.get([...ops][0]).group);
+  }
+  for (const n of nodes.values()) if (foldInto.has(n.group)) n.group = foldInto.get(n.group);
+
+  // Groups: one per namespace that has something in it (operands folded).
+  const inGroup = new Map();
+  for (const n of nodes.values()) {
+    if (!inGroup.has(n.group)) inGroup.set(n.group, []);
+    inGroup.get(n.group).push(n);
+  }
+  const groupIds = [...inGroup.keys()].sort();
   const csvNs = new Set(csvs.map(nsOf));
   const health = new Map();
   const podCount = new Map();
   for (const pod of pods) {
-    const ns = nsOf(pod);
+    const ns = foldInto.get(nsOf(pod)) || nsOf(pod);
     podCount.set(ns, (podCount.get(ns) || 0) + 1);
     const s = podState(pod);
     const was = health.get(ns) || "ok";
     if (s === "broken" || (s === "hang" && was === "ok")) health.set(ns, s);
   }
   const groups = groupIds.map((id) => {
-    const mine = [...nodes.values()].filter((n) => n.group === id);
+    const mine = inGroup.get(id);
     const operator = csvNs.has(id) || (mine.some((n) => n.kind === "operator") && !mine.some((n) => n.kind === "service" || n.kind === "db"));
     const band = mine.some((n) => n.kind === "ingress" && !n.id.includes("/ingress:") && !n.id.includes("/route:")) || EDGE_NS.test(id) ? "edge" : PLATFORM_NS.test(id) || operator || id === "default" && mine.every((n) => n.kind === "external") ? "platform" : "apps";
     const csv = csvs.find((c) => nsOf(c) === id);
-    return { id, label: csv && csvs.filter((c) => nsOf(c) === id).length === 1 ? `${csv.spec?.displayName || meta(csv).name} · ${id}` : id, band, kind: operator ? "operator" : "namespace", namespaces: 1, crds: crdCount.get(id) || 0, pods: podCount.get(id) || 0, health: health.get(id) || "ok" };
+    return { id, label: csv && csvs.filter((c) => nsOf(c) === id).length === 1 ? `${csv.spec?.displayName || meta(csv).name} · ${id}` : id, band, kind: operator ? "operator" : "namespace", namespaces: 1 + [...foldInto.values()].filter((v) => v === id).length, folded: [...foldInto].filter(([, v]) => v === id).map(([k]) => k), crds: crdCount.get(id) || 0, pods: podCount.get(id) || 0, health: health.get(id) || "ok" };
   });
 
   // Recent Warning and rollout events: what the timeline shows until the
@@ -231,13 +283,14 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
   for (const ev of list("events")) {
     const t = Date.parse(ev.lastTimestamp || ev.eventTime || ev.firstTimestamp || "") || 0;
     if (t < start || t > now) continue;
-    const ns = ev.involvedObject?.namespace || nsOf(ev);
+    const evNs = ev.involvedObject?.namespace || nsOf(ev);
+    const ns = foldInto.get(evNs) || evNs;
     const reason = ev.reason || "";
     const kind = /BackOff|OOM|Killing|Unhealthy/.test(reason) ? (reason === "Unhealthy" ? "warning" : "restart") : /ScalingReplicaSet|SuccessfulCreate/.test(reason) ? "rollout" : ev.type === "Warning" ? "warning" : "";
     if (!kind || !groupIds.includes(ns)) continue;
     const obj = ev.involvedObject || {};
-    const pod = obj.kind === "Pod" ? podIndex.get(`${ns}/${obj.name}`) : null;
-    const target = pod ? nodeOfPod(pod) : workloadNode.get(`${ns}/${obj.kind}/${obj.name}`) || "";
+    const pod = obj.kind === "Pod" ? podIndex.get(`${evNs}/${obj.name}`) : null;
+    const target = pod ? nodeOfPod(pod) : workloadNode.get(`${evNs}/${obj.kind}/${obj.name}`) || "";
     events.push({ t: hhmm(t), at: t, kind, group: ns, node: target, text: `${obj.name || ns}: ${reason}${ev.message ? ` — ${String(ev.message).slice(0, 140)}` : ""}` });
   }
   events.sort((a, b) => a.at - b.at);

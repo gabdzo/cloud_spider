@@ -59,6 +59,7 @@ export const FILES = new Set([
   "pod-inspect-view.js",
   "ops-view.js",
   "graph-sample.js",
+  "graph-route.js",
   "graph-model.js",
   "graph-view.js",
   "slo.js",
@@ -1355,7 +1356,7 @@ const page = `<!doctype html>
   #kube-graph .gv-bands { position: relative; display: flex; flex-direction: column; gap: 20px; padding-top: 10px; }
   #kube-graph .gv-band { position: relative; padding: 18px 10px 10px; border: 1px dashed var(--pip-dark); }
   #kube-graph .gv-blabel { position: absolute; top: -8px; left: 10px; margin: 0; padding: 0 6px; font-size: 10px; letter-spacing: 0.2em; color: var(--pip-dim); background: var(--pip-screen); font-weight: normal; }
-  #kube-graph .gv-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  #kube-graph .gv-grid { display: flex; flex-wrap: wrap; gap: 18px 18px; }
   #kube-graph .gv-group { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 4px; min-width: 150px; max-width: 100%; padding: 6px 8px 7px; background: rgba(2, 10, 5, 0.92); border: 1px solid var(--pip-dim); box-shadow: 0 0 0 1px #000, 0 4px 10px rgba(0, 0, 0, 0.5); transition: opacity 0.15s; }
   #kube-graph .gv-group::before, #kube-graph .gv-group::after { content: ""; position: absolute; width: 7px; height: 7px; border: 2px solid var(--pip-bright); pointer-events: none; }
   #kube-graph .gv-group::before { left: -3px; top: -3px; border-right: 0; border-bottom: 0; }
@@ -1374,7 +1375,7 @@ const page = `<!doctype html>
   #kube-graph .gv-tag, #kube-graph .gv-ntag, #kube-graph .gv-etag { flex: none; font-size: 9px; letter-spacing: 0.1em; padding: 0 4px; color: var(--pip-ink); background: var(--pip-dim); }
   #kube-graph .gv-open { flex: none; width: 20px; height: 20px; font: inherit; font-size: 13px; line-height: 1; color: var(--pip-mid); background: var(--pip-ink); border: 1px solid var(--pip-dark); cursor: pointer; padding: 0; }
   #kube-graph .gv-meta { color: var(--pip-dim); font-size: 10px; letter-spacing: 0.04em; }
-  #kube-graph .gv-nodes { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; border-top: 1px dashed var(--pip-dark); }
+  #kube-graph .gv-nodes { display: flex; flex-wrap: wrap; gap: 12px 10px; padding-top: 10px; border-top: 1px dashed var(--pip-dark); }
   #kube-graph .gv-node { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; font: inherit; font-size: 11px; padding: 3px 7px 3px 4px; color: var(--pip-mid); background: var(--pip-ink); border: 1px solid var(--pip-dark); cursor: pointer; }
   #kube-graph .gv-node span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #kube-graph .gv-node:hover { border-color: var(--pip-dim); color: var(--pip-bright); }
@@ -1391,6 +1392,7 @@ const page = `<!doctype html>
   #kube-graph .gv-edge.err { stroke: var(--status-broken); opacity: 0.95; }
   #kube-graph .gv-edge.hot { opacity: 1; filter: drop-shadow(0 0 3px var(--glow-bright)); }
   #kube-graph .gv-edge.faint { opacity: 0.3; }
+  #kube-graph .gv-edge.quiet { opacity: 0.3; stroke-width: 1px; }
   #kube-graph .gv-arrowhead { fill: var(--pip-mid); }
   #kube-graph .gv-timeline { padding: 8px 10px 10px; border: 1px solid var(--pip-dark); background: rgba(2, 10, 5, 0.75); }
   #kube-graph .gv-tlhead { display: flex; gap: 12px; align-items: baseline; color: var(--pip-dim); }
