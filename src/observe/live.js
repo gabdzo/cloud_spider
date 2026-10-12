@@ -31,9 +31,25 @@ export function parseProm(text = "") {
   return out;
 }
 
-const nsOf = (l, side) => l[`${side}_service_namespace`] || l[`${side}_k8s_namespace_name`] || l[`${side}_namespace`] || "";
+// Graph nodes are keyed by the Kubernetes namespace; Beyla's service
+// namespace is app.kubernetes.io/part-of when set (brother-demo, not
+// brother-sandbox). Prefer the k8s namespace, and map a client's service
+// namespace through what the server-side series of that scrape say.
+const svcNsOf = (l) => l.service_namespace || (String(l.job || "").includes("/") ? String(l.job).split("/")[0] : "");
+export function namespaceAliases(samples) {
+  const out = {};
+  for (const { labels: l } of samples) { const sn = svcNsOf(l); if (sn && l.k8s_namespace_name && !(sn in out)) out[sn] = l.k8s_namespace_name; }
+  return out;
+}
+const nsOf = (l, side, alias = {}) => {
+  if (side === "server" && l.k8s_namespace_name) return l.k8s_namespace_name;
+  const k8s = l[`${side}_k8s_namespace_name`];
+  if (k8s) return k8s;
+  const sn = l[`${side}_service_namespace`] || l[`${side}_namespace`] || "";
+  return alias[sn] || sn;
+};
 const idOf = (ns, name) => (ns ? `${ns}/${name}` : name);
-const svcId = (l) => idOf(l.service_namespace || l.k8s_namespace_name || "", l.service_name || l.k8s_deployment_name || l.job || "");
+const svcId = (l) => idOf(l.k8s_namespace_name || l.service_namespace || "", l.service_name || l.k8s_deployment_name || l.job || "");
 
 // Quantile from cumulative histogram buckets [{ le, count }].
 export function quantile(buckets, q = 0.95) {
@@ -57,10 +73,11 @@ export function countersOf(samples) {
   const edges = {}; const red = {};
   const edge = (key) => (edges[key] ??= { total: 0, failed: 0, buckets: {}, kind: "http" });
   const svc = (key) => (red[key] ??= { total: 0, failed: 0, buckets: {} });
+  const alias = namespaceAliases(samples);
   for (const { name, labels: l, value } of samples) {
     if (name.startsWith("traces_service_graph_request")) {
       if (!l.client || !l.server) continue;
-      const key = `${idOf(nsOf(l, "client"), l.client)}>${idOf(nsOf(l, "server"), l.server)}`;
+      const key = `${idOf(nsOf(l, "client", alias), l.client)}>${idOf(nsOf(l, "server", alias), l.server)}`;
       const e = edge(key);
       if (/grpc/i.test(l.connection_type || l.rpc_system || "")) e.kind = "grpc";
       if (name === "traces_service_graph_request_total") e.total += value;
