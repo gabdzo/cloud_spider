@@ -76,7 +76,7 @@ test("the server serves the panel module", () => {
 
 test("categories: scored ones show a number and a tone; thin evidence shows no number; empty ones are left out", () => {
   const m = scoreModel(view);
-  assert.deepEqual(m.categories.map((c) => [c.name, c.text, c.tone]), [["platform", "31", "bad"], ["security", "not enough evidence", "muted"]]);
+  assert.deepEqual(m.categories.map((c) => [c.name, c.text, c.tone]), [["platform", "30.6", "bad"], ["security", "not enough evidence", "muted"]]);
   assert.deepEqual(m.meter, { assessed: 100, unknown: 0, notAssessed: 0 });
   assert.deepEqual(m.counts, { FAIL: 1, PASS: 1, UNKNOWN: 0, NOT_ASSESSED: 0, NOT_APPLICABLE: 1 });
   assert.equal(m.tone, "bad");
