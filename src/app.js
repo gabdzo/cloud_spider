@@ -29,6 +29,7 @@ import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./add
 import { daemonSetCheck, daemonSetRoom, podRoom } from "../upgrades/addons/pod-room.js";
 import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.js";
 import { sampleClusterSnapshot } from "./kube-sample.js";
+import { sampleVaultSnapshot } from "./vault-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, nodeGroupChange, runHint, watchLine } from "./upgrade-rules.js";
@@ -1333,8 +1334,14 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       const viewer = sample ? vaults?.sample : vaults?.live;
       if (!viewer) return { dir: "", note: "vaults are not set up", vaults: [] };
       try {
-        if (sample) return await viewer.view(vaults.samplePlace?.(), { failures: vaults.sampleFailures?.() || [], slo: { metrics: sampleMetrics(vaults.samplePlace?.(), { now: now() }) } });
-        const view = await viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: sloMetrics(), cluster: sloCluster, clusters: sloClusterList() } });
+        if (sample) {
+          const snap = sampleVaultSnapshot(sampleClusterSnapshot());
+          return await viewer.view(vaults.samplePlace?.(), { failures: vaults.sampleFailures?.() || [], slo: { metrics: sampleMetrics(vaults.samplePlace?.(), { now: now() }) }, kube: [{ cluster: snap.clusterName || "cloudspider-up", snap }] });
+        }
+        // Vault health reads the pods the cluster view already polled (no
+        // extra cluster call): every context's last snapshot.
+        const kube = [...kubeCaches.values()].map((hit) => ({ cluster: hit.snap?.clusterName || "", snap: hit.snap }));
+        const view = await viewer.view(place, { failures: radio.failures(), slo: { ledger, metrics: sloMetrics(), cluster: sloCluster, clusters: sloClusterList() }, kube });
         sloAlbIds = albIdsOf(view);
         keepSlos(view);
         return view;

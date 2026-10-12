@@ -1,3 +1,4 @@
+import { sampleStackState } from "./vault-sample.js";
 import { idleCandidates, morningReport } from "./layout.js";
 import { ingressRoutes, openApiRoutes, rootRoute } from "./alb-routes.js";
 
@@ -279,13 +280,17 @@ export async function sampleFetch(url, { signal } = {}) {
 // stacks of samples/vaults/templates are up (auto-discovery, #201), so
 // VAULTS shows the cluster vaults with their perks (vault-perks.js).
 const SAMPLE_UP = { "upgrades/eks|*": 41, "upgrades/addons|karpenter-cloudspider-up": 14, "upgrades/addons|kyverno-cloudspider-up": 9, "upgrades/addons|cert-manager-cloudspider-lab": 6, "upgrades/addons|scaling-demo-cloudspider-up": 4, "upgrades/shopapi|shopapi": 7, "upgrades/demo|demo": 18 };
-export function sampleStacks() {
+// deployedAt(): when the sample stacks last deployed (0: unknown, as in
+// tests with a fixed clock; the sample server says a few hours ago).
+export function sampleStacks({ deployedAt = () => 0 } = {}) {
   return {
     async read(spec) {
       const up = SAMPLE_UP[`${spec?.dir}|${spec?.name}`];
-      if (up) return { stacks: [{ name: spec.name, resources: [] }], handles: new Set(), outputs: {}, count: up, error: "" };
-      if (spec?.name !== "camp") return { stacks: [], handles: new Set(), outputs: {}, count: 0, error: "" };
-      return { stacks: [{ name: "camp", resources: [] }], handles: new Set(["camp-function", "camp-table"]), outputs: {}, count: 6, error: "" };
+      const resources = sampleStackState(spec?.dir, spec?.name);
+      const name = spec?.name === "*" ? "cloudspider-up" : spec?.name;
+      if (up) return { stacks: [{ name, resources }], resources, handles: new Set(), outputs: {}, count: up, updated: deployedAt(), error: "" };
+      if (spec?.name !== "camp") return { stacks: [], resources: [], handles: new Set(), outputs: {}, count: 0, error: "" };
+      return { stacks: [{ name: "camp", resources }], resources, handles: new Set(["camp-function", "camp-table"]), outputs: {}, count: 6, updated: deployedAt(), error: "" };
     },
   };
 }
