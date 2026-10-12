@@ -293,10 +293,10 @@ export function createGraphView(root) {
         h("button", { type: "button", className: "gv-btn gv-sclose", text: "×", title: "close (Esc)", "aria-label": "close", onclick: (ev) => selectNode(node.id, ev) })),
       h("p", { className: "gv-smeta", text: `${KIND_NAME[node.kind] || node.kind} · ${node.ns}` }),
       ...(node.flags || []).map((f) => h("p", { className: `gv-sflag f-${f.id}`, text: `${f.text}: ${f.why}` })),
-      node.endpoints || node.svcPorts ? endpointsSection(node) : null,
+      ...(node.endpoints || node.svcPorts ? [endpointsSection(node)] : []),
       list("CALLED BY", calls.inbound),
       list("CALLS", calls.outbound),
-      node.ns && /^[a-z0-9-]+$/.test(svcName) ? h("a", { className: "gv-inside", href: `#path?debug=${encodeURIComponent(`${svcName}.${node.ns}:`)}&inside=1`, text: "DEBUG FROM INSIDE ›", title: "SNIFF › FROM INSIDE: a short-lived debug pod checks DNS, TCP, HTTP, hops and NetworkPolicy to this Service" }) : null,
+      node.ns && /^[a-z0-9-]+$/.test(svcName) ? h("a", { className: "gv-inside", href: `#path?debug=${encodeURIComponent(`${svcName}.${node.ns}:`)}&inside=1`, text: "DEBUG FROM INSIDE ›", title: "SNIFF › FROM INSIDE: a short-lived debug pod checks DNS, TCP, HTTP, hops and NetworkPolicy to this Service" }) : "",
     );
   }
 
