@@ -236,6 +236,7 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
       const li = el("li");
       li.dataset.kind = c.kind;
       li.append(el("span", "sc-chip", c.label), el("span", "sc-id", c.id), el("span", "", c.title), el("span", "sc-muted", c.move));
+      li.children[2].title = c.title;
       list.append(li);
     }
     if (model.changes.length > 8) list.append(el("li", "sc-muted sc-small", `+${model.changes.length - 8} more in the table below`));

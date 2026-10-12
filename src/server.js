@@ -1700,7 +1700,7 @@ const page = `<!doctype html>
   .vault-panel {
     position: absolute; display: flex; flex-direction: column; min-width: 0;
     font-size: 12px; line-height: 1.45; color: var(--pip-mid);
-    background: rgba(2, 10, 5, 0.94); border: 2px solid var(--pip-dim);
+    background: rgb(2, 10, 5); border: 2px solid var(--pip-dim);
     box-shadow: 0 0 0 1px #000, 0 8px 20px rgba(0, 0, 0, 0.55), inset 0 0 18px rgba(20, 255, 106, 0.05);
   }
   .vault-panel::before, .vault-panel::after {
@@ -1838,7 +1838,8 @@ const page = `<!doctype html>
   .lx-slot[aria-pressed="true"] { border-color: var(--pip-bright); background: var(--pip-ink); box-shadow: 0 0 10px var(--glow-soft); }
   .lx-slot[aria-pressed="true"] .lx-tape { transform: translateY(-5px); }
   .lx-num { color: var(--world-text); letter-spacing: 0.12em; }
-  .lx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0.02em; }
+  /* tape names wrap to two lines: a 96px slot cannot hold "ServiceAccounts and Pod Security" on one */
+  .lx-name { max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow-wrap: anywhere; text-align: center; line-height: 1.2; min-height: 2.4em; letter-spacing: 0.02em; }
   .lx-slot.passed .lx-num { color: var(--pip-bright); text-shadow: 0 0 5px var(--glow-bright); }
   .lx-slot.failing .lx-num { color: var(--status-broken); }
   .lx-slot.started .lx-num { color: var(--status-hang); }
@@ -1971,7 +1972,8 @@ const page = `<!doctype html>
     position: absolute; top: 10px; left: 12px; z-index: 4; margin: 0;
     width: min(400px, calc(100% - 24px)); max-height: calc(100% - 20px); overflow: auto;
     padding: 0 0 8px; font-size: 13px; color: var(--pip-bright);
-    background: rgba(2, 10, 5, 0.96); border: 2px solid var(--pip-mid);
+    /* opaque: a see-through panel lets the map's labels read through the cards */
+    background: rgb(2, 10, 5); border: 2px solid var(--pip-mid);
     box-shadow: 0 0 18px rgba(20, 255, 106, 0.22); scrollbar-width: thin; scrollbar-color: var(--pip-dim) var(--pip-ink);
   }
   #pip .ptitle { margin-bottom: 8px; }
@@ -2504,6 +2506,10 @@ const page = `<!doctype html>
   :root[data-theme="pro"] .readout { gap: 12px; color: var(--text-2); font: 500 12px var(--font-ui); letter-spacing: 0; }
   :root[data-theme="pro"] .readout b { color: var(--text-3); font-weight: 500; }
   :root[data-theme="pro"] select, :root[data-theme="pro"] input { border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: 13px var(--font-ui); box-shadow: none; }
+  /* Pro: panels over the map are solid, and the PULUMI / TF engine tag keeps a face once its gradient is dropped */
+  :root[data-theme="pro"] :is(#pip, .vault-panel) { background-color: var(--raised); }
+  :root[data-theme="pro"] #pip .eng { color: var(--text, #e6e8eb); background-color: var(--surface); border: 1px solid var(--border); border-radius: 4px; }
+  :root[data-theme="pro"] #pip .eng.tf { color: #0b0d10; background-color: #d9b45a; border-color: #d9b45a; }
   :root[data-theme="pro"] :is(.glass, #morning, .m-line, #spend-lines, .sp-head, #vault-page, .vpg-open, .kc-chip, #kube-connect .kc-fold, #kube-ctx button, #learn, .lx-shelf, #pip .eng, #pip .ad-plate, #term, .dial .scale, .runpane .run-out, #pip .meter-cell) { background-image: none; box-shadow: none; }
   :root[data-theme="pro"] .glass { display: none; }
   :root[data-theme="pro"] :is(#morning, #spend-lines, #learn, #term, #vault-page) { border-color: var(--border-strong); border-radius: 10px; background-color: var(--raised); }
