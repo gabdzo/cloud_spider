@@ -917,6 +917,9 @@ const page = `<!doctype html>
 
   /* ---- header gauges: the tally and the bill as recessed LCD strips ---- */
   .gauges { flex: 1 1 360px; min-width: 0; display: flex; align-items: center; gap: 10px; }
+  /* Views without the tally or the bill (SNIFF, CLUSTER...) kept an empty
+     360px gauge slot that pushed the readout onto a row of its own. */
+  .gauges:has(> #tally[hidden]):has(#spend[hidden]) { display: none; }
   .lcd {
     display: flex; align-items: center; gap: 8px; min-width: 0; height: 44px; margin: 0;
     padding: 0 12px 0 9px; border: 0; border-radius: 6px;
@@ -933,7 +936,8 @@ const page = `<!doctype html>
   #tally-issue:empty { display: none; }
   #tally-issue::before { content: "! "; }
   #tally.issue { box-shadow: inset 0 0 0 2px #000, inset 3px 0 0 var(--status-broken), inset 0 0 10px rgba(0, 0, 0, 0.9), 0 1px 0 rgba(255, 255, 255, 0.12); }
-  #corner { position: relative; flex: 0 1 260px; min-width: 150px; }
+  /* 190px: CAPS, a readable bill and the caret; at 150 the bill read "Cost…". */
+  #corner { position: relative; flex: 0 1 260px; min-width: 190px; }
   #spend { width: 100%; cursor: pointer; text-align: left; }
   #spend b { flex: none; color: var(--pip-ink); background: var(--pip-bright); padding: 0 5px; letter-spacing: 0.12em; font-size: 11px; text-shadow: none; }
   #spend-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -2422,10 +2426,38 @@ const page = `<!doctype html>
     .tab { gap: 5px; padding: 0 8px; letter-spacing: 0.06em; }
     .console { gap: 10px; padding-left: 9px; padding-right: 9px; }
     .keys { gap: 7px; }
+    /* The knobs are decoration (aria-hidden): below 1400 they wrapped onto a
+       third header row of their own at 1280 (UX overlaps B). */
+    .knobs { display: none; }
   }
   @media (max-width: 1100px) {
     #radio-panel { flex-basis: 250px; }
-    .knobs { display: none; }
+  }
+  /* Compact Pip header below 1200 (UX overlaps B): at 1024 the header was
+     ~230px of 768, three rows. Same hardware, smaller: porthole, plate
+     title, key caps and the readout shrink, the plate's subtitle goes (the
+     title says it), so the console, gauges and readout share row two. */
+  @media (max-width: 1199px) {
+    .terminal #tally { order: 20; flex: 0 1 auto; max-width: 100%; height: 28px; margin-left: auto; font-size: 12px; }
+    :root:not([data-theme="pro"]) header { gap: 8px 10px; padding: 6px 10px 8px; }
+    :root:not([data-theme="pro"]) .plate { gap: 8px; padding: 4px 10px 4px 5px; }
+    :root:not([data-theme="pro"]) .porthole { width: 40px; height: 40px; }
+    :root:not([data-theme="pro"]) #mascot { width: 38px; height: 35px; }
+    :root:not([data-theme="pro"]) h1 { font-size: 18px; letter-spacing: 0.1em; }
+    :root:not([data-theme="pro"]) .plate small { display: none; }
+    :root:not([data-theme="pro"]) .tab { min-height: 32px; }
+    :root:not([data-theme="pro"]) .tabs { padding-top: 5px; padding-bottom: 7px; }
+    :root:not([data-theme="pro"]) .console { gap: 8px; padding: 4px 8px; }
+    :root:not([data-theme="pro"]) .keys { gap: 5px; }
+    :root:not([data-theme="pro"]) .key { gap: 4px; }
+    :root:not([data-theme="pro"]) .key .cap { width: 36px; height: 26px; }
+    :root:not([data-theme="pro"]) .key .cap img { width: 16px; height: 16px; }
+    :root:not([data-theme="pro"]) .key .tag { min-width: 38px; padding: 0 3px 1px; font-size: 8px; letter-spacing: 0.12em; }
+    :root:not([data-theme="pro"]) .switch { min-height: 36px; gap: 6px; padding: 2px 8px; }
+    :root:not([data-theme="pro"]) .gauges { flex-basis: 200px; gap: 8px; }
+    :root:not([data-theme="pro"]) .lcd { height: 36px; font-size: 12px; }
+    :root:not([data-theme="pro"]) .readout { gap: 8px; padding: 4px 8px; font-size: 12px; }
+    :root:not([data-theme="pro"]) .readout b, :root:not([data-theme="pro"]) .readout label { letter-spacing: 0.08em; }
   }
   @media (max-width: 900px) {
     body { padding: 4px; }
