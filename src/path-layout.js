@@ -1,7 +1,9 @@
 const COL_W = 220;
 const COL_GAP = 56;
-const MIN_COL_W = 140;
-const MIN_COL_GAP = 16;
+// Narrow windows (760): 6-8 columns must fit, so cards shrink to 88px
+// (path-draw drops the icon below 120px) rather than run off the right edge.
+const MIN_COL_W = 88;
+const MIN_COL_GAP = 12;
 const ROW_H = 64;
 const ROW_GAP = 14;
 const PAD = 24;

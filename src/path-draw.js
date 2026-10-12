@@ -198,15 +198,22 @@ function drawProEdge(ctx, edge, color, animTime, reducedMotion) {
   proDot(ctx, edge.x2, edge.y2, color, 2.5);
 }
 
+// Below this width a node card drops its icon (narrow windows, path-layout MIN_COL_W).
+export const COMPACT_W = 120;
+
 function drawProNode(ctx, node, selected, glyph) {
   const color = STATUS[node.status] || muted();
   proCard(ctx, node.x, node.y, node.w, node.h, { color, selected });
   const big = node.w >= 190;
-  ctx.globalAlpha = 0.85;
-  drawSprite(ctx, glyph, node.x + 14, node.y + (big ? 14 : 22), big ? 2 : 1);
-  ctx.globalAlpha = 1;
-  const left = node.x + (big ? 56 : 38);
-  const room = node.w - (big ? 64 : 46) - (node.status && node.status !== "ok" ? 16 : 0);
+  // Compact cards (narrow windows): no icon, the text gets the room.
+  const compact = node.w < COMPACT_W;
+  if (!compact) {
+    ctx.globalAlpha = 0.85;
+    drawSprite(ctx, glyph, node.x + 14, node.y + (big ? 14 : 22), big ? 2 : 1);
+    ctx.globalAlpha = 1;
+  }
+  const left = node.x + (compact ? 12 : big ? 56 : 38);
+  const room = node.w - (compact ? 20 : big ? 64 : 46) - (node.status && node.status !== "ok" ? 16 : 0);
   ctx.font = FONT;
   ctx.fillStyle = text();
   ctx.fillText(clip(node.label, Math.max(6, Math.floor(room / 7.2))), left, node.y + 27);
@@ -232,12 +239,15 @@ function drawNode(ctx, node, selected, glyph, phase) {
   // Big icon on roomy panels, small one when the window squeezes the columns.
   const big = node.w >= 190;
   const box = big ? 36 : 20;
-  ctx.fillStyle = rgba(INK.bright, 0.08);
-  ctx.fillRect(node.x + 12, node.y + 10, box, box);
-  drawSprite(ctx, glyph, node.x + 14, node.y + 12, big ? 2 : 1);
+  const compact = node.w < COMPACT_W;
+  if (!compact) {
+    ctx.fillStyle = rgba(INK.bright, 0.08);
+    ctx.fillRect(node.x + 12, node.y + 10, box, box);
+    drawSprite(ctx, glyph, node.x + 14, node.y + 12, big ? 2 : 1);
+  }
 
-  const left = node.x + (big ? 56 : 38);
-  const room = node.w - (big ? 64 : 46) - (node.status === "broken" ? 22 : 0);
+  const left = node.x + (compact ? 14 : big ? 56 : 38);
+  const room = node.w - (compact ? 22 : big ? 64 : 46) - (node.status === "broken" ? 22 : 0);
   ctx.font = FONT;
   ctx.fillStyle = text();
   ctx.fillText(clip(node.label, Math.max(6, Math.floor(room / 8.5))), left, node.y + 26);
@@ -298,4 +308,44 @@ function wrap(text, max) {
   }
   if (line) lines.push(line);
   return lines;
+}
+
+// Pan hint: when the path is wider than the window (narrow screens, long
+// paths) the stage scrolls sideways; a fade and a "more →" pill sit at the
+// visible edge that has more, so the cut-off column is never a mystery.
+// view = { left, width, height, contentWidth }; returns which edges it drew.
+export function drawPanHint(ctx, view) {
+  const { left = 0, width = 0, height = 0, contentWidth = 0 } = view || {};
+  const out = { left: left > 2, right: left + width < contentWidth - 2 };
+  if (!out.left && !out.right) return out;
+  syncInk();
+  const bg = INK.ink;
+  const edge = (x, dir, label) => {
+    const g = ctx.createLinearGradient(x, 0, x + dir * 48, 0);
+    g.addColorStop(0, rgba(bg, 0.95));
+    g.addColorStop(1, rgba(bg, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(dir > 0 ? x : x - 48, 0, 48, height);
+    ctx.font = inkFont(11, PRO);
+    const w = Math.ceil(ctx.measureText(label).width) + 18;
+    const px = dir > 0 ? x + 8 : x - 8 - w;
+    const py = 10;
+    ctx.fillStyle = INK.screen;
+    ctx.strokeStyle = INK.line;
+    ctx.lineWidth = 1;
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(px + 0.5, py + 0.5, w, 22, 11);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.fillRect(px, py, w, 22);
+      ctx.strokeRect(px + 0.5, py + 0.5, w, 22);
+    }
+    ctx.fillStyle = INK.bright;
+    ctx.fillText(label, px + 9, py + 15);
+  };
+  if (out.right) edge(left + width, -1, PRO ? "more →" : "MORE →");
+  if (out.left) edge(left, 1, PRO ? "← back" : "← BACK");
+  return out;
 }

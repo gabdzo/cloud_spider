@@ -21,7 +21,7 @@ import {
   switchRegion,
 } from "./ui.js";
 import { layoutDiagram, layoutPath, nodeAt } from "./path-layout.js";
-import { paintDiagram, paintPath, sentenceRect } from "./path-draw.js";
+import { drawPanHint, paintDiagram, paintPath, sentenceRect } from "./path-draw.js";
 import { CLUSTER_COLUMNS } from "./cluster.js";
 import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
@@ -1668,7 +1668,7 @@ function drawPath() {
     height,
     empty: pathEmptyText(),
     reducedMotion,
-  });
+  });  drawPanHint(ctx, { left: map.scrollLeft, width: map.clientWidth, height: Math.min(height, map.scrollTop + map.clientHeight), contentWidth: placed.contentWidth });
 }
 
 // Cluster lanes: which namespaces are open and which workloads list their
@@ -2983,6 +2983,7 @@ function stickyOffset() {
 // Sticky lane heads follow the scroll (kube-draw.js).
 map.addEventListener("scroll", () => {
   if (mode === "cluster" && clusterData?.diagram?.layout === "kube") draw();
+  if (mode === "path") draw(); // the pan hint follows the visible edge
 }, { passive: true });
 
 canvas.addEventListener("mouseleave", () => {
