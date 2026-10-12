@@ -461,7 +461,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   function drawFindings(model) {
     const pane = h("aside", { className: "nd-findings", "aria-label": "findings (inferences)" }, h("span", { className: "nd-label", text: "FINDINGS" }));
     if (!model.findings.length) {
-      pane.append(h("p", { className: "nd-quiet", text: model.verdict === "PASS" ? "Nothing to explain: every check that ran passed from this machine." : "No finding ties the failing checks together yet." }));
+      pane.append(h("p", { className: "nd-quiet", text: model.verdict === "PASS" ? `Nothing to explain: every check that ran passed from ${model.inside ? "the debug pod" : "this machine"}.` : "No finding ties the failing checks together yet." }));
       return pane;
     }
     for (const f of model.findings) {
@@ -527,7 +527,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       return;
     }
     if (model.state === "empty" && inside) {
-      const try_ = (text, ns, as = "") => h("button", { type: "button", className: "nd-chip", text: `${text}${ns ? ` from ${ns}` : ""}`, onclick: () => ((field.value = text), ns && (nsSel.value = ns), (asIn.value = as), planInside()) });
+      const try_ = (text, ns, as = "", http = true) => h("button", { type: "button", className: "nd-chip", text: `${text}${ns ? ` from ${ns}` : ""}`, onclick: () => ((field.value = text), ns && (nsSel.value = ns), (asIn.value = as), (httpIn.checked = http), planInside()) });
       body.replaceChildren(h("div", { className: "nd-empty" },
         h("p", { text: "FROM INSIDE starts a short-lived netshoot pod in the namespace you pick (its NetworkPolicy source) and runs a fixed probe: DNS (short name and FQDN), TCP to the Service and to each pod, HTTP, the hops (tracepath; tcptraceroute with NET_RAW) and the path MTU. Then it says which NetworkPolicy allows or blocks the path." }),
         h("p", { className: "nd-quiet", text: "Nothing else is written: no exec, no secrets; the pod is deleted after its log is read and expires by itself (TTL)." }),

@@ -71,10 +71,12 @@ export const ND_CSS = `
   #netdebug .nd-insiderow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--n-line); background: var(--n-raised); }
   #netdebug .nd-insiderow[hidden] { display: none; }
   #netdebug .nd-insiderow select, #netdebug .nd-insiderow input[type="text"], #netdebug .nd-confirm-in { font: inherit; font-size: 12px; color: var(--n-text); background: var(--n-ink); border: 1px solid var(--n-line); padding: 2px 6px; }
-  #netdebug .nd-node-in { width: 9em; }
-  #netdebug .nd-as { width: 12em; }
   #netdebug .nd-check { display: inline-flex; gap: 4px; align-items: center; font-size: 11px; color: var(--n-text2); white-space: nowrap; }
-  #netdebug .nd-check input { width: 13px; height: 13px; margin: 0; flex: none; }
+  /* The page's generic "input" rule (min-height 32px, padding, border) made
+     these checkboxes into big boxes in Pip-Boy: undo it here. */
+  #netdebug .nd-insiderow .nd-check input[type="checkbox"] { width: 13px; height: 13px; min-height: 0; padding: 0; margin: 0; border: 0; flex: none; display: inline-block; accent-color: var(--n-accent); }
+  #netdebug .nd-insiderow input.nd-node-in { flex: none; width: 9em; }
+  #netdebug .nd-insiderow input.nd-as { flex: none; width: 13em; }
   #netdebug .nd-check[hidden] { display: none; }
   #netdebug .nd-insidebtn[aria-pressed="true"] { color: var(--n-ink); background: var(--n-accent); border-color: var(--n-accent); }
   #netdebug .nd-confirm { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--n-strong); background: var(--n-raised); }
