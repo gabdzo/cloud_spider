@@ -7,6 +7,9 @@ kube-state-metrics and Loki (single binary, PVC, 72h). Objects are rendered by
 `upgrades/observe/render.js`; the stack and the PREVIEW (`GET /api/observe/plan`)
 use the same list.
 
+State lives in a local file backend (`~/.cloudspider/pulumi-observe`): no AWS account needed.
+The module is off in every profile: turn it on with `modules.enable: [observe]` in cloudspider.yaml.
+
 ## Install (CRC / OpenShift Local)
 
 STACKS → **Observe bundle**: `context=<write context, e.g. crc-admin>`,
@@ -20,7 +23,7 @@ pulumi stack init observe   # once
 pulumi config set context crc-admin
 pulumi config set platform openshift
 pulumi config set allowPrivileged on
-pulumi config set nodeCidr 192.168.126.0/24
+pulumi config set nodeCidr 192.168.126.0/24   # required
 pulumi preview && pulumi up
 ```
 
@@ -34,7 +37,7 @@ service proxy with the viewer context; needs `services/proxy` `get` on
 `otel-collector` and `loki` in `cloudspider-observe`. Answer: `edges`
 (graph shape: `from`/`to` = `<ns>/<service>`, `source: "trace"`, `rps`,
 `errors` %, `p95ms`, `window`, `at`; plan §4.5), `red`, `restarts`, `events`.
-`mergeLive(scene, live)` in `src/observe/live.js` folds it into a SERVICES scene.
+`GET /api/cluster/graph` merges it (`mergeLive`) when the bundle is installed and the module is on, so the SERVICES view's TRACES layer shows live edges and `nodes[].red`; `?live=0` skips it.
 
 ## Footprint
 

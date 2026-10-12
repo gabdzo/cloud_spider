@@ -4,7 +4,7 @@ import { graphScenario } from "./graph-sample.js";
 import { buildGraph } from "./graph-build.js";
 import { readGraph } from "./graph-read.js";
 import { detect as observeDetect, planView as observePlan } from "./observe/plan.js";
-import { readLive as observeLive } from "./observe/live.js";
+import { mergeLive, readLive as observeLive } from "./observe/live.js";
 import { sampleObserve } from "./observe/sample.js";
 import { originAllowed } from "./origin.js";
 import http from "node:http";
@@ -3085,7 +3085,15 @@ async function route(app, req, res) {
       send(res, 200, { error: "no kube context", unset: true });
       return;
     }
-    send(res, 200, await liveGraph(kube, context));
+    const scene = await liveGraph(kube, context);
+    // The observe bundle's live edges, RED and Events (TRACES layer), when it
+    // is installed on this cluster and the observe module is on.
+    const observing = !enabled || enabled.includes("observe");
+    if (observing && scene && !scene.error && url.searchParams.get("live") !== "0") {
+      const live = await Promise.race([observeLive(kube), new Promise((r) => setTimeout(() => r(null), 4000))]).catch(() => null);
+      if (live?.installed && !live.error) { send(res, 200, mergeLive(scene, live)); return; }
+    }
+    send(res, 200, scene);
     return;
   }
   // LOG ERRORS for the morning report (log-report.js). Read-only.

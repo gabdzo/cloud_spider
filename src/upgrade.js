@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
-import { hostname as osHostname } from "node:os";
+import { homedir, hostname as osHostname } from "node:os";
 import { judgeLock, lockRefusal, parseLocks, pendingOps, processNameOf, staleNote } from "./pulumi-locks.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -286,21 +286,23 @@ export const UPGRADES = [
     stack: "observe",
     project: "cloudspider-observe",
     vault: "observe",
+    // No AWS: state in a local file backend (Pulumi.yaml), no AWS tags.
+    localState: true,
     needs: [],
     namespaces: ["cloudspider-observe"],
     daemonSets: [{ namespace: "cloudspider-observe", name: "beyla", labels: { "app.kubernetes.io/component": "beyla" } }, { namespace: "cloudspider-observe", name: "otel-agent", labels: { "app.kubernetes.io/component": "agent" } }],
     cost: [],
     parameters: [
-      { name: "context", type: "string", default: "" },
+      { name: "context", type: "string", default: "", pattern: /^[A-Za-z0-9_.:@/-]{0,200}$/ },
       { name: "platform", type: "string", default: "kubernetes", choices: ["kubernetes", "openshift"], labels: { kubernetes: "plain Kubernetes (Pod Security: namespace labelled privileged)", openshift: "OpenShift / CRC (adds 2 SecurityContextConstraints bound to Beyla and the log agent only)" } },
       { name: "allowPrivileged", type: "string", default: "off", choices: ["off", "on"], labels: { off: "off · refuses to install (Beyla needs privileged + hostPID for eBPF)", on: "on · I allow privileged Beyla pods and a root log agent (read-only /var/log/pods)" }, warn: "on" },
       { name: "profile", type: "string", default: "crc", choices: ["crc", "standard"], labels: { crc: "crc · tight requests/limits (~115m CPU / 384Mi on 1 node)", standard: "standard · roomier (~2-3x per node)" } },
       { name: "kubeStateMetrics", type: "string", default: "install", choices: ["install", "skip"], labels: { install: "install · the bundle's own", skip: "skip · the cluster already runs one" } },
       { name: "logs", type: "string", default: "on", choices: ["on", "off"], labels: { on: "on · Loki + container logs (morning report LOG ERRORS, Event history)", off: "off · metrics and live edges only" } },
-      { name: "lokiStorage", type: "string", default: "5Gi" },
+      { name: "lokiStorage", type: "string", default: "5Gi", pattern: /^[1-9][0-9]?Gi$/ },
       { name: "lokiRetention", type: "string", default: "72h", choices: ["24h", "72h", "168h"] },
-      { name: "storageClass", type: "string", default: "" },
-      { name: "nodeCidr", type: "string", default: "" },
+      { name: "storageClass", type: "string", default: "", pattern: /^([a-z0-9]([-a-z0-9.]{0,61}[a-z0-9])?)?$/ },
+      { name: "nodeCidr", type: "string", default: "", pattern: /^(\d{1,3}(\.\d{1,3}){3}\/\d{1,2})?$/ },
     ],
   },
   ...addonCards(),
@@ -346,7 +348,11 @@ export function checkParams(spec, input = {}) {
     if (parameter.choices && !parameter.choices.includes(text)) {
       return { error: `${parameter.name} must be ${parameter.choices.join(" or ")}` };
     }
-    if (!parameter.choices && !NAME.test(text)) {
+    // pattern: a parameter's own rule (kube context names hold "/" and ":").
+    if (parameter.pattern && !parameter.pattern.test(text)) {
+      return { error: `${parameter.name} is not valid here` };
+    }
+    if (!parameter.choices && !parameter.pattern && !NAME.test(text)) {
       return { error: `${parameter.name} must be a short lowercase name` };
     }
     values[parameter.name] = text;
@@ -704,6 +710,12 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       if (!verb) return refuse({ module, action, error: "action must be preview, up or destroy" });
       const checked = checkParams(spec, params);
       if (checked.error) return refuse({ module, action: verb, error: checked.error });
+      if (spec.id === "observe" && verb !== "destroy") {
+        if (!checked.values.context) return refuse({ module, action: verb, error: "context is required: the kube context of the cluster to install into (a write context; the current context is never used by default)" });
+        if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(checked.values.nodeCidr || "")) return refuse({ module, action: verb, error: "nodeCidr is required: the nodes' address range, e.g. 192.168.126.0/24 on CRC (kubectl get nodes -o wide)" });
+      }
+      // A local file backend must exist before Pulumi can open it.
+      if (spec.localState) mkdirSync(join(env.HOME || homedir(), ".cloudspider", `pulumi-${spec.id}`), { recursive: true });
       const stack = stackFor(spec, checked.values, legacyName);
       const directory = join(cwd, spec.dir);
       const steps = upgradeSteps(spec, stack, verb, checked.values);

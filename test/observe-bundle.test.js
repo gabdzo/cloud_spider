@@ -164,3 +164,13 @@ test("sample: the real parsers over made-up scrapes; the card is offered", () =>
   assert.equal(card.parameters.find((p) => p.name === "allowPrivileged").default, "off");
   assert.match(card.note, /PRIVILEGED/);
 });
+
+test("the card validates context / nodeCidr with its own patterns and keeps state local", () => {
+  const card = UPGRADES.find((u) => u.id === "observe");
+  const p = (n) => card.parameters.find((x) => x.name === n).pattern;
+  assert.ok(p("context").test("default/api-crc-testing:6443/kube:admin"));
+  assert.ok(!p("context").test("a b"));
+  assert.ok(p("nodeCidr").test("192.168.126.0/24") && !p("nodeCidr").test("x"));
+  assert.equal(card.localState, true);
+  assert.match(readFileSync(join(root, "upgrades/observe/Pulumi.yaml"), "utf8"), /file:\/\/~\/\.cloudspider\/pulumi-observe/);
+});
