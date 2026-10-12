@@ -9,7 +9,7 @@ severity: { default: high }
 confidence: high
 evaluator: policy-reports-clean
 aggregation: proportional
-requires: [kube-policyReports, kube-clusterPolicyReports]
+requires: [kube-policyReports, kube-clusterPolicyReports, kube-pods]
 whyItMatters: "Audit-mode policies only help if someone reads the failures; these are the workloads breaking the baseline today."
 remediation: { summary: "Open the failing policies in the Cluster view (OPS) and fix the workloads, then move the policy to Enforce.", effort: M, addon: kyverno }
 verification: "No PolicyReport or ClusterPolicyReport outside system namespaces has a fail result."
