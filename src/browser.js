@@ -359,6 +359,10 @@ function openLink(url, label = "OPEN ↗") {
   return a;
 }
 function renderChrome() {
+  // The map's DOM overlays (ALB docks, VPC folds) belong to the map only:
+  // SNIFF and CLUSTER draw on the same canvas and must not wear them.
+  if (albDocksEl) albDocksEl.hidden = mode !== "map";
+  if (vpcFoldsEl) vpcFoldsEl.hidden = mode !== "map";
   renderChromeParts();
   renderCardOpen();
   syncUrl();
