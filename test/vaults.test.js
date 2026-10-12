@@ -330,7 +330,7 @@ test("the vault view lists templates and the stack a living vault is bound to", 
     checker: createCheckRunner({ fetch: sampleFetch }),
   });
   const body = await view.view(samplePlace());
-  assert.deepEqual(body.templates.map((t) => t.file), ["templates/service.yaml", "templates/worker.yaml"]);
+  assert.deepEqual(body.templates.map((t) => t.file), ["cert-manager", "demo", "eks", "karpenter", "kyverno", "scaling-demo", "service", "shopapi", "worker"].map((n) => `templates/${n}.yaml`));
   assert.ok(body.templates.every((t) => !t.damaged && t.description));
   assert.deepEqual(body.vaults.find((v) => v.key === "orders-api").stack, { dir: "upgrades/camp", name: "camp" });
   assert.equal(body.vaults.find((v) => v.key === "landing").stack, null);
