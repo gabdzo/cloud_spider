@@ -324,7 +324,13 @@ function renderCardOpen() {
 }
 function cardEndpoints(spec) {
   const project = spec.vault || spec.id;
-  const mine = (place?.fixtures || []).filter((item) => (item.tags || []).some((tag) => (tag.Key ?? tag.key) === "project" && (tag.Value ?? tag.value) === project));
+  // Tags come as [{Key, Value}] (ELB) or { key: value } (EKS, SQS).
+  const tagOf = (tags, key) => {
+    if (!Array.isArray(tags)) return tags?.[key];
+    const found = tags.find((tag) => (tag?.Key ?? tag?.key) === key);
+    return found ? found.Value ?? found.value : undefined;
+  };
+  const mine = (place?.fixtures || []).filter((item) => tagOf(item.tags, "project") === project);
   return publicEndpoints(mine);
 }
 function hostOfUrl(url) {
