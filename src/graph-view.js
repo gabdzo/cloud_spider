@@ -6,6 +6,7 @@
 
 import { graphScenario } from "./graph-sample.js";
 import { routeEdge } from "./graph-route.js";
+import { GROUP_BY, GROUP_BY_KEY, cleanGroupBy, regroup } from "./graph-group.js";
 import { EVENT_KINDS, LAYERS, initialExpanded, initialLayers, sceneStats, stepEvent, timeline, visibleGraph } from "./graph-model.js";
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -53,8 +54,46 @@ function h(tag, props = {}, ...kids) {
 
 export function createGraphView(root) {
   const state = { scenario: "bare", expanded: new Set(), query: "", layers: new Set(LAYERS), focus: null, selected: null, event: null };
-  let scene = graphScenario(state.scenario);
+  // Group by (graph-group.js): raw is the scene as read; scene is regrouped.
+  const store = (() => {
+    try {
+      return globalThis.localStorage || null;
+    } catch {
+      return null;
+    }
+  })();
+  state.groupBy = cleanGroupBy(store?.getItem?.(GROUP_BY_KEY) || "namespace");
+  let raw = null;
+  let scene = null;
+  const setScene = (next) => {
+    raw = next;
+    scene = regroup(raw, state.groupBy);
+    return scene;
+  };
+  setScene(graphScenario(state.scenario));
   state.expanded = initialExpanded(scene);
+  function setGroupBy(key) {
+    const next = cleanGroupBy(key);
+    if (els.groupCustom) els.groupCustom.classList.toggle("bad", Boolean(String(key || "").trim()) && next === "namespace" && String(key).trim() !== "namespace");
+    if (next === state.groupBy) return;
+    state.groupBy = next;
+    try {
+      store?.setItem?.(GROUP_BY_KEY, next);
+    } catch {
+      // not kept
+    }
+    setScene(raw);
+    Object.assign(state, { expanded: initialExpanded(scene), focus: null, selected: null, event: null });
+    syncGroupBy();
+    render();
+  }
+  function syncGroupBy() {
+    if (!els.groupSel) return;
+    const known = GROUP_BY.some((g) => g.id === state.groupBy);
+    els.groupSel.value = known ? state.groupBy : "custom";
+    els.groupCustom.hidden = known;
+    if (!known) els.groupCustom.value = state.groupBy;
+  }
   let view = null;
   let shown = false;
   // Incident review filters: event kinds, the window (live only), and
@@ -63,7 +102,7 @@ export function createGraphView(root) {
   // Live: the events come from /api/cluster/timeline for the picked window
   // (the observe bundle's Loki, else the API server); the server trims.
   let tlData = null;
-  const tlScene = () => (live.on && tlData?.events ? { ...scene, events: tlData.events, window: { ...scene.window, startAt: tlData.window?.startAt, endAt: tlData.window?.endAt } } : scene);
+  const tlScene = () => (live.on && tlData?.events ? { ...scene, events: regroup({ ...raw, events: tlData.events }, state.groupBy).events, window: { ...scene.window, startAt: tlData.window?.startAt, endAt: tlData.window?.endAt } } : scene);
   const tlOpts = () => ({ kinds: state.kinds, windowMin: live.on ? null : state.windowMin, group: state.tlAll ? null : state.focus });
   async function loadTimeline() {
     if (!live.on) return;
@@ -90,6 +129,12 @@ export function createGraphView(root) {
       els.scen.append(h("button", { type: "button", className: "gv-btn", dataset: { scenario: id }, text: label, onclick: () => pick(id) }));
     }
     els.search = h("input", { className: "gv-search", type: "search", placeholder: "find: service, namespace, operator…", "aria-label": "find in the graph", oninput: (ev) => ((state.query = ev.target.value), render()) });
+    els.groupBox = h("label", { className: "gv-seg gv-groupby", title: "Group by: the namespace, or a label; resources without it go to 'unlabeled'. Operator (OLM) groups stay folded." }, h("span", { className: "gv-gblabel", text: "GROUP BY" }));
+    els.groupSel = h("select", { className: "gv-gbsel", "aria-label": "group by", onchange: (ev) => (ev.target.value === "custom" ? ((els.groupCustom.hidden = false), els.groupCustom.focus(), els.groupCustom.value && setGroupBy(els.groupCustom.value)) : setGroupBy(ev.target.value)) });
+    for (const g of GROUP_BY) els.groupSel.append(h("option", { value: g.id, text: g.label }));
+    els.groupSel.append(h("option", { value: "custom", text: "custom label…" }));
+    els.groupCustom = h("input", { className: "gv-gbcustom", type: "text", placeholder: "label key, e.g. team", "aria-label": "custom label key", hidden: true, spellcheck: "false", onchange: (ev) => setGroupBy(ev.target.value), onkeydown: (ev) => ev.key === "Enter" && setGroupBy(ev.target.value) });
+    els.groupBox.append(els.groupSel, els.groupCustom);
     els.layers = h("div", { className: "gv-seg gv-layers", role: "group", "aria-label": "data sources" });
     for (const layer of LAYERS) els.layers.append(h("button", { type: "button", className: `gv-btn gv-layer gv-l-${layer}`, dataset: { layer }, title: LAYER_HINT[layer], text: LAYER_LABEL[layer], onclick: () => toggleLayer(layer) }));
     els.liveBox = h("div", { className: "gv-seg gv-live", hidden: true });
@@ -111,7 +156,7 @@ export function createGraphView(root) {
     root.append(
       h("header", { className: "gv-head" },
         h("div", { className: "gv-title" }, h("b", { text: "SERVICES" }), (els.proto = h("span", { className: "gv-proto", text: "SAMPLE · PROTOTYPE" }))),
-        els.scen, els.liveBox, els.search, els.layers, els.fold),
+        els.scen, els.liveBox, els.groupBox, els.search, els.layers, els.fold),
       els.stats,
       els.legend,
       els.detail,
@@ -119,12 +164,13 @@ export function createGraphView(root) {
       els.tl,
     );
     resize?.observe(els.stage);
+    syncGroupBy();
   }
 
   function pick(id) {
     if (state.scenario === id) return;
     state.scenario = id;
-    scene = graphScenario(id);
+    setScene(graphScenario(id));
     Object.assign(state, { expanded: initialExpanded(scene), layers: initialLayers(scene), query: "", focus: null, selected: null, event: null, kinds: new Set(EVENT_KINDS), windowMin: null, tlAll: false });
     els.search.value = "";
     render();
@@ -161,9 +207,9 @@ export function createGraphView(root) {
   }
 
   function groupCard(group) {
-    const tag = group.kind === "operator" ? "OP" : "NS";
+    const tag = group.kind === "operator" ? "OP" : group.kind === "label" ? (group.unlabeled ? "—" : "LBL") : "NS";
     const card = h("div", {
-      className: `gv-group${group.open ? " open" : ""}${group.dim ? " dim" : ""}${group.match ? " match" : ""}${group.neighbor ? " neighbor" : ""}${state.focus === group.id ? " focus" : ""}`,
+      className: `gv-group${group.kind === "label" ? " by-label" : ""}${group.unlabeled ? " unlabeled" : ""}${group.open ? " open" : ""}${group.dim ? " dim" : ""}${group.match ? " match" : ""}${group.neighbor ? " neighbor" : ""}${state.focus === group.id ? " focus" : ""}`,
       dataset: { id: `g:${group.id}`, health: group.health || "ok" },
     });
     const head = h("button", { type: "button", className: "gv-ghead", title: state.focus === group.id ? "leave focus" : "focus: only this group and who it talks to", onclick: () => focusGroup(group.id) },
@@ -228,10 +274,10 @@ export function createGraphView(root) {
       const body = await fetch(`/api/cluster/graph?${q}`).then((r) => r.json());
       if (body.error) {
         live.error = body.error;
-        scene = emptyScene();
+        setScene(emptyScene());
       } else {
         const first = !scene || scene.id !== "live" || !scene.groups.length;
-        scene = body;
+        setScene(body);
         loadTimeline();
         if (first) Object.assign(state, { expanded: initialExpanded(scene), layers: initialLayers(scene) });
       }
@@ -257,11 +303,11 @@ export function createGraphView(root) {
     Object.assign(state, { query: "", focus: null, selected: null, event: null });
     tlData = null;
     if (on) {
-      scene = emptyScene();
+      setScene(emptyScene());
       state.expanded = new Set();
       if (shown) loadLive();
     } else {
-      scene = graphScenario(state.scenario);
+      setScene(graphScenario(state.scenario));
       state.expanded = initialExpanded(scene);
     }
     if (shown) render();
@@ -473,6 +519,7 @@ export function createGraphView(root) {
     setLive,
     loadLive,
     pick,
+    setGroupBy,
     render,
     stepTimeline,
     loadTimeline,

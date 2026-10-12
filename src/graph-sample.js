@@ -22,19 +22,22 @@ export function bareScenario() {
     { id: "cert-manager", label: "cert-manager", band: "platform", kind: "operator" },
     { id: "kube-system", label: "kube-system", band: "platform", kind: "namespace" },
   ];
-  const n = (group, id, kind, label = id) => ({ id: `${group}/${id}`, group, kind, label, ns: group });
+  const n = (group, id, kind, label = id, labels) => ({ id: `${group}/${id}`, group, kind, label, ns: group, ...(labels ? { labels } : {}) });
+  // Labels for "Group by" (graph-group.js): a Helm release "shop" (web + api)
+  // and "shop-redis", all part-of "shop"; the CR and kube-apiserver have none.
+  const L = (app, partOf, instance) => ({ app, ...(partOf ? { "app.kubernetes.io/part-of": partOf } : {}), ...(instance ? { "app.kubernetes.io/instance": instance, "app.kubernetes.io/managed-by": "Helm" } : {}), ...(partOf === "shop" ? { team: "payments" } : {}) });
   const nodes = [
-    n("ingress-nginx", "controller", "ingress", "ingress-nginx-controller"),
-    n("demo", "web", "service"),
-    n("demo", "api", "service"),
-    n("demo", "redis", "db"),
+    n("ingress-nginx", "controller", "ingress", "ingress-nginx-controller", L("ingress-nginx", "ingress-nginx", "ingress-nginx")),
+    n("demo", "web", "service", "web", L("web", "shop", "shop")),
+    n("demo", "api", "service", "api", L("api", "shop", "shop")),
+    n("demo", "redis", "db", "redis", L("redis", "shop", "shop-redis")),
     n("demo", "demo-tls", "cr", "Certificate demo-tls"),
     n("cert-manager", "controller", "operator", "cert-manager"),
     n("cert-manager", "webhook", "webhook", "cert-manager-webhook"),
     n("cert-manager", "cainjector", "workload", "cainjector"),
     n("cert-manager", "selfsigned", "cr", "ClusterIssuer selfsigned"),
     n("kube-system", "apiserver", "external", "kube-apiserver"),
-    n("kube-system", "coredns", "service"),
+    n("kube-system", "coredns", "service", "coredns", { app: "kube-dns" }),
   ];
   const e = (from, to, kind, source, rps = 0, errors = 0) => ({ from, to, kind, source, rps, errors });
   const edges = [
