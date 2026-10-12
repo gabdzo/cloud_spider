@@ -69,6 +69,7 @@ export const FILES = new Set([
   "graph-model.js",
   "graph-view.js",
   "graph-group.js",
+  "kube-group.js",
   "log-errors-view.js",
   "kube-empty.js",
   "slo.js",
@@ -765,6 +766,13 @@ const page = `<!doctype html>
   #kube-search::-webkit-search-cancel-button { filter: grayscale(1) brightness(1.6); }
   #kube-search-count { flex: none; color: var(--pip-mid); font-size: 12px; white-space: nowrap; }
   #kube-search-count.none { color: var(--status-hang); }
+  #kube-groupby { flex: none; display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; }
+  #kube-groupby[hidden], #kube-groupby-custom[hidden] { display: none; }
+  #kube-groupby b { font-weight: normal; font-size: 10px; letter-spacing: 0.16em; color: var(--pip-dim); white-space: nowrap; }
+  #kube-groupby :is(select, input) { font: inherit; font-size: 12px; padding: 3px 6px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
+  #kube-groupby input { width: 140px; }
+  #kube-groupby input.bad { border-color: var(--status-broken); }
+  #kube-groupby :is(select, input):focus { border-color: var(--pip-bright); box-shadow: 0 0 8px var(--glow-soft); }
   #confirm.caption { flex-basis: 100%; font-size: 11px; color: var(--pip-mid); opacity: 0.85; padding-left: 18px; }
   #status::after { content: "_"; margin-left: 2px; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
@@ -2531,6 +2539,10 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #kube-graph .gv-btn[aria-pressed="true"] { background: var(--surface-2); color: var(--text); border-color: var(--accent); box-shadow: none; }
   :root[data-theme="pro"] #kube-graph .gv-search { color: var(--text); }
   :root[data-theme="pro"] #kube-graph .gv-search:focus { border-color: var(--accent); box-shadow: none; }
+  :root[data-theme="pro"] #kube-groupby b { color: var(--text-2); font-family: var(--font-ui); font-weight: 500; letter-spacing: 0.04em; }
+  :root[data-theme="pro"] #kube-groupby :is(select, input) { color: var(--text); background: var(--raised); border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-ui); }
+  :root[data-theme="pro"] #kube-groupby :is(select, input):focus { border-color: var(--accent); box-shadow: none; }
+  :root[data-theme="pro"] #kube-groupby input.bad { border-color: var(--err); }
   :root[data-theme="pro"] #kube-graph .gv-gblabel { color: var(--text-2); font-family: var(--font-ui); letter-spacing: 0.04em; font-weight: 500; }
   :root[data-theme="pro"] #kube-graph :is(.gv-gbsel, .gv-gbcustom) { color: var(--text); background: var(--raised); border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-ui); }
   :root[data-theme="pro"] #kube-graph :is(.gv-gbsel, .gv-gbcustom):focus { border-color: var(--accent); box-shadow: none; }
@@ -2650,7 +2662,7 @@ const page = `<!doctype html>
 </header>
 <main class="screen">
   <div class="terminal">
-    <span class="line"><span class="prompt">&gt;</span><span id="status"></span><input id="kube-search" type="search" aria-label="search the cluster" placeholder="search: name, ns:team, crash, pending, app=web   ( / )" autocomplete="off" spellcheck="false" hidden><output id="kube-search-count" aria-live="polite" hidden></output></span>
+    <span class="line"><span class="prompt">&gt;</span><span id="status"></span><input id="kube-search" type="search" aria-label="search the cluster" placeholder="search: name, ns:team, crash, pending, app=web   ( / )" autocomplete="off" spellcheck="false" hidden><output id="kube-search-count" aria-live="polite" hidden></output><span id="kube-groupby" title="Group by: the namespace, or a label; resources without it go to 'unlabeled'. System namespaces stay as they are." hidden><b>GROUP BY</b><select id="kube-groupby-sel" aria-label="group lanes by"></select><input id="kube-groupby-custom" type="text" aria-label="custom label key" placeholder="label key, e.g. team" autocomplete="off" spellcheck="false" hidden></span></span>
     <select id="lb" aria-label="load balancer" hidden></select>
     <input id="host" type="text" aria-label="URL or host" placeholder="paste a URL or host" hidden>
     <p id="confirm"></p>

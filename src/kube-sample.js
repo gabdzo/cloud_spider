@@ -36,13 +36,13 @@ export function sampleKubeSnapshot() {
       pod("kube-system", "metrics-server-7f9c6d-m3n4p", rs("metrics-server-7f9c6d"), running()),
     ],
     deployments: [
-      { ...meta("demo", "web"), spec: { replicas: 1, template: { metadata: { labels: { app: "web" } } } }, status: { readyReplicas: 1 } },
-      { ...meta("demo", "api"), spec: { replicas: 1, template: { metadata: { labels: { app: "api" } } } }, status: { readyReplicas: 1 } },
+      { ...meta("demo", "web"), spec: { replicas: 1, template: { metadata: { labels: { app: "web", "app.kubernetes.io/part-of": "storefront", "app.kubernetes.io/instance": "storefront", "app.kubernetes.io/managed-by": "Helm" } } } }, status: { readyReplicas: 1 } },
+      { ...meta("demo", "api"), spec: { replicas: 1, template: { metadata: { labels: { app: "api", "app.kubernetes.io/part-of": "storefront", "app.kubernetes.io/instance": "storefront", "app.kubernetes.io/managed-by": "Helm" } } } }, status: { readyReplicas: 1 } },
       { ...meta("demo", "loadgen"), spec: { replicas: 1, template: { metadata: { labels: { app: "loadgen" } } } }, status: { readyReplicas: 0 } },
       { ...meta("kube-system", "coredns"), spec: { replicas: 2, template: { metadata: { labels: { "k8s-app": "kube-dns" } } } }, status: { readyReplicas: 2 } },
       { ...meta("kube-system", "metrics-server"), spec: { replicas: 1, template: { metadata: { labels: { "k8s-app": "metrics-server" } } } }, status: { readyReplicas: 1 } },
     ],
-    daemonsets: [{ ...meta("demo", "otel-collector"), spec: { template: { metadata: { labels: { app: "otel-collector" } } } }, status: { desiredNumberScheduled: 1, numberReady: 1 } }, daemon("kube-system", "aws-node"), daemon("kube-system", "kube-proxy"), daemon("kube-system", "eks-pod-identity-agent")],
+    daemonsets: [{ ...meta("demo", "otel-collector"), spec: { template: { metadata: { labels: { app: "otel-collector", "app.kubernetes.io/part-of": "observe", "app.kubernetes.io/instance": "observe" } } } }, status: { desiredNumberScheduled: 1, numberReady: 1 } }, daemon("kube-system", "aws-node"), daemon("kube-system", "kube-proxy"), daemon("kube-system", "eks-pod-identity-agent")],
     statefulsets: [],
     services: [
       { ...meta("default", "kubernetes"), spec: { type: "ClusterIP", ports: [{ port: 443 }] } },
@@ -232,7 +232,7 @@ export function sampleClusterSnapshot() {
     namespaces: [...snap.namespaces, { metadata: { name: "shop" } }],
     pods: [...snap.pods, api("shopapi-6f8d9c7b4-a7k2m", A), api("shopapi-6f8d9c7b4-p3x9q", B)],
     nodeMetrics: [{ metadata: { name: A }, usage: { cpu: "312m", memory: "1490Mi" } }, { metadata: { name: B }, usage: { cpu: "268m", memory: "1210Mi" } }],
-    deployments: [...snap.deployments, { metadata: { namespace: "shop", name: "shopapi" }, spec: { replicas: 2, template: { metadata: { labels: { app: "shopapi" } } } }, status: { readyReplicas: 2 } }],
+    deployments: [...snap.deployments, { metadata: { namespace: "shop", name: "shopapi" }, spec: { replicas: 2, template: { metadata: { labels: { app: "shopapi", "app.kubernetes.io/part-of": "storefront", "app.kubernetes.io/instance": "shopapi", team: "payments" } } } }, status: { readyReplicas: 2 } }],
     services: [...snap.services, { metadata: { namespace: "shop", name: "shopapi" }, spec: { type: "ClusterIP", selector: { app: "shopapi" }, ports: [{ port: 3000 }] } }],
     ingresses: [{ metadata: { namespace: "demo", name: "api", annotations: { "alb.ingress.kubernetes.io/scheme": "internet-facing", "alb.ingress.kubernetes.io/target-type": "ip" } }, spec: { ingressClassName: "alb", rules: [{ host: "api.sample.test", http: { paths: [{ path: "/", pathType: "Prefix", backend: { service: { name: "api", port: { number: 9898 } } } }] } }] }, status: { loadBalancer: { ingress: [{ hostname: "k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com" }] } } }, { metadata: { namespace: "shop", name: "shopapi", annotations: { "alb.ingress.kubernetes.io/scheme": "internet-facing", "alb.ingress.kubernetes.io/target-type": "ip" } }, spec: { ingressClassName: "alb", rules: [{ http: { paths: [{ path: "/", pathType: "Prefix", backend: { service: { name: "shopapi", port: { number: 3000 } } } }] } }] }, status: { loadBalancer: { ingress: [{ hostname: "k8s-shop-shopapi-5a1e0c.eu-north-1.elb.amazonaws.com" }] } } }],
   };

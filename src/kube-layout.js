@@ -108,6 +108,7 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
       id: `group:${owner}`,
       kind: "pod-group",
       ns: pods[0].ns,
+      ...(pods[0].lane ? { lane: pods[0].lane } : {}),
       owner,
       label: ownerNode?.label || owner,
       count: pods.length,
@@ -131,7 +132,7 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
   const buckets = new Map();
   for (const [id, targets] of targetsOf) {
     const svc = byIdAll.get(id);
-    const key = `${svc.ns}|${[...new Set(targets)].sort().join(",")}`;
+    const key = `${svc.ns}|${svc.lane || ""}|${[...new Set(targets)].sort().join(",")}`;
     if (!buckets.has(key)) buckets.set(key, []);
     buckets.get(key).push(svc);
   }
@@ -145,6 +146,7 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
       id: `svcs:${head.id}`,
       kind: "service",
       ns: head.ns,
+      ...(head.lane ? { lane: head.lane } : {}),
       label: head.label,
       members: members.map((m) => m.label),
       memberIds: members.map((m) => m.id),
@@ -177,11 +179,12 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
   }
 
   const lanes = namespaces.map((ns) => {
-    const name = ns.label;
-    const items = inLane.filter((n) => n.ns === name);
+    // Group by (kube-group.js): items and label lanes carry `lane`.
+    const name = ns.lane ?? ns.label;
+    const items = inLane.filter((n) => (n.lane ?? n.ns) === name);
     const open = laneOpen(name, ns.system, state) && items.length > 0;
     const workloads = items.filter((n) => n.kind === "workload").length;
-    return { id: ns.id, ns: name, system: !!ns.system, status: ns.status, caption: ns.caption, noAccess: ns.noAccess || [], workloads, items, open };
+    return { id: ns.id, ns: name, title: ns.title, groupBy: ns.groupBy, unlabeled: !!ns.unlabeled, system: !!ns.system, status: ns.status, caption: ns.caption, noAccess: ns.noAccess || [], workloads, items, open };
   });
 
   // Global columns: only the kinds some open lane has, so lanes line up.
@@ -267,7 +270,7 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
   const outLanes = [];
   const outEdges = [];
   for (const lane of lanes) {
-    const box = { id: lane.id, ns: lane.ns, system: lane.system, status: lane.status, caption: lane.caption, noAccess: lane.noAccess, workloads: lane.workloads, open: lane.open, count: lane.items.length, x: L.PAD, y, w: laneW };
+    const box = { id: lane.id, ns: lane.ns, title: lane.title, groupBy: lane.groupBy, unlabeled: lane.unlabeled, system: lane.system, status: lane.status, caption: lane.caption, noAccess: lane.noAccess, workloads: lane.workloads, open: lane.open, count: lane.items.length, x: L.PAD, y, w: laneW };
     box.toggle = { x: L.PAD, y, w: laneW, h: L.LANE_BAR };
     if (!lane.open) {
       box.h = L.LANE_BAR + 4;
@@ -506,7 +509,7 @@ export function expandChip(n) {
 // Full names for the hover title when the card had to squeeze them.
 export function hoverText(hit) {
   if (!hit) return "";
-  if (hit.type === "lane") return `${hit.lane.open ? "fold" : "open"} namespace ${hit.ns}`;
+  if (hit.type === "lane") return `${hit.lane.open ? "fold" : "open"} ${hit.lane.groupBy ? `${hit.lane.groupBy} ${hit.lane.title}` : `namespace ${hit.ns}`}`;
   if (hit.type === "expand") return hit.node.kind === "pod-group" ? `${hit.node.label} ×${hit.node.count}: click to list each pod` : `${hit.node.expanded ? "fold" : "list"} the pods of ${hit.node.label}`;
   const n = hit.node;
   if (n.members) return `${n.ns}/${n.members.join(", ")}: ${n.members.length} Services on the same workloads`;

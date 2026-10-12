@@ -100,7 +100,7 @@ function drawStickyHead(ctx, lane, columns, y) {
   ctx.fillRect(lane.x, y, 4, L.LANE_BAR - 6);
   ctx.font = SMALL;
   ctx.fillStyle = INK.hot;
-  ctx.fillText(`${lane.ns}  ·  ${lane.caption || ""}`, lane.x + 14, y + 16);
+  ctx.fillText(`${lane.title ?? lane.ns}  ·  ${lane.caption || ""}`, lane.x + 14, y + 16);
   ctx.font = TINY;
   for (const col of columns || []) {
     ctx.fillStyle = rgba(INK.mid, 0.85);
@@ -227,11 +227,11 @@ function drawLane(ctx, lane, columns, hover) {
   drawSprite(ctx, icon("namespace"), x + 32, y + 7, 1);
   ctx.font = FONT;
   ctx.fillStyle = INK.hot;
-  const name = lane.ns;
+  const name = lane.title ?? lane.ns;
   ctx.fillText(name, x + 56, y + 20);
   ctx.font = SMALL;
   ctx.fillStyle = INK.mid;
-  const facts = [`NAMESPACE`, lane.caption, lane.workloads ? `${lane.workloads} workload${lane.workloads === 1 ? "" : "s"}` : ""].filter(Boolean).join("  ·  ");
+  const facts = [lane.groupBy ? (lane.unlabeled ? `NO ${lane.groupBy.toUpperCase()}` : lane.groupBy.toUpperCase()) : `NAMESPACE`, lane.caption, lane.workloads ? `${lane.workloads} workload${lane.workloads === 1 ? "" : "s"}` : ""].filter(Boolean).join("  ·  ");
   ctx.fillText(facts, x + 56 + Math.ceil(ctx.measureText(name).width * 1.08) + 18, y + 20);
   ctx.font = TINY;
   ctx.fillStyle = hover ? INK.bright : INK.dim;
