@@ -7,10 +7,19 @@ export const LAYERS = ["static", "flow", "trace", "owner"];
 export const EDGE_BUDGET = 48;
 // Big clusters (operator bundles): the overview keeps the links that tell
 // the story (errors first, then traffic); focus a group to see all of its.
-export const EDGE_BUDGET_BIG = 18;
+export const EDGE_BUDGET_BIG = 12;
+// The overview of a big cluster: only this many links are drawn at full
+// strength (errors first); the rest of the budget is drawn quiet.
+export const LOUD_BIG = 5;
 export const BIG_GROUPS = 12;
 // Small clusters open every group at once (nothing to collapse).
 export const SMALL_NODES = 30;
+
+// Big clusters open with OWNERS off: ownership is the densest layer and
+// says little on the overview; focus or the layer button brings it back.
+export function initialLayers(scene) {
+  return new Set(scene.groups.length > BIG_GROUPS ? LAYERS.filter((l) => l !== "owner") : LAYERS);
+}
 
 export function initialExpanded(scene) {
   return new Set(scene.nodes.length <= SMALL_NODES ? scene.groups.map((group) => group.id) : []);
@@ -26,6 +35,11 @@ export function visibleGraph(scene, state = {}) {
   const focus = state.focus || null;
   const budget = state.budget ?? (scene.groups.length > BIG_GROUPS ? EDGE_BUDGET_BIG : EDGE_BUDGET);
   const groupOf = new Map(scene.nodes.map((node) => [node.id, node.group]));
+  const nodesOf = new Map();
+  for (const node of scene.nodes) {
+    if (!nodesOf.has(node.group)) nodesOf.set(node.group, []);
+    nodesOf.get(node.group).push(node);
+  }
   const nodeMatch = (node) => query && (lower(node.label).includes(query) || lower(node.ns).includes(query) || lower(node.id).includes(query));
   const groupMatch = new Set();
   if (query) {
@@ -60,6 +74,12 @@ export function visibleGraph(scene, state = {}) {
   const total = edges.length;
   // Over budget: the edges that tell the story first (errors, then traffic).
   if (edges.length > budget) edges = [...edges].sort((a, b) => b.errors - a.errors || b.rps - a.rps || a.from.localeCompare(b.from)).slice(0, budget);
+  // The calm overview: in a big cluster with nothing focused or searched,
+  // only the loudest few (errors, then traffic) are drawn at full strength.
+  if (scene.groups.length > BIG_GROUPS && !focus && !query) {
+    const loud = new Set([...edges].sort((a, b) => b.errors - a.errors || b.rps - a.rps).slice(0, LOUD_BIG).filter((e) => e.errors >= 1 || e.rps > 0));
+    edges = edges.map((e) => (loud.has(e) ? e : { ...e, quiet: true }));
+  }
 
   // Focus in a big cluster: only the focused group and its neighbors stay,
   // so the picture fits one screen instead of dimming 40 cards.
@@ -74,7 +94,7 @@ export function visibleGraph(scene, state = {}) {
         match: groupMatch.has(group.id),
         dim: Boolean((query && !groupMatch.has(group.id)) || (focus && group.id !== focus && !neighbors.has(group.id))),
         neighbor: neighbors.has(group.id),
-        nodes: open(group.id) ? scene.nodes.filter((node) => node.group === group.id).map((node) => ({ ...node, match: Boolean(nodeMatch(node)) })) : [],
+        nodes: open(group.id) ? (nodesOf.get(group.id) || []).map((node) => ({ ...node, match: Boolean(nodeMatch(node)) })) : [],
       })),
   }));
   return { bands, edges, hidden: total - edges.length, total, matches: groupMatch.size };
