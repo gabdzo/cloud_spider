@@ -11,6 +11,7 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { request } from "node:https";
+import { createGunzip } from "node:zlib";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import { parse } from "yaml";
@@ -213,11 +214,17 @@ export const BODY_CAP = 4 * 1024 * 1024;
 // keeps the families a caller needs instead of its first 4 MB.
 export function httpsGet(url, { ca, token, servername = "", timeout = TIMEOUT_MS, keepLine = null }) {
   return new Promise((resolve) => {
-    const req = request(url, { method: "GET", ca: ca || undefined, ...(servername ? { servername } : {}), headers: { authorization: `Bearer ${token}`, accept: "application/json" }, timeout }, (res) => {
+    const req = request(url, { method: "GET", ca: ca || undefined, ...(servername ? { servername } : {}), headers: { authorization: `Bearer ${token}`, accept: "application/json", "accept-encoding": "gzip" }, timeout }, (res) => {
+      // gzip: the observe collector's metrics page is 20+ MB raw on a busy
+      // cluster and streamed through the API server's service proxy that took
+      // 5-50 s over a home uplink (kubectl asks for gzip too: ~1.5 s).
       const sink = bodySink(keepLine);
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => sink.push(chunk));
-      res.on("end", () => resolve({ status: res.statusCode || 0, ...sink.end() }));
+      const gz = /gzip/i.test(String(res.headers?.["content-encoding"] || ""));
+      const body = gz ? res.pipe(createGunzip()) : res;
+      body.setEncoding("utf8");
+      body.on("data", (chunk) => sink.push(chunk));
+      body.on("end", () => resolve({ status: res.statusCode || 0, ...sink.end() }));
+      if (gz) body.on("error", (error) => resolve({ status: 0, body: "", error: `gzip: ${error?.message || "bad body"}` }));
     });
     req.on("timeout", () => req.destroy(new Error(`no answer in ${timeout} ms`)));
     req.on("error", (error) => resolve({ status: 0, body: "", error: error?.message || "the request failed" }));

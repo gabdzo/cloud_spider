@@ -3052,6 +3052,7 @@ export function listen(app, port = 9241, host = "127.0.0.1") {
 }
 
 const graphCache = new Map();
+const lastLive = new Map();
 async function liveGraph(kube, context, ttl = 20_000) {
   const key = context || kube.context || "";
   const hit = graphCache.get(key);
@@ -3459,7 +3460,13 @@ async function route(app, req, res) {
     // is installed on this cluster and the observe module is on.
     const observing = !enabled || enabled.includes("observe");
     if (observing && scene && !scene.error && url.searchParams.get("live") !== "0") {
-      const live = await Promise.race([observeLive(kube), new Promise((r) => setTimeout(() => r(null), 4000))]).catch(() => null);
+      // A slow collector read (a big metrics page) must not blank the live
+      // lines: past 4 s the last good read (<= 5 min) is used and the read
+      // finishes in the background to refresh it.
+      const pendingRead = observeLive(kube).then((got) => { if (got?.installed && !got.error) lastLive.set(context, { at: Date.now(), live: got }); return got; }).catch(() => null);
+      let live = await Promise.race([pendingRead, new Promise((r) => setTimeout(() => r(null), 4000))]);
+      const kept = lastLive.get(context);
+      if (!(live?.installed && !live.error) && kept && Date.now() - kept.at <= 300_000) live = kept.live;
       if (live?.installed && !live.error) { send(res, 200, mergeLive(scene, live)); return; }
     }
     send(res, 200, scene);
