@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import { sampleScoreView } from "./score/sample-scan.js";
 import { sampleAlbRoutes, sampleMorning, samplePlace, sampleTrail } from "./sample.js";
 import { samplePathGraph } from "./path-sample.js";
-import { pathResult } from "./path-view.js";
+import { peerSampleWorld } from "./peer-path.js";
+import { pathResult, withPeers } from "./path-view.js";
 import { THEME_NAMES, cssVars } from "./theme.js";
 import { SCORE_CSS } from "./score/style.js";
 import { ND_CSS } from "./netdebug/style.js";
@@ -2565,11 +2566,15 @@ async function route(app, req, res) {
     send(
       res,
       200,
-      pathResult(samplePathGraph(), {
-        lb: url.searchParams.get("lb") || "",
-        host: url.searchParams.get("host") || "",
-        region: "sample",
-      }),
+      withPeers(
+        pathResult(samplePathGraph(), {
+          lb: url.searchParams.get("lb") || "",
+          host: url.searchParams.get("host") || "",
+          region: "sample",
+        }),
+        peerSampleWorld(samplePlace()),
+        url.searchParams.get("lb") || "",
+      ),
     );
     return;
   }

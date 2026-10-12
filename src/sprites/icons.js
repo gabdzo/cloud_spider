@@ -884,6 +884,7 @@ function square(grid) {
 const ALIAS = { internet: "igw",
   alb: "lb", service: "lb", instance: "ec2", eks: "cluster", region: "map",
   "control-plane": "cluster", workload: "pod", route: "lb", ingress: "lb", project: "namespace", generic: "ec2",
+  pods: "pod", rtb: "path", return: "path", pcx: "endpoint", tgw: "endpoint", nacl: "policy", sg: "secret",
   rds: "database", db: "database", postgres: "database", sqs: "queue", worker: "queue", site: "url", cdn: "url", holotape: "learn", lab: "learn", crc: "openshift", redhat: "openshift",
 };
 const cache = new Map();
