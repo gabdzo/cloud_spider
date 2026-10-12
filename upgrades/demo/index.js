@@ -19,6 +19,10 @@ import { usesEksAddon } from "../eks-addons.js";
 // Needs the EKS stack's Pod Identity agent and metrics-server add-ons (it
 // never creates them). Also: the ClusterRole that lets Cloud Spider's read-only viewer role list nodes and
 // metrics. No load balancer: reach web with kubectl port-forward.
+// NetworkPolicy: ingress is denied by default in namespace demo and allowed
+// per flow (see DEMO_INGRESS below); port-forward is not pod-to-pod traffic,
+// so it keeps working. Enforced only where the CNI enforces NetworkPolicy
+// (the VPC CNI network policy agent, Calico or Cilium).
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
 const region = "eu-north-1";
@@ -200,10 +204,12 @@ const podLabels = (labels, name) => ({ ...labels, "app.kubernetes.io/name": name
 // A workload that is not ready in 5 minutes fails the run (instead of
 // pulumi's 10-minute wait); the run pane says what its pods wait on.
 const workload = { ...inNs, customTimeouts: { create: "5m", update: "5m" } };
+// The same name label on the workload itself, not only its pods.
+const meta = (name) => ({ name, namespace: ns, labels: { "app.kubernetes.io/name": name, "app.kubernetes.io/part-of": "cloudspider-demo" } });
 // The collectors' health_check extension (readiness, policy require-readiness-probe).
 const healthProbe = { httpGet: { path: "/", port: 13133 }, periodSeconds: 10 };
 new k8s.apps.v1.DaemonSet("otel-collector", {
-  metadata: { name: "otel-collector", namespace: ns },
+  metadata: meta("otel-collector"),
   spec: {
     selector: { matchLabels: collectorLabels },
     template: {
@@ -265,7 +271,7 @@ service:
 const gatewayConfigMap = new k8s.core.v1.ConfigMap("otel-gateway", { metadata: { name: "otel-gateway", namespace: ns }, data: { "config.yaml": gatewayConfig } }, inNs);
 const gatewayLabels = { app: "otel-gateway" };
 new k8s.apps.v1.Deployment("otel-gateway", {
-  metadata: { name: "otel-gateway", namespace: ns },
+  metadata: meta("otel-gateway"),
   spec: {
     replicas: 1,
     selector: { matchLabels: gatewayLabels },
@@ -295,7 +301,7 @@ export const otelMetricsPath = `/api/v1/namespaces/${ns}/services/otel-metrics/p
 function podinfo(name, extraArgs = []) {
   const labels = { app: name };
   new k8s.apps.v1.Deployment(name, {
-    metadata: { name, namespace: ns },
+    metadata: meta(name),
     spec: {
       replicas: 1,
       selector: { matchLabels: labels },
@@ -321,7 +327,7 @@ podinfo("api");
 podinfo("web", ["--backend-url=http://api:9898/echo"]);
 
 new k8s.apps.v1.Deployment("loadgen", {
-  metadata: { name: "loadgen", namespace: ns },
+  metadata: meta("loadgen"),
   spec: {
     replicas: 1,
     selector: { matchLabels: { app: "loadgen" } },
@@ -340,6 +346,38 @@ new k8s.apps.v1.Deployment("loadgen", {
     },
   },
 }, workload);
+
+// Ingress NetworkPolicy: deny by default, then one allow per flow the demo
+// needs. Egress stays open (DNS, X-Ray, CloudWatch Logs, the kubelet).
+//   web            ← loadgen; scaling-demo/burst (the scaling add-on)   9898
+//   api            ← web                                                9898
+//   otel-collector ← any demo pod (podinfo's OTLP traces)               4317, 4318
+//   otel-gateway   ← otel-collector (node metrics over OTLP)            4317
+//   otel-gateway   ← the VPC: the kube API server's service proxy (Cloud
+//                    Spider's TELEMETRY reads otel-metrics through it; the
+//                    control plane reaches pods from ENIs in the VPC)    8889
+// Kubelet probes come from the node and stay allowed.
+const vpcCidr = aws.ec2.getVpcOutput({ id: cluster.vpcConfig.vpcId }).cidrBlock;
+const app = (name) => ({ matchLabels: { app: name } });
+const tcp = (...ports) => ports.map((port) => ({ protocol: "TCP", port }));
+export const DEMO_INGRESS = [
+  { name: "allow-web", app: "web", from: [{ podSelector: app("loadgen") }, { namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "scaling-demo" } }, podSelector: app("burst") }], ports: [9898] },
+  { name: "allow-api", app: "api", from: [{ podSelector: app("web") }], ports: [9898] },
+  { name: "allow-otel-collector", app: "otel-collector", from: [{ podSelector: {} }], ports: [4317, 4318] },
+  { name: "allow-otel-gateway-otlp", app: "otel-gateway", from: [{ podSelector: app("otel-collector") }], ports: [4317] },
+  { name: "allow-otel-metrics-proxy", app: "otel-gateway", from: "vpc", ports: [8889] },
+];
+new k8s.networking.v1.NetworkPolicy("default-deny-ingress", {
+  metadata: { name: "default-deny-ingress", namespace: ns },
+  spec: { podSelector: {}, policyTypes: ["Ingress"] },
+}, inNs);
+for (const rule of DEMO_INGRESS) {
+  const from = rule.from === "vpc" ? vpcCidr.apply((cidr) => [{ ipBlock: { cidr } }]) : rule.from;
+  new k8s.networking.v1.NetworkPolicy(rule.name, {
+    metadata: { name: rule.name, namespace: ns },
+    spec: { podSelector: app(rule.app), policyTypes: ["Ingress"], ingress: [{ from, ports: tcp(...rule.ports) }] },
+  }, inNs);
+}
 
 export const namespaceName = ns;
 export const portForward = `kubectl -n ${ns} port-forward svc/web 9898:9898   # then open http://127.0.0.1:9898`;
