@@ -90,7 +90,17 @@ export function routeEdge(a, b, obstacles = [], { gap = 10, lanes = new Map(), a
   const bx = portX(b, bPort);
   const sameRow = Math.abs(a.y - b.y) < Math.min(a.h, b.h) / 2;
   let points;
-  if (sameRow) {
+  const [left, right] = a.x <= b.x ? [a, b] : [b, a];
+  const sideGap = right.x - (left.x + left.w);
+  const midY = (Math.max(a.y, b.y) + Math.min(a.y + a.h, b.y + b.h)) / 2;
+  if (sameRow && sideGap >= gap && !hBlocked(blockers, midY, left.x + left.w, right.x)) {
+    // Neighbours in one row: straight across the gap between them, at the
+    // middle of their shared height (a hop over the top ran along the
+    // card edges in the narrow gutter).
+    const y = midY + lane(`s:${Math.round(left.x + left.w)}`);
+    const [x1, x2] = a === left ? [a.x + a.w, b.x] : [a.x, b.x + b.w];
+    points = [{ x: x1, y }, { x: x2, y }];
+  } else if (sameRow) {
     // Hop over the row: up from both tops, across the gutter above.
     const top = Math.min(a.y, b.y);
     const y = freeRow(blockers, top - gap / 2, ax, bx, -1, gap) + lane(`h:${Math.round(top)}`);
