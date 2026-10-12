@@ -243,7 +243,7 @@ export function createGraphView(root) {
       const possible = possibleSummary(group.nodes, scene.edges);
       if (!observed.length) {
         // Nothing seen talking inside: a wide grid of cards, no fake order.
-        card.append(h("p", { className: "gv-empty", text: `no traffic seen between these in the observe window · Beyla draws calls as soon as services talk${possible.count && !state.possible ? ` · ${possible.count} possible link${possible.count === 1 ? "" : "s"} hidden (SHOW POSSIBLE LINKS)` : ""}` }));
+        card.append(h("p", { className: "gv-empty", text: `${talk.live ? `no calls inside this group · its ${talk.live} live link${talk.live === 1 ? " goes" : "s go"} to other groups (click the group name to focus them)` : "no traffic seen between these in the observe window · Beyla draws calls as soon as services talk"}${possible.count && !state.possible ? ` · ${possible.count} possible link${possible.count === 1 ? "" : "s"} hidden (SHOW POSSIBLE LINKS)` : ""}` }));
         if (state.possible && possible.text) card.append(h("p", { className: "gv-possible-note", text: possible.text }));
         card.append(h("div", { className: "gv-cardgrid" }, ...group.nodes.slice().sort((a, b) => a.label.localeCompare(b.label)).map((node) => nodeCard(node))));
       } else {
