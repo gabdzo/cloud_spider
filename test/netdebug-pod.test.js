@@ -375,3 +375,24 @@ test("a failed or slow first connect is retried once after 2 s and both are repo
   const one = podChecks(plan, parseProbeLog("@@BEGIN P-TCP-01 target\nok\n@@END P-TCP-01 target rc=0 ms=2\n@@DONE")).find((x) => x.id === "P-TCP-01");
   assert.equal(one.text, "connected to shopdb.shop.svc.cluster.local:5432 in 2 ms");
 });
+
+test("a missing debug namespace is named before any write, and marked missing in the picker", async () => {
+  const kube = { read: async (kind) => ({ json: { items: kind === "namespaces" ? [{ metadata: { name: "web" } }, { metadata: { name: "kube-system" } }] : [] } }) };
+  const writer = mockWriter();
+  const nd = createNetdebug({ pageOrigin: "http://cs", pod: { cfg: ON, writeContexts: ["crc-admin"], kubeFor: () => kube, writerFor: () => writer } });
+  const plan = await nd.podPlan({ target: "x.web:1" });
+  assert.match(plan.error, /namespace cloudspider-debug does not exist on crc-admin/);
+  assert.match(plan.hint, /create namespace cloudspider-debug/);
+  const r = await nd.startPod("http://cs", { target: "x.web:1", confirm: { namespace: "cloudspider-debug" } });
+  assert.match(r.error, /does not exist/);
+  assert.equal(writer.calls.length, 0);
+  assert.ok(!(await nd.podPlan({ target: "x.web:1", namespace: "web" })).error);
+  const svcs = await nd.podServices({});
+  assert.deepEqual(svcs.namespaces, [{ name: "cloudspider-debug", exists: false }, { name: "web", exists: true }]);
+});
+
+test("driver: a 404 on create names the namespace", async () => {
+  const writer = { ...mockWriter(), createPod: async () => ({ missing: true, error: "not found" }) };
+  const out = await runPod({ writer, spec: { metadata: { namespace: "cloudspider-debug", name: "p", labels: { "cloudspider.io/netdebug": "r" } }, spec: { containers: [{ image: "i" }] } } });
+  assert.match(out.error, /namespace cloudspider-debug not found/);
+});
