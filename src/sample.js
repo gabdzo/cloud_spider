@@ -15,7 +15,7 @@ export const SAMPLE_SHOP_ALB = {
   dns: SHOP_DNS,
   zones: ["sample-a", "sample-b"],
   lbSubnetIds: ["sample-public-a", "sample-public-b"],
-  cluster: "sample-cluster",
+  cluster: "cloudspider-up",
   ingress: "shop/shopapi",
   url: `http://${SHOP_DNS}/items`,
   targetCount: 2,
@@ -68,7 +68,7 @@ export function sampleAlbRoutes(id) {
 }
 
 export function samplePlace() {
-  const vpc = { id: "sample-vpc", cidr: "10.0.0.0/16", name: "sample" };
+  const vpc = { id: "sample-vpc", cidr: "10.0.0.0/16", name: "shared-services" };
   const subnet = {
     id: "sample-subnet",
     vpcId: vpc.id,
@@ -90,7 +90,7 @@ export function samplePlace() {
   // and private subnets in two zones, a NAT, two nodes, a database, a
   // worker function in the VPC and an S3 gateway endpoint; peered with the
   // first VPC. CloudFront in front of the landing page.
-  const eks = { id: "sample-eks-vpc", cidr: "10.43.0.0/16", name: "sample-eks" };
+  const eks = { id: "sample-eks-vpc", cidr: "10.43.0.0/16", name: "cloudspider-up" };
   const eksSubnet = (id, zone, cidr, isPublic) => ({ id, vpcId: eks.id, cidr, name: id.replace("sample-", ""), zone, public: isPublic });
   const node = (id, subnetId) => ({
     id,
@@ -99,7 +99,7 @@ export function samplePlace() {
     vpcId: eks.id,
     subnetId,
     name: "",
-    tags: [{ key: "eks:cluster-name", value: "sample-cluster" }, { key: "eks:nodegroup-name", value: "sample-nodes" }, { key: "project", value: "eks" }],
+    tags: [{ key: "eks:cluster-name", value: "cloudspider-up" }, { key: "eks:nodegroup-name", value: "sample-nodes" }, { key: "project", value: "eks" }],
   });
   return {
     region: "sample",
@@ -127,7 +127,7 @@ export function samplePlace() {
         id: "eks-sample",
         vpcId: eks.id,
         kind: "eks",
-        name: "sample-cluster",
+        name: "cloudspider-up",
         status: "ok",
         version: "1.32",
         phase: "ACTIVE",

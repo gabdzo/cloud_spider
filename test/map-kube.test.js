@@ -8,7 +8,7 @@ import { KUBE_MAP_KEY, assignApps, autoLevel, compoundHit, compoundHover, compou
 import { createApp, KUBE_MAP_TTL } from "../src/app.js";
 
 const demo = () => kubeModel(diagramFromKube(sampleKubeSnapshot(), {}), "cloudspider-up");
-const twoNodes = () => kubeModel(diagramFromKube(sampleMapSnapshot(), {}), "sample-cluster");
+const twoNodes = () => kubeModel(diagramFromKube(sampleMapSnapshot(), {}), "cloudspider-up");
 
 test("kubeModel: Gabriel's demo as nodes, apps per namespace with replica counts, and pods on their node", () => {
   const model = demo();
@@ -52,7 +52,7 @@ test("assignApps: one node subnet takes every app; two subnets split apps by whe
 
 test("map layout: the cluster compound sits in its nodes' subnets; the node buildings move inside it; levels add stalls and figures", () => {
   const place = samplePlace();
-  const models = new Map([["sample-cluster", twoNodes()]]);
+  const models = new Map([["cloudspider-up", twoNodes()]]);
   const at = (level) => layout(place, { rowLimit: 1280, kube: { models, choice: () => level } });
   const plain = layout(place, { rowLimit: 1280 });
   assert.equal(compoundsOf(plain).length, 0, "no kube data, no compound");
@@ -72,7 +72,7 @@ test("map layout: the cluster compound sits in its nodes' subnets; the node buil
   assert.ok(two.every((c) => c.stalls.every((s) => !s.system)), "level 2 folds system namespaces to their line");
   const three = compoundsOf(at("3"));
   const figures = three.flatMap((c) => c.figures);
-  assert.equal(figures.length, models.get("sample-cluster").pods, "level 3 draws every pod once");
+  assert.equal(figures.length, models.get("cloudspider-up").pods, "level 3 draws every pod once");
   for (const c of three) for (const f of c.figures) assert.ok(f.x >= c.x && f.x + f.w <= c.x + c.w && f.y + f.h <= c.y + c.h);
   // Buildings never overlap the stalls.
   for (const c of three) for (const s of c.stalls) for (const b of c.buildings) assert.ok(s.y >= b.y + b.h || s.x >= b.x + b.w || s.x + s.w <= b.x);
@@ -80,11 +80,11 @@ test("map layout: the cluster compound sits in its nodes' subnets; the node buil
 
 test("compoundHit: LOD buttons, pods, apps, then the header; hover lines say what a click does", () => {
   const place = samplePlace();
-  const placed = layout(place, { rowLimit: 1280, kube: { models: new Map([["sample-cluster", twoNodes()]]), choice: () => "3" } });
+  const placed = layout(place, { rowLimit: 1280, kube: { models: new Map([["cloudspider-up", twoNodes()]]), choice: () => "3" } });
   const c = compoundsOf(placed)[0];
   const mid = (item) => [item.x + item.w / 2, item.y + item.h / 2];
   const lod = compoundHit(placed, ...mid(c.lod[0]));
-  assert.deepEqual([lod.type, lod.value, lod.cluster], ["lod", "1", "sample-cluster"]);
+  assert.deepEqual([lod.type, lod.value, lod.cluster], ["lod", "1", "cloudspider-up"]);
   const pod = compoundHit(placed, ...mid(c.figures[0]));
   assert.equal(pod.type, "pod");
   assert.match(pod.id, /^pod:/);

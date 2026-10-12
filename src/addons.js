@@ -252,14 +252,17 @@ export function sampleAddons() {
     { name: "kyverno-cloudspider-up", resourceCount: 9 },
     { name: "karpenter-cloudspider-up", resourceCount: 39 },
     { name: "scaling-demo-cloudspider-up", resourceCount: 9 },
+    { name: "lbc-cloudspider-up", resourceCount: 11 },
     { name: "cert-manager-cloudspider-lab", resourceCount: 6 },
   ];
-  const outputs = { "kyverno-cloudspider-up": { version: "v1.19.1" }, "karpenter-cloudspider-up": { version: "1.15.0" }, "cert-manager-cloudspider-lab": { version: "v1.21.2" } };
+  const outputs = { "kyverno-cloudspider-up": { version: "v1.19.1" }, "karpenter-cloudspider-up": { version: "1.15.0" }, "lbc-cloudspider-up": { version: "v2.14.1" }, "cert-manager-cloudspider-lab": { version: "v1.21.2" } };
   const detected = {
     "pod-identity": { version: "v1.3.10-eksbuild.1", where: "daemonset kube-system/eks-pod-identity-agent", ready: true },
     "metrics-server": { version: "v0.8.0-eksbuild.2", where: "deployment kube-system/metrics-server", ready: true },
     kyverno: { version: "v1.19.1", where: "deployment kyverno/kyverno-admission-controller", ready: true },
     karpenter: { version: "1.15.0", where: "deployment kube-system/karpenter", ready: true },
+    // The Shop API's public ALB on the sample map is the controller's work.
+    lbc: { version: "v2.14.1", where: "deployment kube-system/aws-load-balancer-controller", ready: true },
   };
   return { tree: addonTree({ clusters: ["cloudspider-up", "cloudspider-lab"], stacks, outputs, detected, detectedCluster: "cloudspider-up" }), notes: [], detectedCluster: "cloudspider-up", sample: true };
 }

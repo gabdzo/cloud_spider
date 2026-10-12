@@ -291,7 +291,7 @@ export function sampleCost(now = new Date()) {
   const sum = (series) => Math.round(series.reduce((a, b) => a + b, 0) * 100) / 100;
   const resource = (service, id, resource, series) => ({ service, short: shortService(service), icon: SERVICE_ICON[service] || "caps", id, resource, series, value: sum(series), amount: formatAmount(sum(series), "USD"), credit: sum(series) < 0 });
   const resources = [
-    resource("Amazon Elastic Kubernetes Service", "arn:aws:eks:sample:cluster/sample-cluster", "sample-cluster", wave(2.4, 0.01)),
+    resource("Amazon Elastic Kubernetes Service", "arn:aws:eks:sample:cluster/cloudspider-up", "cloudspider-up", wave(2.4, 0.01)),
     resource("Amazon Elastic Compute Cloud - Compute", "i-0sample0running", "sample-running", wave(0.41, 0.12, 1)),
     resource("Amazon Elastic Load Balancing", "arn:aws:elasticloadbalancing:sample:loadbalancer/app/sample-gate/1", "sample-gate", wave(0.55, 0.05, 2)),
     resource("Amazon Elastic Load Balancing", "arn:aws:elasticloadbalancing:sample:loadbalancer/app/sample-old-gate/2", "sample-old-gate", wave(0.13, 0.0)),

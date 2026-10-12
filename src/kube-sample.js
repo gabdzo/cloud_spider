@@ -187,7 +187,7 @@ export function samplePodInspect(name) {
 }
 
 // Sample mode's map: the same demo on the sample place's two-node cluster
-// (sample-cluster, nodes sample-node-a and sample-node-b in two private
+// (cloudspider-up, nodes sample-node-a and sample-node-b in two private
 // subnets), web scaled to two, every DaemonSet on both nodes.
 export function sampleMapSnapshot() {
   const snap = sampleKubeSnapshot();
@@ -208,7 +208,7 @@ export function sampleMapSnapshot() {
   const twice = (item) => ({ ...item, status: { ...item.status, desiredNumberScheduled: 2, numberReady: 2 } });
   return {
     ...snap,
-    clusterName: "sample-cluster",
+    clusterName: "cloudspider-up",
     nodes: [node(A, "sample-node-a"), node(B, "sample-node-b")],
     pods,
     deployments: snap.deployments.map((d) => (d.metadata.name === "web" ? { ...d, spec: { ...d.spec, replicas: 2 }, status: { readyReplicas: 2 } } : d)),

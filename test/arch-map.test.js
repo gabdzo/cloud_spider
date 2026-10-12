@@ -100,7 +100,7 @@ test("group by tag: one walled camp per value, untagged last, yards per VPC or r
   assert.ok(labels.includes("project: eks"));
   assert.ok(labels.includes("project: orders"));
   const eks = placed.settlements.find((item) => item.label === "project: eks");
-  assert.deepEqual(eks.plots.map((plot) => plot.label), ["sample-eks"]);
+  assert.deepEqual(eks.plots.map((plot) => plot.label), ["cloudspider-up"]);
   assert.deepEqual(eks.plots[0].buildings.map((item) => item.id), ["sample-node-a", "sample-node-b"]);
   assert.ok(eks.fixtures.some((item) => item.id === "eks-sample"));
   assert.equal(placed.camp, null, "the tag view has no separate regional zone");
