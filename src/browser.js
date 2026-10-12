@@ -3001,10 +3001,19 @@ const k9s = createK9s({
     draw();
   },
 });
-k9sBtn.addEventListener("click", () => k9s.toggle());
+// Top-nav K9S tab: from any view it jumps to the Cluster view and opens.
+k9sBtn.addEventListener("click", async () => {
+  if (mode !== "cluster") {
+    markHistory();
+    await enterCluster();
+    k9s.open();
+    return;
+  }
+  k9s.toggle();
+});
 // ":" opens (or focuses) it from anywhere in the Cluster view, unless typing.
 document.addEventListener("keydown", (event) => {
-  if (event.key !== ":" || event.ctrlKey || event.metaKey || event.altKey || k9sBtn.hidden || !moduleOn("kubernetes")) return;
+  if (event.key !== ":" || event.ctrlKey || event.metaKey || event.altKey || mode !== "cluster" || !moduleOn("kubernetes")) return;
   const t = event.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   if (k9sEl.contains(t)) return;
@@ -3031,10 +3040,10 @@ function currentSearch() {
 }
 
 function syncSearchBar() {
-  // The K9S window lives in the Cluster view, any context or screen.
+  // The K9S window lives in the Cluster view; its tab sits in the top nav
+  // (shown whenever the kubernetes module is on) and leaving closes it.
   const kubeView = mode === "cluster" && clusterData?.diagram?.layout === "kube";
-  k9sBtn.hidden = !kubeView;
-  if (!kubeView && k9s.isOpen()) k9s.close();
+  if (mode !== "cluster" && k9s.isOpen()) k9s.close();
   const on = searchable();
   kubeSearchEl.hidden = !on;
   statusEl.hidden = on;
@@ -5303,7 +5312,7 @@ settingsApi = createSettings({
 });
 // Modules (modules.js): the tab or key of a module that is off at the server
 // or hidden in this browser is not offered. Cost is the CAPS gauge.
-const MODULE_UI = { map: "#tab-map", network: "#path", kubernetes: "#cluster", vaults: "#tab-vaults", radio: "#tab-radio", stacks: "#upgrade", learn: "#learn-key", score: "#score-key", ask: "#ask" };
+const MODULE_UI = { map: "#tab-map", network: "#path", kubernetes: "#cluster, #k9s-btn", vaults: "#tab-vaults", radio: "#tab-radio", stacks: "#upgrade", learn: "#learn-key", score: "#score-key", ask: "#ask" };
 function settingsStorage() {
   try {
     return window.localStorage;
@@ -5314,8 +5323,7 @@ function settingsStorage() {
 function applyModules(visible) {
   modulesVisible = visible;
   for (const [id, sel] of Object.entries(MODULE_UI)) {
-    const node = document.querySelector(sel);
-    if (node) node.hidden = !visible.includes(id);
+    for (const node of document.querySelectorAll(sel)) node.hidden = !visible.includes(id);
   }
   if (!visible.includes("cost")) document.querySelector("#spend").hidden = true;
   const regionLabel = document.querySelector("#region")?.closest("label");
