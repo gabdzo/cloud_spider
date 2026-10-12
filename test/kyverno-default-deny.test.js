@@ -39,7 +39,7 @@ test("collector reads the generate rule; scanner may list clusterpolicies", asyn
   const kube = { read: async (n) => (n === "clusterPolicies" ? { json: { items: [{ metadata: { name: DEFAULT_DENY_POLICY.name }, spec: DEFAULT_DENY_POLICY.spec, status: { conditions: [{ type: "Ready", status: "True" }] } }] } } : { json: { items: [] } }) };
   const recs = await kubePolicy.collect({ kube });
   const cp = recs.find((r) => r.key === "kube-clusterPolicies").fields.items[0];
-  assert.deepEqual(cp.generates[0], { rule: "default-deny-v2", kind: "NetworkPolicy", synchronize: true, triggers: ["Namespace"], egress: true, ingress: true, allowsIngress: false });
+  assert.deepEqual(cp.generates[0], { rule: "default-deny", kind: "NetworkPolicy", synchronize: true, triggers: ["Namespace"], egress: true, ingress: true, allowsIngress: false });
   assert.equal(cp.ready, true);
   const absent = await kubePolicy.collect({ kube: { read: async (n) => (n === "clusterPolicies" ? { missing: true, status: 404 } : { json: { items: [] } }) } });
   assert.notEqual(absent.find((r) => r.key === "kube-clusterPolicies").status, "error");
