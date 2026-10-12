@@ -33,6 +33,7 @@ for (const w of bundle.warnings) pulumi.log.warn(w);
 const provider = new k8s.Provider("observe", { context, enableServerSideApply: true, enableConfigMapMutable: true });
 const KINDS = {
   "v1/Namespace": k8s.core.v1.Namespace,
+  "scheduling.k8s.io/v1/PriorityClass": k8s.scheduling.v1.PriorityClass,
   "v1/ServiceAccount": k8s.core.v1.ServiceAccount,
   "v1/ConfigMap": k8s.core.v1.ConfigMap,
   "v1/Service": k8s.core.v1.Service,
@@ -65,7 +66,7 @@ for (const { obj } of rest.filter(({ obj }) => !WORKLOADS.has(obj.kind))) {
   // change must delete before it creates; the pods roll on the checksum.
   const res = create(obj, obj.kind === "ConfigMap" ? { ...inNs, deleteBeforeReplace: true } : inNs);
   made.push(res);
-  if (/SecurityContextConstraints|Role|ServiceAccount/.test(obj.kind)) security.push(res);
+  if (/SecurityContextConstraints|Role|ServiceAccount|PriorityClass/.test(obj.kind)) security.push(res);
 }
 for (const { obj } of rest.filter(({ obj }) => WORKLOADS.has(obj.kind))) made.push(create(obj, { provider, dependsOn: [ns, ...security] }));
 // The API Service's ClusterIP for allow-apiserver-egress (EKS matches it pre-DNAT).
