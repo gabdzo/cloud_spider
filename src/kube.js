@@ -71,6 +71,7 @@ export const PATHS = {
   policyReports: () => "/apis/wgpolicyk8s.io/v1alpha2/policyreports",
   clusterPolicyReports: () => "/apis/wgpolicyk8s.io/v1alpha2/clusterpolicyreports",
   clusterPolicies: () => "/apis/kyverno.io/v1/clusterpolicies",
+  generatingPolicies: () => "/apis/policies.kyverno.io/v1/generatingpolicies",
   // Kyverno 1.19 CEL policies, and the OpenReports format Kyverno writes
   // instead of wgpolicyk8s.io when --openreportsEnabled is on.
   validatingPolicies: () => "/apis/policies.kyverno.io/v1/validatingpolicies",

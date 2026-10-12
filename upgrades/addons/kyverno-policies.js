@@ -93,58 +93,80 @@ export const EXCEPTIONS = [
 ];
 
 // Default deny for every NEW namespace (defaultDeny on the Kyverno card):
-// a generate rule makes NetworkPolicy default-deny (ingress + egress, DNS
-// egress to CoreDNS allowed) when a namespace is created. synchronize: a
-// deleted or edited policy comes back. Only on CREATE and never for
-// existing namespaces (generateExisting false): shop, demo, cnpg-system keep
+// a GeneratingPolicy (CEL, policies.kyverno.io/v1, 2026-10-12; it was a
+// ClusterPolicy generate rule) makes a default-deny NetworkPolicy (ingress
+// + egress, DNS egress to CoreDNS allowed) when a namespace is created.
+// synchronize: a deleted or edited NetworkPolicy comes back. Never for
+// existing namespaces (generateExisting off): shop, demo, cnpg-system keep
 // the policies their stacks wrote. Out: the system namespaces, Kyverno's
 // own, and any namespace labelled cloudspider.io/allow-open=true.
-// Not "operations: [CREATE]": Kyverno re-checks the trigger when it
-// resyncs a deleted policy, that check is no CREATE, and the policy never
-// came back (cloudspider-up 2026-10-12). A precondition on the namespace's
-// creation time keeps every namespace older than the rollout out instead,
-// on create, update and resync alike.
+// Not "operations: [CREATE]" alone: Kyverno re-checks the trigger when it
+// resyncs a deleted downstream, and that check is no CREATE (cloudspider-up
+// 2026-10-12, with the ClusterPolicy). A matchCondition on the namespace's
+// creation time keeps every namespace older than the rollout out instead;
+// a namespace still being created has no creationTimestamp yet and is in.
 export const DEFAULT_DENY_SINCE = "2026-10-12T07:00:00Z";
 export const DEFAULT_DENY_SKIP = ["kube-system", "kube-public", "kube-node-lease", "kyverno"];
 export const ALLOW_OPEN_LABEL = "cloudspider.io/allow-open";
+
+// The downstream object, as plain data (tests and the scorecard read it).
+export const DEFAULT_DENY_NETPOL = {
+  apiVersion: "networking.k8s.io/v1",
+  kind: "NetworkPolicy",
+  metadata: { name: "default-deny", labels: { "app.kubernetes.io/managed-by": "kyverno", "cloudspider.io/policy": "generate-default-deny" } },
+  spec: {
+    podSelector: {},
+    policyTypes: ["Ingress", "Egress"],
+    egress: [{
+      to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } }, podSelector: { matchLabels: { "k8s-app": "kube-dns" } } }],
+      ports: [{ protocol: "UDP", port: 53 }, { protocol: "TCP", port: 53 }],
+    }],
+  },
+};
+
+// A JS value → a CEL literal. Every map value and list element is wrapped
+// in dyn(): CEL's checker refuses literals whose values differ in type
+// ({"protocol": "UDP", "port": 53}). `raw` entries are CEL expressions.
+export function celLiteral(value) {
+  if (value && typeof value === "object" && "$cel" in value) return value.$cel;
+  if (Array.isArray(value)) return `[${value.map((v) => `dyn(${celLiteral(v)})`).join(", ")}]`;
+  if (value && typeof value === "object") return `{${Object.entries(value).map(([k, v]) => `${JSON.stringify(k)}: dyn(${celLiteral(v)})`).join(", ")}}`;
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (value == null) return "null";
+  throw new Error(`no CEL literal for ${typeof value}`);
+}
+
+const quote = (s) => `'${s}'`;
 export const DEFAULT_DENY_POLICY = {
-  // Renamed from default-deny-new-namespaces: Kyverno refuses any edit to a
-  // generate rule (match, preconditions, even its name), so a changed rule
-  // ships as a new policy.
+  // Same name as the ClusterPolicy it replaces: a new kind is a new object
+  // (Pulumi "gpol-…" deletes the old "policy-…" ClusterPolicy).
   name: "generate-default-deny",
+  kind: "GeneratingPolicy",
   title: "Default-deny NetworkPolicy in new namespaces",
   severity: "high",
   category: "Multi-tenancy, Cloud Spider",
   description: "Every new namespace starts closed: no ingress, egress only to DNS. Allow what the app needs with its own NetworkPolicies.",
   spec: {
-    background: true,
-    rules: [
-      {
-        name: "default-deny",
-        match: { any: [{ resources: { kinds: ["Namespace"] } }] },
-        preconditions: { all: [{ key: `{{ time_after('{{request.object.metadata.creationTimestamp}}', '${DEFAULT_DENY_SINCE}') }}`, operator: "Equals", value: true }] },
-        exclude: { any: [{ resources: { names: DEFAULT_DENY_SKIP } }, { resources: { selector: { matchLabels: { [ALLOW_OPEN_LABEL]: "true" } } } }] },
-        generate: {
-          generateExisting: false,
-          synchronize: true,
-          apiVersion: "networking.k8s.io/v1",
-          kind: "NetworkPolicy",
-          name: "default-deny",
-          namespace: "{{request.object.metadata.name}}",
-          data: {
-            metadata: { labels: { "app.kubernetes.io/managed-by": "kyverno", "cloudspider.io/policy": "generate-default-deny" } },
-            spec: {
-              podSelector: {},
-              policyTypes: ["Ingress", "Egress"],
-              egress: [{
-                to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } }, podSelector: { matchLabels: { "k8s-app": "kube-dns" } } }],
-                ports: [{ protocol: "UDP", port: 53 }, { protocol: "TCP", port: 53 }],
-              }],
-            },
-          },
-        },
-      },
+    evaluation: {
+      synchronize: { enabled: true },
+      generateExisting: { enabled: false },
+      orphanDownstreamOnPolicyDelete: { enabled: false },
+    },
+    matchConstraints: {
+      resourceRules: [{ apiGroups: [""], apiVersions: ["v1"], operations: ["CREATE", "UPDATE"], resources: ["namespaces"] }],
+      objectSelector: { matchExpressions: [{ key: ALLOW_OPEN_LABEL, operator: "NotIn", values: ["true"] }] },
+    },
+    matchConditions: [
+      { name: "not-system", expression: `!(object.metadata.name in [${DEFAULT_DENY_SKIP.map(quote).join(", ")}])` },
+      { name: "not-allow-open", expression: `!(has(object.metadata.labels) && '${ALLOW_OPEN_LABEL}' in object.metadata.labels && object.metadata.labels['${ALLOW_OPEN_LABEL}'] == 'true')` },
+      { name: "created-after-rollout", expression: `!has(object.metadata.creationTimestamp) || timestamp(object.metadata.creationTimestamp) > timestamp('${DEFAULT_DENY_SINCE}')` },
     ],
+    variables: [
+      { name: "nsName", expression: "object.metadata.name" },
+      { name: "downstream", expression: celLiteral([{ ...DEFAULT_DENY_NETPOL, metadata: { ...DEFAULT_DENY_NETPOL.metadata, namespace: { $cel: "string(variables.nsName)" } } }]) },
+    ],
+    generate: [{ expression: "generator.Apply(variables.nsName, variables.downstream)" }],
   },
 };
 

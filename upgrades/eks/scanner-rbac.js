@@ -12,6 +12,7 @@ export const SCANNER_RULES = [
   { apiGroups: ["policy"], resources: ["poddisruptionbudgets"], verbs: ["get", "list"] },
   { apiGroups: ["wgpolicyk8s.io"], resources: ["policyreports", "clusterpolicyreports"], verbs: ["get", "list"] },
   { apiGroups: ["kyverno.io"], resources: ["clusterpolicies"], verbs: ["get", "list"] },
+  { apiGroups: ["policies.kyverno.io"], resources: ["generatingpolicies"], verbs: ["get", "list"] },
   { apiGroups: ["metrics.k8s.io"], resources: ["nodes", "pods"], verbs: ["get", "list"] },
   // Protections (src/score/collectors/kube-protect.js): service accounts,
   // volumes, CloudNativePG clusters and backups, Velero schedules.

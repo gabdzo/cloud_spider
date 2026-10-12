@@ -35,6 +35,28 @@ SHAPE.clusterPolicies = (i) => ({
     allowsIngress: (r.generate.data?.spec?.ingress || []).length > 0,
   })),
 });
+// Kyverno GeneratingPolicies (CEL): the downstream is a CEL literal, so the
+// facts K8S-SEC-010 needs are read from its text (kind, policyTypes, ingress
+// rules); triggers from matchConstraints.
+const RESOURCE_KIND = { namespaces: "Namespace", configmaps: "ConfigMap", pods: "Pod" };
+SHAPE.generatingPolicies = (i) => {
+  const text = [...(i?.spec?.variables || []).map((v) => v.expression || ""), ...(i?.spec?.generate || []).map((g) => g.expression || g.template?.value || "")].join("\n");
+  const kind = (text.match(/"kind":\s*dyn\("([A-Za-z]+)"\)/) || text.match(/^kind:\s*([A-Za-z]+)/m) || [])[1] || "";
+  const types = (text.match(/"policyTypes":\s*dyn\(\[([^\]]*)\]\)/) || text.match(/policyTypes:\s*\[([^\]]*)\]/) || [])[1] || "";
+  return {
+    name: name(i),
+    ready: (i?.status?.conditions || []).some((c) => c.type === "Ready" && c.status === "True") || i?.status?.ready === true,
+    generates: (i?.spec?.generate || []).length ? [{
+      rule: name(i),
+      kind,
+      synchronize: i?.spec?.evaluation?.synchronize?.enabled === true,
+      triggers: [...new Set((i?.spec?.matchConstraints?.resourceRules || []).flatMap((r) => (r.resources || []).map((x) => RESOURCE_KIND[x] || x)))],
+      egress: /Egress/.test(types),
+      ingress: /Ingress/.test(types),
+      allowsIngress: /"ingress":|^\s*ingress:/m.test(text),
+    }] : [],
+  };
+};
 const LISTS = Object.keys(SHAPE);
 // Reports also come as OpenReports (openreports.io, Kyverno with
 // --openreportsEnabled; same results shape): read both formats and fold
@@ -58,7 +80,7 @@ export const kubePolicy = {
         items = [...items, ...(open[n]?.json?.items || [])];
         if ((RANK[other.status] ?? 9) < (RANK[status] ?? 9)) ({ status, error } = other);
       }
-      const crd = n.endsWith("olicyReports") || n === "clusterPolicies";
+      const crd = n.endsWith("olicyReports") || n === "clusterPolicies" || n === "generatingPolicies";
       // A core list that 404s is an error; a CRD list that 404s is absent.
       const final = status === "absent" && !crd ? "error" : status;
       return evidence({ key: `kube-${n}`, collector: "kube-policy", read: `GET ${n}`, target: "kubernetes", status: final, fields: { items: items.map(SHAPE[n]) }, error: final === "error" && !error ? { code: "404", message: `${n} is not served` } : error });

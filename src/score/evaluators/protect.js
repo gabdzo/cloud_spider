@@ -140,12 +140,17 @@ export const protectEvaluators = {
   // K8S-SEC-010: a Kyverno generate rule that gives every new namespace a
   // default-deny NetworkPolicy, kept in sync.
   "new-namespace-default-deny"({ data, status = {} }) {
-    if (status["kube-clusterPolicies"] === "absent") return { items: [{ id: "kyverno", pass: false, detail: "Kyverno is not installed: new namespaces start open (install it with defaultDeny on)" }] };
-    const rules = (data["kube-clusterPolicies"]?.items || []).flatMap((p) => p.generates.map((g) => ({ ...g, policy: p.name, ready: p.ready })));
+    // GeneratingPolicy (CEL, today's card) or a ClusterPolicy generate rule
+    // (older installs); Kyverno is absent only when neither is served.
+    if (status["kube-clusterPolicies"] === "absent" && (status["kube-generatingPolicies"] ?? "absent") === "absent") return { items: [{ id: "kyverno", pass: false, detail: "Kyverno is not installed: new namespaces start open (install it with defaultDeny on)" }] };
+    const rules = [
+      ...(data["kube-generatingPolicies"]?.items || []).flatMap((p) => p.generates.map((g) => ({ ...g, policy: p.name, ready: p.ready, ref: "generatingpolicy" }))),
+      ...(data["kube-clusterPolicies"]?.items || []).flatMap((p) => p.generates.map((g) => ({ ...g, policy: p.name, ready: p.ready, ref: "clusterpolicy" }))),
+    ];
     const deny = rules.filter((g) => g.kind === "NetworkPolicy" && g.triggers.includes("Namespace") && g.ingress && !g.allowsIngress);
     if (!deny.length) return { items: [{ id: "kyverno", pass: false, detail: "no Kyverno generate rule makes a default-deny NetworkPolicy for new namespaces" }] };
     const best = deny.find((g) => g.synchronize && g.egress) || deny.find((g) => g.synchronize) || deny[0];
-    const id = `clusterpolicy/${best.policy}`;
+    const id = `${best.ref}/${best.policy}`;
     if (!best.synchronize) return { items: [{ id, pass: true, warn: true, detail: `${best.policy} generates default-deny without synchronize: a deleted policy stays deleted` }] };
     if (!best.egress) return { items: [{ id, pass: true, warn: true, detail: `${best.policy} denies ingress only; egress stays open` }] };
     return { items: [{ id, pass: true, detail: `${best.policy}: new namespaces get default-deny ingress + egress, kept in sync` }] };

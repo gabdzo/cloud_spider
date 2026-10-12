@@ -3,7 +3,7 @@ import { ALL_POLICIES, CEL_API, DEFAULT_DENY_POLICY, EXCEPTIONS, GENERATE_RBAC }
 
 // Kyverno (Helm) with the four baseline and two demo policies of
 // kyverno-policies.js as ValidatingPolicies (CEL), all in Audit mode, and
-// generate-default-deny as a ClusterPolicy (ValidatingPolicy cannot generate). Reports land in PolicyReports (wgpolicyk8s.io), which Cloud
+// generate-default-deny as a GeneratingPolicy (CEL too). Reports land in PolicyReports (wgpolicyk8s.io), which Cloud
 // Spider's viewer may read. One replica per controller; cleanup off.
 export default function kyverno({ pulumi, aws, k8s, addon }) {
   const { k, config, netpol } = setup({ pulumi, aws, k8s, addon });
@@ -23,14 +23,14 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
     // namespace, where only this stack writes.
     features: { policyExceptions: { enabled: true, namespace: addon.namespace } },
   }, { netpol });
-  // Pulumi names stay "policy-<name>" for the ClusterPolicy; a
-  // ValidatingPolicy is "vpol-<name>" (a new kind is a new object: the old
-  // ClusterPolicy is deleted, the ValidatingPolicy created).
-  const resources = policies.map((item) => ({ item, cel: item !== DEFAULT_DENY_POLICY }));
-  for (const { item, cel } of resources) {
-    new k8s.apiextensions.CustomResource(`${cel ? "vpol" : "policy"}-${item.name}`, {
-      apiVersion: cel ? CEL_API : "kyverno.io/v1",
-      kind: cel ? "ValidatingPolicy" : "ClusterPolicy",
+  // Every policy is CEL now. Pulumi names: "vpol-<name>" for a
+  // ValidatingPolicy, "gpol-<name>" for the GeneratingPolicy (a new kind is a
+  // new object: the old "policy-<name>" ClusterPolicy is deleted).
+  for (const item of policies) {
+    const kind = item.kind || "ValidatingPolicy";
+    new k8s.apiextensions.CustomResource(`${kind === "GeneratingPolicy" ? "gpol" : "vpol"}-${item.name}`, {
+      apiVersion: CEL_API,
+      kind,
       metadata: {
         name: item.name,
         labels: { "app.kubernetes.io/part-of": "cloudspider-addons" },
@@ -56,7 +56,7 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
     { apiGroups: ["wgpolicyk8s.io"], resources: ["policyreports", "clusterpolicyreports"] },
     { apiGroups: ["openreports.io"], resources: ["reports", "clusterreports"] },
     { apiGroups: ["kyverno.io"], resources: ["clusterpolicies", "policies", "policyexceptions"] },
-    { apiGroups: ["policies.kyverno.io"], resources: ["validatingpolicies", "namespacedvalidatingpolicies", "policyexceptions"] },
+    { apiGroups: ["policies.kyverno.io"], resources: ["validatingpolicies", "namespacedvalidatingpolicies", "generatingpolicies", "policyexceptions"] },
   ], { dependsOn: [release] });
   return { version: addon.appVersion, details: { policies: policies.map((item) => item.name), mode: "Audit", api: CEL_API, defaultDeny } };
 }
