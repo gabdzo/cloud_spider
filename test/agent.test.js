@@ -251,8 +251,14 @@ test("cross-site or origin-less requests are refused and start nothing", () => {
 
 test("nothing is spawned without an explicit POST /api/agent from the page", async () => {
   const fake = fakeSpawn();
-  const port = 9300 + Math.floor(Math.random() * 500);
-  const server = await listen(appWith(createAgent({ spawn: fake.spawn, env: {}, kill() {} }), port), port);
+  // Port 0: the OS picks a free port. A random pick from 9300-9799 was
+  // flaky because the box runs other dev servers there (EADDRINUSE).
+  // The app needs its origin up front, so bind first and build the app
+  // for the port the OS handed out.
+  let app = null;
+  const server = await listen(new Proxy({}, { get: (_, key) => app?.[key], has: (_, key) => key in app }), 0);
+  const port = server.address().port;
+  app = appWith(createAgent({ spawn: fake.spawn, env: {}, kill() {} }), port);
   const base = `http://127.0.0.1:${port}`;
   try {
     for (const path of ["/", "/browser.js", "/terminal.js", "/agent-text.js", "/api/agent"]) await fetch(base + path).then((response) => response.text());
@@ -265,7 +271,7 @@ test("nothing is spawned without an explicit POST /api/agent from the page", asy
     const response = await fetch(`${base}/api/agent`, { method: "POST", headers: { origin: base, "content-type": "application/json" }, body: JSON.stringify({ question: "hi", context: { region: "eu-north-1" } }) });
     assert.equal(response.status, 200);
     assert.match(response.headers.get("content-type"), /ndjson/);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    // agentAsk spawns synchronously before the 200 headers, so no wait.
     assert.equal(fake.children.length, 1);
     const child = fake.children[0];
     assert.equal(child.call.cmd, "agent");
@@ -274,6 +280,7 @@ test("nothing is spawned without an explicit POST /api/agent from the page", asy
     const body = await response.text();
     assert.deepEqual(body.trim().split("\n").map((row) => JSON.parse(row)), [{ type: "text", text: "ok" }, { type: "done" }]);
   } finally {
+    server.closeAllConnections?.();
     server.close();
   }
 });
