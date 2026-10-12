@@ -73,6 +73,19 @@ export function overlapProbe(opts = {}) {
     if (c.empty) continue;
     units.push({ el, r: c, kind: "text", full: r });
   }
+  const opaque = (st) => st.backgroundImage !== "none" || (() => { const m = st.backgroundColor.match(/rgba?\(([^)]+)\)/); if (!m) return false; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number); return p.length < 4 || p[3] >= 0.85; })();
+  const coveredByLayer = (hit, topEl, underEl) => {
+    for (let e = hit; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+      if (e.contains(underEl)) return false;
+      const st = getComputedStyle(e);
+      if (/(fixed|absolute)/.test(st.position) && opaque(st)) return true;
+    }
+    return false;
+  };
+  const lineRects = (u) => {
+    const list = getComputedStyle(u.el).display === "inline" ? [...u.el.getClientRects()] : [];
+    return list.length > 1 ? list : [u.r];
+  };
   const findings = [];
   const add = (kind, a, b, extra = "") => findings.push({ kind, a: describe(a), ...(b ? { b: describe(b) } : {}), ...(extra ? { note: extra } : {}) });
   // clipped / overflowing
@@ -90,13 +103,26 @@ export function overlapProbe(opts = {}) {
     for (let j = i + 1; j < units.length; j++) {
       const a = units[i], b = units[j];
       if (a.el === b.el || a.el.contains(b.el) || b.el.contains(a.el)) continue;
-      const x1 = Math.max(a.r.left, b.r.left), x2 = Math.min(a.r.right, b.r.right);
-      const y1 = Math.max(a.r.top, b.r.top), y2 = Math.min(a.r.bottom, b.r.bottom);
-      if (x2 - x1 < MIN || y2 - y1 < MIN) continue;
+      // An inline element that wraps (a long <code> in a sentence) is one
+      // box per line, not the union of its lines.
+      let x1, x2, y1, y2, found = false;
+      for (const ra of lineRects(a)) for (const rb of lineRects(b)) {
+        if (found) break;
+        x1 = Math.max(ra.left, rb.left); x2 = Math.min(ra.right, rb.right);
+        y1 = Math.max(ra.top, rb.top); y2 = Math.min(ra.bottom, rb.bottom);
+        found = x2 - x1 >= MIN && y2 - y1 >= MIN;
+      }
+      if (!found) continue;
       const hit = document.elementFromPoint((x1 + x2) / 2, (y1 + y2) / 2);
       if (!hit) continue;
       const mine = (u) => u.el === hit || u.el.contains(hit);
       if (!mine(a) && !mine(b)) continue; // both under something else (a modal)
+      // A floating layer (fixed/absolute panel with an opaque
+      // background) painting over content outside it covers it by design:
+      // the content underneath does not show through, so it is not an
+      // overlap. Text on text, or a see-through layer, still counts.
+      const top = mine(a) ? a : b, under = top === a ? b : a;
+      if (coveredByLayer(hit, top.el, under.el)) continue;
       add("overlap", a.el, b.el, `${Math.round(x2 - x1)}×${Math.round(y2 - y1)} at ${Math.round(x1)},${Math.round(y1)}`);
     }
   }
