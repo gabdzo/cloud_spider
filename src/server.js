@@ -75,6 +75,7 @@ export const FILES = new Set([
   "vault-layout.js",
   "vault-draw.js",
   "vault-page.js",
+  "vault-perks.js",
   "url-state.js",
   "settings-view.js",
   "map-focus.js",

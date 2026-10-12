@@ -1,0 +1,20 @@
+# Sample (auto-discovery): its stack is "up" in sample mode, so VAULTS lists
+# it the way #201 lists a deployed stack, and vault-perks.js groups it.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: shopapi
+  number: 165
+  title: Shop API
+  description: "PostgREST over the shopdb database, behind a public ALB."
+  owner: gabriel
+  tags: [upgrade, eks, api]
+spec:
+  type: api
+  resources:
+    tags:
+      project: shopapi
+  stack:
+    dir: upgrades/shopapi
+    name: "shopapi"
+

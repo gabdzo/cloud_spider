@@ -45,7 +45,7 @@ test("a good vault validates with defaults filled in", () => {
 test("each mistake gets its own sentence naming the path", () => {
   const cases = [
     [(d) => (d.apiVersion = "backstage.io/v1alpha1"), "apiVersion: must be cloudspider/v1, not backstage.io/v1alpha1"],
-    [(d) => (d.kind = "Component"), "kind: must be Vault, not Component"],
+    [(d) => (d.kind = "Component"), "kind: must be Vault or Perk, not Component"],
     [(d) => delete d.metadata, "metadata: is required"],
     [(d) => (d.metadata.name = "Bad Name"), "metadata.name: use lowercase letters, digits and dashes (max 63)"],
     [(d) => delete d.metadata.number, "metadata.number: is required (0-999, shown as VAULT 101)"],
