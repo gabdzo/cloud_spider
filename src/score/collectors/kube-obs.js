@@ -148,7 +148,9 @@ export const kubeObs = {
 // The apps on the cluster: vaults whose stack is a Stacks card that runs on
 // the EKS cluster (needs eks), not the cluster itself or its add-ons (those
 // are platform, scored elsewhere), or a vault that names the cluster.
-const CLUSTER_APP_DIRS = new Set(UPGRADES.filter((u) => (u.needs || []).includes("eks") && u.dir !== "upgrades/addons").map((u) => u.dir));
+// The Observability card watches the cluster; it is not an app with SLOs.
+const PLATFORM_CARDS = new Set(["observability"]);
+const CLUSTER_APP_DIRS = new Set(UPGRADES.filter((u) => (u.needs || []).includes("eks") && u.dir !== "upgrades/addons" && !PLATFORM_CARDS.has(u.id)).map((u) => u.dir));
 export function appVaults(list, cluster, dirs = CLUSTER_APP_DIRS) {
   return list
     .filter((v) => v && v.kind !== "perk" && !v.perkOf && !v.damaged && v.type !== "cluster")

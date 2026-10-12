@@ -122,6 +122,7 @@ test("collector helpers: agents by image, LB hosts, alarm scope, app vaults", ()
     { key: "other-cluster", type: "api", cluster: "c2", stack: { dir: "upgrades/shopapi" } },
     { key: "shopapi", type: "api", stack: { dir: "upgrades/shopapi" }, slos: [{ name: "a", sli: "availability", source: "alb", flag: "ok" }] },
     { key: "demo", type: "service", stack: { dir: "upgrades/demo" }, slos: [] },
+    { key: "observability", type: "data", stack: { dir: "upgrades/observability" }, slos: [{ name: "r", sli: "availability", source: "resources" }] },
   ], "c1");
   assert.deepEqual(vs.map((v) => [v.key, v.alb]), [["shopapi", true], ["demo", false]]);
 });
