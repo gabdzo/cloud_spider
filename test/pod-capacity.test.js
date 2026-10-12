@@ -163,10 +163,12 @@ test("eks legacy stack, maxPods=110 on a t4g.medium: launch template with maxPod
   assert.doesNotMatch(source, /110 with prefix delegation/);
 });
 
-test("the committed legacy stack config matches cloudspider-up: t4g.medium, maxPods 110", () => {
+test("the committed legacy stack config matches cloudspider-up: t4g.medium, maxPods 110, 2 SPOT nodes (live since 2026-10-12)", () => {
   const text = readFileSync(join(root, "upgrades/eks/Pulumi.upgrade.yaml"), "utf8");
   assert.match(text, /cloudspider-upgrade:instanceType: t4g\.medium/);
   assert.match(text, /cloudspider-upgrade:maxPods: "110"/);
+  assert.match(text, /cloudspider-upgrade:nodeCount: "2"/);
+  assert.match(text, /cloudspider-upgrade:capacityType: SPOT/);
 });
 
 test("Karpenter's NodePool may use every zone of the cluster's subnets; zones narrows it, an unknown zone is refused", { skip: ready("upgrades/addons") }, async () => {

@@ -4,7 +4,8 @@ config:
   aws:profile: default
   aws:allowedAccountIds:
     - 550536272523
+  cloudspider-upgrade:capacityType: SPOT
   cloudspider-upgrade:clusterName: cloudspider-up
   cloudspider-upgrade:instanceType: t4g.medium
   cloudspider-upgrade:maxPods: "110"
-  cloudspider-upgrade:nodeCount: "1"
+  cloudspider-upgrade:nodeCount: "2"
