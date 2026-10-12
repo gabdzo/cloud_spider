@@ -2433,6 +2433,32 @@ const page = `<!doctype html>
   @media (max-width: 1100px) {
     #radio-panel { flex-basis: 250px; }
   }
+  /* Compact Pip header below 1200 (UX overlaps B): at 1024 the header was
+     ~230px of 768, three rows. Same hardware, smaller: porthole, plate
+     title, key caps and the readout shrink, the plate's subtitle goes (the
+     title says it), so the console, gauges and readout share row two. */
+  @media (max-width: 1199px) {
+    .terminal #tally { order: 20; flex: 0 1 auto; max-width: 100%; height: 28px; margin-left: auto; font-size: 12px; }
+    :root:not([data-theme="pro"]) header { gap: 8px 10px; padding: 6px 10px 8px; }
+    :root:not([data-theme="pro"]) .plate { gap: 8px; padding: 4px 10px 4px 5px; }
+    :root:not([data-theme="pro"]) .porthole { width: 40px; height: 40px; }
+    :root:not([data-theme="pro"]) #mascot { width: 38px; height: 35px; }
+    :root:not([data-theme="pro"]) h1 { font-size: 18px; letter-spacing: 0.1em; }
+    :root:not([data-theme="pro"]) .plate small { display: none; }
+    :root:not([data-theme="pro"]) .tab { min-height: 32px; }
+    :root:not([data-theme="pro"]) .tabs { padding-top: 5px; padding-bottom: 7px; }
+    :root:not([data-theme="pro"]) .console { gap: 8px; padding: 4px 8px; }
+    :root:not([data-theme="pro"]) .keys { gap: 5px; }
+    :root:not([data-theme="pro"]) .key { gap: 4px; }
+    :root:not([data-theme="pro"]) .key .cap { width: 36px; height: 26px; }
+    :root:not([data-theme="pro"]) .key .cap img { width: 16px; height: 16px; }
+    :root:not([data-theme="pro"]) .key .tag { min-width: 38px; padding: 0 3px 1px; font-size: 8px; letter-spacing: 0.12em; }
+    :root:not([data-theme="pro"]) .switch { min-height: 36px; gap: 6px; padding: 2px 8px; }
+    :root:not([data-theme="pro"]) .gauges { flex-basis: 200px; gap: 8px; }
+    :root:not([data-theme="pro"]) .lcd { height: 36px; font-size: 12px; }
+    :root:not([data-theme="pro"]) .readout { gap: 8px; padding: 4px 8px; font-size: 12px; }
+    :root:not([data-theme="pro"]) .readout b, :root:not([data-theme="pro"]) .readout label { letter-spacing: 0.08em; }
+  }
   @media (max-width: 900px) {
     body { padding: 4px; }
     .device { padding: 6px; border-radius: 12px; }
