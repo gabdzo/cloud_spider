@@ -318,7 +318,11 @@ function podinfo(name, extraArgs = []) {
             name,
             image: "ghcr.io/stefanprodan/podinfo:6.7.1",
             command: ["./podinfo", "--port=9898", "--level=info", `--otel-service-name=${name}`, ...extraArgs],
-            env: [{ name: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value: "otel-collector:4317" }],
+            // With a scheme: the OTLP gRPC exporter parses a bare
+            // "otel-collector:4317" as scheme "otel-collector" with no host
+            // ("dns resolver: missing address", no trace ever left the pod
+            // since 2026-10-10). http:// = plaintext gRPC to the collector.
+            env: [{ name: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", value: "http://otel-collector:4317" }],
             ports: [{ containerPort: 9898, name: "http" }],
             readinessProbe: { httpGet: { path: "/readyz", port: 9898 }, periodSeconds: 10 },
             resources: { requests: { cpu: "10m", memory: "32Mi" }, limits: { memory: "96Mi" } },
