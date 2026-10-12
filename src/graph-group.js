@@ -45,7 +45,7 @@ export function regroup(scene, groupBy = "namespace") {
       g.from.add(node.group);
       if ((BAND_RANK[from.band] ?? 1) < (BAND_RANK[g.band] ?? 1)) g.band = from.band;
     }
-    if (node.kind !== "cr" && node.kind !== "external") g.pods += node.pods ?? 1;
+    if (node.kind !== "cr" && node.kind !== "external") g.pods += typeof node.pods === "number" ? node.pods : 1;
     made.set(id, g);
     groupOfNode.set(node.id, id);
     return { ...node, group: id };

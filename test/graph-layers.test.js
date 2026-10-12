@@ -69,3 +69,29 @@ test("view: full-row open groups, layered cards, side panel, legend, badge key, 
   assert.match(server, /:root\[data-theme="pro"\] #kube-graph \.gv-side/);
   assert.match(server, /"graph-layers\.js",/);
 });
+
+test("pairs allowed both ways do not collapse a group into one column; traffic picks the direction", async () => {
+  const { layerNodes } = await import("../src/graph-layers.js");
+  const n = (id, kind = "service") => ({ id, kind, label: id });
+  const nodes = [n("frontend"), n("api"), n("db", "db"), n("loadgen", "workload")];
+  const e = (from, to, source = "static", rps = 0) => ({ from, to, kind: "tcp", source, rps, errors: 0 });
+  const edges = [e("frontend", "api"), e("api", "frontend"), e("api", "db"), e("db", "api"), e("loadgen", "frontend"), e("frontend", "loadgen"), e("frontend", "api", "trace", 2), e("loadgen", "frontend", "trace", 3)];
+  const cols = layerNodes(nodes, edges).map((c) => c.map((x) => x.id));
+  assert.ok(cols.length >= 3, JSON.stringify(cols));
+  assert.ok(cols.findIndex((c) => c.includes("loadgen")) < cols.findIndex((c) => c.includes("frontend")));
+  assert.ok(cols.findIndex((c) => c.includes("frontend")) < cols.findIndex((c) => c.includes("api")));
+});
+
+test("Group by label sums plain pod counts, never pod objects", async () => {
+  const { regroup } = await import("../src/graph-group.js");
+  const scene = { groups: [{ id: "a", band: "apps" }], nodes: [{ id: "a/x", group: "a", ns: "a", kind: "service", label: "x", labels: { team: "t" }, pods: { ready: 1, total: 1 } }], edges: [] };
+  const out = regroup(scene, "team");
+  assert.equal(typeof out.groups[0].pods, "number");
+});
+
+test("an unordered mesh wraps into several columns instead of one stack", async () => {
+  const { layerNodes } = await import("../src/graph-layers.js");
+  const nodes = ["a", "b", "c", "d", "e"].map((id) => ({ id, kind: "service", label: id }));
+  const edges = nodes.flatMap((x) => nodes.filter((y) => y !== x).map((y) => ({ from: x.id, to: y.id, kind: "tcp", source: "static" })));
+  assert.ok(layerNodes(nodes, edges).length >= 2);
+});

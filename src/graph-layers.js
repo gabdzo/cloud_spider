@@ -40,8 +40,18 @@ export function layerNodes(nodes, edges) {
   const ids = new Set(nodes.map((n) => n.id));
   const out = new Map(nodes.map((n) => [n.id, []]));
   const indeg = new Map(nodes.map((n) => [n.id, 0]));
-  for (const e of edges) {
-    if (!ids.has(e.from) || !ids.has(e.to) || e.from === e.to || edgeStatus(e) === "owner") continue;
+  // A pair linked both ways (NetworkPolicies often allow both): keep the
+  // direction traffic was seen on; with none seen, neither orders them.
+  const rel = edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to && edgeStatus(e) !== "owner");
+  const liveKey = new Set(rel.filter((e) => edgeStatus(e) === "live" || edgeStatus(e) === "error").map((e) => `${e.from}>${e.to}`));
+  const anyKey = new Set(rel.map((e) => `${e.from}>${e.to}`));
+  const seenPair = new Set();
+  for (const e of rel) {
+    const k = `${e.from}>${e.to}`;
+    const back = `${e.to}>${e.from}`;
+    if (anyKey.has(back) && !(liveKey.has(k) && !liveKey.has(back))) continue;
+    if (seenPair.has(k)) continue;
+    seenPair.add(k);
     out.get(e.from).push(e.to);
     indeg.set(e.to, indeg.get(e.to) + 1);
   }
@@ -53,7 +63,11 @@ export function layerNodes(nodes, edges) {
     for (const to of out.get(id)) visit(to, d + 1, seen);
     seen.delete(id);
   };
-  const roots = nodes.filter((n) => n.kind === "ingress" || indeg.get(n.id) === 0);
+  let roots = nodes.filter((n) => n.kind === "ingress" || indeg.get(n.id) === 0);
+  if (!roots.length && nodes.length) {
+    const min = Math.min(...nodes.map((n) => indeg.get(n.id)));
+    roots = nodes.filter((n) => indeg.get(n.id) === min);
+  }
   for (const r of roots) visit(r.id, r.kind === "ingress" ? 0 : 1, new Set());
   for (const n of nodes) if (!depth.has(n.id)) depth.set(n.id, 1);
   const last = Math.max(1, ...nodes.filter((n) => tierHint(n) !== 99).map((n) => depth.get(n.id))) + 1;
@@ -65,6 +79,15 @@ export function layerNodes(nodes, edges) {
   }
   const used = [...new Set(nodes.map((n) => depth.get(n.id)))].sort((a, b) => a - b);
   const cols = used.map((d) => nodes.filter((n) => depth.get(n.id) === d).sort((a, b) => a.label.localeCompare(b.label)));
+  // Nothing orders them (no traffic, links allowed every way): wrap the one
+  // tall column into columns of 3 so the row stays wide, not a long stack.
+  if (cols.length === 1 && cols[0].length > 3) {
+    const per = Math.max(3, Math.ceil(cols[0].length / 4));
+    const wrapped = [];
+    for (let i = 0; i < cols[0].length; i += per) wrapped.push(cols[0].slice(i, i + per));
+    wrapped.unordered = true;
+    return wrapped;
+  }
   return cols;
 }
 
