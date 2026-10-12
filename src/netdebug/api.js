@@ -249,6 +249,9 @@ export function createNetdebug({ settings = NETWORK_DEFAULTS, pageOrigin = "", d
       const c = pod?.cfg || {};
       return { enabled: c.enabled === true, namespace: c.namespace || "cloudspider-debug", sourceNamespaces: c.sourceNamespaces || [], writeContexts: pod?.writeContexts || [], allowRawTrace: c.allowRawTrace === true, ttlSeconds: c.ttlSeconds || 300 };
     },
+    async podServices(query = {}) {
+      return podRunner.services(query);
+    },
     async podPlan(body = {}) {
       return podRunner.plan(body);
     },

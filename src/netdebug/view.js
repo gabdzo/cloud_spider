@@ -251,9 +251,32 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   const httpIn = h("input", { type: "checkbox", "aria-label": "HTTP GET too" });
   const rawIn = h("input", { type: "checkbox", "aria-label": "tcptraceroute (NET_RAW)" });
   const rawLabel = h("label", { className: "nd-check", hidden: true }, rawIn, "TCP TRACE");
+  const tlsIn = h("input", { type: "checkbox", "aria-label": "TLS handshake for a tcp:// target" });
+  const tlsLabel = h("label", { className: "nd-check", title: "tcp:// only: after the connect, a bare TLS handshake (STARTTLS for Postgres on 5432). No payload is sent." }, tlsIn, "TLS");
+  // The Service picker: Services with ready endpoints, filling the field
+  // with http(s)://svc.ns:port or tcp://svc.ns:port.
+  const svcSel = h("select", { className: "nd-svc", "aria-label": "pick a Service as the target", title: "pick a Service: fills the target with the right scheme and port" });
+  let svcFor = "";
+  const loadServices = async () => {
+    const key = sample() ? "sample" : "live";
+    if (svcFor === key) return;
+    svcFor = key;
+    svcSel.replaceChildren(h("option", { value: "", text: "SERVICE… (loading)" }));
+    const out = await fetchJson(`/api/netdebug/pod/services${sample() ? "?sample=1" : ""}`).catch(() => null);
+    const list = out?.services || [];
+    const opts = [h("option", { value: "", text: out?.error ? "SERVICE… (none: " + out.error + ")" : list.length ? `SERVICE… (${list.length})` : "SERVICE… (none)" })];
+    for (const svc of list) for (const t of svc.targets || []) opts.push(h("option", { value: t, text: `${svc.namespace}/${svc.name} ${t.replace(/^.*:/, ":")} ${t.split(":")[0]} · ${svc.ready}/${svc.total} ready${svc.total && !svc.ready ? " · NO ENDPOINTS" : ""}` }));
+    svcSel.replaceChildren(...opts);
+  };
+  svcSel.addEventListener("change", () => {
+    if (!svcSel.value) return;
+    field.value = svcSel.value;
+    confirmPlan = null;
+    field.focus();
+  });
   const insideRow = h("div", { className: "nd-insiderow", hidden: true },
-    h("span", { className: "nd-label", text: "POD IN" }), nsSel, nodeIn, asIn,
-    h("label", { className: "nd-check" }, httpIn, "HTTP"), rawLabel,
+    h("span", { className: "nd-label", text: "POD IN" }), nsSel, nodeIn, asIn, svcSel,
+    h("label", { className: "nd-check" }, httpIn, "HTTP"), tlsLabel, rawLabel,
     h("span", { className: "nd-quiet", text: "read-only otherwise · deleted after the run · TTL" }));
   const bar = h("div", { className: "nd-bar" }, h("b", { className: "nd-title", text: "DEBUG" }), field, insideBtn, modes, runBtn, meta, exports, fold);
   root.replaceChildren(bar, insideRow, body);
@@ -268,7 +291,8 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     insideBtn.setAttribute("aria-pressed", String(inside));
     insideRow.hidden = !inside;
     rawLabel.hidden = !(podCfg?.allowRawTrace || sample());
-    field.placeholder = inside ? "shopapi.shop:3000 · 10.128.0.12:8080 · https://api.example.com — from inside the cluster" : "https://… or a host: only what you type is probed";
+    if (inside) loadServices();
+    field.placeholder = inside ? "shopapi.shop:3000 · tcp://shopdb.shop:5432 · https://api.example.com — from inside the cluster" : "https://… or a host: only what you type is probed";
     const want = sample() ? ["cloudspider-debug", "web", "shop"] : [podCfg?.namespace || "cloudspider-debug", ...(podCfg?.sourceNamespaces || [])];
     if ([...nsSel.options].map((o) => o.value).join() !== want.join()) nsSel.replaceChildren(...want.map((n) => h("option", { value: n, text: n })));
   }
@@ -280,7 +304,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   });
   const podBody = (extra = {}) => {
     const asLabels = Object.fromEntries(asIn.value.split(/[,\s]+/).filter((x) => x.includes("=")).map((x) => x.split("=")));
-    return { target: field.value.trim(), namespace: nsSel.value, node: nodeIn.value.trim(), asLabels, http: httpIn.checked, rawTrace: rawIn.checked, sample: sample() === true, ...extra };
+    return { target: field.value.trim(), namespace: nsSel.value, node: nodeIn.value.trim(), asLabels, http: httpIn.checked, tls: tlsIn.checked, rawTrace: rawIn.checked, sample: sample() === true, ...extra };
   };
   const planInside = async () => {
     if (!field.value.trim()) return field.focus();
@@ -529,7 +553,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     if (model.state === "empty" && inside) {
       const try_ = (text, ns, as = "", http = true) => h("button", { type: "button", className: "nd-chip", text: `${text}${ns ? ` from ${ns}` : ""}`, onclick: () => ((field.value = text), ns && (nsSel.value = ns), (asIn.value = as), (httpIn.checked = http), planInside()) });
       body.replaceChildren(h("div", { className: "nd-empty" },
-        h("p", { text: "FROM INSIDE starts a short-lived netshoot pod in the namespace you pick (its NetworkPolicy source) and runs a fixed probe: DNS (short name and FQDN), TCP to the Service and to each pod, HTTP, the hops (tracepath; tcptraceroute with NET_RAW) and the path MTU. Then it says which NetworkPolicy allows or blocks the path." }),
+        h("p", { text: "FROM INSIDE starts a short-lived netshoot pod in the namespace you pick (its NetworkPolicy source) and runs a fixed probe: DNS (short name and FQDN), TCP to the Service and to each pod, HTTP (or, for tcp://host:port, only the connect plus an optional TLS handshake: no payload), the hops (tracepath; tcptraceroute with NET_RAW) and the path MTU. Then it says which NetworkPolicy allows or blocks the path." }),
         h("p", { className: "nd-quiet", text: "Nothing else is written: no exec, no secrets; the pod is deleted after its log is read and expires by itself (TTL)." }),
         h("div", { className: "nd-tries" }, h("span", { className: "nd-label", text: "TRY" }), ...(sample() ? [try_("shopapi.shop:3000", "cloudspider-debug"), try_("shopapi.shop:3000", "web", "app=web"), try_("https://api.example.com/healthz", "cloudspider-debug")] : [try_("kubernetes.default:443", "")]))));
       return;

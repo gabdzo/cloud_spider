@@ -76,6 +76,7 @@ export const ND_CSS = `
      these checkboxes into big boxes in Pip-Boy: undo it here. */
   #netdebug .nd-insiderow .nd-check input[type="checkbox"] { width: 13px; height: 13px; min-height: 0; padding: 0; margin: 0; border: 0; flex: none; display: inline-block; accent-color: var(--n-accent); }
   #netdebug .nd-insiderow input.nd-node-in { flex: none; width: 9em; }
+  #netdebug .nd-insiderow select.nd-svc { flex: none; max-width: 22em; }
   #netdebug .nd-insiderow input.nd-as { flex: none; width: 13em; }
   #netdebug .nd-check[hidden] { display: none; }
   #netdebug .nd-insidebtn[aria-pressed="true"] { color: var(--n-ink); background: var(--n-accent); border-color: var(--n-accent); }

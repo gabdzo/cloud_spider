@@ -7,7 +7,7 @@ import { podGuard } from "./pod-guard.js";
 import { runPod, sweepPods } from "./pod-driver.js";
 import { awsPolicyMode, cniEnforcer } from "./kube-checks.js";
 import { parseProbeLog, podChecks, podFindings, podPath, policyChecks } from "./pod-result.js";
-import { SAMPLE_POD_NAMESPACES, samplePodLog, samplePodReads } from "./sample-pod.js";
+import { SAMPLE_POD_NAMESPACES, SAMPLE_POD_SERVICES, samplePodLog, samplePodReads } from "./sample-pod.js";
 
 const osUser = () => {
   try {
@@ -46,6 +46,56 @@ export async function readForPod(kube, target, { sourceNs, live = null } = {}) {
   return { namespaces, policies, endpoints, targetPods, openshift, live, cni };
 }
 
+// The Service picker: Services and their ready endpoints (EndpointSlices,
+// viewer reads). Cluster-wide when the viewer may list them, else only the
+// namespaces the debug pod may run in. Headless and ExternalName included.
+export async function listServices(kube, { namespaces = [] } = {}) {
+  if (!kube) return { error: "no kube context" };
+  let svcs = await kube.read("services");
+  let slices = await kube.read("endpointSlicesAll");
+  let scope = "cluster";
+  if (!svcs.json) {
+    scope = "namespaces";
+    const per = await Promise.all(namespaces.map((ns) => kube.read("nsServices", ns)));
+    const perS = await Promise.all(namespaces.map((ns) => kube.read("nsEndpointSlices", ns)));
+    svcs = { json: { items: per.flatMap((r) => r.json?.items || []) } };
+    slices = { json: { items: perS.flatMap((r) => r.json?.items || []) } };
+  }
+  const eps = new Map();
+  for (const s of slices.json?.items || []) {
+    const key = `${s.metadata?.namespace}/${s.metadata?.labels?.["kubernetes.io/service-name"]}`;
+    const e = eps.get(key) || { ready: 0, total: 0 };
+    for (const x of s.endpoints || []) {
+      e.total += 1;
+      if (x.conditions?.ready !== false) e.ready += 1;
+    }
+    eps.set(key, e);
+  }
+  const services = (svcs.json?.items || []).map((s) => {
+    const key = `${s.metadata?.namespace}/${s.metadata?.name}`;
+    const e = eps.get(key) || { ready: 0, total: 0 };
+    const ports = (s.spec?.ports || []).filter((p) => (p.protocol || "TCP") === "TCP").map((p) => ({ port: p.port, name: p.name || "", protocol: "TCP", appProtocol: p.appProtocol || "", targetPort: p.targetPort ?? p.port }));
+    return { namespace: s.metadata?.namespace, name: s.metadata?.name, type: s.spec?.type || "ClusterIP", ports, ready: e.ready, total: e.total };
+  }).filter((s) => s.ports.length && s.type !== "ExternalName");
+  services.sort((a, b) => a.namespace.localeCompare(b.namespace) || a.name.localeCompare(b.name));
+  return { scope, services: services.slice(0, 500) };
+}
+
+const HTTP_NAME = /^(https?|http2|h2c?|grpc|grpc-web|web|api|metrics|ui|admin|health)([-_].*)?$/i;
+const HTTP_PORTS = new Set([80, 443, 3000, 4000, 5000, 8000, 8080, 8443, 8888, 9090, 9898]);
+const TCP_NAME = /postgres|pg|mysql|maria|redis|mongo|amqp|kafka|nats|memcache|cassandra|zookeeper|tcp|etcd|ldap|smtp/i;
+
+// The target the picker fills: http(s):// for web ports, tcp:// for
+// databases, queues and anything not known as HTTP. Pure.
+export function serviceTarget(svc, port) {
+  const p = port || svc.ports?.[0] || {};
+  const host = `${svc.name}.${svc.namespace}`;
+  const tag = `${p.name || ""} ${p.appProtocol || ""}`.trim();
+  const tls = /https|tls/i.test(tag) || p.port === 443 || p.port === 8443;
+  const http = !TCP_NAME.test(tag) && (HTTP_NAME.test(p.name || "") || /^(https?|http2|kubernetes\.io\/h2c)/i.test(p.appProtocol || "") || HTTP_PORTS.has(p.port));
+  return http ? `${tls ? "https" : "http"}://${host}:${p.port}` : `tcp://${host}:${p.port}`;
+}
+
 export function createPodRunner({ cfg = {}, writeContexts = [], kubeFor = () => null, writerFor = () => null, liveFor = async () => null, now = Date.now, user = osUser } = {}) {
   const c = { ...POD_DEFAULTS, ...cfg };
   const contextOf = (body) => String(body.context || writeContexts[0] || "");
@@ -55,7 +105,7 @@ export function createPodRunner({ cfg = {}, writeContexts = [], kubeFor = () => 
     const context = sample ? "sample" : contextOf(body);
     const sourceNs = String(body.namespace || c.namespace);
     let reads;
-    if (sample) reads = samplePodReads();
+    if (sample) reads = samplePodReads(parsePodTarget(body.target, { sourceNs, namespaces: SAMPLE_POD_NAMESPACES }));
     else {
       if (c.enabled !== true) return { status: 403, error: "the debug pod is off", hint: "network.pod.enabled: true in cloudspider.yaml turns it on." };
       const kube = kubeFor(context);
@@ -75,6 +125,15 @@ export function createPodRunner({ cfg = {}, writeContexts = [], kubeFor = () => 
   }
 
   return {
+    // GET /api/netdebug/pod/services: what the picker lists.
+    async services({ context = "", sample = false } = {}) {
+      if (sample) return { context: "sample", scope: "sample", services: SAMPLE_POD_SERVICES.map((s) => ({ ...s, targets: s.ports.map((p) => serviceTarget(s, p)) })) };
+      if (c.enabled !== true) return { status: 403, error: "the debug pod is off" };
+      const ctx = String(context || writeContexts[0] || "");
+      const got = await listServices(kubeFor(ctx), { namespaces: [...new Set([c.namespace, ...(c.sourceNamespaces || [])])] });
+      if (got.error) return { status: 502, error: got.error };
+      return { context: ctx, scope: got.scope, services: got.services.map((s) => ({ ...s, targets: s.ports.map((p) => serviceTarget(s, p)) })) };
+    },
     // Shown before the confirm: everything that would be created.
     async plan(body = {}) {
       const p = await prepare(body);
