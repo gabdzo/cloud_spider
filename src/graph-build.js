@@ -66,7 +66,7 @@ function hhmm(ms) {
 // reads: { namespaces, pods, services, deployments, statefulsets, daemonsets,
 //   ingresses, routes, networkPolicies, csvs, crds, events, notes, absent }
 // opts: { title, namespaces: "*" | [..], now }
-export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", now = Date.now(), windowMin = 30 } = {}) {
+export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", now = Date.now(), windowMin = 30, withPodNodes = false } = {}) {
   const allow = (ns) => namespaces === "*" || namespaces.includes(ns);
   const list = (key) => (reads[key] || []).filter((o) => !nsOf(o) || allow(nsOf(o)));
   const nsLabels = new Map((reads.namespaces || []).map((n) => [meta(n).name, meta(n).labels || {}]));
@@ -332,7 +332,11 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
   const bad = recent.filter((e) => e.kind !== "rollout");
   const absent = reads.absent || [];
   const flavour = absent.includes("routes") ? "Kubernetes" : "OpenShift";
+  // withPodNodes: "ns/pod" → node, for LOG ERRORS (graph-lookup.js); off for
+  // the page, where it would only add weight.
+  const podNodes = withPodNodes ? Object.fromEntries(list("pods").map((pod) => [`${nsOf(pod)}/${meta(pod).name}`, nodeOfPod(pod)]).filter(([, id]) => id)) : undefined;
   return {
+    ...(podNodes ? { podNodes } : {}),
     id: "live",
     title,
     note: [`live · read-only · ${flavour}`, namespaces === "*" ? "" : `namespaces: ${namespaces.join(", ")}`, ...(reads.notes || [])].filter(Boolean).join(" · "),

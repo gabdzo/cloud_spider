@@ -34,7 +34,9 @@ export function restartsFromPods(pods, window) {
   return out;
 }
 
-export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights = null, kube = null, clock = Date.now, nodeOf = null } = {}) {
+// nodeIndex: async () => nodeOf, read once per build (main.js: the live
+// SERVICES graph), so LOG ERRORS can link a service to its graph node.
+export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights = null, kube = null, clock = Date.now, nodeOf: fixedNodeOf = null, nodeIndex = null } = {}) {
   let cache = null;
   let flight = null;
 
@@ -58,21 +60,22 @@ export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights 
     const source = sourceName();
     let restarts = [];
     let notes = [];
+    const nodeOf = fixedNodeOf || (nodeIndex ? await nodeIndex().catch(() => null) : null);
     if (kube?.read) {
       const pods = await kube.read("pods").catch(() => ({ error: "pods not read" }));
       if (pods.json) restarts = restartsFromPods(pods.json.items, window);
       else notes.push("restarts: pods not readable");
     }
     if (!source) {
-      return { ...logErrors({ restarts, window, source: "", partial: true }), notes: [...notes, "no log store configured: logs.loki.url, or logs.cloudwatch.logGroups with the aws module"] };
+      return { ...logErrors({ restarts, window, source: "", partial: true, nodeOf }), notes: [...notes, "no log store configured: logs.loki.url, or logs.cloudwatch.logGroups with the aws module"] };
     }
     const [tonight, before] = await Promise.all([readWindow(source, window), readWindow(source, dayBefore(window))]);
     if (source === "bundle" && /answered 40[34]/.test(tonight.error || "")) {
       const why = /404/.test(tonight.error) ? "the observe bundle (STACKS → Observe, logs=on) is not installed" : "the viewer may not get services/proxy loki:http in cloudspider-observe";
-      return { ...logErrors({ restarts, window, source: "", partial: true }), notes: [...notes, `no log store: logs.loki.url, logs.cloudwatch.logGroups with the aws module, or ${why}`] };
+      return { ...logErrors({ restarts, window, source: "", partial: true, nodeOf }), notes: [...notes, `no log store: logs.loki.url, logs.cloudwatch.logGroups with the aws module, or ${why}`] };
     }
     if (tonight.error && !tonight.entries?.length) {
-      const out = logErrors({ restarts, window, source, partial: true });
+      const out = logErrors({ restarts, window, source, partial: true, nodeOf });
       return { ...out, error: tonight.error, notes, line: { status: "unknown", text: `Log errors not read: ${tonight.error}.` } };
     }
     if (tonight.truncated) notes.push("more lines than one read takes: counts are a floor");

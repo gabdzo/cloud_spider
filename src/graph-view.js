@@ -171,6 +171,31 @@ export function createGraphView(root) {
   function emptyScene() {
     return { id: "live", title: live.context || "cluster", note: "", bands: [{ id: "edge", label: "EDGE" }, { id: "apps", label: "APPS" }, { id: "platform", label: "PLATFORM" }], groups: [], nodes: [], edges: [], events: [], window: { start: "00:00", end: "00:30", incident: ["00:00", "00:00"] } };
   }
+  // A LOG ERRORS link in live mode can arrive before the live graph has
+  // loaded: keep it and apply it when the graph is there.
+  let pendingFocus = null;
+  function focusOn({ scenario = "", node = "", t = "", query = "" } = {}) {
+    if (!els.stage) build();
+    if (scenario && !live.on) pick(scenario);
+    if (live.on && (live.loading || !scene || scene.id !== "live")) {
+      pendingFocus = { scenario, node, t, query };
+      if (!live.loading) loadLive();
+      return false;
+    }
+    const hit = scene.nodes.find((x) => x.id === node);
+    Object.assign(state, { focus: null, selected: null, event: null, query: "" });
+    if (hit) {
+      state.expanded.add(hit.group);
+      state.focus = hit.group;
+      state.selected = hit.id;
+      const tl = timeline(scene).events;
+      const at = t ? tl.filter((ev) => ev.node === hit.id || ev.group === hit.group).find((ev) => ev.t >= t) || tl.find((ev) => ev.node === hit.id) : null;
+      if (at) state.event = at.index;
+    } else if (query) state.query = query;
+    els.search.value = state.query;
+    render();
+    return Boolean(hit);
+  }
   async function loadLive(fresh = false) {
     if (!live.on || live.loading) return;
     live.loading = true;
@@ -194,6 +219,13 @@ export function createGraphView(root) {
       live.error = error?.message || "the graph did not load";
     }
     live.loading = false;
+    if (pendingFocus && scene?.id === "live") {
+      const f = pendingFocus;
+      pendingFocus = null;
+      focusOn(f);
+      return;
+    }
+    pendingFocus = null;
     if (shown) render();
   }
   function setLive(on, context = "") {
@@ -392,22 +424,8 @@ export function createGraphView(root) {
     },
     // LOG ERRORS (log-errors-view.js): focus a service and, when given, the
     // timeline minute (HH:MM). Unknown node: falls back to a search for its name.
-    focusOn({ scenario = "", node = "", t = "", query = "" } = {}) {
-      if (!els.stage) build();
-      if (scenario && !live.on) pick(scenario);
-      const hit = scene.nodes.find((x) => x.id === node);
-      Object.assign(state, { focus: null, selected: null, event: null, query: "" });
-      if (hit) {
-        state.expanded.add(hit.group);
-        state.focus = hit.group;
-        state.selected = hit.id;
-        const tl = timeline(scene).events;
-        const at = t ? tl.filter((ev) => ev.node === hit.id || ev.group === hit.group).find((ev) => ev.t >= t) || tl.find((ev) => ev.node === hit.id) : null;
-        if (at) state.event = at.index;
-      } else if (query) state.query = query;
-      els.search.value = state.query;
-      render();
-      return Boolean(hit);
+    focusOn(args = {}) {
+      return focusOn(args);
     },
     // for tests and screenshots
     state,
