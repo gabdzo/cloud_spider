@@ -49,6 +49,9 @@ test("NetworkPolicy: ipBlock (with except), named ports, port ranges, no policy,
 
 test("CNI enforcement, the Corefile, CoreDNS metrics", () => {
   assert.equal(cniEnforcer([{ metadata: { name: "aws-node" }, spec: { template: { spec: { containers: [{ name: "aws-network-policy-agent", args: ["--enable-network-policy=false"] }] } } } }]), "");
+  // The EKS managed vpc-cni add-on names the agent aws-eks-nodeagent (cloudspider-up, 2026-10-12).
+  assert.equal(cniEnforcer([{ metadata: { name: "aws-node" }, spec: { template: { spec: { containers: [{ name: "aws-node" }, { name: "aws-eks-nodeagent", args: ["--enable-ipv6=false", "--enable-network-policy=true"] }] } } } }]), "VPC CNI network policy agent");
+  assert.equal(cniEnforcer([{ metadata: { name: "aws-node" }, spec: { template: { spec: { containers: [{ name: "aws-eks-nodeagent", args: ["--enable-network-policy=false"] }] } } } }]), "");
   assert.equal(cniEnforcer([{ metadata: { name: "cilium" } }]), "Cilium");
   assert.deepEqual(parseCorefile(".:53 {\n  errors\n  forward . 10.0.0.2 {\n max_concurrent 1000\n }\n  cache\n}"), { forward: "10.0.0.2", cache: 3600, loop: false, errors: true, log: false });
   const m = parseCorednsMetrics(SAMPLE_COREDNS_METRICS);

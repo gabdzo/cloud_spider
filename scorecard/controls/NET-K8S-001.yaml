@@ -12,6 +12,6 @@ aggregation: all-or-nothing
 requires: [kube-networkPolicies, kube-cni]
 whyItMatters: "The VPC CNI ignores NetworkPolicy unless its policy agent is on. Without an enforcer (the agent, Calico or Cilium) every policy, default deny included (K8S-SEC-005), is decoration."
 remediation: { summary: "Turn on the VPC CNI network policy agent (enableNetworkPolicy: true in the vpc-cni add-on configuration) or run Calico or Cilium.", effort: S }
-verification: "kubectl -n kube-system get daemonset aws-node -o jsonpath='{.spec.template.spec.containers[*].name}' lists aws-network-policy-agent started with --enable-network-policy=true (or a calico-node / cilium DaemonSet runs)."
+verification: "kubectl -n kube-system get daemonset aws-node -o jsonpath='{.spec.template.spec.containers[*].name}' lists aws-eks-nodeagent (EKS add-on; aws-network-policy-agent upstream) started with --enable-network-policy=true (or a calico-node / cilium DaemonSet runs)."
 references:
   - { source: "docs/design/network-debugging.md §8 (K-NP-02)", url: "https://docs.aws.amazon.com/eks/latest/userguide/cni-network-policy.html" }
