@@ -149,7 +149,8 @@ test("ops(): fixed read-only paths; a missing CRD is absent, a 403 is forbidden,
   assert.deepEqual(ops.forbidden, ["policyReports"]);
   assert.deepEqual(ops.errors, []);
   assert.equal(ops.hpas[0].metadata.name, "web");
-  assert.equal(urls.length, 11);
+  assert.equal(urls.length, 14);
+  assert.ok(urls.includes("/apis/policies.kyverno.io/v1/validatingpolicies") && urls.includes("/apis/openreports.io/v1alpha1/reports"), "CEL policies and OpenReports are read too");
   assert.ok(urls.includes("/api/v1/events?limit=500"));
   assert.ok(urls.includes("/apis/karpenter.sh/v1/nodepools"));
   const none = await createKube({ env: { KUBECONFIG: "/none" }, read: async () => { throw new Error("ENOENT"); } }).ops();

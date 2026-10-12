@@ -61,14 +61,15 @@ test("shopapi: the API and its migration Job pass both demo policies", { skip: r
 
 test("the hostPath exception is scoped to DaemonSet demo/otel-collector and its pods, never a namespace", { skip: ready("upgrades/addons") }, async () => {
   const [only] = EXCEPTIONS;
-  assert.deepEqual(only.spec.exceptions, [{ policyName: "disallow-host-path", ruleNames: ["disallow-host-path", "autogen-disallow-host-path"] }]);
-  for (const match of only.spec.match.any) {
-    assert.deepEqual(match.resources.namespaces, ["demo"]);
-    assert.ok(match.resources.names?.every((n) => n.startsWith("otel-collector")), "named, not namespace-wide");
-  }
+  assert.deepEqual(only.spec.policyRefs, [{ name: "disallow-host-path", kind: "ValidatingPolicy" }]);
+  const [cond] = only.spec.matchConditions;
+  assert.equal(only.spec.matchConditions.length, 1);
+  assert.match(cond.expression, /^object\.metadata\.\?namespace\.orValue\(''\) == 'demo' && /, "demo only");
+  assert.match(cond.expression, /object\.kind == 'DaemonSet' && object\.metadata\.name == 'otel-collector'/, "the DaemonSet by name");
+  assert.match(cond.expression, /o\.kind == 'DaemonSet' && o\.name == 'otel-collector'/, "pods only when owned by it");
   const resources = await mock("upgrades/addons", "cloudspider-addons", "kyverno-cloudspider-up", { "cloudspider-addons:clusterName": "cloudspider-up" });
   const exception = resources.find((r) => r.inputs?.kind === "PolicyException");
-  assert.equal(exception.inputs.apiVersion, "kyverno.io/v2");
+  assert.equal(exception.inputs.apiVersion, "policies.kyverno.io/v1");
   assert.equal(exception.inputs.metadata.namespace, "kyverno");
   const release = resources.find((r) => r.type === "kubernetes:helm.sh/v3:Release");
   assert.deepEqual(release.inputs.values.features.policyExceptions, { enabled: true, namespace: "kyverno" });

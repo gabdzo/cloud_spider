@@ -36,19 +36,32 @@ SHAPE.clusterPolicies = (i) => ({
   })),
 });
 const LISTS = Object.keys(SHAPE);
+// Reports also come as OpenReports (openreports.io, Kyverno with
+// --openreportsEnabled; same results shape): read both formats and fold
+// each into its wgpolicyk8s.io list, so K8S-SEC-009 counts either.
+const OPEN = { policyReports: "openReports", clusterPolicyReports: "openClusterReports" };
+const RANK = { ok: 0, denied: 1, error: 2, absent: 3 };
 
 export const kubePolicy = {
   key: "kube-policy",
   target: "kubernetes",
-  reads: LISTS.map((n) => `GET ${n}`),
+  reads: [...LISTS, ...Object.values(OPEN)].map((n) => `GET ${n}`),
   async collect({ kube }) {
     const answers = await Promise.all(LISTS.map((n) => kube.read(n)));
+    const open = Object.fromEntries(await Promise.all(Object.entries(OPEN).map(async ([n, o]) => [n, await kube.read(o)])));
     return LISTS.map((n, i) => {
-      const { status, error } = kubeStatus(answers[i]);
+      let { status, error } = kubeStatus(answers[i]);
+      let items = answers[i]?.json?.items || [];
+      if (open[n]) {
+        // Either format present is enough; the better status of the two wins.
+        const other = kubeStatus(open[n]);
+        items = [...items, ...(open[n]?.json?.items || [])];
+        if ((RANK[other.status] ?? 9) < (RANK[status] ?? 9)) ({ status, error } = other);
+      }
       const crd = n.endsWith("olicyReports") || n === "clusterPolicies";
       // A core list that 404s is an error; a CRD list that 404s is absent.
       const final = status === "absent" && !crd ? "error" : status;
-      return evidence({ key: `kube-${n}`, collector: "kube-policy", read: `GET ${n}`, target: "kubernetes", status: final, fields: { items: (answers[i]?.json?.items || []).map(SHAPE[n]) }, error: final === "error" && !error ? { code: "404", message: `${n} is not served` } : error });
+      return evidence({ key: `kube-${n}`, collector: "kube-policy", read: `GET ${n}`, target: "kubernetes", status: final, fields: { items: items.map(SHAPE[n]) }, error: final === "error" && !error ? { code: "404", message: `${n} is not served` } : error });
     });
   },
 };

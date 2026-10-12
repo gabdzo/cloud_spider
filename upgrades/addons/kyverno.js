@@ -1,8 +1,9 @@
 import { helmRelease, setup, small, viewerAccess } from "./common.js";
-import { ALL_POLICIES, DEFAULT_DENY_POLICY, EXCEPTIONS, GENERATE_RBAC } from "./kyverno-policies.js";
+import { ALL_POLICIES, CEL_API, DEFAULT_DENY_POLICY, EXCEPTIONS, GENERATE_RBAC } from "./kyverno-policies.js";
 
 // Kyverno (Helm) with the four baseline and two demo policies of
-// kyverno-policies.js, all in Audit mode. Reports land in PolicyReports (wgpolicyk8s.io), which Cloud
+// kyverno-policies.js as ValidatingPolicies (CEL), all in Audit mode, and
+// generate-default-deny as a ClusterPolicy (ValidatingPolicy cannot generate). Reports land in PolicyReports (wgpolicyk8s.io), which Cloud
 // Spider's viewer may read. One replica per controller; cleanup off.
 export default function kyverno({ pulumi, aws, k8s, addon }) {
   const { k, config, netpol } = setup({ pulumi, aws, k8s, addon });
@@ -22,10 +23,14 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
     // namespace, where only this stack writes.
     features: { policyExceptions: { enabled: true, namespace: addon.namespace } },
   }, { netpol });
-  for (const item of policies) {
-    new k8s.apiextensions.CustomResource(`policy-${item.name}`, {
-      apiVersion: "kyverno.io/v1",
-      kind: "ClusterPolicy",
+  // Pulumi names stay "policy-<name>" for the ClusterPolicy; a
+  // ValidatingPolicy is "vpol-<name>" (a new kind is a new object: the old
+  // ClusterPolicy is deleted, the ValidatingPolicy created).
+  const resources = policies.map((item) => ({ item, cel: item !== DEFAULT_DENY_POLICY }));
+  for (const { item, cel } of resources) {
+    new k8s.apiextensions.CustomResource(`${cel ? "vpol" : "policy"}-${item.name}`, {
+      apiVersion: cel ? CEL_API : "kyverno.io/v1",
+      kind: cel ? "ValidatingPolicy" : "ClusterPolicy",
       metadata: {
         name: item.name,
         labels: { "app.kubernetes.io/part-of": "cloudspider-addons" },
@@ -40,8 +45,8 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
     }, { ...k, dependsOn: [release] });
   }
   for (const item of EXCEPTIONS) {
-    new k8s.apiextensions.CustomResource(`exception-${item.name}`, {
-      apiVersion: "kyverno.io/v2",
+    new k8s.apiextensions.CustomResource(`celexception-${item.name}`, {
+      apiVersion: CEL_API,
       kind: "PolicyException",
       metadata: { name: item.name, namespace: addon.namespace, labels: { "app.kubernetes.io/part-of": "cloudspider-addons" }, annotations: { "cloudspider/why": item.why } },
       spec: item.spec,
@@ -49,7 +54,9 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
   }
   viewerAccess(k8s, k, addon.id, [
     { apiGroups: ["wgpolicyk8s.io"], resources: ["policyreports", "clusterpolicyreports"] },
+    { apiGroups: ["openreports.io"], resources: ["reports", "clusterreports"] },
     { apiGroups: ["kyverno.io"], resources: ["clusterpolicies", "policies", "policyexceptions"] },
+    { apiGroups: ["policies.kyverno.io"], resources: ["validatingpolicies", "namespacedvalidatingpolicies", "policyexceptions"] },
   ], { dependsOn: [release] });
-  return { version: addon.appVersion, details: { policies: policies.map((item) => item.name), mode: "Audit", defaultDeny } };
+  return { version: addon.appVersion, details: { policies: policies.map((item) => item.name), mode: "Audit", api: CEL_API, defaultDeny } };
 }
