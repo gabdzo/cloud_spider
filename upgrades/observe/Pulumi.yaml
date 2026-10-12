@@ -1,0 +1,5 @@
+name: cloudspider-observe
+runtime: nodejs
+description: The observe bundle (opt-in) for any Kubernetes or OpenShift cluster - Grafana Beyla (eBPF live edges + RED), an OpenTelemetry collector (gateway + node agent), kube-state-metrics, Loki single binary. Its own namespace, least-privilege NetworkPolicies, an SCC only on OpenShift. Local state (no AWS account needed).
+backend:
+  url: "file://~/.cloudspider/pulumi-observe"

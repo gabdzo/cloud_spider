@@ -51,10 +51,14 @@ test("every Stacks card has a cost, a vault, a project folder and needs that exi
     for (const need of spec.needs) assert.ok(ids.includes(need), `${spec.id} needs ${need}`);
     const project = parse(read(`${spec.dir}/Pulumi.yaml`));
     assert.equal(project.name, spec.project, `${spec.dir}/Pulumi.yaml names ${spec.project}`);
-    assert.equal(project.backend.url, "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default");
+    // localState: a stack for clusters with no AWS account (the observe
+    // bundle) keeps its state on this machine instead of the S3 backend.
+    if (spec.localState) assert.match(project.backend.url, /^file:\/\/~\/\.cloudspider\//, spec.id);
+    else assert.equal(project.backend.url, "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default");
     const vaultPath = existsSync(join(root, `vaults/${spec.vault}.yaml`)) ? `vaults/${spec.vault}.yaml` : `vaults/templates/${spec.vault}.yaml`;
     const vault = parse(read(vaultPath));
-    assert.deepEqual(vault.spec.resources.tags, { project: spec.vault }, vaultPath);
+    if (spec.localState) assert.equal(vault.spec.stack.name, spec.stack, vaultPath);
+    else assert.deepEqual(vault.spec.resources.tags, { project: spec.vault }, vaultPath);
     const program = read(`${spec.dir}/index.js`);
     // Add-ons share one program; common.js tags each stack project=<addon id>.
     if (spec.addon) assert.match(read(`${spec.dir}/common.js`), /stackTags\(addon\.id/);

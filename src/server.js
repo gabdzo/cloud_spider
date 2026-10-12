@@ -3,6 +3,9 @@ import { sampleLogErrors } from "./log-errors-sample.js";
 import { graphScenario } from "./graph-sample.js";
 import { buildGraph } from "./graph-build.js";
 import { readGraph } from "./graph-read.js";
+import { detect as observeDetect, planView as observePlan } from "./observe/plan.js";
+import { mergeLive, readLive as observeLive } from "./observe/live.js";
+import { sampleObserve } from "./observe/sample.js";
 import { originAllowed } from "./origin.js";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
@@ -3045,6 +3048,32 @@ async function route(app, req, res) {
   // SERVICES: the static + ownership graph of a kube context (graph-read.js
   // reads, graph-build.js shapes). Read-only GETs, no Secrets, the
   // context's namespace allowlist. Cached 20 s per context.
+  // OBSERVE (upgrades/observe): the bundle PREVIEW (what the Observe card
+  // installs, rendered by upgrades/observe/render.js) and the live edges,
+  // RED and Events it feeds (observe/live.js, service-proxy GETs only).
+  // Read-only: installs go through the STACKS card.
+  if (req.method === "GET" && url.pathname === "/api/observe/plan") {
+    const q = Object.fromEntries(url.searchParams);
+    let found = { nodes: 1 };
+    const kube = q.sample === "1" ? null : app.kubeOf?.(q.context || "");
+    if (kube && q.detect !== "0") {
+      const reads = await readGraph(kube).catch(() => null);
+      if (reads && !reads.error) found = observeDetect(reads);
+    }
+    try {
+      send(res, 200, observePlan({ platform: q.platform || found.platform, kubeStateMetrics: q.kubeStateMetrics || found.kubeStateMetrics, allowPrivileged: q.allowPrivileged, profile: q.profile, logs: q.logs, lokiStorage: q.lokiStorage, lokiRetention: q.lokiRetention, storageClass: q.storageClass, nodeCidr: q.nodeCidr }, { nodes: found.nodes || 1 }));
+    } catch (error) {
+      send(res, 400, { error: error.message });
+    }
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/observe/live") {
+    if (url.searchParams.get("sample") === "1") { send(res, 200, sampleObserve()); return; }
+    const kube = app.kubeOf?.(url.searchParams.get("context") || "");
+    if (!kube) { send(res, 200, { installed: false, note: "no kube context" }); return; }
+    send(res, 200, await observeLive(kube).catch((error) => ({ installed: true, error: error.message })));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/api/cluster/graph") {
     if (url.searchParams.get("sample") === "1") {
       send(res, 200, graphScenario(url.searchParams.get("scenario") === "bundle" ? "bundle" : "bare"));
@@ -3056,7 +3085,15 @@ async function route(app, req, res) {
       send(res, 200, { error: "no kube context", unset: true });
       return;
     }
-    send(res, 200, await liveGraph(kube, context));
+    const scene = await liveGraph(kube, context);
+    // The observe bundle's live edges, RED and Events (TRACES layer), when it
+    // is installed on this cluster and the observe module is on.
+    const observing = !enabled || enabled.includes("observe");
+    if (observing && scene && !scene.error && url.searchParams.get("live") !== "0") {
+      const live = await Promise.race([observeLive(kube), new Promise((r) => setTimeout(() => r(null), 4000))]).catch(() => null);
+      if (live?.installed && !live.error) { send(res, 200, mergeLive(scene, live)); return; }
+    }
+    send(res, 200, scene);
     return;
   }
   // LOG ERRORS for the morning report (log-report.js). Read-only.
