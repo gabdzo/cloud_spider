@@ -183,6 +183,8 @@ Order changed 2026-10-12 (Gabriel): the brother owns his cluster and wants whate
 | 3 | **observe bundle** (7.2): one-click opt-in install that feeds live edges, RED metrics and incident history into the graph and the score | next |
 | 4 | scale: edge routing around cards, calmer overview, server aggregation, 2k-pod perf test | |
 | 5 | incident review on the bundle's data (event exporter history + RED + restarts/rollouts), window picker | |
+| 6 | **logs**: Loki in the observe bundle + a log-errors section in the morning report (7.3) | 6–8 h |
+| 7 | **agent onboarding**: a ready-made prompt + `vault.yaml` template so a coding agent registers services as vaults (7.4) | 2–3 h |
 | later | an existing Prometheus (OTel servicegraph / Istio / Linkerd), Hubble, EKS flow monitor / VPC flow logs | |
 
 ### 7.1 Answers (2026-10-12, Gabriel)
@@ -209,6 +211,24 @@ One opt-in module (`observe`, off in every profile; `modules.enable: [observe]`)
 - **Graph:** observed edges become the TRACES layer; a static edge never observed is dimmed, an observed edge with no static path is flagged.
 - **Score:** RED + restarts feed K8S-OBS controls (other worker's area: only an input is added there).
 - **OLM:** optional later; plain manifests first.
+
+### 7.3 Phase 6: logs and the morning log-errors section
+
+- **Loki** joins the observe bundle (single binary, filesystem storage on a small local PV, default 5 Gi, **72 h retention**), fed by the OTel collector's logs pipeline (filelog receiver on the nodes via a small agent DaemonSet, or the collector's k8s log receiver; the preview says which). Its own NetworkPolicy: only the collector writes, only Cloud Spider (service proxy) reads. Uninstall removes the PVC too, after a confirm.
+- **Morning report: LOG ERRORS.** Last night's (the 22:00–07:00 window, configurable) errors and exceptions, grouped by service (the graph's node, from k8s metadata):
+  - a fingerprint per error (message with numbers/ids/hex stripped, plus the top stack frame), count, first seen, last seen;
+  - one sample stack trace (trimmed to 30 lines, secrets-looking tokens masked);
+  - **NEW** when the fingerprint was not seen the day before; **SPIKE** when the count is ≥ 3× yesterday's same window;
+  - links: the service in SERVICES (focused) and the minute in INCIDENT REVIEW.
+- Fallback without Loki: the same section from `kubectl logs --previous` of restarted pods only (read-only), marked partial.
+- Effort: Loki + pipeline in the bundle 3 h; fingerprinting + report section + links 3–4 h; tests on a recorded log fixture 1 h.
+
+### 7.4 Phase 7: agent onboarding (vaults from a repo or the cluster)
+
+- `docs/agent-onboarding.md`: a ready-made prompt the brother pastes into his coding agent. It tells the agent to read a repo (Dockerfiles, Helm charts, k8s manifests, OpenAPI, env vars naming other services) **or** the cluster through Cloud Spider's read-only `/api/cluster/graph`, and write one `vaults/<service>.yaml` per service.
+- `vaults/_template.yaml`: owner (team, contact), repo, the Kubernetes workload(s) it maps to (namespace/kind/name), SLOs (availability, latency p95, error rate, each with a target and window), dependencies (other vaults, databases, external APIs), runbook link.
+- Validation: `npm run vaults:check` (schema + the workloads exist in the graph), so the agent can loop until green. Nothing is written to the cluster.
+- Effort: template + schema check 1 h; prompt + doc + an example run on the demo app 1–2 h.
 
 ## 8. Open questions
 
