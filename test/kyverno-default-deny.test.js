@@ -10,6 +10,7 @@ import { loadCatalog } from "../src/score/catalog.js";
 import { UPGRADES } from "../src/upgrade.js";
 
 const spec = DEFAULT_DENY_POLICY.spec;
+const HAS_CLI = (await import("node:child_process")).spawnSync(process.env.KYVERNO_CLI || "kyverno", ["version"]).status === 0;
 
 // The downstream is a CEL literal: dyn(x) → x, then JSON. Proves the literal
 // carries exactly DEFAULT_DENY_NETPOL (plus the namespace expression).
@@ -109,4 +110,23 @@ test("K8S-SEC-010: no Kyverno FAIL, no rule FAIL, no sync WARN, full PASS", () =
   assert.deepEqual([nosync.pass, nosync.warn], [true, true]);
   const full = ev([{ name: "p", ready: true, generates: [{ ...g, synchronize: true }] }]);
   assert.deepEqual([full.pass, Boolean(full.warn), full.id], [true, false, "clusterpolicy/p"]);
+});
+
+// The Kyverno CLI (KYVERNO_CLI or kyverno on PATH; skipped without it)
+// renders the GeneratingPolicy: only namespaces created after the rollout,
+// not system, not allow-open, get the default-deny.
+test("Kyverno CLI: the GeneratingPolicy generates for new namespaces only", { skip: HAS_CLI ? false : "kyverno CLI not installed" }, async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { CEL_API } = await import("../upgrades/addons/kyverno-policies.js");
+  const dir = mkdtempSync(join(tmpdir(), "kgen-"));
+  writeFileSync(join(dir, "gp.yaml"), JSON.stringify({ apiVersion: CEL_API, kind: "GeneratingPolicy", metadata: { name: DEFAULT_DENY_POLICY.name }, spec }));
+  const ns = (n, labels = {}, ts) => JSON.stringify({ apiVersion: "v1", kind: "Namespace", metadata: { name: n, labels, ...(ts ? { creationTimestamp: ts } : {}) } });
+  writeFileSync(join(dir, "ns.yaml"), [ns("team-a"), ns("kube-system"), ns("open", { [ALLOW_OPEN_LABEL]: "true" }), ns("old", {}, "2026-01-01T00:00:00Z"), ns("newer", {}, "2026-10-12T09:00:00Z")].join("\n---\n"));
+  const out = spawnSync(process.env.KYVERNO_CLI || "kyverno", ["apply", join(dir, "gp.yaml"), "--resource", join(dir, "ns.yaml")], { encoding: "utf8" }).stdout;
+  const got = [...out.matchAll(/applied to \/Namespace\/(\S+):/g)].map((m) => m[1]).sort();
+  assert.deepEqual(got, ["newer", "team-a"]);
+  assert.match(out, /namespace: newer[\s\S]*policyTypes:\s*- Ingress\s*- Egress/);
 });
