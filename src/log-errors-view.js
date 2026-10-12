@@ -24,7 +24,8 @@ export function hhmm(time) {
 
 export function windowText(window) {
   if (!window) return "";
-  return `${hhmm(window.start)}–${hhmm(window.end)}${window.running ? " (so far)" : ""}`;
+  const days = new Date(window.end).toDateString() !== new Date(window.start).toDateString() && window.end - window.start >= 20 * 3_600_000 && window.kind === "24h";
+  return `${hhmm(window.start)}${days ? " yesterday" : ""}–${hhmm(window.end)}${window.running ? " (so far)" : ""}`;
 }
 
 export const WINDOW_BUTTONS = [["1h", "LAST 1H"], ["24h", "LAST 24H"], ["night", "NIGHT"]];

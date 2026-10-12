@@ -80,3 +80,8 @@ test("view, server and browser wiring", async () => {
   assert.match(browser, /const data = logNight;/);
   assert.match(browser, /: await read\("night"\);/);
 });
+
+test("24h window text names yesterday", async () => {
+  const { windowText } = await import("../src/log-errors-view.js");
+  assert.match(windowText({ start: NOW - 86_400_000, end: NOW, running: true, kind: "24h" }), /^13:45 yesterday–13:45 \(so far\)$/);
+});
