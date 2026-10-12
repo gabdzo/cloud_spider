@@ -165,8 +165,11 @@ export function mergeLive(scene, live) {
 // One read: metrics (and Loki events when logs are on) through the kube
 // client's fixed proxy paths (kube.js PATHS.observeMetrics / observeEvents).
 const memory = new Map();
+// What liveFromScrapes and restartsOf read; the rest of the page is skipped
+// while it streams (it runs past the 4 MB body cap on a busy cluster).
+export const LIVE_FAMILIES = ["traces_service_graph_request", "http_server_request_duration_seconds", "rpc_server_duration_seconds", "kube_pod_container_status_restarts_total"];
 export async function readLive(kube, { now = Date.now(), sinceMs = 3 * 3600_000, cache = memory } = {}) {
-  const got = await kube.readText("observeMetrics");
+  const got = kube.readLines ? await kube.readLines("observeMetrics", LIVE_FAMILIES) : await kube.readText("observeMetrics");
   if (got.missing) return { installed: false, note: "the observe bundle is not installed on this cluster (STACKS → Observe)" };
   if (got.forbidden) return { installed: true, error: "this context may not read services/proxy in cloudspider-observe" };
   if (got.error) return { installed: true, error: got.error };
@@ -180,5 +183,6 @@ export async function readLive(kube, { now = Date.now(), sinceMs = 3 * 3600_000,
   const loki = await kube.read("observeEvents", (now - sinceMs) * 1e6, now * 1e6).catch((e) => ({ error: e.message }));
   if (loki.json) events = eventsFromLoki(loki.json);
   else logsNote = loki.missing ? "no Loki (logs=off): event history is what Cloud Spider recorded" : `Loki: ${loki.error || "forbidden"}`;
-  return { installed: true, ...live, restarts, events, notes: logsNote ? [logsNote] : [] };
+  const notes = [logsNote, got.truncated ? "the collector's metrics page passed 4 MB even filtered: some live edges may be missing" : ""].filter(Boolean);
+  return { installed: true, ...live, restarts, events, notes };
 }

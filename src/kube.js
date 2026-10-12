@@ -205,20 +205,46 @@ export function runExec(run, exec, env, timeout = EXEC_TIMEOUT_MS) {
   });
 }
 
-function httpsGet(url, { ca, token, servername = "", timeout = TIMEOUT_MS }) {
+export const BODY_CAP = 4 * 1024 * 1024;
+
+// keepLine: a text body is filtered line by line as it streams, so a large
+// Prometheus page (the observe collector's runs to 10+ MB on a busy cluster)
+// keeps the families a caller needs instead of its first 4 MB.
+export function httpsGet(url, { ca, token, servername = "", timeout = TIMEOUT_MS, keepLine = null }) {
   return new Promise((resolve) => {
     const req = request(url, { method: "GET", ca: ca || undefined, ...(servername ? { servername } : {}), headers: { authorization: `Bearer ${token}`, accept: "application/json" }, timeout }, (res) => {
-      let body = "";
+      const sink = bodySink(keepLine);
       res.setEncoding("utf8");
-      res.on("data", (chunk) => {
-        if (body.length < 4 * 1024 * 1024) body += chunk;
-      });
-      res.on("end", () => resolve({ status: res.statusCode || 0, body }));
+      res.on("data", (chunk) => sink.push(chunk));
+      res.on("end", () => resolve({ status: res.statusCode || 0, ...sink.end() }));
     });
     req.on("timeout", () => req.destroy(new Error(`no answer in ${timeout} ms`)));
     req.on("error", (error) => resolve({ status: 0, body: "", error: error?.message || "the request failed" }));
     req.end();
   });
+}
+
+export function bodySink(keepLine = null, cap = BODY_CAP) {
+  let body = "", rest = "", truncated = false;
+  const add = (text) => {
+    if (body.length + text.length > cap) {
+      truncated = true;
+      body += text.slice(0, Math.max(0, cap - body.length));
+    } else body += text;
+  };
+  return {
+    push(chunk) {
+      if (truncated) return;
+      if (!keepLine) return add(chunk);
+      const lines = (rest + chunk).split("\n");
+      rest = lines.pop();
+      for (const line of lines) if (keepLine(line)) add(`${line}\n`);
+    },
+    end() {
+      if (keepLine && rest && !truncated && keepLine(rest)) add(rest);
+      return truncated ? { body, truncated } : { body };
+    },
+  };
 }
 
 // What a namespaced snapshot reads per namespace, and which of those the
@@ -271,19 +297,19 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     return pending;
   }
 
-  async function getPath(path, { text = false } = {}) {
+  async function getPath(path, { text = false, keepLine = null } = {}) {
     const t = await resolveTarget();
     if (t.error) return { error: t.error, unset: true };
     const tok = await token(t);
     if (tok.error) return { error: tok.error };
-    let res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token });
+    let res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}) });
     // 429: the API server's flow control said "later" (it does right after
     // an add-on install floods it). Try again twice before calling the read
     // failed, so one busy second does not turn a control UNKNOWN.
     for (const ms of RETRY_429_MS) {
       if (res.status !== 429) break;
       await wait(ms);
-      res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token });
+      res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}) });
     }
     if (res.error) return { error: res.error };
     if (res.status === 401) {
@@ -293,7 +319,7 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     if (res.status === 403) return { forbidden: true, error: `forbidden for kube context ${contextName}` };
     if (res.status === 404) return { missing: true, error: "not found" };
     if (res.status < 200 || res.status >= 300) return { error: `the cluster said ${res.status}` };
-    if (text) return { text: res.body };
+    if (text) return res.truncated ? { text: res.body, truncated: true } : { text: res.body };
     try {
       return { json: JSON.parse(res.body) };
     } catch {
@@ -337,6 +363,14 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     async readText(name, ...args) {
       if (!Object.hasOwn(PATHS, name) || typeof PATHS[name] !== "function") return { error: `no such read: ${String(name).slice(0, 60)}` };
       return getPath(PATHS[name](...args), { text: true });
+    },
+    // A text read keeping only lines that start with one of prefixes (and
+    // their # HELP/# TYPE lines): for metric pages bigger than the body cap.
+    async readLines(name, prefixes, ...args) {
+      if (!Object.hasOwn(PATHS, name) || typeof PATHS[name] !== "function") return { error: `no such read: ${String(name).slice(0, 60)}` };
+      const list = (Array.isArray(prefixes) ? prefixes : []).map(String).filter(Boolean);
+      const keepLine = (line) => list.some((p) => line.startsWith(p) || line.startsWith(`# HELP ${p}`) || line.startsWith(`# TYPE ${p}`));
+      return getPath(PATHS[name](...args), { text: true, keepLine });
     },
     async target() {
       const t = await resolveTarget();
