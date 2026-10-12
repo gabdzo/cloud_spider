@@ -5,6 +5,7 @@ import { userInfo } from "node:os";
 import { POD_DEFAULTS, buildPlan, parsePodTarget, podSpec, sccManifests } from "./pod-spec.js";
 import { podGuard } from "./pod-guard.js";
 import { runPod, sweepPods } from "./pod-driver.js";
+import { awsPolicyMode, cniEnforcer } from "./kube-checks.js";
 import { parseProbeLog, podChecks, podFindings, podPath, policyChecks } from "./pod-result.js";
 import { SAMPLE_POD_NAMESPACES, samplePodLog, samplePodReads } from "./sample-pod.js";
 
@@ -38,7 +39,11 @@ export async function readForPod(kube, target, { sourceNs, live = null } = {}) {
     targetPods = (pods.json?.items || []).filter((p) => names.has(p.metadata?.name));
   }
   const openshift = Boolean(namespaces.some((n) => /^openshift-/.test(n.metadata?.name || "")));
-  return { namespaces, policies, endpoints, targetPods, openshift, live };
+  // Who enforces policy (explains "blocked on paper, connected live").
+  const sys = await kube.read("nsDaemonsets", "kube-system").catch(() => ({}));
+  const dss = sys?.json?.items || null;
+  const cni = dss ? { enforcer: cniEnforcer(dss), awsMode: awsPolicyMode(dss) } : null;
+  return { namespaces, policies, endpoints, targetPods, openshift, live, cni };
 }
 
 export function createPodRunner({ cfg = {}, writeContexts = [], kubeFor = () => null, writerFor = () => null, liveFor = async () => null, now = Date.now, user = osUser } = {}) {
@@ -104,7 +109,7 @@ export function createPodRunner({ cfg = {}, writeContexts = [], kubeFor = () => 
         from: ["pod", "kube"],
         context: { kubeContext: p.context, namespace: p.plan.source.namespace, node: pod.node || p.plan.source.node || "", ...(p.sample ? { sample: true } : {}), ...(p.reads.live?.edges?.length ? { live: "observe" } : {}) },
         checks,
-        findings: podFindings(p.plan, checks),
+        findings: podFindings(p.plan, checks, { cni: p.reads.cni }),
         path: podPath(p.plan, checks, { pod, live: p.reads.live }),
         pod: { name: p.spec.metadata.name, namespace: p.plan.source.namespace, image: p.plan.image, raw: p.plan.raw, complete: parsed.done },
       };
