@@ -16,6 +16,24 @@ const LAYER_HINT = {
   trace: "OpenTelemetry traces: which API called which (L7, with errors)",
   owner: "ownerReferences: operator → custom resources → what they own",
 };
+// Edge source marks: what each line style means (legend under the stats).
+const EDGE_LEGEND = [
+  ["s-trace", "LIVE · Beyla/OTel", "measured L7 traffic from Beyla eBPF via the OTel collector, with req/s and errors"],
+  ["s-flow", "LIVE · FLOW", "measured L3/L4 flows (VPC CNI flow logs or Hubble)"],
+  ["s-static", "STATIC · config", "declared by Services, Ingress/Routes, NetworkPolicies: may talk, not measured"],
+  ["owns", "OWNER", "ownerReferences: operator → custom resources → what they own"],
+  ["err", "ERRORS ≥ 1%", "a live edge with at least 1% failed requests"],
+];
+// Live trace edges get an on-line badge; past this many only the busiest
+// (and the selected node's) keep theirs, so the graph stays readable.
+const BADGE_MAX = 12;
+export function edgeBadge(edge) {
+  const src = edge.sources.includes("trace") ? "trace" : edge.sources.includes("flow") ? "flow" : "";
+  if (!src) return "";
+  const rate = edge.rps ? ` ${edge.rps}/s` : "";
+  const err = edge.errors ? ` · ${edge.errors}% err` : "";
+  return `${src === "trace" ? "LIVE · Beyla/OTel" : "LIVE · FLOW"}${rate}${err}`;
+}
 const KIND_TAG = { operator: "OP", webhook: "HOOK", service: "SVC", db: "DB", cr: "CR", ingress: "ING", external: "API", workload: "WL", namespace: "NS" };
 const EVENT_TAG = { rollout: "ROLLOUT", restart: "RESTART", warning: "WARN", alarm: "ALARM", ok: "OK" };
 
@@ -81,6 +99,8 @@ export function createGraphView(root) {
     els.fold = h("button", { type: "button", className: "gv-btn", text: "FOLD ALL", title: "close every group", onclick: () => ((state.expanded = new Set()), (state.focus = null), render()) });
     els.stats = h("p", { className: "gv-stats" });
     els.detail = h("p", { className: "gv-detail", "aria-live": "polite" });
+    els.legend = h("p", { className: "gv-legend", "aria-label": "edge sources" });
+    for (const [cls, text, hint] of EDGE_LEGEND) els.legend.append(h("span", { className: `gv-key ${cls}`, title: hint }, h("i", { "aria-hidden": "true" }), h("span", { text })));
     els.stage = h("div", { className: "gv-stage" });
     els.svg = document.createElementNS(SVG, "svg");
     els.svg.setAttribute("class", "gv-edges");
@@ -93,6 +113,7 @@ export function createGraphView(root) {
         h("div", { className: "gv-title" }, h("b", { text: "SERVICES" }), (els.proto = h("span", { className: "gv-proto", text: "SAMPLE · PROTOTYPE" }))),
         els.scen, els.liveBox, els.search, els.layers, els.fold),
       els.stats,
+      els.legend,
       els.detail,
       els.stage,
       els.tl,
@@ -360,6 +381,7 @@ export function createGraphView(root) {
       at.set(el.dataset.id, { x: r.left - box.left + els.stage.scrollLeft, y: r.top - box.top + els.stage.scrollTop, w: r.width, h: r.height });
     }
     const paths = [];
+    const badges = [];
     const hot = state.selected;
     // Orthogonal routes through the gaps (graph-route.js); every card and
     // chip is an obstacle, so lines no longer cross cards or labels.
@@ -393,9 +415,28 @@ export function createGraphView(root) {
       const cls = `gv-edge s-${src}${edge.quiet ? " quiet" : ""}${edge.kinds.includes("owns") ? " owns" : ""}${edge.errors >= 1 ? " err" : ""}${touch ? " hot" : ""}${hot && !touch ? " faint" : ""}`;
       const width = Math.min(3.2, 1 + Math.log10(1 + edge.rps) * 0.9).toFixed(2);
       const title = `${edge.from.replace(/^g:/, "")} → ${edge.to.replace(/^g:/, "")}: ${edge.count} link${edge.count > 1 ? "s" : ""} · ${edge.kinds.join("/")} · ${edge.sources.join("+")}${edge.rps ? ` · ${edge.rps}/s` : ""}${edge.errors ? ` · ${edge.errors}% errors` : ""}`;
-      paths.push(`<path class="${cls}" d="${d}" stroke-width="${width}" marker-end="url(#gv-arrow)"><title>${title.replace(/[<&]/g, "")}</title></path>`);
+      paths.push(`<path class="${cls}" d="${d}" stroke-width="${width}" marker-end="url(#gv-arrow)" data-src="${src}"><title>${title.replace(/[<&]/g, "")}</title></path>`);
+      if (src === "trace") badges.push({ i: paths.length - 1, text: edgeBadge(edge), rps: edge.rps, touch, err: edge.errors >= 1 });
     }
     svg.innerHTML = marker + paths.join("");
+    // Badges at each live edge's midpoint (needs SVG geometry; skipped without it).
+    const keep = badges.length <= BADGE_MAX ? badges : badges.filter((b) => b.touch).concat([...badges].sort((p, q) => q.rps - p.rps).slice(0, BADGE_MAX)).filter((b, i, all) => all.indexOf(b) === i);
+    const drawn = svg.querySelectorAll("path.gv-edge");
+    const out = [];
+    for (const b of keep) {
+      const path = drawn[b.i];
+      if (!path?.getTotalLength) continue;
+      let pt;
+      try {
+        pt = path.getPointAtLength(path.getTotalLength() / 2);
+      } catch {
+        continue;
+      }
+      const w = Math.round(b.text.length * 6.4 + 12);
+      const safe = b.text.replace(/[<&]/g, "");
+      out.push(`<g class="gv-badge${b.err ? " err" : ""}${hot && !b.touch ? " faint" : ""}" transform="translate(${Math.round(pt.x + 6)},${Math.round(pt.y - 8)})"><rect width="${w}" height="15" rx="2"/><text x="5" y="11">${safe}</text></g>`);
+    }
+    if (out.length) svg.insertAdjacentHTML("beforeend", out.join(""));
   }
 
   root.addEventListener("keydown", (event) => {

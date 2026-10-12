@@ -1417,6 +1417,19 @@ const page = `<!doctype html>
   #kube-graph .gv-edge.hot { opacity: 1; filter: drop-shadow(0 0 3px var(--glow-bright)); }
   #kube-graph .gv-edge.faint { opacity: 0.3; }
   #kube-graph .gv-edge.quiet { opacity: 0.3; stroke-width: 1px; }
+  #kube-graph .gv-badge rect { fill: var(--bg, #041a0c); stroke: var(--pip-bright); stroke-width: 1px; opacity: 0.92; }
+  #kube-graph .gv-badge text { font: 10px/1 inherit; font-family: inherit; letter-spacing: 0.04em; fill: var(--pip-bright); }
+  #kube-graph .gv-badge.err rect { stroke: var(--status-broken); }
+  #kube-graph .gv-badge.err text { fill: var(--status-broken); }
+  #kube-graph .gv-badge.faint { opacity: 0.3; }
+  #kube-graph .gv-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 2px 0 4px; font-size: 11px; letter-spacing: 0.06em; color: var(--pip-mid); }
+  #kube-graph .gv-key { display: inline-flex; align-items: center; gap: 6px; }
+  #kube-graph .gv-key i { display: inline-block; width: 26px; height: 0; border-top: 2px solid var(--pip-dim); }
+  #kube-graph .gv-key.s-trace i { border-top-color: var(--pip-bright); border-top-width: 3px; }
+  #kube-graph .gv-key.s-flow i { border-top-color: var(--pip-mid); }
+  #kube-graph .gv-key.s-static i { border-top-style: dashed; }
+  #kube-graph .gv-key.owns i { border-top: 2px dotted var(--world-amber); }
+  #kube-graph .gv-key.err i { border-top-color: var(--status-broken); }
   #kube-graph .gv-arrowhead { fill: var(--pip-mid); }
   #kube-graph .gv-timeline { padding: 8px 10px 10px; border: 1px solid var(--pip-dark); background: rgba(2, 10, 5, 0.97); }
   /* Docked: the timeline stays on screen at the bottom of SERVICES however
@@ -1529,13 +1542,6 @@ const page = `<!doctype html>
   .ko-events li.node b { color: var(--world-amber); }
   /* ---- end cluster screens ---- */
   /* ---- K9S window (k9s.js): a terminal docked over the cluster ---- */
-  #k9s-btn { position: absolute; z-index: 4; right: 14px; bottom: 12px; display: flex; align-items: center; gap: 7px; padding: 5px 11px 5px 9px; font: inherit; font-size: 12px; letter-spacing: 0.12em; color: var(--btn-off-label); background: linear-gradient(180deg, var(--btn-off-top), var(--btn-off-mid) 45%, var(--btn-off-low)); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-gloss), inset 0 -2px 0 var(--btn-shade), 0 2px 6px var(--btn-shade); cursor: pointer; }
-  #k9s-btn[hidden] { display: none; }
-  #k9s-btn i { width: 9px; height: 9px; border-radius: 50%; background: var(--lamp-off); box-shadow: inset 0 0 0 1px var(--btn-rim), 0 0 0 1px var(--lamp-off-hi); }
-  #k9s-btn small { color: var(--pip-dim); font-size: 10px; border: 1px solid var(--btn-rim); padding: 0 4px; }
-  #k9s-btn:hover { color: var(--pip-mid); }
-  #k9s-btn[aria-pressed="true"] { color: var(--btn-lit-label); background: linear-gradient(180deg, var(--btn-lit-top), var(--btn-lit-mid) 45%, var(--btn-lit-low)); box-shadow: inset 0 1px 0 var(--btn-gloss-lit), inset 0 2px 4px var(--btn-shade), 0 0 10px var(--btn-glow-far); }
-  #k9s-btn[aria-pressed="true"] i { background: var(--lamp-on); box-shadow: 0 0 6px var(--btn-glow), inset 0 0 0 1px var(--lamp-on-core); }
   #k9s { position: absolute; z-index: 4; left: 12px; right: 12px; bottom: 50px; height: min(56%, 520px); display: flex; flex-direction: column; background: var(--pip-ink); border: 1px solid var(--pip-dim); box-shadow: 0 0 0 3px var(--btn-skirt), 0 0 0 4px var(--btn-rim), 0 10px 30px var(--btn-shade); font-size: 12px; color: var(--pip-mid); outline: none; }
   #k9s[hidden] { display: none; }
   #k9s:focus-within, #k9s:focus { border-color: var(--pip-bright); }
@@ -2402,7 +2408,7 @@ const page = `<!doctype html>
   :root[data-theme="pro"] .glass { display: none; }
   :root[data-theme="pro"] :is(#morning, #spend-lines, #learn, #term, #vault-page) { border-color: var(--border-strong); border-radius: 10px; background-color: var(--raised); }
   :root[data-theme="pro"] #spend-lines { box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5); }
-  :root[data-theme="pro"] :is(#kube-ctx button[aria-pressed="true"], #k9s-btn[aria-pressed="true"]) { background: var(--surface-2); box-shadow: none; }
+  :root[data-theme="pro"] #kube-ctx button[aria-pressed="true"] { background: var(--surface-2); box-shadow: none; }
   :root[data-theme="pro"] #sunrise { display: none; }
   :root[data-theme="pro"] .screen { border-radius: 10px; background: var(--raised); box-shadow: 0 0 0 1px var(--border); }
   :root[data-theme="pro"] .terminal { border-bottom: 1px solid var(--border); background: none; }
@@ -2544,6 +2550,16 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #kube-graph .gv-edge.owns { stroke: var(--warn); }
   :root[data-theme="pro"] #kube-graph .gv-edge.err { stroke: var(--err); }
   :root[data-theme="pro"] #kube-graph .gv-edge.hot { filter: none; }
+  :root[data-theme="pro"] #kube-graph .gv-badge rect { fill: var(--raised); stroke: var(--accent); }
+  :root[data-theme="pro"] #kube-graph .gv-badge text { fill: var(--accent); font-family: var(--font-ui); font-weight: 600; }
+  :root[data-theme="pro"] #kube-graph .gv-badge.err rect { stroke: var(--err); }
+  :root[data-theme="pro"] #kube-graph .gv-badge.err text { fill: var(--err); }
+  :root[data-theme="pro"] #kube-graph .gv-legend { color: var(--text-2, var(--text)); font-family: var(--font-ui); letter-spacing: 0; }
+  :root[data-theme="pro"] #kube-graph .gv-key i { border-top-color: var(--text-3); }
+  :root[data-theme="pro"] #kube-graph .gv-key.s-trace i { border-top-color: var(--accent); }
+  :root[data-theme="pro"] #kube-graph .gv-key.s-flow i { border-top-color: var(--info); }
+  :root[data-theme="pro"] #kube-graph .gv-key.owns i { border-top-color: var(--warn); }
+  :root[data-theme="pro"] #kube-graph .gv-key.err i { border-top-color: var(--err); }
   :root[data-theme="pro"] #kube-graph .gv-arrowhead { fill: var(--text-3); }
   :root[data-theme="pro"] #kube-graph .gv-timeline { background: var(--raised); border-color: var(--border); border-radius: 10px; }
   :root[data-theme="pro"] #kube-graph .gv-timeline { box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.45); }
@@ -2591,6 +2607,7 @@ const page = `<!doctype html>
     <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true" data-module="map">Map</button>
     <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false" title="sniff: a request's path, and DEBUG for any URL" data-pro-title="network: a request's path, and DEBUG for any URL" data-module="network"><span data-pro-label="Network">Sniff</span></button>
     <button id="cluster" class="tab" type="button" data-icon="cluster" aria-pressed="false" data-module="kubernetes">Cluster</button>
+    <button id="k9s-btn" class="tab" type="button" data-icon="terminal" aria-pressed="false" title="K9S: a read-only resource table for the connected cluster (:)" data-module="kubernetes">K9S</button>
     <button id="tab-vaults" class="tab" type="button" data-icon="vaults" aria-pressed="false" title="vaults: every project, its checks and what it owns" data-module="vaults">Vaults</button>
   </nav>
   <div class="console">
@@ -2674,7 +2691,6 @@ const page = `<!doctype html>
       <section id="kube-empty" aria-label="no cluster connected" hidden></section>
       <section id="kube-graph" aria-label="services graph (sample prototype)" tabindex="-1" hidden data-module="graph"></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
-      <button id="k9s-btn" type="button" aria-pressed="false" title="K9S window: a read-only resource table (:)" hidden data-module="kubernetes"><i></i><b>K9S</b><small>:</small></button>
       <section id="k9s" aria-label="K9S window, read-only resource table" hidden data-module="kubernetes"></section>
       <form id="pip" hidden></form>
       <section id="term" hidden></section>
