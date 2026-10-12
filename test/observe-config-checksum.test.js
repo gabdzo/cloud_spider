@@ -13,7 +13,8 @@ test("workloads that mount a ConfigMap carry its checksum; a config change chang
   assert.deepEqual(a, sums(renderBundle({ profile: "crc", allowPrivileged: true })));
 });
 
-test("index.js replaces ConfigMaps delete-first", async () => {
+test("index.js updates ConfigMaps in place (delete-first if ever replaced)", async () => {
   const src = (await import("node:fs")).readFileSync(new URL("../upgrades/observe/index.js", import.meta.url), "utf8");
   assert.match(src, /ConfigMap" \? \{ \.\.\.inNs, deleteBeforeReplace: true \}/);
+  assert.match(src, /enableConfigMapMutable: true/);
 });
