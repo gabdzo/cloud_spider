@@ -480,12 +480,27 @@ function drawRegionLabel(ctx, region, width) {
   let lx = bx + 2;
   const legendBase = baseline + 26;
   const right = Math.min(region.x + region.w - 12, width - 12) - VIEW_SWITCH_W;
+  // A key, not a row of buttons: one flat strip behind it, "KEY" in front,
+  // no box per item (the boxes read as buttons next to ARCH / BY TAG).
+  const keyW = Math.ceil(ctx.measureText("KEY").width) + 10;
+  const items = [];
+  let probe = lx + keyW;
   for (const item of LEGEND) {
     const w = 30 + Math.ceil(ctx.measureText(item.label).width) + 14;
-    if (lx + w > right) break;
+    if (probe + w > right) break;
+    items.push(item);
+    probe += w + 6;
+  }
+  if (items.length) {
+    ctx.fillStyle = rgba(PIP.ink, 0.6);
+    ctx.fillRect(lx - 4, legendBase - 13, probe - lx, 18);
+    ctx.fillStyle = PIP.dim;
+    ctx.fillText("KEY", lx, legendBase);
+    lx += keyW;
+  }
+  for (const item of items) {
+    const w = 30 + Math.ceil(ctx.measureText(item.label).width) + 14;
     const baseline = legendBase;
-    ctx.fillStyle = rgba(PIP.ink, 0.85);
-    ctx.fillRect(lx - 4, baseline - 13, w, 18);
     if (item.swatch) {
       const sun = item.swatch === "sun";
       ctx.fillStyle = sun ? WORLD.soilSunTop : WORLD.soilShadeTop;

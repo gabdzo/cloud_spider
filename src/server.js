@@ -2754,6 +2754,24 @@ const page = `<!doctype html>
   #where b { color: var(--pip-bright); font-weight: 700; }
   #where i { font-style: normal; padding: 0 6px; opacity: 0.7; }
   #where[hidden] { display: none; }
+
+  /* UX pass 2: legend chips are a key, not buttons */
+  #kube-graph .gv-key, #kube-graph .gv-bk { cursor: help; border: 0 !important; background: none !important; box-shadow: none !important; }
+  #kube-graph .gv-legend::before, #kube-graph .gv-badgekey::before { content: "KEY"; margin-right: 8px; color: var(--pip-dim-text); letter-spacing: 0.14em; font-size: 11px; }
+  #stats span[title], #stats .meter[title] { cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); }
+  /* UX pass 2: one spacing step (8 px) between the stacked bars at the
+     top of a view: breadcrumb, prompt, morning report, sub-tabs, header */
+  .screen > #where { margin: 6px 0 2px; }
+  .terminal { margin-bottom: 8px; }
+  #morning:not([hidden]) { margin-bottom: 8px; }
+  #kube-tabs:not([hidden]) { margin: 0 0 8px; }
+  #kube-graph .gv-head, #kube-graph .gv-stats, #kube-graph .gv-legend, #kube-graph .gv-badgekey { margin-bottom: 6px; }
+  /* the breadcrumb reads in Pip: bright place names on a dark plate */
+  #where { color: var(--pip-mid); text-shadow: 0 0 4px var(--glow-soft); }
+  #where b { color: var(--pip-hot); text-shadow: 0 0 6px var(--glow-bright); }
+  #where:not([hidden]) { position: relative; z-index: 6; display: inline-block; background: var(--pip-ink); border: 1px solid var(--pip-dark); padding: 2px 10px; margin-left: 18px; }
+  :root[data-theme="pro"] #where { text-shadow: none; background: transparent; border: 0; }
+  :root[data-theme="pro"] #where b { color: var(--text, inherit); text-shadow: none; }
 </style>
 </head>
 <body>
@@ -2784,7 +2802,7 @@ const page = `<!doctype html>
   <div class="gauges" aria-label="map readouts">
     <p id="tally" class="lcd" hidden data-module="map"><img class="px" data-icon="map" alt=""><span id="tally-text"></span><span id="tally-issue"></span></p>
     <div id="corner">
-      <button id="spend" class="lcd" type="button" aria-expanded="false" aria-controls="spend-lines" hidden data-module="cost"><img class="px" data-icon="caps" alt=""><b data-pro-label="Cost">CAPS</b><span id="spend-label"></span><i class="caret" aria-hidden="true"></i></button>
+      <button id="spend" class="lcd" type="button" aria-expanded="false" aria-controls="spend-lines" hidden data-module="cost"><img class="px" data-icon="caps" alt=""><b data-pro-label="Cost" title="CAPS = money: the AWS bill so far this month">CAPS</b><span id="spend-label"></span><i class="caret" aria-hidden="true"></i></button>
       <div id="spend-lines" role="region" aria-label="the bill, month to date" tabindex="-1" hidden data-module="cost"></div>
     </div>
   </div>

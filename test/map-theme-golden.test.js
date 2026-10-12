@@ -14,15 +14,17 @@ const { paint, focusLists } = await import("../src/draw.js");
 const { PALETTE } = await import("../src/theme.js");
 const { PRO_GLYPHS, glyphKey } = await import("../src/map-pro-icons.js");
 
+// Changed on purpose (UX pass 2, docs/ux-review-2026-10-12.md): the map
+// legend is one flat KEY strip instead of a box per item.
 const PIP_GOLDEN = {
-  w1440: ["926804b2fa76a60e", { width: 1440 }],
-  w760: ["5b314d43ea0564a1", { width: 760, animTime: 1234 }],
+  w1440: ["cfb8d10d46772680", { width: 1440 }],
+  w760: ["e20e32948635cc0a", { width: 760, animTime: 1234 }],
   // Changed on purpose (#pro-map-2): side-by-side VPCs leave a chip row
   // above the first row so peering chips clear the ARCH / BY TAG switch.
-  w1920flow: ["df21db83d0007176", { width: 1920, flow: true, animTime: 5000 }],
+  w1920flow: ["51958092b1666b5d", { width: 1920, flow: true, animTime: 5000 }],
   tag: ["050f2c5ce9d5efd2", { width: 1440, view: "tag" }],
-  selBuilding: ["62f8a10c31f10b55", { width: 1440, select: "building" }],
-  selFixture: ["4f4a7de6c8b45908", { width: 1440, select: "fixture" }],
+  selBuilding: ["11472f447c1379be", { width: 1440, select: "building" }],
+  selFixture: ["7c572b0518118a31", { width: 1440, select: "fixture" }],
 };
 
 function render(opts, theme) {

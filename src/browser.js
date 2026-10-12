@@ -43,6 +43,7 @@ import { costFor, costLine, estimate } from "./stack-costs.js";
 import { bundlesWith } from "./stack-bundles.js";
 import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
+  explainAbbr,
 } from "./chrome.js";
 import { FRAME_MS, PIP } from "./theme.js";
 import { createVaultState, VPC_FOLD_KEY } from "./vault-state.js";
@@ -455,10 +456,14 @@ function renderChromeParts() {
     if (debugBarShown(mode)) netdebugView.show();
     else netdebugView.hide();
   }
-  tabMap.setAttribute("aria-pressed", String(mode === "map" && !vaultRoute));
-  tabVaults.setAttribute("aria-pressed", String(vaultPageOpen()));
-  pathButton.setAttribute("aria-pressed", String(mode === "path"));
-  clusterButton.setAttribute("aria-pressed", String(mode === "cluster"));
+  // SCORE, LEARN and STACKS cover the screen: their own key is lit, so the
+  // view tab under them goes dark (before, VAULTS or MAP stayed lit and
+  // "where am I" pointed at a page you could not see).
+  const covered = Boolean(scoreApi?.isOpen() || learnApi?.isOpen() || pipOpen);
+  tabMap.setAttribute("aria-pressed", String(!covered && mode === "map" && !vaultRoute));
+  tabVaults.setAttribute("aria-pressed", String(!covered && vaultPageOpen()));
+  pathButton.setAttribute("aria-pressed", String(!covered && mode === "path"));
+  clusterButton.setAttribute("aria-pressed", String(!covered && mode === "cluster"));
   tabRadio.setAttribute("aria-pressed", String(!radioPanel.hidden));
   upgradeButton.setAttribute("aria-pressed", String(pipOpen));
   acct.textContent = sample ? "SAMPLE" : "LIVE";
@@ -1480,6 +1485,8 @@ function markHistory() {
 }
 
 function syncUrl() {
+  // a panel opened or closed (SCORE, LEARN, ×, Esc): the lit tabs follow
+  if (typeof renderChromeParts === "function" && learnApi && scoreApi) renderChromeParts();
   if (applyingUrl || !urlReady) return;
   const want = formatUrlState(urlState());
   if (location.hash === want) return;
@@ -3461,7 +3468,7 @@ canvas.addEventListener("mousemove", (event) => {
       draw();
     }
     if (hit) {
-      const title = compoundHover(hit);
+      const title = explainAbbr(compoundHover(hit));
       if (canvas.title !== title) canvas.title = title;
       if (canvas.style.cursor !== "pointer") canvas.style.cursor = "pointer";
       return;
@@ -3476,7 +3483,7 @@ canvas.addEventListener("mousemove", (event) => {
     if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
     return;
   }
-  const title = mode === "map" ? mapTitle(placedMap(), event.offsetX, event.offsetY) : "";
+  const title = mode === "map" ? explainAbbr(mapTitle(placedMap(), event.offsetX, event.offsetY)) : "";
   if (canvas.title !== title) canvas.title = title;
   if (mode !== "map" || !vaultsData.vaults.length) {
     if (canvas.style.cursor) canvas.style.cursor = "";
@@ -3774,7 +3781,7 @@ document.querySelector("#score-key").addEventListener("click", () => {
     if (pipOpen) toggleUpgrade();
     if (terminal.isOpen() && !terminal.isRunning()) terminal.setOpen(false);
   }
-  scoreView.toggle();
+  Promise.resolve(scoreView.toggle()).then(renderChromeParts);
 });
 document.querySelector("#learn-key").addEventListener("click", () => {
   markHistory();
@@ -3783,7 +3790,7 @@ document.querySelector("#learn-key").addEventListener("click", () => {
     if (pipOpen) toggleUpgrade();
     if (scoreView.isOpen()) scoreView.setOpen(false);
   }
-  learnView.toggle();
+  Promise.resolve(learnView.toggle()).then(renderChromeParts);
 });
 askThis.addEventListener("click", () => {
   const question = askThisQuestion();
