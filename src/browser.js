@@ -25,6 +25,8 @@ import { drawPanHint, nodeTitle, paintDiagram, paintPath, sentenceRect } from ".
 import { CLUSTER_COLUMNS } from "./cluster.js";
 import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
+import { GROUP_BY, cleanGroupBy } from "./graph-group.js";
+import { TOPOLOGY_GROUP_BY_KEY, groupDiagram, lanesForNamespaces } from "./kube-group.js";
 import { countText, matchOrder, searchKube } from "./kube-search.js";
 import { createK9s } from "./k9s.js";
 import { paintKube } from "./kube-draw.js";
@@ -163,6 +165,54 @@ let bundleSeq = 0;
 let bundleWith = false;
 const kubeSearchEl = document.querySelector("#kube-search");
 const kubeSearchCount = document.querySelector("#kube-search-count");
+// TOPOLOGY Group by (kube-group.js): lanes by namespace or a label; kept.
+const kubeGroupBox = document.querySelector("#kube-groupby");
+const kubeGroupSel = document.querySelector("#kube-groupby-sel");
+const kubeGroupCustom = document.querySelector("#kube-groupby-custom");
+let topologyGroupBy = "namespace";
+try {
+  topologyGroupBy = cleanGroupBy(window.localStorage.getItem(TOPOLOGY_GROUP_BY_KEY) || "namespace");
+} catch {
+  // default
+}
+for (const g of GROUP_BY) kubeGroupSel.append(new Option(g.label, g.id));
+kubeGroupSel.append(new Option("custom label…", "custom"));
+function syncTopologyGroupBy() {
+  const known = GROUP_BY.some((g) => g.id === topologyGroupBy);
+  kubeGroupSel.value = known ? topologyGroupBy : "custom";
+  kubeGroupCustom.hidden = known;
+  if (!known) kubeGroupCustom.value = topologyGroupBy;
+}
+function setTopologyGroupBy(raw) {
+  const text = String(raw || "").trim();
+  const next = cleanGroupBy(text);
+  kubeGroupCustom.classList.toggle("bad", Boolean(text) && text !== "namespace" && next === "namespace");
+  if (next === topologyGroupBy) return;
+  topologyGroupBy = next;
+  try {
+    window.localStorage.setItem(TOPOLOGY_GROUP_BY_KEY, next);
+  } catch {
+    // not kept
+  }
+  syncTopologyGroupBy();
+  draw();
+}
+syncTopologyGroupBy();
+kubeGroupSel.addEventListener("change", () => {
+  if (kubeGroupSel.value !== "custom") return setTopologyGroupBy(kubeGroupSel.value);
+  kubeGroupCustom.hidden = false;
+  kubeGroupCustom.focus();
+  if (kubeGroupCustom.value) setTopologyGroupBy(kubeGroupCustom.value);
+});
+kubeGroupCustom.addEventListener("change", () => setTopologyGroupBy(kubeGroupCustom.value));
+kubeGroupCustom.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") setTopologyGroupBy(kubeGroupCustom.value);
+});
+let groupedMemo = { diagram: null, by: "", out: null };
+function groupedDiagram(diagram) {
+  if (groupedMemo.diagram !== diagram || groupedMemo.by !== topologyGroupBy) groupedMemo = { diagram, by: topologyGroupBy, out: groupDiagram(diagram, topologyGroupBy) };
+  return groupedMemo.out;
+}
 const k9sEl = document.querySelector("#k9s");
 const k9sBtn = document.querySelector("#k9s-btn");
 const kubeTele = document.querySelector("#kube-tele");
@@ -2091,12 +2141,13 @@ function placedCluster() {
     const found = currentSearch();
     // A search opens the lanes and lists the folded workloads it found
     // pods in, without touching the saved lane state.
+    const grouped = groupedDiagram(clusterData.diagram);
     const state = found.active
-      ? { open: { ...clusterLanes.open, ...Object.fromEntries(found.open.map((ns) => [ns, true])) }, expanded: [...new Set([...clusterLanes.expanded, ...found.expand])] }
+      ? { open: { ...clusterLanes.open, ...Object.fromEntries(lanesForNamespaces(grouped, found.open).map((ns) => [ns, true])) }, expanded: [...new Set([...clusterLanes.expanded, ...found.expand])] }
       : clusterLanes;
-    const key = `${map.clientWidth || 0}|${top}|${JSON.stringify(state)}`;
+    const key = `${map.clientWidth || 0}|${top}|${topologyGroupBy}|${JSON.stringify(state)}`;
     if (clusterPlaced.data !== clusterData || clusterPlaced.key !== key) {
-      clusterPlaced = { key, data: clusterData, placed: layoutKube(clusterData.diagram, { width: map.clientWidth || 0, state, top }) };
+      clusterPlaced = { key, data: clusterData, placed: layoutKube(grouped, { width: map.clientWidth || 0, state, top }) };
     }
     return clusterPlaced.placed;
   }
@@ -3046,6 +3097,7 @@ function syncSearchBar() {
   if (mode !== "cluster" && k9s.isOpen()) k9s.close();
   const on = searchable();
   kubeSearchEl.hidden = !on;
+  kubeGroupBox.hidden = !on;
   statusEl.hidden = on;
   confirmEl.classList.toggle("caption", on);
   const found = on ? currentSearch() : null;
