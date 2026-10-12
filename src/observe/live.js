@@ -191,10 +191,15 @@ export async function readLive(kube, { now = Date.now(), sinceMs = 3 * 3600_000,
   if (got.forbidden) return { installed: true, error: "this context may not read services/proxy in cloudspider-observe" };
   if (got.error) return { installed: true, error: got.error };
   const ctx = kube.context || "default";
-  const prev = cache.get(ctx) || null;
+  // Rates over a baseline at least 30 s old: the collector's counters move
+  // only every export interval, so a delta over a few seconds (the graph and
+  // the observe card polling back to back) read 0/s on busy edges.
+  const ring = [].concat(cache.get(ctx) || []).filter((s) => now - s.at <= 300_000);
+  const prev = ring.filter((s) => now - s.at >= 30_000).pop() || ring.find((s) => now - s.at > 0) || null;
   const cur = { at: now, text: got.text };
-  if (!prev || now - prev.at > 10_000) cache.set(ctx, cur);
-  const live = liveFromScrapes(cur, prev && now - prev.at > 0 ? prev : null);
+  if (!ring.length || now - ring[ring.length - 1].at > 10_000) ring.push(cur);
+  cache.set(ctx, ring);
+  const live = liveFromScrapes(cur, prev);
   const restarts = restartsOf(parseProm(got.text));
   let events = [], logsNote = "";
   const loki = await kube.read("observeEvents", (now - sinceMs) * 1e6, now * 1e6).catch((e) => ({ error: e.message }));
