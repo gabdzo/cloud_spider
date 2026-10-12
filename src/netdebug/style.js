@@ -38,13 +38,14 @@ export const ND_CSS = `
     display: flex; flex-direction: column; overflow: hidden;
     background: var(--n-bg); color: var(--n-text); border: 1px solid var(--n-strong); font-family: var(--n-font); font-size: 12.5px; line-height: 1.45; }
   #netdebug[hidden] { display: none; }
+  .mapwrap:has(> #netdebug:not([hidden])) { padding-bottom: var(--nd-h, 0px); }
   ${TONES}
   #netdebug .nd-label { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--n-text2); white-space: nowrap; }
   #netdebug .nd-quiet { color: var(--n-muted); margin: 0; }
   #netdebug .nd-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--n-line); background: var(--n-raised); flex-wrap: nowrap; }
   #netdebug[data-open="0"] .nd-bar { border-bottom: 0; }
   #netdebug .nd-title { font-size: 12px; letter-spacing: .18em; color: var(--n-accent); }
-  #netdebug .nd-url { flex: 1 1 280px; min-width: 180px; font: inherit; font-size: 13px; padding: 5px 9px; color: var(--n-text); background: var(--n-ink); border: 1px solid var(--n-strong); outline: none; }
+  #netdebug .nd-url { flex: 1 1 280px; min-width: 180px; text-overflow: ellipsis; font: inherit; font-size: 13px; padding: 5px 9px; color: var(--n-text); background: var(--n-ink); border: 1px solid var(--n-strong); outline: none; }
   #netdebug .nd-url:focus { border-color: var(--n-accent); }
   #netdebug .nd-url::placeholder { color: var(--n-muted); }
   #netdebug .nd-modes { display: inline-flex; gap: 6px; }

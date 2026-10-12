@@ -748,6 +748,12 @@ const page = `<!doctype html>
     text-shadow: 0 0 5px var(--glow-bright);
   }
   .line { display: flex; gap: 8px; flex: 1 1 320px; min-width: 0; }
+  /* SNIFF: the diagnosis gets the whole first row; the load balancer, URL
+     and ASK go on the row under it. Sharing one row squeezed a long message
+     into a 250px column five lines tall (UX overlaps B). */
+  .terminal:has(> #lb:not([hidden])) > .line { flex-basis: 100%; }
+  .terminal:has(> #lb:not([hidden])) > #lb { flex: 1 1 260px; min-width: 0; max-width: 520px; }
+  .terminal:has(> #lb:not([hidden])) > #host { flex: 2 1 260px; min-width: 0; }
   .prompt { color: var(--pip-mid); }
   #status { min-width: 0; overflow-wrap: anywhere; }
   /* Cluster view: the prompt is a search line; the context note shrinks. */
