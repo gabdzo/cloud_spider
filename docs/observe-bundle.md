@@ -54,3 +54,20 @@ TAKE IT DOWN (pulumi destroy): the namespace (pods, ConfigMaps, Loki's claim,
 NetworkPolicies) and the cluster-scoped ClusterRoles, bindings and SCCs, all
 labelled `app.kubernetes.io/managed-by=cloudspider-observe`. Leftover check:
 `oc get clusterrole,clusterrolebinding,scc -l app.kubernetes.io/managed-by=cloudspider-observe`.
+
+## Reduced mode (allowPrivileged=off)
+
+No Beyla (no live edges or RED), no container logs (reading `/var/log/pods`
+needs root + hostPath), no SCCs; the namespace is Pod Security `baseline`.
+Installed: Events history in Loki, cluster metrics, kubelet stats (an API
+call), kube-state-metrics. crc on 1 node: 4 pods, ~90m CPU / 288Mi requested.
+
+## Viewer access and LOG ERRORS
+
+The bundle ships Role/RoleBinding `cloudspider-observe-viewer`: `get` on
+`services/proxy` for `otel-collector:metrics` and `loki:http` only, bound to
+the `cloudspider-viewers` group and optionally `viewerUser` (e.g. `developer`
+on CRC). LOG ERRORS uses the bundle's Loki by itself when no `logs.loki.url`
+/ CloudWatch groups are set (selector `{k8s_namespace_name=~".+"}`, OTLP
+labels); `logs.bundle: false` turns that off. A configured Loki URL with
+plain `namespace` labels still takes precedence.

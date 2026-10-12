@@ -21,13 +21,34 @@ const on = { allowPrivileged: "on" };
 const kinds = (b) => b.items.map((i) => `${i.obj.kind}/${i.obj.metadata.name}`);
 const contrib = JSON.parse(readFileSync(join(root, "test/fixtures/otelcol-contrib-components.json"), "utf8"));
 
-test("refuses without allowPrivileged, with the warning and the would-be objects", () => {
+test("allowPrivileged=off: the reduced bundle, nothing privileged, explained", () => {
   for (const platform of ["kubernetes", "openshift"]) {
-    assert.throws(() => renderBundle({ platform }), (e) => e.code === "OBSERVE_PRIVILEGED" && /privileged/.test(e.message) && e.bundle.privileged.includes("DaemonSet/beyla"));
+    const b = renderBundle({ platform });
+    assert.equal(b.reduced, true);
+    assert.deepEqual(b.privileged, []);
+    assert.ok(!kinds(b).some((k) => /beyla|SecurityContextConstraints/.test(k)), platform);
+    assert.match(b.notes.join(" "), /no live service-to-service edges.*no container logs/);
+    const agent = b.items.find((i) => i.obj.kind === "DaemonSet" && i.obj.metadata.name === "otel-agent").obj.spec.template.spec;
+    assert.ok(!agent.volumes.some((v) => v.hostPath));
+    assert.equal(agent.containers[0].securityContext.runAsNonRoot, true);
+    assert.ok(!("file_log" in agentConfig(b.options).receivers));
+    for (const c of b.items.filter((i) => /Deployment|DaemonSet|StatefulSet/.test(i.obj.kind)).flatMap((i) => i.obj.spec.template.spec.containers)) assert.ok(!c.securityContext?.privileged, c.name);
+    const nsLabels = b.items[0].obj.metadata.labels;
+    assert.equal(nsLabels["pod-security.kubernetes.io/enforce"], "baseline");
+    assert.ok(kinds(b).includes("StatefulSet/loki"), "Events history stays");
   }
   const view = planView({ platform: "openshift" });
-  assert.match(view.blocked, /allowPrivileged is off/);
-  assert.ok(view.objects.some((o) => o.kind === "SecurityContextConstraints"));
+  assert.equal(view.reduced, true);
+  assert.equal(view.footprint.pods, 4);
+});
+
+test("viewer RBAC: services/proxy get on the two Service ports, to the viewers group (+ viewerUser)", () => {
+  const b = renderBundle({ ...on, viewerUser: "developer" });
+  const role = b.items.find((i) => i.obj.kind === "Role").obj;
+  assert.deepEqual(role.rules, [{ apiGroups: [""], resources: ["services/proxy"], resourceNames: ["otel-collector:metrics", "loki:http"], verbs: ["get"] }]);
+  const rb = b.items.find((i) => i.obj.kind === "RoleBinding").obj;
+  assert.deepEqual(rb.subjects.map((x) => `${x.kind}/${x.name}`), ["Group/cloudspider-viewers", "User/developer"]);
+  assert.throws(() => normalize({ viewerUser: "a b" }), /viewerUser/);
 });
 
 test("SCCs only on OpenShift, each bound to one ServiceAccount", () => {
@@ -110,7 +131,10 @@ test("stack renders under mocks: SCC only on OpenShift, netpols, context provide
   assert.ok(np.includes("default-deny") && np.includes("allow-dns-egress") && np.includes("allow-apiserver-egress"));
   assert.equal(k.find((x) => x.type === "pulumi:providers:kubernetes").inputs.context, "kind-dev");
   assert.ok(k.every((x) => !x.type.startsWith("aws:")));
-  await assert.rejects(mock({ "cloudspider-observe:context": "crc-admin" }), /allowPrivileged is off/);
+  const reduced = await mock({ "cloudspider-observe:context": "crc-admin", "cloudspider-observe:platform": "openshift" });
+  assert.equal(scc(reduced), 0);
+  assert.ok(!reduced.some((x) => x.type.endsWith("DaemonSet") && x.inputs.metadata.name === "beyla"));
+  assert.ok(reduced.some((x) => x.type.endsWith(":Role") && x.inputs.metadata.name === "cloudspider-observe-viewer"));
   await assert.rejects(mock({ "cloudspider-observe:context": "cloudspider-viewer", "cloudspider-observe:allowPrivileged": "on" }), /read-only/);
 });
 

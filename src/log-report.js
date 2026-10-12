@@ -4,7 +4,7 @@
 // Read-only throughout; cached for five minutes (Insights is billed per GB
 // scanned, so it is never polled faster).
 import { dayBefore, logErrors, nightWindow, serviceOf } from "./log-errors.js";
-import { readInsights, readLoki } from "./log-sources.js";
+import { readBundleLoki, readInsights, readLoki } from "./log-sources.js";
 import { sampleLogErrors } from "./log-errors-sample.js";
 
 const TTL = 5 * 60_000;
@@ -41,10 +41,13 @@ export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights 
   function sourceName() {
     if (logs.loki?.url) return "loki";
     if (insights && logs.cloudwatch?.logGroups?.length) return "cloudwatch";
+    // Nothing configured: the observe bundle's Loki, if it is installed.
+    if (kube?.read && logs.bundle !== false) return "bundle";
     return "";
   }
 
   async function readWindow(source, window) {
+    if (source === "bundle") return readBundleLoki({ kube, window });
     if (source === "loki") return readLoki({ url: logs.loki.url, tenant: logs.loki.tenant, selector: logs.loki.selector || undefined, window, fetch });
     return readInsights({ insights: await insights(), groups: logs.cloudwatch.logGroups, window });
   }
@@ -64,6 +67,10 @@ export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights 
       return { ...logErrors({ restarts, window, source: "", partial: true }), notes: [...notes, "no log store configured: logs.loki.url, or logs.cloudwatch.logGroups with the aws module"] };
     }
     const [tonight, before] = await Promise.all([readWindow(source, window), readWindow(source, dayBefore(window))]);
+    if (source === "bundle" && /answered 40[34]/.test(tonight.error || "")) {
+      const why = /404/.test(tonight.error) ? "the observe bundle (STACKS → Observe, logs=on) is not installed" : "the viewer may not get services/proxy loki:http in cloudspider-observe";
+      return { ...logErrors({ restarts, window, source: "", partial: true }), notes: [...notes, `no log store: logs.loki.url, logs.cloudwatch.logGroups with the aws module, or ${why}`] };
+    }
     if (tonight.error && !tonight.entries?.length) {
       const out = logErrors({ restarts, window, source, partial: true });
       return { ...out, error: tonight.error, notes, line: { status: "unknown", text: `Log errors not read: ${tonight.error}.` } };

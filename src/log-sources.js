@@ -61,6 +61,23 @@ export async function readLoki({ url, tenant = "", window, selector, fetch = glo
   return { entries, truncated: true };
 }
 
+// The observe bundle's Loki (upgrades/observe) through the API server's
+// service proxy with the kube client: no URL to configure. Its streams carry
+// the OTLP labels (k8s_namespace_name, service_name, k8s_pod_name); the
+// Events stream (service_name="k8s-events") has no namespace and stays out.
+export const BUNDLE_SELECTOR = '{k8s_namespace_name=~".+"}';
+export function kubeLokiFetch(kube) {
+  return async (url) => {
+    const qs = String(url).slice(String(url).indexOf("?") + 1);
+    const got = await kube.read("observeLokiQuery", qs);
+    if (got.json) return { status: 200, json: async () => got.json };
+    return { status: got.missing ? 404 : got.forbidden ? 403 : 502, json: async () => ({}) };
+  };
+}
+export function readBundleLoki({ kube, window }) {
+  return readLoki({ url: "kube://cloudspider-observe/loki", window, selector: BUNDLE_SELECTOR, fetch: kubeLokiFetch(kube) });
+}
+
 // CloudWatch Logs Insights over the cluster's container log groups (the
 // demo's ADOT collector, Container Insights' /aws/containerinsights/<c>/application).
 export const INSIGHTS_QUERY = [

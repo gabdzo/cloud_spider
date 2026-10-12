@@ -20,6 +20,10 @@
 // OpenShift: a dedicated SCC per host-level ServiceAccount (beyla:
 // privileged + hostPID; agent: hostPath read-only, runs as root to read pod
 // logs). Nothing privileged installs unless allowPrivileged=on.
+// allowPrivileged=off is the reduced mode: no Beyla (no live edges), no
+// SCCs, the agent keeps kubelet stats only (an API call, no host access) and
+// container logs are off (reading /var/log/pods needs root + hostPath).
+// What stays: Events history in Loki, cluster metrics, kube-state-metrics.
 
 export const MANAGED_BY = "cloudspider-observe";
 export const NAMESPACE = "cloudspider-observe";
@@ -51,7 +55,8 @@ export const PROFILES = {
 };
 const MEMORY_LIMIT_MIB = { crc: 200, standard: 600 };
 
-export const PRIVILEGED_WARNING = "Beyla reads HTTP/gRPC calls with eBPF: its pods run privileged with the host's PID namespace on every node, and the log agent mounts /var/log/pods read-only as root. On OpenShift this adds two SecurityContextConstraints bound only to those two ServiceAccounts. Set allowPrivileged=on to install.";
+export const PRIVILEGED_WARNING = "Beyla reads HTTP/gRPC calls with eBPF: its pods run privileged with the host's PID namespace on every node, and the log agent mounts /var/log/pods read-only as root. On OpenShift this adds two SecurityContextConstraints bound only to those two ServiceAccounts. Set allowPrivileged=on for live edges and container logs; off installs the reduced bundle.";
+export const REDUCED_NOTE = "allowPrivileged=off: reduced bundle. No Beyla, so no live service-to-service edges or RED; no container logs (the agent would need root and a hostPath on /var/log/pods); no SecurityContextConstraints. Installed: Events history (Loki), cluster metrics (k8s_cluster), kubelet stats, kube-state-metrics, all unprivileged.";
 
 const labels = (component) => ({ "app.kubernetes.io/managed-by": MANAGED_BY, "app.kubernetes.io/part-of": "cloudspider", "app.kubernetes.io/name": `observe-${component}`, "app.kubernetes.io/component": component });
 const meta = (name, ns, component) => ({ name, ...(ns ? { namespace: ns } : {}), labels: labels(component) });
@@ -70,6 +75,7 @@ export function normalize(raw = {}) {
     lokiRetention: raw.lokiRetention || "72h",
     storageClass: raw.storageClass || "",
     nodeCidr: raw.nodeCidr || "0.0.0.0/0",
+    viewerUser: raw.viewerUser || "",
     namespace: NAMESPACE,
   };
   if (!["kubernetes", "openshift"].includes(o.platform)) throw new Error("platform must be kubernetes or openshift");
@@ -79,6 +85,7 @@ export function normalize(raw = {}) {
   if (!/^[1-9][0-9]?Gi$/.test(o.lokiStorage)) throw new Error("lokiStorage must be like 5Gi (1-99)");
   if (!/^([1-9][0-9]{0,2})h$/.test(o.lokiRetention) || Number(o.lokiRetention.slice(0, -1)) < 24) throw new Error("lokiRetention must be hours, 24h or more, like 72h (Loki's compactor works in 24h index periods)");
   if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(o.nodeCidr)) throw new Error("nodeCidr must be a CIDR like 192.168.126.0/24");
+  if (o.viewerUser && !/^[A-Za-z0-9_.:@-]{1,128}$/.test(o.viewerUser)) throw new Error("viewerUser is not a valid user name");
   if (o.storageClass && !/^[a-z0-9]([-a-z0-9.]{0,61}[a-z0-9])?$/.test(o.storageClass)) throw new Error("storageClass is not a valid name");
   return o;
 }
@@ -122,7 +129,7 @@ export function collectorConfig(o) {
 }
 
 export function agentConfig(o) {
-  const logs = o.logs === "on";
+  const logs = o.logs === "on" && o.allowPrivileged !== false;
   return {
     receivers: {
       kubelet_stats: { collection_interval: "30s", auth_type: "serviceAccount", endpoint: "https://${env:NODE_IP}:10250", insecure_skip_verify: true, metric_groups: ["node", "pod", "container"] },
@@ -172,46 +179,51 @@ export function renderBundle(raw = {}) {
   const items = [];
   const notes = [];
   const add = (why, obj, flags = {}) => items.push({ why, obj, ...flags });
+  const full = o.allowPrivileged;
+  const agentLogs = full && o.logs === "on";
   const role = (name, component, rules) => add(`${component}: read-only`, { apiVersion: "rbac.authorization.k8s.io/v1", kind: "ClusterRole", metadata: meta(`cloudspider-observe-${name}`, "", component), rules });
   const bind = (name, component, sa) => add(`binds cloudspider-observe-${name} to ${sa}`, { apiVersion: "rbac.authorization.k8s.io/v1", kind: "ClusterRoleBinding", metadata: meta(`cloudspider-observe-${name}`, "", component), roleRef: { apiGroup: "rbac.authorization.k8s.io", kind: "ClusterRole", name: `cloudspider-observe-${name}` }, subjects: [{ kind: "ServiceAccount", name: sa, namespace: ns }] });
   const sa = (name, component) => add(`${component}'s identity`, { apiVersion: "v1", kind: "ServiceAccount", metadata: meta(name, ns, component) });
   const cm = (name, component, key, data, why) => add(why, { apiVersion: "v1", kind: "ConfigMap", metadata: meta(name, ns, component), data: { [key]: yaml(data) } });
   const watchRead = ["get", "list", "watch"];
 
-  add("the bundle's own namespace; uninstall deletes it and everything in it", { apiVersion: "v1", kind: "Namespace", metadata: { name: ns, labels: { ...labels("namespace"), "pod-security.kubernetes.io/enforce": "privileged", "pod-security.kubernetes.io/warn": "privileged", ...(openshift ? { "security.openshift.io/scc.podSecurityLabelSync": "false" } : {}) } } }, { privileged: true });
+  add("the bundle's own namespace; uninstall deletes it and everything in it", { apiVersion: "v1", kind: "Namespace", metadata: { name: ns, labels: { ...labels("namespace"), "pod-security.kubernetes.io/enforce": full ? "privileged" : "baseline", "pod-security.kubernetes.io/warn": full ? "privileged" : "restricted", ...(openshift && full ? { "security.openshift.io/scc.podSecurityLabelSync": "false" } : {}) } } }, { privileged: full });
 
-  // Beyla
-  sa("beyla", "beyla");
-  role("beyla", "beyla", [{ apiGroups: [""], resources: ["pods", "services", "nodes"], verbs: watchRead }, { apiGroups: ["apps"], resources: ["replicasets", "deployments", "statefulsets", "daemonsets"], verbs: watchRead }]);
-  bind("beyla", "beyla", "beyla");
-  if (openshift) add("OpenShift: privileged + hostPID for Beyla's ServiceAccount only (eBPF)", scc("cloudspider-observe-beyla", ns, "beyla", "beyla", { allowPrivilegedContainer: true, allowHostPID: true, allowPrivilegeEscalation: true, allowedCapabilities: ["*"], volumes: ["configMap", "emptyDir", "projected", "hostPath"] }), { privileged: true });
-  cm("beyla-config", "beyla", "beyla.yml", beylaConfig(ns), "Beyla: instrument every namespace but system ones, RED + service graph as OTLP metrics to the gateway");
-  add("Beyla on every node: live HTTP/gRPC calls between pods, no app changes (privileged, hostPID: eBPF)", {
-    apiVersion: "apps/v1", kind: "DaemonSet", metadata: meta("beyla", ns, "beyla"),
-    spec: { selector: sel("beyla"), updateStrategy: { type: "RollingUpdate" }, template: { metadata: { labels: labels("beyla") }, spec: {
-      serviceAccountName: "beyla", hostPID: true, tolerations: [{ operator: "Exists" }],
-      containers: [{ name: "beyla", image: IMAGES.beyla, env: [{ name: "BEYLA_CONFIG_PATH", value: "/config/beyla.yml" }, { name: "BEYLA_KUBE_METADATA_ENABLE", value: "true" }], securityContext: { privileged: true, runAsUser: 0 }, resources: R.beyla, volumeMounts: [{ name: "config", mountPath: "/config", readOnly: true }, { name: "var-run-beyla", mountPath: "/var/run/beyla" }] }],
-      volumes: [{ name: "config", configMap: { name: "beyla-config" } }, { name: "var-run-beyla", emptyDir: {} }],
-    } } },
-  }, { privileged: true });
+  if (full) {
+    // Beyla
+    sa("beyla", "beyla");
+    role("beyla", "beyla", [{ apiGroups: [""], resources: ["pods", "services", "nodes"], verbs: watchRead }, { apiGroups: ["apps"], resources: ["replicasets", "deployments", "statefulsets", "daemonsets"], verbs: watchRead }]);
+    bind("beyla", "beyla", "beyla");
+    if (openshift) add("OpenShift: privileged + hostPID for Beyla's ServiceAccount only (eBPF)", scc("cloudspider-observe-beyla", ns, "beyla", "beyla", { allowPrivilegedContainer: true, allowHostPID: true, allowPrivilegeEscalation: true, allowedCapabilities: ["*"], volumes: ["configMap", "emptyDir", "projected", "hostPath"] }), { privileged: true });
+    cm("beyla-config", "beyla", "beyla.yml", beylaConfig(ns), "Beyla: instrument every namespace but system ones, RED + service graph as OTLP metrics to the gateway");
+    add("Beyla on every node: live HTTP/gRPC calls between pods, no app changes (privileged, hostPID: eBPF)", {
+      apiVersion: "apps/v1", kind: "DaemonSet", metadata: meta("beyla", ns, "beyla"),
+      spec: { selector: sel("beyla"), updateStrategy: { type: "RollingUpdate" }, template: { metadata: { labels: labels("beyla") }, spec: {
+        serviceAccountName: "beyla", hostPID: true, tolerations: [{ operator: "Exists" }],
+        containers: [{ name: "beyla", image: IMAGES.beyla, env: [{ name: "BEYLA_CONFIG_PATH", value: "/config/beyla.yml" }, { name: "BEYLA_KUBE_METADATA_ENABLE", value: "true" }], securityContext: { privileged: true, runAsUser: 0 }, resources: R.beyla, volumeMounts: [{ name: "config", mountPath: "/config", readOnly: true }, { name: "var-run-beyla", mountPath: "/var/run/beyla" }] }],
+        volumes: [{ name: "config", configMap: { name: "beyla-config" } }, { name: "var-run-beyla", emptyDir: {} }],
+      } } },
+    }, { privileged: true });
+
+  } else notes.push(REDUCED_NOTE);
 
   // Node agent
   sa("otel-agent", "agent");
   role("agent", "agent", [{ apiGroups: [""], resources: ["nodes/stats", "nodes/proxy"], verbs: ["get"] }]);
   bind("agent", "agent", "otel-agent");
-  if (openshift) add("OpenShift: hostPath (read-only /var/log/pods) and root for the log agent's ServiceAccount only", scc("cloudspider-observe-agent", ns, "otel-agent", "agent", { allowHostDirVolumePlugin: true }), { privileged: true });
-  cm("otel-agent", "agent", "config.yaml", agentConfig(o), o.logs === "on" ? "node agent: container logs (file_log) and kubelet stats → gateway" : "node agent: kubelet stats → gateway");
-  const logMounts = o.logs === "on" ? [{ name: "varlogpods", mountPath: "/var/log/pods", readOnly: true }] : [];
+  if (openshift && agentLogs) add("OpenShift: hostPath (read-only /var/log/pods) and root for the log agent's ServiceAccount only", scc("cloudspider-observe-agent", ns, "otel-agent", "agent", { allowHostDirVolumePlugin: true }), { privileged: true });
+  cm("otel-agent", "agent", "config.yaml", agentConfig(o), agentLogs ? "node agent: container logs (file_log) and kubelet stats → gateway" : "node agent: kubelet stats → gateway");
+  const logMounts = agentLogs ? [{ name: "varlogpods", mountPath: "/var/log/pods", readOnly: true }] : [];
   add("node agent on every node (one small collector per node)", {
     apiVersion: "apps/v1", kind: "DaemonSet", metadata: meta("otel-agent", ns, "agent"),
     spec: { selector: sel("agent"), template: { metadata: { labels: labels("agent") }, spec: {
       serviceAccountName: "otel-agent", tolerations: [{ operator: "Exists" }],
       containers: [{ name: "otelcol", image: IMAGES.collector, args: ["--config=/conf/config.yaml"], env: [{ name: "NODE_IP", valueFrom: { fieldRef: { fieldPath: "status.hostIP" } } }],
-        securityContext: { ...hardened, runAsNonRoot: o.logs !== "on", ...(o.logs === "on" ? { runAsUser: 0 } : {}) }, resources: R.agent,
+        securityContext: { ...hardened, runAsNonRoot: !agentLogs, ...(agentLogs ? { runAsUser: 0 } : {}) }, resources: R.agent,
         volumeMounts: [{ name: "conf", mountPath: "/conf", readOnly: true }, ...logMounts] }],
-      volumes: [{ name: "conf", configMap: { name: "otel-agent" } }, ...(o.logs === "on" ? [{ name: "varlogpods", hostPath: { path: "/var/log/pods", type: "Directory" } }] : [])],
+      volumes: [{ name: "conf", configMap: { name: "otel-agent" } }, ...(agentLogs ? [{ name: "varlogpods", hostPath: { path: "/var/log/pods", type: "Directory" } }] : [])],
     } } },
-  }, { privileged: o.logs === "on" });
+  }, { privileged: agentLogs });
 
   // Gateway
   sa("otel-collector", "collector");
@@ -273,26 +285,25 @@ export function renderBundle(raw = {}) {
     add("Loki Service (the gateway writes, Cloud Spider reads through the service proxy)", { apiVersion: "v1", kind: "Service", metadata: meta("loki", ns, "loki"), spec: { selector: sel("loki").matchLabels, ports: [{ name: "http", port: PORTS.loki }] } });
   } else notes.push("logs=off: no Loki, no container logs; Events go to the gateway's debug log only (incident history is what Cloud Spider records itself)");
 
+  // The viewer (read-only) may read the gateway's metrics and Loki through
+  // the service proxy, those two Service ports only.
+  add("the viewer reads the gateway's metrics and Loki through the API server's service proxy (get, two Service ports only)", { apiVersion: "rbac.authorization.k8s.io/v1", kind: "Role", metadata: meta("cloudspider-observe-viewer", ns, "viewer"), rules: [{ apiGroups: [""], resources: ["services/proxy"], resourceNames: ["otel-collector:metrics", "loki:http"], verbs: ["get"] }] });
+  add(`binds it to the cloudspider-viewers group${o.viewerUser ? ` and user ${o.viewerUser}` : ""}`, { apiVersion: "rbac.authorization.k8s.io/v1", kind: "RoleBinding", metadata: meta("cloudspider-observe-viewer", ns, "viewer"), roleRef: { apiGroup: "rbac.authorization.k8s.io", kind: "Role", name: "cloudspider-observe-viewer" }, subjects: [{ apiGroup: "rbac.authorization.k8s.io", kind: "Group", name: "cloudspider-viewers" }, ...(o.viewerUser ? [{ apiGroup: "rbac.authorization.k8s.io", kind: "User", name: o.viewerUser }] : [])] });
+
   if (openshift) notes.push("OpenShift ships its own metrics API and monitoring: metrics-server is not installed");
   else notes.push("pod/node CPU and memory in the CLUSTER tab still need metrics.k8s.io (metrics-server), which is not bundled: it registers a cluster-wide APIService");
   if (o.nodeCidr === "0.0.0.0/0") notes.push("nodeCidr not set: the API server / kubelet / service-proxy rules allow those ports from any address; set it to the node network (CRC: 192.168.126.0/24) to tighten them");
 
   const privileged = items.filter((i) => i.privileged).map((i) => `${i.obj.kind}/${i.obj.metadata.name}`);
-  if (!o.allowPrivileged) {
-    const error = new Error(`allowPrivileged is off. ${PRIVILEGED_WARNING}`);
-    error.code = "OBSERVE_PRIVILEGED";
-    error.bundle = { namespace: ns, items, notes, privileged, options: o };
-    throw error;
-  }
-  return { namespace: ns, items, notes, privileged, options: o, warning: PRIVILEGED_WARNING };
+  return { namespace: ns, items, notes, privileged, options: o, reduced: !full, warning: PRIVILEGED_WARNING };
 }
 
 // Footprint of a profile: requests and limits summed (DaemonSets × nodes).
 const cpuM = (v) => (String(v).endsWith("m") ? Number(String(v).slice(0, -1)) : Number(v) * 1000);
 const memMi = (v) => (String(v).endsWith("Gi") ? Number(String(v).slice(0, -2)) * 1024 : Number(String(v).replace("Mi", "")));
-export function footprint({ profile = "crc", nodes = 1, logs = "on", kubeStateMetrics = "install" } = {}) {
+export function footprint({ profile = "crc", nodes = 1, logs = "on", kubeStateMetrics = "install", allowPrivileged = true } = {}) {
   const R = PROFILES[profile];
-  const parts = [["beyla", nodes], ["agent", nodes], ["collector", 1], ...(kubeStateMetrics === "install" ? [["ksm", 1]] : []), ...(logs === "on" ? [["loki", 1]] : [])];
+  const parts = [...(allowPrivileged ? [["beyla", nodes]] : []), ["agent", nodes], ["collector", 1], ...(kubeStateMetrics === "install" ? [["ksm", 1]] : []), ...(logs === "on" ? [["loki", 1]] : [])];
   const sum = (kind, key, f) => parts.reduce((t, [p, n]) => t + f(R[p][kind][key]) * n, 0);
   return { pods: parts.reduce((t, [, n]) => t + n, 0), requests: { cpuMillicores: sum("requests", "cpu", cpuM), memoryMi: sum("requests", "memory", memMi) }, limits: { cpuMillicores: sum("limits", "cpu", cpuM), memoryMi: sum("limits", "memory", memMi) } };
 }
