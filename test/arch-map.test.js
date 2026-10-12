@@ -75,7 +75,7 @@ test("wires: private subnets route to the NAT, the NAT to the gate, the control 
 
 test("peering is a wire between two VPC settlements down the region's gutter", () => {
   const placed = layout(samplePlace());
-  assert.equal(placed.regionEdges.length, 1);
+  assert.equal(placed.regionEdges.length, 2);
   const [edge] = placed.regionEdges;
   assert.equal(edge.state, "peer");
   assert.ok(edge.gutter < Math.min(...placed.settlements.map((item) => item.x)));
@@ -85,7 +85,7 @@ test("peering is a wire between two VPC settlements down the region's gutter", (
 test("the region fences every VPC and the regional zone; CloudFront sits above it in GLOBAL", () => {
   const placed = layout(samplePlace());
   assert.equal(placed.region.label, "REGION SAMPLE");
-  assert.match(placed.region.caption, /^2 VPCs · 2 AZs · 5 EC2/);
+  assert.match(placed.region.caption, /^3 VPCs · 2 AZs · 5 EC2/);
   for (const item of [...placed.settlements, placed.camp]) assert.ok(inside(placed.region, item), `${item.id || item.label} inside the region`);
   assert.equal(placed.zones.length, 1);
   assert.equal(placed.zones[0].nodes[0].id, "cdn-sample");
@@ -138,7 +138,7 @@ test("route tables: default route target, subnets, main flag, peering routes", (
       { DestinationCidrBlock: "10.9.0.0/16", VpcPeeringConnectionId: "pcx-1" },
     ],
   });
-  assert.deepEqual(route, { id: "rtb-1", vpcId: "v", main: true, subnetIds: ["s-1"], target: "nat-9", peers: ["pcx-1"] });
+  assert.deepEqual(route, { id: "rtb-1", vpcId: "v", main: true, subnetIds: ["s-1"], target: "nat-9", peers: ["pcx-1"], peerRoutes: [{ dest: "10.9.0.0/16", pcx: "pcx-1", state: "" }], tgwRoutes: [] });
 });
 
 test("RDS lands in the subnet of its AZ; Lambda keeps its VPC subnets; ARNs map to kinds", () => {
@@ -228,7 +228,7 @@ test("a folded VPC in the architecture view is a closed camp inside the region; 
   assert.equal(camp.closed, true);
   assert.match(camp.caption, /^\d+ resources · 2\/2 running · 4 subnets · 2 AZs$/);
   assert.ok(inside(placed.region, camp));
-  assert.equal(placed.regionEdges.length, 1, "peering still reaches the closed camp");
+  assert.equal(placed.regionEdges.length, 2, "peering still reaches the closed camp");
   const tag = layout(samplePlace(), { view: "tag" });
   const first = tag.settlements[0];
   assert.equal(foldAt(tag, first.x + 30, first.y + 10), null);

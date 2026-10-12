@@ -44,9 +44,11 @@ export const SAMPLE_STORY = {
       "AWS-OBS-001": { items: ["k8s-shop-shopapi-5a1e0c"], detail: "no 5XX alarm with an action" },
       "AWS-SEC-013": { items: ["cloudspider-up"], detail: "API endpoint public to 0.0.0.0/0", fixedAt: 2 },
       "AWS-REL-010": { items: ["sample-old-gate"], detail: "listener with no healthy target", fixedAt: 4 },
+      "NET-VPC-004": { items: ["pcx-sample (shared-services ⇄ cloudspider-up)"], detail: "HALF: no route back from shared-services to cloudspider-up" },
     },
     warn: {
       "NET-VPC-001": { items: ["sample-eks-vpc"], detail: "flow logs on, kept 3 days" },
+      "NET-VPC-007": { items: ["pcx-sample-data (cloudspider-up ⇄ data)"], detail: "DNS resolution over the peering is off on the data side: private hostnames (RDS, endpoints) resolve to public IPs" },
     },
     pass: ["cloudspider-up", "sample-orders-db", "k8s-shop-shopapi-5a1e0c"],
   },

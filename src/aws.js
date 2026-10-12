@@ -399,7 +399,7 @@ export async function describeDiagram(region, clientFactory = diagramClients) {
   const arch = await readArchitecture(clients);
   errors.push(...arch.errors);
   fixtures.push(...arch.fixtures);
-  const extra = { routes: arch.routes, peerings: arch.peerings };
+  const extra = { routes: arch.routes, peerings: arch.peerings, tgws: arch.tgws, tgwAttachments: arch.tgwAttachments };
   const value = errors.length ? { gateways, fixtures, ...extra, error: errors.join("  ") } : { gateways, fixtures, ...extra };
   diagramCache = { at: now, region, value };
   return value;

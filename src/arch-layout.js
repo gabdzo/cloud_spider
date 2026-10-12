@@ -463,28 +463,60 @@ export function emptyLabel(vpc, place) {
 }
 
 // Peering: a wire down the region's left gutter between two settlements.
-export function peeringEdges(peerings, settlements) {
+// Each wire gets its own lane, and carries the judged link (lamp, CIDRs,
+// warnings) from peering.js so the map can say HALF out loud.
+export function peeringEdges(peerings, settlements, links = []) {
   const byVpc = new Map(settlements.map((item) => [item.id, item]));
+  const judged = new Map((links || []).map((link) => [link.id, link]));
   const edges = [];
   for (const peer of peerings || []) {
     const a = byVpc.get(peer.a);
     const b = byVpc.get(peer.b);
     if (!a || !b) continue;
     const [top, low] = a.y <= b.y ? [a, b] : [b, a];
+    const lane = edges.length;
+    const link = judged.get(peer.id) || {};
     edges.push({
       from: top.id,
       to: low.id,
       id: peer.id,
       state: peer.status === "active" ? "peer" : "off",
       label: peer.name || peer.id,
+      lamp: link.lamp || (peer.status === "active" ? "ok" : "unknown"),
+      link: link.state || null,
+      cidrs: [...(peer.aCidrs || []), ...(peer.bCidrs || [])],
+      warnings: link.warnings || [],
       x1: top.x,
-      y1: top.y + Math.min(40, Math.floor(top.h / 2)),
+      y1: top.y + Math.min(40, Math.floor(top.h / 2)) + lane * 10,
       x2: low.x,
-      y2: low.y + Math.min(40, Math.floor(low.h / 2)),
-      gutter: top.x - 14,
+      y2: low.y + Math.min(40, Math.floor(low.h / 2)) + lane * 10,
+      gutter: top.x - 6 - (lane % 2) * 5,
+      chipY: low.y - 15,
     });
   }
   return edges;
+}
+
+// Transit Gateway: a hub in the region's right margin with a spoke to each
+// attached VPC's right wall.
+export function tgwEdges(hubs, settlements, region) {
+  const byVpc = new Map(settlements.map((item) => [item.id, item]));
+  if (!region) return [];
+  const right = region.x + region.w;
+  return (hubs || []).map((hub, index) => {
+    const spokes = hub.spokes.map((spoke) => ({ ...spoke, at: byVpc.get(spoke.vpcId) })).filter((spoke) => spoke.at);
+    const ys = spoke => spoke.at.y + Math.min(60, Math.floor(spoke.at.h / 2));
+    const mid = spokes.length ? Math.floor(spokes.reduce((sum, spoke) => sum + ys(spoke), 0) / spokes.length) : region.y + 60;
+    const x = right - 40 - index * 30;
+    return {
+      id: hub.id,
+      label: hub.name || hub.id,
+      lamp: hub.lamp || "ok",
+      x,
+      y: mid,
+      spokes: spokes.map((spoke) => ({ id: spoke.id, vpcId: spoke.vpcId, lamp: spoke.lamp, x: spoke.at.x + spoke.at.w, y: ys(spoke) })),
+    };
+  });
 }
 
 // ---- group by tag ----

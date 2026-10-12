@@ -6,6 +6,8 @@
 // call becomes one line in `errors`; the rest of the map still draws.
 import {
   DescribeRouteTablesCommand,
+  DescribeTransitGatewayAttachmentsCommand,
+  DescribeTransitGatewaysCommand,
   DescribeVpcEndpointsCommand,
   DescribeVpcPeeringConnectionsCommand,
 } from "@aws-sdk/client-ec2";
@@ -51,7 +53,38 @@ export function routeFrom(table) {
     subnetIds: (table.Associations || []).map((item) => item.SubnetId).filter(Boolean),
     target,
     peers: [...new Set(routes.map((route) => route.VpcPeeringConnectionId).filter(Boolean))],
+    // Every destination sent to a peering or a Transit Gateway (peering.js
+    // checks both sides route to each other, and nothing sends 0.0.0.0/0).
+    peerRoutes: routes.filter((route) => route.VpcPeeringConnectionId).map((route) => ({ dest: route.DestinationCidrBlock || route.DestinationIpv6CidrBlock || route.DestinationPrefixListId || "", pcx: route.VpcPeeringConnectionId, state: route.State || "" })),
+    tgwRoutes: routes.filter((route) => route.TransitGatewayId).map((route) => ({ dest: route.DestinationCidrBlock || route.DestinationIpv6CidrBlock || route.DestinationPrefixListId || "", tgw: route.TransitGatewayId, state: route.State || "" })),
   };
+}
+
+// A peering connection with both sides' CIDRs, owners, regions and whether
+// each side lets the other resolve its private DNS names.
+export function peeringFrom(item) {
+  const req = item.RequesterVpcInfo || {};
+  const acc = item.AccepterVpcInfo || {};
+  const cidrs = (info) => [...new Set([info.CidrBlock, ...(info.CidrBlockSet || []).map((c) => c.CidrBlock)].filter(Boolean))];
+  return {
+    id: item.VpcPeeringConnectionId,
+    a: req.VpcId || "",
+    b: acc.VpcId || "",
+    status: item.Status?.Code || "",
+    name: tagObject(item.Tags).Name || "",
+    aCidrs: cidrs(req),
+    bCidrs: cidrs(acc),
+    aOwner: req.OwnerId || "",
+    bOwner: acc.OwnerId || "",
+    aRegion: req.Region || "",
+    bRegion: acc.Region || "",
+    dnsA: Boolean(req.PeeringOptions?.AllowDnsResolutionFromRemoteVpc),
+    dnsB: Boolean(acc.PeeringOptions?.AllowDnsResolutionFromRemoteVpc),
+  };
+}
+
+export function attachmentFrom(a) {
+  return { id: a.TransitGatewayAttachmentId, tgw: a.TransitGatewayId, vpcId: a.ResourceType === "vpc" ? a.ResourceId || "" : "", type: a.ResourceType || "", state: a.State || "", owner: a.ResourceOwnerId || "" };
 }
 
 function shortService(name) {
@@ -139,6 +172,8 @@ export async function readArchitecture(clients) {
   const routes = [];
   const peerings = [];
   const fixtures = [];
+  const tgws = [];
+  const tgwAttachments = [];
   const ec2 = clients.ec2 || clients.igw;
   const step = async (label, run) => {
     try {
@@ -161,10 +196,24 @@ export async function readArchitecture(clients) {
         for (const item of out?.VpcPeeringConnections || []) {
           const code = item.Status?.Code || "";
           if (["deleted", "rejected", "expired", "failed"].includes(code)) continue;
-          peerings.push({ id: item.VpcPeeringConnectionId, a: item.RequesterVpcInfo?.VpcId || "", b: item.AccepterVpcInfo?.VpcId || "", status: code, name: tagObject(item.Tags).Name || "" });
+          peerings.push(peeringFrom(item));
         }
       }),
     );
+  }
+  if (ec2) {
+    await step("DescribeTransitGateways", () =>
+      pages((NextToken) => ec2.send(new DescribeTransitGatewaysCommand({ NextToken })), (out) => {
+        for (const t of out?.TransitGateways || []) if (!["deleted", "deleting"].includes(t.State)) tgws.push({ id: t.TransitGatewayId, name: tagObject(t.Tags).Name || "", state: t.State || "", owner: t.OwnerId || "" });
+      }),
+    );
+    if (tgws.length) {
+      await step("DescribeTransitGatewayAttachments", () =>
+        pages((NextToken) => ec2.send(new DescribeTransitGatewayAttachmentsCommand({ NextToken })), (out) => {
+          for (const a of out?.TransitGatewayAttachments || []) if (!["deleted", "deleting", "rejected", "failed"].includes(a.State)) tgwAttachments.push(attachmentFrom(a));
+        }),
+      );
+    }
   }
   if (clients.rds) {
     await step("DescribeDBInstances", () =>
@@ -199,5 +248,5 @@ export async function readArchitecture(clients) {
     if (tags && !Object.keys(item.tags || {}).length) item.tags = tags;
   }
   fixtures.push(...services);
-  return { routes, peerings, fixtures, errors };
+  return { routes, peerings, fixtures, errors, tgws, tgwAttachments };
 }

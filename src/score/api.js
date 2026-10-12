@@ -18,6 +18,7 @@ import { awsCloudtrail } from "./collectors/aws-cloudtrail.js";
 import { awsEks } from "./collectors/aws-eks.js";
 import { awsElbv2 } from "./collectors/aws-elbv2.js";
 import { awsAcm, awsCloudfront, awsLbEdge, awsRoute53, awsVpcNet } from "./collectors/aws-net.js";
+import { awsPeering } from "./collectors/aws-peering.js";
 import { awsNetwork } from "./collectors/aws-network.js";
 import { awsObservability } from "./collectors/aws-observability.js";
 import { awsRds } from "./collectors/aws-rds.js";
@@ -29,7 +30,7 @@ import { permissionReport } from "./permissions.js";
 import { renderReport } from "./report.js";
 
 export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac, kubeNetwork, kubeProtect, kubeAws, kubeObs];
-export const AWS_COLLECTORS = [awsNetwork, awsElbv2, awsEks, awsRds, awsCloudtrail, awsObservability, awsRoute53, awsCloudfront, awsLbEdge, awsVpcNet, awsAcm];
+export const AWS_COLLECTORS = [awsNetwork, awsElbv2, awsEks, awsRds, awsCloudtrail, awsObservability, awsRoute53, awsCloudfront, awsLbEdge, awsVpcNet, awsAcm, awsPeering];
 const SHORT = (name) => String(name || "").split("/").pop();
 
 // The browser never gets evidence fields, only statuses and results.

@@ -35,6 +35,11 @@ const ACCOUNT = {
   DescribeNetworkAclsCommand: () => ({ NetworkAcls: [] }),
   DescribeFlowLogsCommand: () => ({ FlowLogs: [] }),
   ListCertificatesCommand: () => ({ CertificateSummaryList: [] }),
+  // Peering reads (NET-VPC-004..007): one VPC, no peering, no TGW.
+  DescribeVpcsCommand: () => ({ Vpcs: [{ VpcId: "vpc-1", CidrBlock: "10.0.0.0/16" }] }),
+  DescribeVpcPeeringConnectionsCommand: () => ({ VpcPeeringConnections: [] }),
+  DescribeRouteTablesCommand: () => ({ RouteTables: [] }),
+  DescribeTransitGatewaysCommand: () => ({ TransitGateways: [] }),
 };
 
 test("an AWS scan: a public open database is a failed gate → BLOCKED, the number still shown with it", async () => {

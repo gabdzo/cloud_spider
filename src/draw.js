@@ -248,12 +248,14 @@ export function paint(ctx, scene) {
   for (const settlement of placed.settlements) if (settlement.closed) drawFoldLamp(ctx, settlement, animTime, reducedMotion);
   if (placed.camp) drawLinks(ctx, placed.camp.edges, animTime, reducedMotion);
   drawPeering(ctx, placed.regionEdges, animTime, reducedMotion);
+  drawHubs(ctx, placed.hubs, animTime, reducedMotion);
   for (const fixture of allFixtures(placed)) drawFixture(ctx, fixture, ui, phase, reducedMotion);
 
   // Text last, so smoke, wanderers and sprites never cover a label.
   ctx.font = FONT;
   drawVaultLabels(ctx, placed.vaults, settled);
   if (placed.region) drawRegionLabel(ctx, placed.region, width);
+  drawPeeringChips(ctx, placed.regionEdges);
   for (const zone of placed.zones || []) drawSettlementLabel(ctx, zone);
   if (!placed.settlements.length && !placed.camp && !placed.vaults && !placed.orphans?.items?.length && !placed.orphans?.fixtures?.length) {
     ctx.fillStyle = TEXT;
@@ -546,10 +548,69 @@ function drawPeering(ctx, edges, animTime, reducedMotion) {
     path();
     ctx.stroke();
     ctx.setLineDash([]);
+    // A pixel bridge at the midpoint: two rails, three planks, a lamp.
+    const my = Math.floor((edge.y1 + edge.y2) / 2);
     ctx.fillStyle = WORLD.metalLight;
-    ctx.fillRect(gx - 4, Math.floor((edge.y1 + edge.y2) / 2) - 4, 8, 8);
-    ctx.fillStyle = WORLD.vault;
-    ctx.fillRect(gx - 2, Math.floor((edge.y1 + edge.y2) / 2) - 2, 4, 4);
+    ctx.fillRect(gx - 5, my - 9, 2, 18);
+    ctx.fillRect(gx + 3, my - 9, 2, 18);
+    for (const dy of [-6, 0, 6]) ctx.fillRect(gx - 5, my + dy - 1, 10, 2);
+    const lamp = PEER_LAMP[edge.lamp] || PEER_LAMP.unknown;
+    const blink = edge.lamp === "warn" && !reducedMotion && Math.floor((animTime || 0) / 500) % 2;
+    ctx.fillStyle = blink ? PIP.dark : lamp;
+    ctx.fillRect(gx - 2, my - 13, 4, 4);
+  }
+}
+
+const PEER_LAMP = { ok: STATUS.ok, warn: STATUS.hang, bad: STATUS.broken, off: STATUS.unknown, unknown: STATUS.unknown };
+
+// The peering's plate sits in the gap above the lower VPC: name, CIDRs, and
+// HALF when only one side routes.
+function drawPeeringChips(ctx, edges) {
+  ctx.font = SMALL;
+  for (const edge of edges || []) {
+    const half = edge.link === "half";
+    const text = `⇄ ${edge.label}  ${edge.cidrs.join(" ↔ ")}${half ? "  HALF · routes one side only" : edge.lamp === "warn" ? "  CHECK" : ""}`;
+    const x = Math.max(4, edge.gutter) + 8;
+    const w = Math.ceil(ctx.measureText(text).width) + 10;
+    ctx.fillStyle = rgba(PIP.ink, 0.85);
+    ctx.fillRect(x, edge.chipY - 9, w, 14);
+    ctx.strokeStyle = half || edge.lamp === "warn" ? STATUS.hang : WORLD.vault;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, edge.chipY - 8.5, w - 1, 13);
+    ctx.fillStyle = half || edge.lamp === "warn" ? STATUS.hang : PIP.bright;
+    ctx.fillText(text, x + 5, edge.chipY + 2);
+  }
+}
+
+// Transit Gateway: a riveted hub with dashed spokes to each VPC wall.
+function drawHubs(ctx, hubs, animTime, reducedMotion) {
+  for (const hub of hubs || []) {
+    for (const spoke of hub.spokes) {
+      ctx.strokeStyle = spoke.lamp === "ok" ? WORLD.vault : STATUS.hang;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.lineDashOffset = reducedMotion ? 0 : -((animTime || 0) / 80) % 7;
+      ctx.beginPath();
+      ctx.moveTo(spoke.x, spoke.y);
+      ctx.lineTo(hub.x - 8, spoke.y);
+      ctx.lineTo(hub.x - 8, hub.y);
+      ctx.lineTo(hub.x, hub.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = PEER_LAMP[spoke.lamp] || PEER_LAMP.unknown;
+      ctx.fillRect(spoke.x + 1, spoke.y - 2, 4, 4);
+    }
+    ctx.fillStyle = WORLD.metalLight;
+    ctx.fillRect(hub.x - 2, hub.y - 14, 28, 28);
+    ctx.fillStyle = PIP.ink;
+    ctx.fillRect(hub.x + 2, hub.y - 10, 20, 20);
+    ctx.fillStyle = PEER_LAMP[hub.lamp] || PEER_LAMP.unknown;
+    ctx.fillRect(hub.x + 8, hub.y - 4, 8, 8);
+    for (const [dx, dy] of [[0, -12], [22, -12], [0, 10], [22, 10]]) { ctx.fillStyle = WORLD.metalLight; ctx.fillRect(hub.x + dx, hub.y + dy, 2, 2); }
+    ctx.font = SMALL;
+    ctx.fillStyle = PIP.bright;
+    ctx.fillText("TGW", hub.x, hub.y + 26);
+    ctx.fillText(hub.label, hub.x - 10, hub.y + 38);
   }
 }
 
