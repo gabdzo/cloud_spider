@@ -5,11 +5,11 @@ import { parseVaultHash } from "../src/vault-page.js";
 
 test("url state round-trips every piece", () => {
   const cases = [
-    { view: "", vault: null, sample: false, learn: "", stacks: "", lb: "", host: "", debug: "", why: false },
-    { view: "path", vault: null, sample: true, learn: "", stacks: "", lb: "arn:aws:elasticloadbalancing:eu-central-1:1:loadbalancer/app/web/abc", host: "shop.example.com", debug: "", why: false },
-    { view: "cluster", vault: null, sample: false, learn: "k8s/01-pods", stacks: "", lb: "", host: "", debug: "", why: false },
-    { view: "vaults", vault: "shop/api", sample: true, learn: "", stacks: "eks", lb: "", host: "", debug: "", why: false },
-    { view: "", vault: null, sample: false, learn: "", stacks: "1", lb: "", host: "", debug: "", why: false },
+    { view: "", vault: null, sample: false, learn: "", stacks: "", score: false, lb: "", host: "", debug: "", why: false },
+    { view: "path", vault: null, sample: true, learn: "", stacks: "", score: false, lb: "arn:aws:elasticloadbalancing:eu-central-1:1:loadbalancer/app/web/abc", host: "shop.example.com", debug: "", why: false },
+    { view: "cluster", vault: null, sample: false, learn: "k8s/01-pods", stacks: "", score: false, lb: "", host: "", debug: "", why: false },
+    { view: "vaults", vault: "shop/api", sample: true, learn: "", stacks: "eks", score: true, lb: "", host: "", debug: "", why: false },
+    { view: "", vault: null, sample: false, learn: "", stacks: "1", score: false, lb: "", host: "", debug: "", why: false },
   ];
   for (const state of cases) assert.deepEqual(parseUrlState(formatUrlState(state)), state);
 });
@@ -46,4 +46,12 @@ test("#sniff is an alias of #path, written back as #path", () => {
   assert.equal(state.debug, "https://google.com");
   assert.equal(state.why, true);
   assert.equal(formatUrlState(state), "#path?sample=1");
+});
+
+test("SCORE has a URL: score=1 round-trips, #score alone opens it over the map", () => {
+  assert.equal(formatUrlState({ view: "", score: true }), "#?score=1");
+  assert.equal(formatUrlState({ view: "cluster", score: true }), "#cluster?score=1");
+  assert.deepEqual([parseUrlState("#score").view, parseUrlState("#score").score], ["", true]);
+  assert.equal(parseUrlState("#cluster?score=1").score, true);
+  assert.equal(parseUrlState("#cluster").score, false);
 });

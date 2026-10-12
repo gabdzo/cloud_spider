@@ -6,6 +6,7 @@
 // view is "" (the map), "path", "cluster", "vaults" or "vaults/<key>".
 // #sniff is read as #path (the tab's pip label); the hash is written as #path.
 // learn and stacks are "1" when the panel is open with nothing picked.
+// score=1: the SCORE panel is open (#score alone is read as the map with it).
 const VIEWS = new Set(["", "path", "cluster", "vaults"]);
 
 export function parseUrlState(hash) {
@@ -13,7 +14,7 @@ export function parseUrlState(hash) {
   const at = text.indexOf("?");
   const route = at < 0 ? text : text.slice(0, at);
   const params = new URLSearchParams(at < 0 ? "" : text.slice(at + 1));
-  let view = route === "sniff" ? "path" : route;
+  let view = route === "sniff" ? "path" : route === "score" ? "" : route;
   let vault = null;
   if (route.startsWith("vaults/")) {
     view = "vaults";
@@ -30,6 +31,7 @@ export function parseUrlState(hash) {
     sample: params.get("sample") === "1",
     learn: params.get("learn") || "",
     stacks: params.get("stacks") || "",
+    score: route === "score" || params.get("score") === "1",
     lb: view === "path" ? params.get("lb") || "" : "",
     host: view === "path" ? params.get("host") || "" : "",
     debug: view === "path" ? (params.get("debug") || "").slice(0, 2048) : "",
@@ -44,6 +46,7 @@ export function formatUrlState(state = {}) {
   if (state.sample) params.set("sample", "1");
   if (state.learn) params.set("learn", state.learn);
   if (state.stacks) params.set("stacks", state.stacks);
+  if (state.score) params.set("score", "1");
   if (route === "path" && state.lb) params.set("lb", state.lb);
   if (route === "path" && state.host) params.set("host", state.host);
   const query = params.toString();
