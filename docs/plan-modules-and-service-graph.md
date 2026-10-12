@@ -180,16 +180,31 @@ Ratings from the prototype shots, 0–10:
 | 2 | real static + ownership graph (Services/EndpointSlices/Ingress/Routes/NetworkPolicy, ownerRefs, CRDs, OLM CSV) | 6–8 h |
 | 3 | scale: grouping heuristics, server aggregation, lazy members, 2k-pod perf test | 3–4 h |
 | 4 | incident review: event recorder, restarts, rollouts, CR conditions, Alertmanager/CloudWatch alarms, window picker | 6–7 h |
-| 5a | live edges from Prometheus (OTel servicegraph / Istio / Linkerd) | 3–4 h |
-| 5b | Hubble Relay edges (Cilium) | 3–4 h |
-| 5c | EKS flow monitor / VPC flow logs → pod edges (aws module) | 5–6 h |
+| 5 | **observe** module: opt-in install of Grafana Beyla + a small OTel collector → live L7 edges and RED metrics | 6–8 h |
+| later | live edges from an existing Prometheus (OTel servicegraph / Istio / Linkerd), Hubble Relay (Cilium), EKS flow monitor / VPC flow logs | 3–6 h each |
 
-**Recommended order:** 1 → 2 → 3 → 4 (a usable product for his team at about 22 h), then 5a. Phase 5b/5c only if his clusters run Cilium or he wants AWS flows.
+**Recommended order:** 1 → 2 → 3 → 4 (a usable product for his team at about 22 h), then 5 (observe). Prometheus, Hubble and VPC flows come after that, only if a cluster already has them.
+
+### 7.1 Answers (2026-10-12, Gabriel)
+
+- The brother's clusters are **plain Kubernetes** (not EKS) with **no metrics and no Prometheus**. Live edges therefore cannot come from an existing Prometheus; phase 5 brings its own (Beyla).
+- Gabriel tests the brother's scenario on his **local OpenShift cluster**, so OpenShift Routes and OLM ClusterServiceVersions are **in phase 2**. Both are read only when the API group exists; on plain Kubernetes they are skipped without an error (no Routes, grouping falls back to ownerReferences + Helm labels).
+
+### 7.2 Phase 5: the observe module
+
+- **What:** a one-click, opt-in install of **Grafana Beyla** (eBPF auto-instrumentation, no app changes) as a DaemonSet plus a **small OTel collector** (servicegraph connector + spanmetrics), into a namespace the user picks (default `cloudspider-observe`).
+- **Install is the only cluster write in the product.** It is a separate module (`observe`, off in every profile), behind a PREVIEW that lists every object, then an explicit INSTALL. It never runs from SAMPLE. It needs privileged pods (eBPF); on OpenShift that means a dedicated SCC bound to Beyla's ServiceAccount, shown in the preview.
+- **NetworkPolicies per our netpol convention:** default-deny in the namespace; Beyla → collector on OTLP 4317/4318 only; Cloud Spider → collector read port only; collector egress: none (DNS only).
+- **Retention:** the collector keeps short in-memory windows (default 15 min); nothing is persisted in the cluster. Cloud Spider pulls aggregates and keeps them in the local event recorder (phase 4).
+- **Uninstall:** one button removes everything by the `app.kubernetes.io/managed-by=cloudspider-observe` label (DaemonSet, Deployment, Services, ConfigMaps, RBAC, SCC binding, NetworkPolicies, then the namespace if we created it), and reports anything left over.
+- **Graph:** observed HTTP/gRPC edges (method + route, rate, error %, p95) become a **live** layer on top of static edges; a static edge that is never observed is shown dimmed, an observed edge without a static path is flagged.
+- **OLM is optional:** plain manifests first; an OLM bundle can come later for OpenShift catalogs.
+
 
 ## 8. Open questions
 
-1. Are the team's clusters mostly OpenShift, vanilla (kind/k3d) or EKS? This sets the priority of OLM CSV grouping and Routes.
-2. Is there a Prometheus with OTel, Istio or Linkerd metrics in those clusters? If yes, live edges come cheap (5a); if no, static + ownership is the product.
+1. ~~Cluster flavour~~ answered: plain Kubernetes; OpenShift locally for testing (7.1).
+2. ~~Prometheus~~ answered: none; phase 5 installs Beyla + a collector (7.2).
 3. Is RBAC cluster-wide read, or namespaced? This affects grouping and the "partial" UX.
 4. How long should incident history be kept (hours, days)? This decides the size of the recorder.
 5. Should the minimal product be a separately branded build, or just `profile: k8s-only`?
