@@ -38,13 +38,14 @@ export const ND_CSS = `
     display: flex; flex-direction: column; overflow: hidden;
     background: var(--n-bg); color: var(--n-text); border: 1px solid var(--n-strong); font-family: var(--n-font); font-size: 12.5px; line-height: 1.45; }
   #netdebug[hidden] { display: none; }
+  .mapwrap:has(> #netdebug:not([hidden])) { padding-bottom: var(--nd-h, 0px); }
   ${TONES}
   #netdebug .nd-label { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--n-text2); white-space: nowrap; }
   #netdebug .nd-quiet { color: var(--n-muted); margin: 0; }
   #netdebug .nd-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--n-line); background: var(--n-raised); flex-wrap: nowrap; }
   #netdebug[data-open="0"] .nd-bar { border-bottom: 0; }
   #netdebug .nd-title { font-size: 12px; letter-spacing: .18em; color: var(--n-accent); }
-  #netdebug .nd-url { flex: 1 1 280px; min-width: 180px; font: inherit; font-size: 13px; padding: 5px 9px; color: var(--n-text); background: var(--n-ink); border: 1px solid var(--n-strong); outline: none; }
+  #netdebug .nd-url { flex: 1 1 280px; min-width: 180px; text-overflow: ellipsis; font: inherit; font-size: 13px; padding: 5px 9px; color: var(--n-text); background: var(--n-ink); border: 1px solid var(--n-strong); outline: none; }
   #netdebug .nd-url:focus { border-color: var(--n-accent); }
   #netdebug .nd-url::placeholder { color: var(--n-muted); }
   #netdebug .nd-modes { display: inline-flex; gap: 6px; }
@@ -85,7 +86,9 @@ export const ND_CSS = `
   #netdebug .nd-confirmrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   #netdebug .nd-work { color: var(--n-ink); background: var(--n-bad); padding: 4px 10px; font-weight: 700; letter-spacing: .12em; }
   #netdebug .nd-spec, #netdebug .nd-confirm pre { max-height: 240px; overflow: auto; font-size: 11px; color: var(--n-text2); margin: 6px 0 0; }
-  #netdebug .nd-live { display: block; color: var(--n-info); font-size: 10.5px; }
+  /* LIVE is a third line in the text column; auto-placed it fell into the
+     glyph column and squeezed the SVC box (UX overlaps B). */
+  #netdebug .nd-live { display: block; grid-column: 2; color: var(--n-info); font-size: 10.5px; white-space: nowrap; }
   #netdebug .nd-node[data-layer="policy"] b { letter-spacing: .08em; }
   #netdebug .nd-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
   #netdebug .nd-steps li { display: flex; gap: 8px; color: var(--n-text2); }
@@ -95,10 +98,10 @@ export const ND_CSS = `
   #netdebug .nd-verdict { display: flex; align-items: center; gap: 12px; font-size: 11.5px; color: var(--n-text2); }
   #netdebug .nd-verdict b { color: var(--n-tone); border: 1px solid var(--n-tone); padding: 1px 10px; letter-spacing: .14em; font-size: 11.5px; }
   #netdebug .nd-chain { list-style: none; margin: 0; padding: 2px 0 4px; display: flex; align-items: stretch; gap: 0; overflow-x: auto; }
-  #netdebug .nd-node { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 7px; align-items: center; min-width: 116px; padding: 6px 10px; cursor: pointer;
+  #netdebug .nd-node { display: grid; grid-template-columns: auto 1fr; grid-auto-rows: auto; column-gap: 7px; align-items: center; flex: 0 0 auto; min-width: 116px; padding: 6px 10px; cursor: pointer;
     background: var(--n-raised); border: 1px solid var(--n-line); border-top: 2px solid var(--n-tone); }
   #netdebug .nd-node:hover, #netdebug .nd-node[aria-pressed="true"] { background: var(--n-hover); border-color: var(--n-strong); border-top-color: var(--n-tone); }
-  #netdebug .nd-node .nd-glyph { grid-row: 1 / 3; color: var(--n-tone); font-size: 15px; }
+  #netdebug .nd-node .nd-glyph { grid-row: 1 / span 3; color: var(--n-tone); font-size: 15px; }
   #netdebug .nd-node b { font-size: 11px; letter-spacing: .12em; }
   #netdebug .nd-node small { font-size: 11px; color: var(--n-text2); white-space: nowrap; }
   #netdebug .nd-edge { flex: 0 0 26px; display: flex; align-items: center; }

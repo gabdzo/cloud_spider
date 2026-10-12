@@ -222,6 +222,18 @@ async function copyText(text, button) {
 }
 
 export function createNetdebugView({ root, hostInput = null, sample = () => false, onDone = () => {}, fetchJson = (url, opts) => fetch(url, opts).then((r) => r.json()) }) {
+  // The DEBUG panel floats over the bottom of the stage. Reserve its height
+  // on the stage (--nd-h, read by .mapwrap) so the PATH above stays visible
+  // and scrolls instead of hiding behind the panel (UX overlaps B).
+  const stage = root?.parentElement;
+  const reserve = () => {
+    if (!stage?.style) return;
+    const h = root.hidden ? 0 : Math.ceil(root.getBoundingClientRect().height) + 12;
+    if (stage.style.getPropertyValue("--nd-h") === `${h}px`) return;
+    stage.style.setProperty("--nd-h", `${h}px`);
+    if (typeof window !== "undefined" && typeof Event === "function") window.dispatchEvent(new Event("resize"));
+  };
+  if (typeof ResizeObserver === "function" && root) new ResizeObserver(reserve).observe(root);
   let run = null;
   let filter = "all";
   let polling = 0;
@@ -410,6 +422,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     runBtn.disabled = false;
   };
   runBtn.addEventListener("click", () => (inside ? planInside() : start()));
+  field.addEventListener("input", () => { field.title = field.value; });
   field.addEventListener("keydown", (event) => {
     if (event.key === "Enter") inside ? planInside() : start();
   });
@@ -536,6 +549,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   function draw() {
     const model = ndModel(run, { filter });
     root.dataset.state = model.state;
+    field.title = field.value; // long URLs end in an ellipsis; the tooltip has the whole one
     root.dataset.open = open ? "1" : "0";
     fold.textContent = open ? "▾" : "▴";
     fold.setAttribute("aria-expanded", String(open));
@@ -607,9 +621,11 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       }
       root.hidden = false;
       draw();
+      reserve();
     },
     hide() {
       root.hidden = true;
+      reserve();
     },
     reset() {
       polling += 1;
