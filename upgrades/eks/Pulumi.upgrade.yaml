@@ -10,3 +10,4 @@ config:
   cloudspider-upgrade:maxPods: "110"
   cloudspider-upgrade:networkPolicy: "on"
   cloudspider-upgrade:nodeCount: "2"
+  cloudspider-upgrade:controlPlaneLogs: "on"

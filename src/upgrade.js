@@ -90,7 +90,7 @@ export const UPGRADES = [
       { name: "metricsServer", type: "string", default: "on", choices: ["on", "off"] },
       { name: "ebsCsiDriver", type: "string", default: "on", choices: ["on", "off"] },
       // K8S-OBS-003: api, audit, authenticator to /aws/eks/<cluster>/cluster (in place).
-      { name: "controlPlaneLogs", type: "string", default: "off", choices: ["off", "on"], labels: { off: "off · no audit trail (SCORE FAILs K8S-OBS-003)", on: "on · api, audit, authenticator, kept 7 days (~$0.50/GB ingested; a quiet demo ~$0.05-0.15/day)" }, warn: "off" },
+      { name: "controlPlaneLogs", type: "string", default: "off", choices: ["off", "on"], labels: { off: "off · no audit trail (SCORE FAILs K8S-OBS-003)", on: "on · api, audit, authenticator, kept 7 days (~$0.10-0.25/day: $0.50/GB ingested, audit is the noisy one)" }, warn: "off" },
     ],
   },
   {
