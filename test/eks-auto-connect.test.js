@@ -71,12 +71,18 @@ function rig({ autoConnect, fail = "", contextsYaml = "contexts:\n  - context: w
   return { home, kubeconfigFile, contextsFile, app, upgrade, cleanup: () => rmSync(home, { recursive: true, force: true }) };
 }
 
+// Polls every 10 ms and returns the moment the check passes; the deadline
+// is only the failure ceiling. A RUN here spawns the fake pulumi, aws and
+// kubectl scripts: ~2-3.5 s alone but over 8 s with five suites running at
+// once, so the old 600-iteration (~6 s) budget failed under load.
+const UNTIL_MS = 30_000;
 async function until(check, what) {
-  for (let i = 0; i < 600; i += 1) {
+  const deadline = Date.now() + UNTIL_MS;
+  while (Date.now() < deadline) {
     if (await check()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  assert.fail(`timed out waiting for ${what}`);
+  assert.fail(`timed out waiting for ${what} (${UNTIL_MS / 1000} s)`);
 }
 
 const idle = (r) => !r.upgrade.running().length;
