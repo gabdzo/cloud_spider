@@ -11,6 +11,7 @@ import {
 import { FONT_PX, SMOKE_PX } from "./layout.js";
 import { drawVaultBadges, drawVaultLabels, drawVaultsLive, drawVaultsStatic, settledVaults, vaultCards } from "./vault-draw.js";
 import { isExpendable } from "./verbs.js";
+import { BADGE } from "./vault-page.js";
 import { drawCompoundGround, drawCompoundTop } from "./map-kube-draw.js";
 import { PALETTE, PIP, STATE_COLOR, STATUS, WORLD, canvasPro, font, rgba } from "./theme.js";
 import { paintPro } from "./map-pro.js";
@@ -677,8 +678,10 @@ function drawPublicBadge(ctx, fixture, phase) {
   ctx.lineWidth = 2;
   ctx.strokeRect(x - 2.5, y - 2.5, w + 5, fixture.h + 5);
   ctx.font = SMALL;
-  const tw = Math.min(w - 12, Math.ceil(ctx.measureText(text).width) + 12);
-  const tx = x + w - tw - 6;
+  // Left edge, like the PRO tab: the vault number badges sit on the top
+  // right corner and used to paint over the right-aligned tab (UX overlaps B).
+  const tw = Math.min(w - 12 - BADGE.w - 8, Math.ceil(ctx.measureText(text).width) + 12);
+  const tx = x + 6;
   const ty = y - 9;
   ctx.fillStyle = WORLD.amber;
   ctx.fillRect(tx, ty, tw, 15);
