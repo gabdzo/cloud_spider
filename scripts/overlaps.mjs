@@ -25,6 +25,8 @@ export const VIEWS = {
   k9s: [click("#cluster"), click("#k9s-btn")],
   vaults: [click("#tab-vaults")],
   stacks: [click("#upgrade")],
+  // a stack opened: the bill, fields and buttons inside the wider panel
+  "stacks-open": [click("#upgrade"), async (p) => { await wait(800); await p.evaluate(() => document.querySelector("#pip .card .card-head")?.click()); await wait(1500); }],
   learn: [click("#learn-key")],
   score: [click("#score-key")],
   ask: [click("#ask")],

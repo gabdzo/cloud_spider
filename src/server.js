@@ -1994,7 +1994,7 @@ const page = `<!doctype html>
   .reach-lamp[data-state="fail"]::before { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
   .reach-lamp[data-state="fail"] { color: var(--status-broken); }
   #map-view { position: absolute; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 3px 6px; background: var(--pip-ink); border: 1px solid var(--pip-dark); box-shadow: 0 0 0 1px var(--pip-ink), 0 4px 10px var(--pip-ink); }
-  #map-view button.cmd { min-height: 24px; padding: 0 8px; font-size: 11px; letter-spacing: 0.12em; }
+  #map-view button.cmd { white-space: nowrap; min-height: 24px; padding: 0 8px; font-size: 11px; letter-spacing: 0.12em; }
   #map-view button.cmd[aria-pressed="true"] { background: var(--pip-bright); color: var(--pip-ink); border-color: var(--pip-bright); text-shadow: none; }
   #map-view button.cmd[aria-pressed="true"]::before, #map-view button.cmd[aria-pressed="true"]::after { color: var(--pip-ink); }
   #map-view select { min-height: 24px; padding: 0 4px; font-size: 11px; max-width: 120px; }
@@ -2225,6 +2225,45 @@ const page = `<!doctype html>
   #pip .nodebill-head img { image-rendering: pixelated; }
   #pip .nodebill-head b { margin-left: auto; font-weight: normal; color: var(--pip-bright); letter-spacing: 0.02em; }
   #pip input[readonly] { color: var(--pip-dim-text); border-style: dashed; }
+  /* STACKS v2: docked beside the map (the map moves over, nothing is covered),
+     sections, chevrons, status chips, depth. */
+  #pip { --pip-w: clamp(380px, 31vw, 580px); width: min(var(--pip-w), calc(100% - 24px)); padding-bottom: 10px;
+    background: linear-gradient(180deg, rgb(6, 22, 12) 0%, rgb(2, 10, 5) 120px, rgb(2, 10, 5) 100%);
+    box-shadow: 0 0 0 1px var(--pip-ink), 0 0 22px rgba(20, 255, 106, 0.24), inset 0 0 40px rgba(20, 255, 106, 0.05); }
+  .mapwrap:has(> #pip:not([hidden])) > #map { margin-left: calc(min(var(--pip-w-doc, clamp(380px, 31vw, 580px)), calc(100% - 24px)) + 20px); }
+  #pip:has(.runpane:not([hidden])) { --pip-w: clamp(460px, 40vw, 680px); }
+  .mapwrap:has(> #pip .runpane:not([hidden])) > #map { --pip-w-doc: clamp(460px, 40vw, 680px); }
+  #pip .ptitle { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(180deg, var(--pip-bright), var(--pip-mid)); box-shadow: 0 2px 0 var(--pip-ink), 0 4px 10px rgba(0, 0, 0, 0.6); }
+  #pip .ptitle .pcount { margin-left: auto; font-size: 9px; letter-spacing: 0.16em; opacity: 0.8; }
+  #pip .pdiv { margin: 12px 8px 6px; background: linear-gradient(90deg, rgba(196, 160, 80, 0.16), transparent 70%); }
+  #pip .pdiv img { image-rendering: pixelated; }
+  #pip .card { position: relative; margin: 0 8px 5px; border: 1px solid var(--pip-dark);
+    background: linear-gradient(180deg, rgba(20, 255, 106, 0.07), rgba(20, 255, 106, 0.015) 60%, rgba(0, 0, 0, 0.25));
+    box-shadow: inset 0 1px 0 rgba(20, 255, 106, 0.12), 0 2px 4px rgba(0, 0, 0, 0.55); transition: border-color 0.12s, box-shadow 0.12s; }
+  #pip .card::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 3px; background: var(--pip-dim); }
+  #pip .card:hover { border-color: var(--pip-mid); box-shadow: inset 0 1px 0 rgba(20, 255, 106, 0.2), 0 0 10px rgba(20, 255, 106, 0.18); }
+  #pip .card:hover::before, #pip .card.open::before { background: var(--pip-bright); box-shadow: 0 0 6px var(--glow-bright); }
+  #pip .card.tf::before { background: var(--case-brass-lo); }
+  #pip .card-head { cursor: pointer; padding: 5px 8px 5px 11px; }
+  #pip .card-head:focus-visible { outline: 2px solid var(--pip-hot, var(--pip-bright)); outline-offset: -2px; }
+  #pip .card-chev { flex: 0 0 auto; width: 12px; text-align: center; font-size: 16px; line-height: 1; transition: transform 0.15s; }
+  #pip .card-head[aria-expanded="true"] .card-chev { transform: rotate(90deg); }
+  #pip .card-chips { display: inline-flex; gap: 4px; flex: 0 1 auto; min-width: 0; overflow: hidden; }
+  #pip .st-chip { flex: 0 0 auto; padding: 0 5px; font-size: 9px; line-height: 15px; letter-spacing: 0.12em; white-space: nowrap; border: 1px solid; }
+  #pip .st-chip.cfg { color: var(--pip-bright); border-color: var(--pip-mid); background: linear-gradient(rgba(20, 255, 106, 0.18), rgba(20, 255, 106, 0.05)); }
+  #pip .st-chip.need { color: var(--world-amber); border-color: var(--case-brass-lo); background: linear-gradient(rgba(196, 160, 80, 0.18), rgba(196, 160, 80, 0.04)); }
+  #pip .card-head:hover .st-chip, #pip .card.open .card-head .st-chip { color: var(--pip-ink); border-color: var(--pip-ink); background: transparent; }
+  #pip .card-head:hover, #pip .card.open .card-head { background: linear-gradient(180deg, var(--pip-hot, var(--pip-bright)), var(--pip-bright) 45%, var(--pip-mid)); }
+  #pip .card.open { border-color: var(--pip-bright); box-shadow: 0 0 12px rgba(20, 255, 106, 0.22); }
+  #pip .card.open .card-body { background: rgba(0, 0, 0, 0.3); border-top: 1px solid var(--pip-dark); }
+  #pip .card-note p { margin: 0; line-height: 1.4; }
+  #pip .card-note.clamped p { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  #pip .note-more { margin-top: 3px; min-height: 0; padding: 0 6px; font-size: 10px; letter-spacing: 0.14em; cursor: pointer; color: var(--pip-bright); background: transparent; border: 1px solid var(--pip-dark); }
+  #pip .note-more:hover, #pip .note-more:focus-visible { background: var(--pip-bright); color: var(--pip-ink); }
+  :root[data-theme="pro"] #pip .note-more { color: var(--accent); border-color: var(--border); border-radius: 4px; font-family: var(--font-ui); }
+  :root[data-theme="pro"] #pip .note-more:hover { background: var(--accent); color: #fff; }
+  #pip .pempty { margin: 8px; padding: 12px; border: 1px dashed var(--pip-dim); color: var(--pip-dim-text); }
   /* ---- TERMINAL: a RobCo CRT over the right side of the map ---- */
   #term {
     position: absolute; top: 10px; right: 12px; bottom: 10px; z-index: 5;
@@ -2569,6 +2608,21 @@ const page = `<!doctype html>
   :root[data-theme="pro"] select, :root[data-theme="pro"] input { border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: 13px var(--font-ui); box-shadow: none; }
   /* Pro: panels over the map are solid, and the PULUMI / TF engine tag keeps a face once its gradient is dropped */
   :root[data-theme="pro"] :is(#pip, .vault-panel) { background-color: var(--raised); }
+  :root[data-theme="pro"] #pip { background: var(--raised); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); border: 1px solid var(--border); border-radius: 10px; }
+  :root[data-theme="pro"] #pip .ptitle { background: var(--raised); box-shadow: 0 1px 0 var(--border); color: var(--text, #e6e8eb); }
+  :root[data-theme="pro"] #pip .pdiv { background: none; color: var(--text-3); border-top: 0; border-bottom: 1px solid var(--border); font-family: var(--font-ui); letter-spacing: 0.08em; }
+  :root[data-theme="pro"] #pip .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: none; overflow: hidden; }
+  :root[data-theme="pro"] #pip .card::before { background: transparent; }
+  :root[data-theme="pro"] #pip .card:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  :root[data-theme="pro"] #pip .card:hover::before, :root[data-theme="pro"] #pip .card.open::before { background: var(--accent); box-shadow: none; }
+  :root[data-theme="pro"] #pip .card-head:hover, :root[data-theme="pro"] #pip .card.open .card-head { background: var(--raised); color: var(--text, #e6e8eb); }
+  :root[data-theme="pro"] #pip .card-head:hover img, :root[data-theme="pro"] #pip .card.open .card-head img { filter: none; }
+  :root[data-theme="pro"] #pip .card-head:focus-visible { outline-color: var(--accent); }
+  :root[data-theme="pro"] #pip .st-chip { border-radius: 4px; font-family: var(--font-ui); letter-spacing: 0.04em; }
+  :root[data-theme="pro"] #pip .st-chip.cfg, :root[data-theme="pro"] #pip .card-head:hover .st-chip.cfg, :root[data-theme="pro"] #pip .card.open .card-head .st-chip.cfg { color: var(--accent); border-color: var(--accent); background: transparent; }
+  :root[data-theme="pro"] #pip .st-chip.need, :root[data-theme="pro"] #pip .card-head:hover .st-chip.need, :root[data-theme="pro"] #pip .card.open .card-head .st-chip.need { color: #d9b45a; border-color: #d9b45a; background: transparent; }
+  :root[data-theme="pro"] #pip .card.open { border-color: var(--accent); box-shadow: none; }
+  :root[data-theme="pro"] #pip .card.open .card-body { background: transparent; border-top-color: var(--border); }
   :root[data-theme="pro"] #pip .eng { color: var(--text, #e6e8eb); background-color: var(--surface); border: 1px solid var(--border); border-radius: 4px; }
   :root[data-theme="pro"] #pip .eng.tf { color: #0b0d10; background-color: #d9b45a; border-color: #d9b45a; }
   :root[data-theme="pro"] :is(.glass, #morning, .m-line, #spend-lines, .sp-head, #vault-page, .vpg-open, .kc-chip, #kube-connect .kc-fold, #kube-ctx button, #learn, .lx-shelf, #pip .eng, #pip .ad-plate, #term, .dial .scale, .runpane .run-out, #pip .meter-cell) { background-image: none; box-shadow: none; }
