@@ -119,13 +119,6 @@ export function probeScript(plan) {
   const lines = [
     "t(){ awk '{printf \"%d\", $1*1000}' /proc/uptime; }",
     "run(){ id=$1; k=$2; shift 2; printf '\\n@@BEGIN %s %s\\n' \"$id\" \"$k\"; s=$(t); \"$@\" 2>&1; rc=$?; printf '\\n@@END %s %s rc=%s ms=%s\\n' \"$id\" \"$k\" \"$rc\" \"$(( $(t) - s ))\"; }",
-    // A new pod's network is not ready at once (EKS VPC CNI attaches its
-    // policy programs after the pod starts: the first SYNs are dropped and
-    // retried, measured live as ~1050 ms or a 3 s timeout on the first
-    // connect). Wait until the cluster DNS answers on TCP 53 (up to ~10 s)
-    // before any timed check, and report how long it took.
-    "ready(){ ns=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf); for i in 1 2 3 4 5 6 7 8; do nc -z -w 1 \"$ns\" 53 >/dev/null 2>&1 && { echo \"ready after $i tries\"; return 0; }; sleep 0.2; done; echo 'not ready'; return 1; }",
-    "run P-NET-02 ready ready",
     "run P-DNS-01 resolv cat /etc/resolv.conf",
     "run P-NET-01 route ip route",
     "run P-NET-01 self hostname -i",
@@ -135,7 +128,12 @@ export function probeScript(plan) {
     if (t.short) lines.push(`run P-DNS-02 short dig +search +short +time=2 +tries=1 ${q(t.short)}`);
     lines.push(`run P-DNS-02 fqdn dig +short +time=2 +tries=1 ${q(t.host)}`);
   }
-  if (plan.checks.tcp) lines.push(`run P-TCP-01 target nc -z -v -w 3 ${q(t.host)} ${t.port}; tcprc=$rc`);
+  // Measured live on EKS (VPC CNI network policy): a pod's first
+  // connects in its first ~1-3 s are dropped (DNS already answers), so the
+  // first connect showed ~1050 ms (a SYN retransmit) or a 3 s timeout while
+  // the same connect 2 s later took 0-10 ms. A failed or slow (>= 900 ms)
+  // first connect is tried once more after 2 s; both are reported.
+  if (plan.checks.tcp) lines.push(`run P-TCP-01 target nc -z -v -w 3 ${q(t.host)} ${t.port}; tcprc=$rc; tcpms=$(( $(t) - s )); if [ "$tcprc" != 0 ] || [ "$tcpms" -ge 900 ]; then sleep 2; run P-TCP-01 retry nc -z -v -w 3 ${q(t.host)} ${t.port}; tcprc=$rc; fi`);
   (t.endpoints || []).forEach((e, i) => plan.checks.tcp && lines.push(`run P-TCP-02 ep${i} nc -z -v -w 3 ${e.ip} ${e.port}`));
   if (plan.checks.tls) lines.push(`[ "$tcprc" = 0 ] && run P-TLS-01 target timeout 6 openssl s_client -brief -verify_quiet${plan.checks.starttls ? ` -starttls ${plan.checks.starttls}` : ""} -connect ${q(`${t.host}:${t.port}`)} -servername ${q(t.host)} </dev/null`);
   const traceTo = t.endpoints?.[0]?.ip || t.host;

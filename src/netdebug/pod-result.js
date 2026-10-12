@@ -75,8 +75,11 @@ export function podChecks(plan, parsed) {
       out.push(check("P-DNS-02", "dns", got.length ? "PASS" : "FAIL", got.length ? `${name} → ${got.slice(0, 3).join(", ")}` : `${name} did not resolve${/timed out|no servers/i.test(b.out) ? " (DNS timed out: is egress to port 53 allowed?)" : ""}`, { observed: { name, addresses: got }, command: `dig ${key === "short" ? "+search " : ""}${name}`, ms: b.ms, key, tool: "dig" }));
     }
   }
-  const tcp = pick(blocks, "P-TCP-01");
-  if (tcp) out.push(check("P-TCP-01", "transport", tcp.rc === 0 ? "PASS" : "FAIL", tcp.rc === 0 ? `connected to ${t.host}:${t.port} in ${tcp.ms} ms` : `${t.host}:${t.port} ${tcpWhy(tcp.out)}`, { observed: { ok: tcp.rc === 0, why: tcp.rc === 0 ? "" : tcpWhy(tcp.out) }, command: `nc -zv -w 3 ${t.host} ${t.port}`, ms: tcp.ms, tool: "nc" }));
+  const first = pick(blocks, "P-TCP-01", "target");
+  const retry = pick(blocks, "P-TCP-01", "retry");
+  const tcp = retry || first;
+  const early = retry && first ? ` (the first try, right after the pod started, ${first.rc === 0 ? `took ${first.ms} ms` : tcpWhy(first.out)}; a new pod's first connects are often dropped until its NetworkPolicy is in place, so it was tried again 2 s later)` : "";
+  if (tcp) out.push(check("P-TCP-01", "transport", tcp.rc === 0 ? "PASS" : "FAIL", tcp.rc === 0 ? `connected to ${t.host}:${t.port} in ${tcp.ms} ms${early}` : `${t.host}:${t.port} ${tcpWhy(tcp.out)}${early}`, { observed: { ok: tcp.rc === 0, why: tcp.rc === 0 ? "" : tcpWhy(tcp.out), ...(retry && first ? { firstTry: { ok: first.rc === 0, ms: first.ms } } : {}) }, command: `nc -zv -w 3 ${t.host} ${t.port}`, ms: tcp.ms, tool: "nc" }));
   else na("P-TCP-01", "transport", "no connect ran");
   (t.endpoints || []).forEach((e, i) => {
     const b = pick(blocks, "P-TCP-02", `ep${i}`);
@@ -117,8 +120,6 @@ export function podChecks(plan, parsed) {
   }
   const self = pick(blocks, "P-NET-01", "self")?.out?.split(/\s+/)[0] || "";
   const route = pick(blocks, "P-NET-01", "route")?.out || "";
-  const rdy = pick(blocks, "P-NET-02", "ready");
-  if (rdy) out.push(check("P-NET-02", "route", rdy.rc === 0 ? "PASS" : "UNKNOWN", rdy.rc === 0 ? `pod network ready in ${rdy.ms} ms (cluster DNS answered on TCP 53); timings below start after that` : `the cluster DNS did not answer on TCP 53 within ${Math.round(rdy.ms / 1000)} s (blocked egress to 53, or the pod network was slow to start); later timings may include start-up delay`, { observed: { ready: rdy.rc === 0, ms: rdy.ms }, command: "nc -z -w 1 <nameserver> 53 (until it answers)", ms: rdy.ms, tool: "nc" }));
   out.push(check("P-NET-01", "route", route ? "PASS" : "NOT_ASSESSED", route ? `pod ${self || "?"} · ${route.split("\n")[0]}` : "ip route was not read", { observed: { podIp: self, route }, command: "ip route" }));
   return out;
 }

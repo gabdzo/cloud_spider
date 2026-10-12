@@ -364,13 +364,14 @@ test("multi-port Services: endpoints use the slice port named like the target's 
   assert.deepEqual(s.ports.map((p) => serviceTarget(s, p)), ["http://web.shop:80", "http://web.shop:9090", "http://web.shop:50051"]);
 });
 
-test("the probe waits for the pod network before timing anything (P-NET-02)", () => {
+test("a failed or slow first connect is retried once after 2 s and both are reported", () => {
   const plan = buildPlan({ target: "tcp://shopdb.shop:5432" }, { namespaces: ["shop"], runId: "r9" });
-  const script = probeScript(plan);
-  assert.ok(script.indexOf("run P-NET-02 ready ready") < script.indexOf("run P-DNS-01"));
-  const ok = podChecks(plan, parseProbeLog("@@BEGIN P-NET-02 ready\nready after 3 tries\n@@END P-NET-02 ready rc=0 ms=2410\n@@DONE")).find((c) => c.id === "P-NET-02");
-  assert.equal(ok.status, "PASS");
-  assert.match(ok.text, /ready in 2410 ms/);
-  const no = podChecks(plan, parseProbeLog("@@BEGIN P-NET-02 ready\nnot ready\n@@END P-NET-02 ready rc=1 ms=9600\n@@DONE")).find((c) => c.id === "P-NET-02");
-  assert.equal(no.status, "UNKNOWN");
+  assert.match(probeScript(plan), /tcpms=.*-ge 900 \]; then sleep 2; run P-TCP-01 retry nc -z -v -w 3 'shopdb\.shop\.svc\.cluster\.local' 5432; tcprc=\$rc; fi/);
+  const log = "@@BEGIN P-TCP-01 target\nnc: connect to x port 5432 (tcp) timed out: Operation in progress\n@@END P-TCP-01 target rc=1 ms=3010\n@@BEGIN P-TCP-01 retry\nConnection succeeded\n@@END P-TCP-01 retry rc=0 ms=10\n@@DONE";
+  const c = podChecks(plan, parseProbeLog(log)).find((x) => x.id === "P-TCP-01");
+  assert.equal(c.status, "PASS");
+  assert.match(c.text, /in 10 ms \(the first try, right after the pod started, timed out/);
+  assert.deepEqual(c.observed.firstTry, { ok: false, ms: 3010 });
+  const one = podChecks(plan, parseProbeLog("@@BEGIN P-TCP-01 target\nok\n@@END P-TCP-01 target rc=0 ms=2\n@@DONE")).find((x) => x.id === "P-TCP-01");
+  assert.equal(one.text, "connected to shopdb.shop.svc.cluster.local:5432 in 2 ms");
 });
