@@ -92,7 +92,8 @@ export function normalize(raw = {}) {
 
 export function beylaConfig(ns = NAMESPACE) {
   return {
-    discovery: { instrument: [{ k8s_namespace: "." }], exclude_instrument: [{ k8s_namespace: `^(${ns}|kube-system|openshift-.*)$` }] },
+    // Beyla's discovery.instrument selectors are globs, not regexes ("." matched nothing).
+    discovery: { instrument: [{ k8s_namespace: "*" }], exclude_instrument: [ns, "kube-system", "openshift-*"].map((k8s_namespace) => ({ k8s_namespace })) },
     attributes: { kubernetes: { enable: true } },
     routes: { unmatched: "heuristic" },
     otel_metrics_export: { endpoint: `http://otel-collector.${ns}:${PORTS.otlpHttp}`, protocol: "http/protobuf", features: ["application", "application_service_graph"], interval: "15s" },

@@ -227,3 +227,11 @@ test("allow-apiserver-egress also allows the kubernetes Service ClusterIP (EKS p
   assert.deepEqual(without.egress[0].to.map((p) => p.ipBlock.cidr), ["10.43.0.0/16"]);
   assert.ok(!JSON.stringify(without).includes("apisvc"));
 });
+
+test("Beyla discovery uses globs (instrument every namespace but its own, kube-system, openshift-*)", async () => {
+  const { beylaConfig } = await import("../upgrades/observe/render.js");
+  const d = beylaConfig("cloudspider-observe").discovery;
+  assert.deepEqual(d.instrument, [{ k8s_namespace: "*" }]);
+  assert.deepEqual(d.exclude_instrument.map((x) => x.k8s_namespace), ["cloudspider-observe", "kube-system", "openshift-*"]);
+  assert.ok(!JSON.stringify(d).match(/[\^$()|]/), "no regex syntax: Beyla matches globs");
+});
