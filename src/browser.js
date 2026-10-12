@@ -173,7 +173,14 @@ const graphView = createGraphView(document.querySelector("#kube-graph"));
 // No cluster to read (no kubeconfig / no such context): how to connect.
 const kubeEmpty = createKubeEmpty(document.querySelector("#kube-empty"), { onRetry: () => pullCluster(), onSample: () => toggleSample() });
 // Modules this page shows (null until /api/config answers): see applyModules.
-let modulesVisible = null;
+// The server stamps <html data-modules> with the modules that are on and
+// hides every [data-module] element of the rest (modules.js gateStyle); what
+// the script draws itself asks moduleOn.
+const serverModules = document.documentElement.dataset.modules;
+let modulesVisible = serverModules ? serverModules.split(" ").filter(Boolean) : null;
+function moduleOn(id) {
+  return !modulesVisible || modulesVisible.includes(id);
+}
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
 const tabVaults = document.querySelector("#tab-vaults");
@@ -545,6 +552,7 @@ function renderMorning() {
       iconEl.src = iconURL("pod");
       const ledEl = vel("i", "m-led");
       ledEl.setAttribute("aria-hidden", "true");
+      li.dataset.module = "kubernetes";
       li.append(iconEl, vel("b"), vel("span", "m-text"), ledEl);
       morningLines.idle.parentElement.append(li);
     }
@@ -2995,7 +3003,7 @@ const k9s = createK9s({
 k9sBtn.addEventListener("click", () => k9s.toggle());
 // ":" opens (or focuses) it from anywhere in the Cluster view, unless typing.
 document.addEventListener("keydown", (event) => {
-  if (event.key !== ":" || event.ctrlKey || event.metaKey || event.altKey || k9sBtn.hidden) return;
+  if (event.key !== ":" || event.ctrlKey || event.metaKey || event.altKey || k9sBtn.hidden || !moduleOn("kubernetes")) return;
   const t = event.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
   if (k9sEl.contains(t)) return;
@@ -3472,7 +3480,7 @@ no.addEventListener("click", () => {
 });
 
 window.addEventListener("keydown", (event) => {
-  if (mode !== "map") return;
+  if (mode !== "map" || !moduleOn("stacks")) return;
   if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
   if (!ui.confirmation) return;
   const key = event.key.toLowerCase();

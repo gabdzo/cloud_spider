@@ -1,4 +1,4 @@
-import { moduleOff } from "./modules.js";
+import { MODULE_IDS, gateStyle, moduleOff, stackModule } from "./modules.js";
 import { sampleLogErrors } from "./log-errors-sample.js";
 import { graphScenario } from "./graph-sample.js";
 import { buildGraph } from "./graph-build.js";
@@ -103,6 +103,7 @@ export const FILES = new Set([
   "perk-view.js",
   "url-state.js",
   "settings-view.js",
+  "module-keys.js",
   "map-focus.js",
   "agent-text.js",
   "terminal.js",
@@ -2587,30 +2588,30 @@ const page = `<!doctype html>
     <div><h1 data-pro-label="Cloud Spider">CLOUD SPIDER</h1><small>SPIDER-TEC SURVEY UNIT 3000</small></div>
   </div>
   <nav class="tabs" aria-label="views">
-    <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true">Map</button>
-    <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false" title="sniff: a request's path, and DEBUG for any URL" data-pro-title="network: a request's path, and DEBUG for any URL"><span data-pro-label="Network">Sniff</span></button>
-    <button id="cluster" class="tab" type="button" data-icon="cluster" aria-pressed="false">Cluster</button>
-    <button id="tab-vaults" class="tab" type="button" data-icon="vaults" aria-pressed="false" title="vaults: every project, its checks and what it owns">Vaults</button>
+    <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true" data-module="map">Map</button>
+    <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false" title="sniff: a request's path, and DEBUG for any URL" data-pro-title="network: a request's path, and DEBUG for any URL" data-module="network"><span data-pro-label="Network">Sniff</span></button>
+    <button id="cluster" class="tab" type="button" data-icon="cluster" aria-pressed="false" data-module="kubernetes">Cluster</button>
+    <button id="tab-vaults" class="tab" type="button" data-icon="vaults" aria-pressed="false" title="vaults: every project, its checks and what it owns" data-module="vaults">Vaults</button>
   </nav>
   <div class="console">
     <div class="keys" role="group" aria-label="panels">
-      <button id="tab-radio" class="key" type="button" aria-pressed="true" title="radio: the account's recent calls" data-pro-title="activity: the account's recent calls"><span class="cap" data-icon="radio"></span><span class="tag" data-pro-label="Activity">Radio</span></button>
-      <button id="upgrade" class="key" type="button" aria-pressed="false" title="stacks: Pulumi upgrades"><span class="cap" data-icon="stack"></span><span class="tag">Stacks</span></button>
-      <button id="learn-key" class="key" type="button" aria-pressed="false" title="learn: holotape labs for Kubernetes and OpenShift"><span class="cap" data-icon="learn"></span><span class="tag">Learn</span></button>
-      <button id="score-key" class="key" type="button" aria-pressed="false" title="score: production readiness of the connected cluster (reads only; FIX runs an add-on stack after you approve its preview)"><span class="cap" data-icon="vaults"></span><span class="tag">Score</span></button>
-      <button id="ask" class="key" type="button" aria-pressed="false" title="ask your local agent (runs only when you press ASK)"><span class="cap" data-icon="terminal"></span><span class="tag">Ask</span></button>
+      <button id="tab-radio" class="key" type="button" aria-pressed="true" title="radio: the account's recent calls" data-pro-title="activity: the account's recent calls" data-module="radio"><span class="cap" data-icon="radio"></span><span class="tag" data-pro-label="Activity">Radio</span></button>
+      <button id="upgrade" class="key" type="button" aria-pressed="false" title="stacks: Pulumi upgrades" data-module="stacks"><span class="cap" data-icon="stack"></span><span class="tag">Stacks</span></button>
+      <button id="learn-key" class="key" type="button" aria-pressed="false" title="learn: holotape labs for Kubernetes and OpenShift" data-module="learn"><span class="cap" data-icon="learn"></span><span class="tag">Learn</span></button>
+      <button id="score-key" class="key" type="button" aria-pressed="false" title="score: production readiness of the connected cluster (reads only; FIX runs an add-on stack after you approve its preview)" data-module="score"><span class="cap" data-icon="vaults"></span><span class="tag">Score</span></button>
+      <button id="ask" class="key" type="button" aria-pressed="false" title="ask your local agent (runs only when you press ASK)" data-module="ask"><span class="cap" data-icon="terminal"></span><span class="tag">Ask</span></button>
     </div>
   <button id="sample" class="switch" type="button" role="switch" aria-checked="false" aria-label="Sample mode" title="Sample mode: a made-up account, nothing read from AWS"><span class="well" aria-hidden="true"><span class="nut"></span><span class="lever"></span></span><span class="marks" aria-hidden="true"><span>ON</span><span>OFF</span></span><span class="name" aria-hidden="true">SAMPLE</span><span class="led" aria-hidden="true"></span></button>
   </div>
   <div class="gauges" aria-label="map readouts">
-    <p id="tally" class="lcd" hidden><img class="px" data-icon="map" alt=""><span id="tally-text"></span><span id="tally-issue"></span></p>
+    <p id="tally" class="lcd" hidden data-module="map"><img class="px" data-icon="map" alt=""><span id="tally-text"></span><span id="tally-issue"></span></p>
     <div id="corner">
-      <button id="spend" class="lcd" type="button" aria-expanded="false" aria-controls="spend-lines" hidden><img class="px" data-icon="caps" alt=""><b data-pro-label="Cost">CAPS</b><span id="spend-label"></span><i class="caret" aria-hidden="true"></i></button>
-      <div id="spend-lines" role="region" aria-label="the bill, month to date" tabindex="-1" hidden></div>
+      <button id="spend" class="lcd" type="button" aria-expanded="false" aria-controls="spend-lines" hidden data-module="cost"><img class="px" data-icon="caps" alt=""><b data-pro-label="Cost">CAPS</b><span id="spend-label"></span><i class="caret" aria-hidden="true"></i></button>
+      <div id="spend-lines" role="region" aria-label="the bill, month to date" tabindex="-1" hidden data-module="cost"></div>
     </div>
   </div>
   <div class="readout">
-    <label>REGION <select id="region"></select></label>
+    <label data-module="aws">REGION <select id="region"></select></label>
     <span><b>MODE</b> <output id="acct">LIVE</output></span>
     <span><b>TIME</b> <output id="clock">--:--</output></span>
   </div>
@@ -2630,20 +2631,20 @@ const page = `<!doctype html>
     <button id="ask-this" class="cmd" type="button" data-icon="terminal" hidden>ASK ABOUT THIS</button>
   </div>
   <p id="error" hidden></p>
-  <section id="morning" aria-label="morning report" hidden>
+  <section id="morning" aria-label="morning report" hidden data-module="map">
     <canvas id="sunrise" width="64" height="36" aria-hidden="true"></canvas>
     <div class="m-head"><b>MORNING</b><small>REPORT</small><output id="morning-when"></output></div>
     <ul class="m-lines">
       <li id="m-hurting" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="fire" alt=""><b>HURTING</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
       <li id="m-changed" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="clock" alt=""><b>CHANGED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
       <li id="m-idle" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="caps" alt=""><b>IDLE·BILLED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
-      <li id="m-logs" class="m-line" role="button" tabindex="0" aria-expanded="false" aria-controls="log-errors"><img class="px" data-icon="terminal" alt=""><b>LOG ERRORS</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-logs" class="m-line" role="button" tabindex="0" aria-expanded="false" aria-controls="log-errors" data-module="kubernetes"><img class="px" data-icon="terminal" alt=""><b>LOG ERRORS</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
     </ul>
     <button id="morning-fold" class="m-fold" type="button" aria-expanded="true" aria-controls="morning" title="fold the morning report">&#9650;</button>
   </section>
   <div class="body">
     <div class="mapwrap">
-      <section id="log-errors" aria-label="log errors, last night" hidden></section>
+      <section id="log-errors" aria-label="log errors, last night" hidden data-module="kubernetes"></section>
       <div id="map">
         <canvas id="place" tabindex="0" role="application" aria-roledescription="survey map" aria-label="survey map. Tab or the arrow keys move between resources, Enter opens one, Escape closes it."></canvas>
         <p id="map-say" class="sr-only" aria-live="polite"></p>
@@ -2658,30 +2659,30 @@ const page = `<!doctype html>
           <button id="view-tag" class="cmd" type="button" aria-pressed="false" title="one walled camp per tag value">BY TAG</button>
           <select id="view-tag-key" aria-label="tag key to group by"></select>
         </div>
-        <button id="vault-all" class="cmd" type="button" aria-pressed="false" hidden>OPEN ALL</button>
-        <button id="vault-templates-btn" class="cmd" type="button" aria-expanded="false" aria-controls="vault-templates" hidden>TEMPLATES</button>
-        <section id="vault-templates" aria-label="vault templates" hidden></section>
+        <button id="vault-all" class="cmd" type="button" aria-pressed="false" hidden data-module="vaults">OPEN ALL</button>
+        <button id="vault-templates-btn" class="cmd" type="button" aria-expanded="false" aria-controls="vault-templates" hidden data-module="vaults">TEMPLATES</button>
+        <section id="vault-templates" aria-label="vault templates" hidden data-module="vaults"></section>
         <div id="vault-panels"></div>
       </div>
       <section id="vault-page" aria-label="vaults page" hidden></section>
-      <nav id="kube-tabs" aria-label="cluster screens" hidden></nav>
+      <nav id="kube-tabs" aria-label="cluster screens" hidden data-module="kubernetes"></nav>
       <nav id="kube-ctx" aria-label="kube contexts" hidden></nav>
       <div id="kube-connect-dock" hidden></div>
       <section id="kube-connect" aria-label="EKS clusters: kube connection" hidden></section>
       <section id="kube-tele" aria-label="cluster telemetry" hidden></section>
       <section id="kube-ops" aria-label="cluster add-ons" hidden></section>
       <section id="kube-empty" aria-label="no cluster connected" hidden></section>
-      <section id="kube-graph" aria-label="services graph (sample prototype)" tabindex="-1" hidden></section>
+      <section id="kube-graph" aria-label="services graph (sample prototype)" tabindex="-1" hidden data-module="graph"></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
-      <button id="k9s-btn" type="button" aria-pressed="false" title="K9S window: a read-only resource table (:)" hidden><i></i><b>K9S</b><small>:</small></button>
-      <section id="k9s" aria-label="K9S window, read-only resource table" hidden></section>
+      <button id="k9s-btn" type="button" aria-pressed="false" title="K9S window: a read-only resource table (:)" hidden data-module="kubernetes"><i></i><b>K9S</b><small>:</small></button>
+      <section id="k9s" aria-label="K9S window, read-only resource table" hidden data-module="kubernetes"></section>
       <form id="pip" hidden></form>
       <section id="term" hidden></section>
       <section id="learn" aria-label="learn" hidden></section>
       <section id="score" aria-label="scorecard" hidden></section>
       <section id="netdebug" aria-label="network debugging" hidden></section>
     </div>
-    <aside id="radio-panel" aria-label="radio">
+    <aside id="radio-panel" aria-label="radio" data-module="radio">
       <div class="ptitle"><img class="px" data-icon="radio" alt=""><span data-pro-label="Activity">RADIO</span><span id="station-count"></span></div>
       <div class="scope"><canvas id="scope"></canvas></div>
       <div class="dial" aria-hidden="true"><div class="scale"></div><div class="nums"><span>88</span><span>94</span><span>100</span><span>106</span><span>112</span></div><div id="needle"></div></div>
@@ -2735,9 +2736,13 @@ export function featureOff(features, method, path) {
 // The page with the config's theme on <html>: data-theme is what shows (a
 // browser's own choice in settings replaces it before the first paint),
 // data-config-theme is the default "Use config" returns to.
-export function pageFor(theme) {
+export function pageFor(theme, enabled) {
   const t = THEME_NAMES.includes(theme) ? theme : "pip";
-  return page.replace('<html lang="en">', `<html lang="en" data-theme="${t}" data-config-theme="${t}">`);
+  const mods = (enabled || MODULE_IDS).filter((id) => MODULE_IDS.includes(id));
+  const stamp = enabled ? ` data-modules="${mods.join(" ")}"` : "";
+  return page
+    .replace('<html lang="en">', `<html lang="en" data-theme="${t}" data-config-theme="${t}"${stamp}>`)
+    .replace("</head>", `${gateStyle(mods)}</head>`);
 }
 
 export function listen(app, port = 9241, host = "127.0.0.1") {
@@ -2779,7 +2784,7 @@ async function route(app, req, res) {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store",
     });
-    res.end(pageFor(app.settings?.()?.config?.ui?.theme));
+    res.end(pageFor(app.settings?.()?.config?.ui?.theme, app.settings?.()?.modules?.enabled));
     return;
   }
 
@@ -2899,7 +2904,9 @@ async function route(app, req, res) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/upgrades") {
-    send(res, 200, { modules: app.upgrades(), terraform: app.terraformStacks ? app.terraformStacks() : [] });
+    // A card whose module is off (the observe bundle) is not offered.
+    const on = (id) => !enabled || enabled.includes(stackModule(id));
+    send(res, 200, { modules: (app.upgrades() || []).filter((m) => on(m.id)), terraform: app.terraformStacks ? app.terraformStacks() : [] });
     return;
   }
 
@@ -2939,6 +2946,10 @@ async function route(app, req, res) {
     const body = await readJson(req).catch(() => null);
     if (!body || typeof body !== "object") {
       send(res, 400, { error: "the run request was not JSON", hint: "Reload the page and press the button again." });
+      return;
+    }
+    if (enabled && !enabled.includes(stackModule(String(body.module || "")))) {
+      send(res, 404, { error: `module off: ${stackModule(String(body.module || ""))} (modules in cloudspider.yaml)` });
       return;
     }
     send(res, 200, await app.upgradeRun(req.headers.origin, body));
