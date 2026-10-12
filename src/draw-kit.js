@@ -305,6 +305,18 @@ export function crtBackdrop(ctx, width, height, { horizon = HORIZON, seed = 7, c
   }
 }
 
+// Resource names keep both ends: the tail (hash, last octets, -b) tells
+// siblings apart, so "k8s-shop-shopapi-5a1e0c" clips to "k8s-sh…5a1e0c",
+// not "k8s-shop-s…". The head gets the extra character.
+export function clipMiddle(text, max) {
+  const value = String(text || "");
+  if (value.length <= max) return value;
+  if (max < 5) return clip(value, max);
+  const keep = max - 1;
+  const tail = Math.floor(keep / 2);
+  return `${value.slice(0, keep - tail)}…${value.slice(value.length - tail)}`;
+}
+
 export function clip(text, max) {
   const value = String(text || "");
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
