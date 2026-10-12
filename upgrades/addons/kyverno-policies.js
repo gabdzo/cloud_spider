@@ -21,14 +21,16 @@ function policy(name, title, severity, description, message, expression, categor
     spec: {
       validationActions: ["Audit"],
       evaluation: { admission: { enabled: true }, background: { enabled: true } },
-      // Both: Kyverno 1.19.1's background scan ignored the matchCondition
-      // (cloudspider-up 2026-10-12: kube-system and cert-manager got
-      // results); the namespaceSelector is what admission and background honour.
+      // And the namespaceSelector, for admission.
       matchConstraints: {
         namespaceSelector: { matchExpressions: [{ key: "kubernetes.io/metadata.name", operator: "NotIn", values: SKIP_NAMESPACES }] },
         resourceRules: [{ apiGroups: [""], apiVersions: ["v1"], operations: ["CREATE", "UPDATE"], resources: ["pods"] }],
       },
-      matchConditions: [{ name: "skip-system-namespaces", expression: `!(object.metadata.?namespace.orValue('') in ${JSON.stringify(SKIP_NAMESPACES).replaceAll('"', "'")})` }],
+      // request.namespace, not object.metadata.namespace: autogen rewrites
+      // object.metadata to object.spec.template.metadata, which has no
+      // namespace, so Deployments/DaemonSets in kube-system matched
+      // (cloudspider-up 2026-10-12).
+      matchConditions: [{ name: "skip-system-namespaces", expression: `!(request.namespace in ${JSON.stringify(SKIP_NAMESPACES).replaceAll('"', "'")})` }],
       autogen: { podControllers: { controllers: POD_CONTROLLERS } },
       validations: [{ expression, message }],
     },

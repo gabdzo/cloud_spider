@@ -18,7 +18,7 @@ test("every validate policy is a CEL ValidatingPolicy in Audit with pod-controll
     assert.deepEqual(p.spec.validationActions, ["Audit"], p.name);
     assert.ok(p.spec.autogen.podControllers.controllers.includes("deployments"), p.name);
     for (const ns of SKIP_NAMESPACES) assert.ok(p.spec.matchConditions[0].expression.includes(`'${ns}'`), `${p.name} skips ${ns}`);
-    // The background scan honours only the namespaceSelector (cloudspider-up 2026-10-12).
+    assert.ok(!p.spec.matchConditions[0].expression.includes("object.metadata"), `${p.name}: autogen would rewrite object.metadata to the pod template (no namespace)`);
     assert.deepEqual(p.spec.matchConstraints.namespaceSelector, { matchExpressions: [{ key: "kubernetes.io/metadata.name", operator: "NotIn", values: SKIP_NAMESPACES }] }, p.name);
     assert.ok(!("rules" in p.spec), `${p.name} has no ClusterPolicy rules`);
   }
@@ -26,11 +26,15 @@ test("every validate policy is a CEL ValidatingPolicy in Audit with pod-controll
 
 test("Kyverno CLI: the CEL policies and exception behave", { skip: !has && "kyverno CLI not installed" }, () => {
   const dir = mkdtempSync(join(tmpdir(), "kcel-"));
-  writeFileSync(join(dir, "pol.yaml"), ALL_POLICIES.map((p) => JSON.stringify({ apiVersion: CEL_API, kind: "ValidatingPolicy", metadata: { name: p.name }, spec: p.spec })).join("\n---\n"));
+  // Without the namespaceSelector: the matchCondition alone must skip
+  // kube-system, through autogen too (the background scan relies on it).
+  const bare = (spec) => ({ ...spec, matchConstraints: { ...spec.matchConstraints, namespaceSelector: undefined } });
+  writeFileSync(join(dir, "pol.yaml"), ALL_POLICIES.map((p) => JSON.stringify({ apiVersion: CEL_API, kind: "ValidatingPolicy", metadata: { name: p.name }, spec: bare(p.spec) })).join("\n---\n"));
   writeFileSync(join(dir, "exc.yaml"), EXCEPTIONS.map((e) => JSON.stringify({ apiVersion: CEL_API, kind: "PolicyException", metadata: { name: e.name, namespace: "kyverno" }, spec: e.spec })).join("\n---\n"));
   const out = spawnSync(cli, ["apply", join(dir, "pol.yaml"), "--resource", new URL("./fixtures/kyverno/resources.yaml", import.meta.url).pathname, "--exceptions", join(dir, "exc.yaml"), "--audit-warn=false"], { encoding: "utf8" }).stdout;
   const fails = [...out.matchAll(/policy (\S+) -> resource (\S+) failed/g)].map((m) => `${m[1]} ${m[2]}`).sort();
   assert.deepEqual(fails, [...ALL_POLICIES.map((p) => `${p.name} shop/Deployment/bad`), "disallow-host-path demo/Pod/sneaky"].sort());
-  // kube-system is not matched at all (namespaceSelector); skip: the 2 collector exceptions.
-  assert.match(out, /pass: 21, fail: 7, warn: 0, error: 0, skip: 2 /);
+  // Skipped: the kube-system Pod and DaemonSet (6 policies each; a DaemonSet
+  // is skipped only if the skip survives autogen) and the 2 collector exceptions.
+  assert.match(out, /pass: 21, fail: 7, warn: 0, error: 0, skip: 14 /);
 });
