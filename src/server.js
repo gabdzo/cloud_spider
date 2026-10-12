@@ -110,6 +110,7 @@ export const FILES = new Set([
   "settings-view.js",
   "module-keys.js",
   "map-focus.js",
+  "quick-find.js",
   "agent-text.js",
   "terminal.js",
   "learn-view.js",
