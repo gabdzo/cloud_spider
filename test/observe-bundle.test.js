@@ -235,3 +235,9 @@ test("Beyla discovery uses globs (instrument every namespace but its own, kube-s
   assert.deepEqual(d.exclude_instrument.map((x) => x.k8s_namespace), ["cloudspider-observe", "kube-system", "openshift-*"]);
   assert.ok(!JSON.stringify(d).match(/[\^$()|]/), "no regex syntax: Beyla matches globs");
 });
+
+test("Beyla's memory limit leaves room for a busy node (320Mi was OOMKilled on EKS)", () => {
+  const beyla = (profile) => renderBundle({ ...on, profile }).items.find((i) => i.obj.metadata.name === "beyla" && i.obj.kind === "DaemonSet").obj.spec.template.spec.containers[0].resources;
+  assert.equal(beyla("crc").limits.memory, "640Mi");
+  assert.equal(beyla("crc").requests.memory, "96Mi");
+});
