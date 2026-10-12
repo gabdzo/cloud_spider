@@ -1,4 +1,5 @@
-# Template (the shopapi stack is not up). When it is:
+# Listed in VAULTS automatically while the shopapi stack is up (auto
+# discovery, src/vault-view.js). To customise it, copy it into vaults/:
 #   npm run vaults:new -- shopapi shopapi
 # upgrades/shopapi (Pulumi project cloudspider-shopapi, stack shopapi): in
 # namespace shop, a migration Job (psql) and PostgREST serving GET /items
@@ -23,10 +24,36 @@ spec:
     dir: upgrades/shopapi
     name: shopapi
   links:
+    # expose=alb: the stack output url (http://<alb>/items); OPEN ↗ + lamp.
+    view: {output: url}
     repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/shopapi
     docs: https://docs.postgrest.org/
+  # expose=alb only (no url output with expose=none: the check waits).
+  checks:
+    http:
+      - url: {output: url}
+        name: items
+        expect: 200
+        contains: price_cents
   # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  # The ALB ones read its CloudWatch metrics once expose=alb made it.
   slos:
+    - name: api-availability
+      sli: availability
+      source: alb
+      target: 99.5%
+      window: 30d
+    - name: api-latency-p95
+      sli: latency
+      source: alb
+      threshold: 500
+      target: 99%
+      window: 30d
+    - name: items-check
+      sli: availability
+      source: check:items
+      target: 99%
+      window: 7d
     - name: api-restarts
       sli: error-rate
       source: kube:restarts:shop/shopapi

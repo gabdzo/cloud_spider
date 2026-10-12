@@ -184,6 +184,12 @@ export function createVaultStore({ dir, fs = { readdir, readFile, stat }, templa
         stack: entry.stack || null,
       }));
     },
+    // The full template vaults (parsed, validated), for auto-discovery: a
+    // template whose stack is up is listed as a live vault (vault-view.js).
+    async templateEntries() {
+      if (!templateStore) return [];
+      return (await templateStore.load()).vaults.filter((entry) => !entry.damaged).map((entry) => ({ ...entry, file: `${TEMPLATES_DIR}/${entry.file}` }));
+    },
     // Concurrent callers share one read.
     async load() {
       if (!flight) flight = read().finally(() => { flight = null; });

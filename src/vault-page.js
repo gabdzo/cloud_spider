@@ -47,7 +47,7 @@ export function stackState(vault) {
   if (info?.error) return { state: "error", text: `STACK ${which} · ${info.error}`.toUpperCase() };
   if (info && !info.stacks?.length) return { state: "down", text: `NOT UP · ${which}`.toUpperCase() };
   const count = info ? ` · ${info.resources} RESOURCE${info.resources === 1 ? "" : "S"}` : "";
-  return { state: "live", text: `LIVE · ${which}${count}`.toUpperCase() };
+  return { state: "live", text: `LIVE · ${vault.auto ? "AUTO · " : ""}${which}${count}`.toUpperCase() };
 }
 
 export function checkTally(vault) {
