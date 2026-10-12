@@ -47,11 +47,11 @@ Requests with `allowPrivileged=on`, logs on, kube-state-metrics installed
 | profile | 1 node | 3 nodes | limits (1 node) |
 |---|---|---|---|
 | crc (laptop, single node) | 5 pods, 70m CPU / 472Mi | 9 pods, 120m / 856Mi | 1.4 CPU / 1.4Gi |
-| standard (busy clusters) | 5 pods, 320m CPU / 1.1Gi | 9 pods, 520m / 2.25Gi | 3.2 CPU / 3.1Gi |
+| standard (busy clusters) | 5 pods, 295m CPU / 1.1Gi | 9 pods, 445m / 2.25Gi | 3.2 CPU / 3.1Gi |
 
 Plus the Loki claim (default 5Gi). Beyla's memory grows with the processes it
 instruments (420-464Mi per node on a busy EKS node): crc requests 128Mi and
-bursts to its 640Mi limit, standard requests 448Mi. Use standard on a cluster
+bursts to its 640Mi limit, standard requests 448Mi (CPU 25m; real use 1-21m). Beyla and the agent run at the bundle PriorityClass cloudspider-observe-node-agent (1000000), so on a full node they preempt an ordinary pod, which is rescheduled elsewhere. Use standard on a cluster
 with real traffic.
 
 The stack warns (preview and up) when `allowPrivileged` is off (no Beyla, no

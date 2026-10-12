@@ -38,6 +38,7 @@ export const IMAGES = {
 export const PORTS = { otlpGrpc: 4317, otlpHttp: 4318, prom: 8889, loki: 3100, ksm: 8080 };
 
 // requests / limits per piece. crc: OpenShift Local / kind / a laptop.
+export const NODE_AGENT_PRIORITY = "cloudspider-observe-node-agent";
 export const PROFILES = {
   crc: {
     // Requests from kubectl top on cloudspider-up (3 nodes, 2026-10-12): CPU
@@ -56,7 +57,7 @@ export const PROFILES = {
     loki: { requests: { cpu: "15m", memory: "96Mi" }, limits: { cpu: "500m", memory: "320Mi" } },
   },
   standard: {
-    beyla: { requests: { cpu: "50m", memory: "448Mi" }, limits: { cpu: "500m", memory: "768Mi" } },
+    beyla: { requests: { cpu: "25m", memory: "448Mi" }, limits: { cpu: "500m", memory: "768Mi" } },
     agent: { requests: { cpu: "50m", memory: "128Mi" }, limits: { cpu: "500m", memory: "384Mi" } },
     collector: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "768Mi" } },
     ksm: { requests: { cpu: "20m", memory: "64Mi" }, limits: { cpu: "200m", memory: "256Mi" } },
@@ -207,6 +208,10 @@ export function renderBundle(raw = {}) {
   const watchRead = ["get", "list", "watch"];
 
   add("the bundle's own namespace; uninstall deletes it and everything in it", { apiVersion: "v1", kind: "Namespace", metadata: { name: ns, labels: { ...labels("namespace"), "pod-security.kubernetes.io/enforce": full ? "privileged" : "baseline", "pod-security.kubernetes.io/warn": full ? "privileged" : "restricted", ...(openshift && full ? { "security.openshift.io/scc.podSecurityLabelSync": "false" } : {}) } } }, { privileged: full });
+  // Node agents must land on every node, also a full one: like other node
+  // agents they outrank ordinary pods and may preempt one, which the
+  // scheduler then places elsewhere. Below system-*-critical (2e9).
+  add("node-agent priority for Beyla and the agent: they may preempt an ordinary pod on a full node", { apiVersion: "scheduling.k8s.io/v1", kind: "PriorityClass", metadata: meta(NODE_AGENT_PRIORITY, "", "priority"), value: 1000000, globalDefault: false, preemptionPolicy: "PreemptLowerPriority", description: "Cloud Spider observe node agents (Beyla, otel-agent)" });
 
   if (full) {
     // Beyla
@@ -218,7 +223,7 @@ export function renderBundle(raw = {}) {
     add("Beyla on every node: live HTTP/gRPC calls between pods, no app changes (privileged, hostPID: eBPF)", {
       apiVersion: "apps/v1", kind: "DaemonSet", metadata: meta("beyla", ns, "beyla"),
       spec: { selector: sel("beyla"), updateStrategy: { type: "RollingUpdate" }, template: { metadata: { labels: labels("beyla") }, spec: {
-        serviceAccountName: "beyla", hostPID: true, tolerations: [{ operator: "Exists" }],
+        serviceAccountName: "beyla", priorityClassName: NODE_AGENT_PRIORITY, hostPID: true, tolerations: [{ operator: "Exists" }],
         containers: [{ name: "beyla", image: IMAGES.beyla, env: [{ name: "BEYLA_CONFIG_PATH", value: "/config/beyla.yml" }, { name: "BEYLA_KUBE_METADATA_ENABLE", value: "true" }], securityContext: { privileged: true, runAsUser: 0 }, resources: R.beyla, volumeMounts: [{ name: "config", mountPath: "/config", readOnly: true }, { name: "var-run-beyla", mountPath: "/var/run/beyla" }] }],
         volumes: [{ name: "config", configMap: { name: "beyla-config" } }, { name: "var-run-beyla", emptyDir: {} }],
       } } },
@@ -236,7 +241,7 @@ export function renderBundle(raw = {}) {
   add("node agent on every node (one small collector per node)", {
     apiVersion: "apps/v1", kind: "DaemonSet", metadata: meta("otel-agent", ns, "agent"),
     spec: { selector: sel("agent"), template: { metadata: { labels: labels("agent") }, spec: {
-      serviceAccountName: "otel-agent", tolerations: [{ operator: "Exists" }],
+      serviceAccountName: "otel-agent", priorityClassName: NODE_AGENT_PRIORITY, tolerations: [{ operator: "Exists" }],
       containers: [{ name: "otelcol", image: IMAGES.collector, args: ["--config=/conf/config.yaml"], env: [{ name: "NODE_IP", valueFrom: { fieldRef: { fieldPath: "status.hostIP" } } }],
         securityContext: { ...hardened, runAsNonRoot: !agentLogs, ...(agentLogs ? { runAsUser: 0 } : {}) }, resources: R.agent,
         volumeMounts: [{ name: "conf", mountPath: "/conf", readOnly: true }, ...logMounts] }],
