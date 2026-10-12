@@ -230,6 +230,40 @@ export function pathStats(diagram) {
   };
 }
 
+// Abbreviations the map draws; its tooltips spell them out.
+export const ABBR = {
+  IGW: "internet gateway: the VPC's door to the internet",
+  NAT: "NAT gateway: lets private subnets reach out, nothing reach in",
+  AZ: "availability zone: one data centre of the region",
+  EKS: "Elastic Kubernetes Service: managed Kubernetes",
+  ALB: "application load balancer (HTTP)",
+  NLB: "network load balancer (TCP)",
+  ENI: "network interface",
+  CIDR: "the address range",
+  EC2: "a virtual machine",
+  CDN: "content delivery network (CloudFront)",
+  RDS: "managed database",
+  CAPS: "money: the AWS bill so far this month",
+};
+export function explainAbbr(title) {
+  if (!title) return title;
+  const found = Object.keys(ABBR).filter((k) => new RegExp(`\\b${k}\\b`).test(title));
+  return found.length ? `${title}\n${found.map((k) => `${k} = ${ABBR[k]}`).join("\n")}` : title;
+}
+
+// What the footer counters mean (their tooltips).
+export const STAT_HELP = {
+  VPC: "VPCs in this region",
+  SUBNETS: "subnets in this region",
+  SHACKS: "EC2 instances (the map draws them as shacks)",
+  LIT: "running instances / all instances (a lit window = running)",
+  PARTS: "parts in the picture: services, workloads, pods, routes",
+  BROKEN: "parts failing now (crash, 5xx, no endpoints)",
+  HANGING: "parts stuck or degraded (pending, restarting, slow)",
+  HEALTHY: "healthy parts / all parts",
+};
+export const helpFor = (text) => STAT_HELP[String(text).split(/\s/)[0]] || "";
+
 export function renderStats(el, stats) {
   if (!stats) {
     el.replaceChildren();
@@ -241,6 +275,7 @@ export function renderStats(el, stats) {
   const cells = stats.cells.map((text) => {
     const span = document.createElement("span");
     span.textContent = text;
+    if (helpFor(text)) span.title = helpFor(text);
     return span;
   });
   const meter = document.createElement("span");
@@ -248,6 +283,7 @@ export function renderStats(el, stats) {
   const bar = document.createElement("i");
   bar.style.setProperty("--fill", `${Math.round(stats.meter.fill * 100)}%`);
   meter.append(document.createTextNode(stats.meter.label), bar);
+  if (helpFor(stats.meter.label)) meter.title = helpFor(stats.meter.label);
   el.replaceChildren(...cells, meter);
 }
 

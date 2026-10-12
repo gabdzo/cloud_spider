@@ -123,8 +123,8 @@ test("VAULTS is the view tab after Cluster and K9S (a push-button with a lamp an
   assert.match(browser, /vaultMode: "page"/);
   assert.match(browser, /window\.addEventListener\("hashchange", queueUrl\)/);
   assert.match(browser, /window\.addEventListener\("popstate", queueUrl\)/);
-  assert.match(browser, /tabVaults\.setAttribute\("aria-pressed", String\(vaultPageOpen\(\)\)\)/);
-  assert.match(browser, /tabMap\.setAttribute\("aria-pressed", String\(mode === "map" && !vaultRoute\)\)/);
+  assert.match(browser, /tabVaults\.setAttribute\("aria-pressed", String\(!covered && vaultPageOpen\(\)\)\)/);
+  assert.match(browser, /tabMap\.setAttribute\("aria-pressed", String\(!covered && mode === "map" && !vaultRoute\)\)/);
   // Path and Cluster drop the route; MAP and the porthole close the view.
   assert.match(browser, /function enterPath\(\) \{\n  dropVaultRoute\(\);/);
   assert.match(browser, /function enterCluster\(\) \{\n  dropVaultRoute\(\);/);
