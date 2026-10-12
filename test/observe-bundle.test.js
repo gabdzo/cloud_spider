@@ -81,7 +81,7 @@ test("profiles, options, footprint; Loki retention + claim deleted with the set"
   assert.throws(() => normalize({ lokiRetention: "2h" }), /24h/);
   assert.throws(() => normalize({ nodeCidr: "x" }), /CIDR/);
   const crc = footprint({ profile: "crc" });
-  assert.deepEqual(crc.requests, { cpuMillicores: 70, memoryMi: 728 });
+  assert.deepEqual(crc.requests, { cpuMillicores: 70, memoryMi: 472 });
   assert.ok(footprint({ profile: "standard", nodes: 3 }).requests.cpuMillicores > crc.requests.cpuMillicores * 3);
   const b = renderBundle({ ...on, lokiStorage: "2Gi", lokiRetention: "24h", storageClass: "crc-csi-hostpath-provisioner" });
   const sts = b.items.find((i) => i.obj.kind === "StatefulSet").obj;
@@ -239,7 +239,8 @@ test("Beyla discovery uses globs (instrument every namespace but its own, kube-s
 test("Beyla's memory limit leaves room for a busy node (320Mi was OOMKilled on EKS)", () => {
   const beyla = (profile) => renderBundle({ ...on, profile }).items.find((i) => i.obj.metadata.name === "beyla" && i.obj.kind === "DaemonSet").obj.spec.template.spec.containers[0].resources;
   assert.equal(beyla("crc").limits.memory, "640Mi");
-  assert.equal(beyla("crc").requests.memory, "384Mi");
+  assert.equal(beyla("crc").requests.memory, "128Mi");
+  assert.equal(beyla("standard").requests.memory, "448Mi");
 });
 
 test("the collector drops Beyla series Cloud Spider never reads, keeps the live-edge ones", () => {
@@ -251,4 +252,12 @@ test("the collector drops Beyla series Cloud Spider never reads, keeps the live-
   const dropped = (n) => rules.some((re) => re.test(n));
   for (const n of ["http.client.request.body.size", "http.server.response.body.size", "http.client.request.duration", "rpc.client.duration"]) assert.ok(dropped(n), n);
   for (const n of ["http.server.request.duration", "rpc.server.duration", "traces_service_graph_request_total"]) assert.ok(!dropped(n), n);
+});
+
+test("the stack warns when the bundle cannot draw live edges or leaves the node ports open", () => {
+  const w = renderBundle({}).warnings.join("\n");
+  assert.match(w, /allowPrivileged is off: NO Beyla/);
+  assert.match(w, /nodeCidr is not set/);
+  assert.deepEqual(renderBundle({ allowPrivileged: "on", nodeCidr: "10.0.0.0/16" }).warnings, []);
+  assert.ok(footprint({ profile: "crc", nodes: 3 }).requests.memoryMi < footprint({ profile: "standard", nodes: 3 }).requests.memoryMi, "crc is the small one on any node count");
 });

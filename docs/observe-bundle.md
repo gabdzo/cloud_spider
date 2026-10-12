@@ -41,12 +41,21 @@ service proxy with the viewer context; needs `services/proxy` `get` on
 
 ## Footprint
 
-| profile | pods (1 node) | requests | limits |
-|---|---|---|---|
-| crc | 5 | 115m CPU / 384Mi | 1.4 CPU / 1.1Gi |
-| standard | 5 (+2 per extra node) | 320m CPU / 896Mi | 3.2 CPU / 2.9Gi |
+Requests with `allowPrivileged=on`, logs on, kube-state-metrics installed
+(`footprint()` in render.js; DaemonSets count once per node):
 
-Plus the Loki claim (default 5Gi).
+| profile | 1 node | 3 nodes | limits (1 node) |
+|---|---|---|---|
+| crc (laptop, single node) | 5 pods, 70m CPU / 472Mi | 9 pods, 120m / 856Mi | 1.4 CPU / 1.4Gi |
+| standard (busy clusters) | 5 pods, 320m CPU / 1.1Gi | 9 pods, 520m / 2.25Gi | 3.2 CPU / 3.1Gi |
+
+Plus the Loki claim (default 5Gi). Beyla's memory grows with the processes it
+instruments (420-464Mi per node on a busy EKS node): crc requests 128Mi and
+bursts to its 640Mi limit, standard requests 448Mi. Use standard on a cluster
+with real traffic.
+
+The stack warns (preview and up) when `allowPrivileged` is off (no Beyla, no
+live edges) and when `nodeCidr` is unset (0.0.0.0/0).
 
 ## Uninstall
 
@@ -60,7 +69,7 @@ labelled `app.kubernetes.io/managed-by=cloudspider-observe`. Leftover check:
 No Beyla (no live edges or RED), no container logs (reading `/var/log/pods`
 needs root + hostPath), no SCCs; the namespace is Pod Security `baseline`.
 Installed: Events history in Loki, cluster metrics, kubelet stats (an API
-call), kube-state-metrics. crc on 1 node: 4 pods, ~90m CPU / 288Mi requested.
+call), kube-state-metrics. crc on 1 node: 4 pods, 60m CPU / 344Mi requested.
 
 ## Viewer access and LOG ERRORS
 
