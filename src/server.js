@@ -3522,6 +3522,8 @@ async function route(app, req, res) {
       const kept = lastLive.get(context);
       if (!(live?.installed && !live.error) && kept && Date.now() - kept.at <= 300_000) live = kept.live;
       if (live?.installed && !live.error) { send(res, 200, mergeLive(scene, live)); return; }
+      // Installed but unreadable (403): say so, the view shows it instead of "idle".
+      if (live?.forbidden) { send(res, 200, { ...scene, liveError: live.error }); return; }
     }
     send(res, 200, scene);
     return;
