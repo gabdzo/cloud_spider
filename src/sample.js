@@ -188,10 +188,15 @@ export async function sampleFetch(url, { signal } = {}) {
   };
 }
 
-// Sample mode's Pulumi state: orders-api is bound to the camp stack.
+// Sample mode's Pulumi state: orders-api is bound to the camp stack, and the
+// stacks of samples/vaults/templates are up (auto-discovery, #201), so
+// VAULTS shows the cluster vaults with their perks (vault-perks.js).
+const SAMPLE_UP = { "upgrades/eks|*": 41, "upgrades/addons|karpenter-cloudspider-up": 14, "upgrades/addons|kyverno-cloudspider-up": 9, "upgrades/addons|cert-manager-cloudspider-lab": 6, "upgrades/addons|scaling-demo-cloudspider-up": 4, "upgrades/shopapi|shopapi": 7, "upgrades/demo|demo": 18 };
 export function sampleStacks() {
   return {
     async read(spec) {
+      const up = SAMPLE_UP[`${spec?.dir}|${spec?.name}`];
+      if (up) return { stacks: [{ name: spec.name, resources: [] }], handles: new Set(), outputs: {}, count: up, error: "" };
       if (spec?.name !== "camp") return { stacks: [], handles: new Set(), outputs: {}, count: 0, error: "" };
       return { stacks: [{ name: "camp", resources: [] }], handles: new Set(["camp-function", "camp-table"]), outputs: {}, count: 6, error: "" };
     },

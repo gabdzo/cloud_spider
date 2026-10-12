@@ -6,6 +6,8 @@ import { validateSlos } from "./slo.js";
 
 export const API_VERSION = "cloudspider/v1";
 export const KIND = "Vault";
+// kind: Perk is a Vault that is one of a cluster vault's perks (vault-perks.js).
+export const KINDS = ["Vault", "Perk"];
 export const VAULT_TYPES = ["static-site", "service", "api", "cluster", "worker", "data", "other"];
 export const LINK_KEYS = ["view", "repo", "docs", "dashboard"];
 export const CHECK_TIMEOUT = { default: 5000, min: 100, max: 30000 };
@@ -55,7 +57,7 @@ export function validateVault(doc) {
   if (doc.apiVersion !== API_VERSION) {
     errors.push(`apiVersion: must be ${API_VERSION}${doc.apiVersion ? `, not ${doc.apiVersion}` : ""}`);
   }
-  if (doc.kind !== KIND) errors.push(`kind: must be ${KIND}${doc.kind ? `, not ${doc.kind}` : ""}`);
+  if (!KINDS.includes(doc.kind)) errors.push(`kind: must be ${KINDS.join(" or ")}${doc.kind ? `, not ${doc.kind}` : ""}`);
   unknownKeys(doc, ["apiVersion", "kind", "metadata", "spec"], "", warnings);
 
   const meta = isObject(doc.metadata) ? doc.metadata : null;
@@ -84,7 +86,15 @@ export function validateVault(doc) {
   if (!spec) errors.push("spec: is required");
   const out = { resources: { tags: {}, ids: [] }, links: {}, checks: [], stack: null, slos: [] };
   if (spec) {
-    unknownKeys(spec, ["type", "resources", "links", "checks", "stack", "slos"], "spec.", warnings);
+    unknownKeys(spec, ["type", "resources", "links", "checks", "stack", "slos", "perkOf", "perkId", "cluster"], "spec.", warnings);
+    // Where it shows in VAULTS (vault-perks.js): perkOf <cluster> (a perk of
+    // that cluster vault) or none (stays a vault), perkId the perk, cluster
+    // the cluster an app lives in.
+    for (const key of ["perkOf", "perkId", "cluster"]) {
+      if (spec[key] === undefined) continue;
+      if (typeof spec[key] !== "string" || !NAME.test(spec[key].trim())) errors.push(`spec.${key}: must be a name like cloudspider-up`);
+      else out[key] = spec[key].trim();
+    }
     // spec.slos: targets measured from what the app already reads (slo.js).
     const slos = validateSlos(spec.slos);
     errors.push(...slos.errors);
@@ -208,6 +218,10 @@ export function validateVault(doc) {
       checks: out.checks,
       stack: out.stack,
       slos: out.slos,
+      kind: doc.kind === "Perk" ? "perk" : "vault",
+      ...(out.perkOf ? { perkOf: out.perkOf } : {}),
+      ...(out.perkId ? { perkId: out.perkId } : {}),
+      ...(out.cluster ? { cluster: out.cluster } : {}),
     },
     errors: [],
     warnings,

@@ -1,0 +1,20 @@
+# Sample (auto-discovery): its stack is "up" in sample mode, so VAULTS lists
+# it the way #201 lists a deployed stack, and vault-perks.js groups it.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: cert-manager
+  number: 205
+  title: cert-manager
+  description: "Issues and renews TLS certificates in the cluster."
+  owner: gabriel
+  tags: [upgrade, eks, addon]
+spec:
+  type: cluster
+  resources:
+    tags:
+      project: cert-manager
+  stack:
+    dir: upgrades/addons
+    name: "cert-manager-cloudspider-lab"
+

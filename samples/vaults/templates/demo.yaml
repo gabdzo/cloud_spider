@@ -1,0 +1,20 @@
+# Sample (auto-discovery): its stack is "up" in sample mode, so VAULTS lists
+# it the way #201 lists a deployed stack, and vault-perks.js groups it.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: demo
+  number: 115
+  title: EKS demo app
+  description: "Podinfo web and api with a load generator and an OpenTelemetry collector."
+  owner: gabriel
+  tags: [demo, eks, observability]
+spec:
+  type: service
+  resources:
+    tags:
+      project: demo
+  stack:
+    dir: upgrades/demo
+    name: "demo"
+

@@ -1,0 +1,23 @@
+# Sample (auto-discovery): its stack is "up" in sample mode, so VAULTS lists
+# it the way #201 lists a deployed stack, and vault-perks.js groups it.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: eks
+  number: 110
+  title: EKS clusters
+  description: "Small EKS clusters from the Stacks panel, one stack each, with their own VPC, roles and a node group."
+  owner: gabriel
+  tags: [upgrade, kubernetes]
+spec:
+  type: cluster
+  resources:
+    tags:
+      project: eks
+    ids: [cloudspider-up, cloudspider-lab]
+  stack:
+    dir: upgrades/eks
+    name: "*"
+  # each cluster by name
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/eks
