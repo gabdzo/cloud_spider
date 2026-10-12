@@ -32,3 +32,10 @@ test("settings module rows pin each part to its column; SCORE/LEARN get a scrim"
   assert.match(server, /#settings \.st-mods b \{[^}]*grid-column: 2/);
   assert.match(server, /\.mapwrap:has\(#score:not\(\[hidden\]\), #learn:not\(\[hidden\]\)\)::before/);
 });
+
+test("a perk card's INSTALL sits in the state row's flow, not on top of it", async () => {
+  assert.doesNotMatch(server, /\.pk-install \{ position: absolute/);
+  const view = readFileSync(new URL("../src/perk-view.js", import.meta.url), "utf8");
+  assert.match(view, /lamp\.append\(el\("span", "pk-install", "INSTALL ▸"\)\)/);
+  assert.match(server, /\.pk-state-text \{[^}]*text-overflow: ellipsis/);
+});
