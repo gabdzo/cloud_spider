@@ -28,7 +28,9 @@ import { fileURLToPath } from "node:url";
 import { createVaultStore, vaultsDir } from "./vaults.js";
 import { createCheckRunner } from "./vault-checks.js";
 import { createVaultView } from "./vault-view.js";
+import { createCodeTime } from "./git-time.js";
 import { sampleFailures, sampleFetch, sampleLogs, samplePlace, sampleStacks } from "./sample.js";
+import { sampleCodeTime, sampleDeployedAt } from "./vault-sample.js";
 import { createStackReader } from "./vault-stacks.js";
 import { createSloStore } from "./slo-store.js";
 import { effectiveConfig, envExports, loadConfig, resolvePath, usage } from "./config.js";
@@ -84,11 +86,12 @@ function awsMake(name, make) {
 }
 const aws = awsMake("aws", () => createAws());
 const vaults = {
-  live: createVaultView({ store: createVaultStore({ dir: vaultsDir() }), checker: createCheckRunner(), stacks: createStackReader() }),
+  live: createVaultView({ store: createVaultStore({ dir: vaultsDir() }), checker: createCheckRunner(), stacks: createStackReader(), codeTime: createCodeTime() }),
   sample: createVaultView({
     store: createVaultStore({ dir: join(root, "samples", "vaults") }),
     checker: createCheckRunner({ fetch: sampleFetch }),
-    stacks: sampleStacks(),
+    stacks: sampleStacks({ deployedAt: () => sampleDeployedAt() }),
+    codeTime: sampleCodeTime,
   }),
   samplePlace,
   sampleFailures,

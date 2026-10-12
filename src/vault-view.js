@@ -5,6 +5,7 @@ import { matchVaults, placeResources } from "./vault-match.js";
 import { createLogCache, readErrorLines, vaultHandles, vaultLogGroups, vaultTrouble } from "./vault-trouble.js";
 import { vaultStatus } from "./vault-checks.js";
 import { createSloLedger, sloLamp, vaultSlos } from "./slo.js";
+import { kubeSignals, vaultHealth, vaultLocation, vaultRelations, vaultVersion } from "./vault-insight.js";
 
 // {output: name} links and check URLs come from the stack's outputs; an
 // output the stack does not have yet leaves the link off and the check out,
@@ -64,7 +65,7 @@ function eventTime(event) {
   return Number.isFinite(t) ? t : 0;
 }
 
-export function createVaultView({ store, checker, stacks = null, clock = Date.now }) {
+export function createVaultView({ store, checker, stacks = null, codeTime = null, clock = Date.now }) {
   // The folder's vaults plus the auto-discovered ones, in number order.
   async function entries() {
     const loaded = await store.load();
@@ -98,6 +99,7 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
           checks: resolved.checks,
           resources: info?.handles?.size ? { ...entry.resources, handles: info.handles } : entry.resources,
           logGroups: info?.logGroups || [],
+          stackResources: (info?.resources || []).filter((item) => item?.type),
           stackInfo: entry.stack
             ? {
                 stacks: (info?.stacks || []).filter((item) => !item.missing).map((item) => item.name),
@@ -142,11 +144,55 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
       status: entry.damaged ? "fail" : vaultStatus(checks, entry.checks.length),
       slos,
       sloLamp: sloLamp(slos),
+      insight: entry.insight || null,
+    };
+  }
+
+  // The cluster a k8s vault runs on: the vault's own, an add-on stack's
+  // suffix (karpenter-cloudspider-up), else the one polled cluster.
+  function clusterOf(entry, resources, kube) {
+    if (entry.cluster) return entry.cluster;
+    if (!resources.some((r) => String(r.type).startsWith("kubernetes:"))) return "";
+    const name = String(entry.stack?.name || "");
+    const known = kube.map((k) => k.cluster).filter(Boolean);
+    const hit = known.find((c) => name.endsWith(`-${c}`));
+    if (hit) return hit;
+    if (entry.stack?.dir === "upgrades/addons" && name.startsWith(`${entry.name}-`)) return name.slice(entry.name.length + 1);
+    return known[0] || "";
+  }
+
+  // Health, version/ownership, location and relations (vault-insight.js).
+  async function insightOf(vault, entry, { mapItems, owned, kube, metrics, placeRegion = "" }) {
+    const mapDns = new Map(mapItems.map((item) => [item.id, item.dnsName || item.dns || ""]));
+    const mapExtra = new Map(mapItems.map((item) => [item.id, { ingress: typeof item.ingress === "string" ? item.ingress : "", lbSubnetIds: Array.isArray(item.lbSubnetIds) ? item.lbSubnetIds : [] }]));
+    owned = owned.map((item) => ({ ...item, ...(mapExtra.get(item.id) || {}) }));
+    let codeChangedAt = 0;
+    if (entry.stack?.dir && codeTime) {
+      try {
+        codeChangedAt = (await codeTime(entry.stack.dir)) || 0;
+      } catch {
+        codeChangedAt = 0;
+      }
+    }
+    const resources = entry.stackResources || [];
+    const location = vaultLocation({ resources, owned, cluster: clusterOf(entry, resources, kube), region: placeRegion });
+    // only the snapshots of the vault's own cluster (when it is known)
+    const mine = location.cluster ? kube.filter((k) => !k.cluster || k.cluster === location.cluster) : kube;
+    const signals = kubeSignals(mine, location.namespaces, { now: clock() });
+    if (location.cluster && location.namespaces.length && !mine.some((k) => k.cluster === location.cluster)) signals.why = `${location.cluster} is not polled`;
+    const handles = new Map();
+    for (const item of owned) for (const h of [item.id, item.arn, item.name]) if (h) handles.set(h, item.id);
+    return {
+      health: vaultHealth(vault, { kube: location.namespaces.length ? signals : null, mapItems, metrics }),
+      version: vaultVersion(vault, { codeChangedAt, owned }),
+      location,
+      pods: signals.read ? { ready: signals.ready, total: signals.pods } : null,
+      relations: vaultRelations(resources, { kube: mine.filter((k) => k.snap && !k.snap.error), handles, extra: owned.map((item) => ({ ...item, dns: mapDns.get(item.id) || "" })) }),
     };
   }
 
   return {
-    async view(place, { failures = [], slo = {} } = {}) {
+    async view(place, { failures = [], slo = {}, kube = [] } = {}) {
       const ledger = slo.ledger || ownLedger;
       const loaded = await entries();
       const bound = await bind(loaded.vaults);
@@ -155,7 +201,7 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
       const metrics = slo.metrics || null;
       // Status as the map shows it (instances' state, fixtures' status).
       const raw = new Map([...(place?.instances || []), ...(place?.fixtures || [])].map((item) => [item.id, item]));
-      const vaults = bound.map((entry) => {
+      const vaults = await Promise.all(bound.map(async (entry) => {
         const checks = entry.damaged ? [] : checker.peek(entry.checks);
         const mine = owned.get(entry.key) || [];
         // A failed call from before the stack's last run is history: that
@@ -175,8 +221,12 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
               clusters: slo.clusters || [],
               now: clock(),
             });
-        return shape({ ...entry, logGroups: vaultLogGroups(entry.logGroups, functions) }, mine, checks, trouble, slos);
-      });
+        const vault = shape({ ...entry, logGroups: vaultLogGroups(entry.logGroups, functions) }, mine, checks, trouble, slos);
+        if (entry.damaged) return vault;
+        const ownedItems = mine.map((id) => ({ ...(resources.get(id) || { id }), subnetId: raw.get(id)?.subnetId || "" }));
+        vault.insight = await insightOf(vault, entry, { mapItems: mine.map((id) => raw.get(id)).filter(Boolean), owned: ownedItems, kube, metrics: metrics?.targets || {}, placeRegion: place?.region || "" });
+        return vault;
+      }));
       const autoNames = new Set(vaults.filter((vault) => vault.auto).map((vault) => vault.name));
       const templates = (typeof store.templates === "function" ? await store.templates() : []).map((template) => ({ ...template, live: autoNames.has(template.name) }));
       return { dir: loaded.dir, note: loaded.note, vaults, templates };

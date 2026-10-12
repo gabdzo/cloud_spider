@@ -122,7 +122,7 @@ export function createStackReader({ run = spawn, cwd = root, env = process.env, 
               const outputs = {};
               if (!spec.resource) for (const item of loaded.stacks) Object.assign(outputs, stackOutputs(item.resources));
               const times = loaded.stacks.map((item) => Date.parse(item.updated || "")).filter(Number.isFinite);
-              const value = { ...loaded, handles: stackHandles(resources), outputs, count: countResources(resources), logGroups: stackLogGroups(resources), updated: times.length ? Math.max(...times) : 0 };
+              const value = { ...loaded, resources, handles: stackHandles(resources), outputs, count: countResources(resources), logGroups: stackLogGroups(resources), updated: times.length ? Math.max(...times) : 0 };
               cache.set(key, { at: clock(), value });
               inflight.delete(key);
               return value;
