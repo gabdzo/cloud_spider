@@ -132,7 +132,7 @@ export function policyChecks(plan, reads = {}) {
 }
 
 // Inference meets fact: what the policy evaluator says vs what the pod saw.
-export function podFindings(plan, checks) {
+export function podFindings(plan, checks, { cni = null } = {}) {
   const get = (id) => checks.filter((c) => c.id === id);
   const np = get("K-NP-03");
   const tcp = get("P-TCP-01")[0];
@@ -145,7 +145,12 @@ export function podFindings(plan, checks) {
   if (blocked.length && tcp?.status === "FAIL" && /timed out/.test(tcp.observed.why || "")) {
     f.push({ id: "F-NP-BLOCK", confidence: "high", statement: `NetworkPolicy blocks this path: ${[...new Set(blocked.flatMap(by))].join(", ")} select the pods and no rule lets this source in; the connect timed out, as a drop does.`, supports: ["K-NP-03", "P-TCP-01"], contradicts: [], next: [`kubectl describe networkpolicy -n ${plan.target.namespace || plan.source.namespace}`] });
   } else if (blocked.length && tcp?.status === "PASS") {
-    f.push({ id: "F-NP-NOTENFORCED", confidence: "medium", statement: "The policies say this connection is blocked, but the pod connected: the CNI may not enforce NetworkPolicy (VPC CNI without the policy agent, flannel).", supports: ["P-TCP-01"], contradicts: ["K-NP-03"], next: ["kubectl get ds -n kube-system"] });
+    const statement = cni?.awsMode === "standard"
+      ? "The policies say this connection is blocked, but the pod connected: the VPC CNI policy agent runs in standard mode, where a new pod is default-allow until its policies are applied, and the short-lived debug pod probed inside that window. Your long-running pods are enforced; set NETWORK_POLICY_ENFORCING_MODE=strict on aws-node to close the window."
+      : cni && !cni.enforcer
+        ? "The policies say this connection is blocked, but the pod connected: nothing in kube-system enforces NetworkPolicy (no policy agent, Calico or Cilium), so the policies are decoration."
+        : "The policies say this connection is blocked, but the pod connected: the CNI may not enforce NetworkPolicy (VPC CNI without the policy agent, flannel).";
+    f.push({ id: "F-NP-NOTENFORCED", confidence: cni?.awsMode === "standard" || (cni && !cni.enforcer) ? "high" : "medium", statement, supports: ["P-TCP-01"], contradicts: ["K-NP-03"], next: ["kubectl get ds -n kube-system"] });
   } else if (!blocked.length && tcp?.status === "FAIL" && /timed out/.test(tcp.observed.why || "")) {
     f.push({ id: "F-DROP-OTHER", confidence: "medium", statement: "No NetworkPolicy blocks this, yet the connect timed out: look below Kubernetes (security groups, NACLs, node firewall, an egress gateway) or at the hop where the trace stops.", supports: ["P-TCP-01", "K-NP-03"], contradicts: [], next: ["tracepath -n <target>"] });
   }

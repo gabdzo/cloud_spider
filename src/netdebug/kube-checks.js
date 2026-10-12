@@ -107,6 +107,16 @@ export function cniEnforcer(daemonsets) {
   return "";
 }
 
+// VPC CNI with the policy agent: NETWORK_POLICY_ENFORCING_MODE on aws-node
+// (default standard: a new pod is default-allow until the agent has applied
+// its policies, seconds on a busy node). "" when the agent is off/absent.
+export function awsPolicyMode(daemonsets) {
+  const ds = (daemonsets || []).find((d) => nameOf(d) === "aws-node");
+  if (!ds || cniEnforcer([ds]) !== "VPC CNI network policy agent") return "";
+  const env = (ds.spec?.template?.spec?.containers || []).flatMap((c) => c.env || []);
+  return String(env.find((e) => e.name === "NETWORK_POLICY_ENFORCING_MODE")?.value || "standard").toLowerCase();
+}
+
 export function parseCorefile(text) {
   const t = String(text || "");
   const forward = (/^\s*forward\s+\.\s+([^{\n]+)/m.exec(t) || [])[1]?.trim() || "";
