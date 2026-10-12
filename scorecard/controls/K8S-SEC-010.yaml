@@ -1,0 +1,17 @@
+kind: Control
+id: K8S-SEC-010
+revision: 1
+title: "New namespaces start with a default-deny NetworkPolicy"
+category: security
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: new-namespace-default-deny
+aggregation: all-or-nothing
+requires: [kube-clusterPolicies]
+whyItMatters: "K8S-SEC-005 checks today's namespaces; the next one somebody creates starts wide open until someone remembers. A generate rule closes it at birth."
+remediation: { summary: "Kyverno card: defaultDeny on (the default). A ClusterPolicy generates NetworkPolicy default-deny (ingress + egress, DNS egress to CoreDNS allowed) in every namespace created from then on, synchronize on so it comes back if deleted; kube-system, kube-public, kube-node-lease, kyverno and namespaces labelled cloudspider.io/allow-open=true are left out. Existing namespaces are not touched.", effort: S, card: { id: kyverno, params: { defaultDeny: "on" } } }
+verification: "A Kyverno ClusterPolicy has a generate rule on Namespace that makes a NetworkPolicy with Ingress (no rules) and Egress, synchronize true."
+references:
+  - { source: "Kyverno: add network policy", url: "https://kyverno.io/policies/best-practices/add-network-policy/add-network-policy/" }

@@ -41,6 +41,10 @@ export function withEksMaxNodes(list, max = EKS_MAX_NODES) {
 }
 
 const ADDON_PARAMETERS = {
+  // New namespaces start closed (Kyverno generate; existing ones untouched).
+  kyverno: [
+    { name: "defaultDeny", type: "string", default: "on", choices: ["on", "off"], labels: { on: "on · new namespaces get a default-deny NetworkPolicy (DNS egress allowed)", off: "off · new namespaces are open (SCORE FAILs K8S-SEC-010)" }, warn: "off" },
+  ],
   karpenter: [
     { name: "capacity", type: "string", default: "spot", choices: ["spot", "on-demand"] },
     // kubelet maxPods on its nodes (only with the EKS stack's prefix delegation).

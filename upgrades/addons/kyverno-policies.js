@@ -79,3 +79,53 @@ export const EXCEPTIONS = [
     },
   },
 ];
+
+// Default deny for every NEW namespace (defaultDeny on the Kyverno card):
+// a generate rule makes NetworkPolicy default-deny (ingress + egress, DNS
+// egress to CoreDNS allowed) when a namespace is created. synchronize: a
+// deleted or edited policy comes back. Only on CREATE and never for
+// existing namespaces (generateExisting false): shop, demo, cnpg-system keep
+// the policies their stacks wrote. Out: the system namespaces, Kyverno's
+// own, and any namespace labelled cloudspider.io/allow-open=true.
+export const DEFAULT_DENY_SKIP = ["kube-system", "kube-public", "kube-node-lease", "kyverno"];
+export const ALLOW_OPEN_LABEL = "cloudspider.io/allow-open";
+export const DEFAULT_DENY_POLICY = {
+  name: "default-deny-new-namespaces",
+  title: "Default-deny NetworkPolicy in new namespaces",
+  severity: "high",
+  category: "Multi-tenancy, Cloud Spider",
+  description: "Every new namespace starts closed: no ingress, egress only to DNS. Allow what the app needs with its own NetworkPolicies.",
+  spec: {
+    background: true,
+    rules: [
+      {
+        name: "default-deny",
+        match: { any: [{ resources: { kinds: ["Namespace"], operations: ["CREATE"] } }] },
+        exclude: { any: [{ resources: { names: DEFAULT_DENY_SKIP } }, { resources: { selector: { matchLabels: { [ALLOW_OPEN_LABEL]: "true" } } } }] },
+        generate: {
+          generateExisting: false,
+          synchronize: true,
+          apiVersion: "networking.k8s.io/v1",
+          kind: "NetworkPolicy",
+          name: "default-deny",
+          namespace: "{{request.object.metadata.name}}",
+          data: {
+            metadata: { labels: { "app.kubernetes.io/managed-by": "kyverno", "cloudspider.io/policy": "default-deny-new-namespaces" } },
+            spec: {
+              podSelector: {},
+              policyTypes: ["Ingress", "Egress"],
+              egress: [{
+                to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "kube-system" } }, podSelector: { matchLabels: { "k8s-app": "kube-dns" } } }],
+                ports: [{ protocol: "UDP", port: 53 }, { protocol: "TCP", port: 53 }],
+              }],
+            },
+          },
+        },
+      },
+    ],
+  },
+};
+
+// What Kyverno's controllers need to write the generated NetworkPolicies
+// (the chart's extraResources); Kyverno refuses the policy without it.
+export const GENERATE_RBAC = [{ apiGroups: ["networking.k8s.io"], resources: ["networkpolicies"], verbs: ["create", "update", "patch", "delete", "get", "list", "watch"] }];
