@@ -3876,6 +3876,21 @@ function iconImg(name) {
 }
 
 // The head of a card: icon, title, the hourly cost chip and the engine plate.
+// A stack's note: the first lines, MORE for the rest (some run to a page).
+function noteBlock(text) {
+  const box = el("div", { className: "card-note" }, el("p", { textContent: text }));
+  if (text.length > 240) {
+    box.classList.add("clamped");
+    const more = el("button", { type: "button", className: "note-more", textContent: "MORE ▾", title: "show the whole note" });
+    more.addEventListener("click", () => {
+      const open = box.classList.toggle("clamped");
+      more.textContent = open ? "MORE ▾" : "LESS ▴";
+    });
+    box.append(more);
+  }
+  return box;
+}
+
 function cardHead(spec) {
   const head = el(
     "button",
@@ -3883,8 +3898,17 @@ function cardHead(spec) {
     iconImg(CARD_ICON[spec.id] || "stack"),
     el("span", { className: "card-title", textContent: spec.title }),
   );
+  // Status chips: CONFIGURED (a Pulumi.<stack>.yaml with values on disk;
+  // not a claim that it is up) and what it needs first.
+  const chips = el("span", { className: "card-chips" });
+  if (spec.current && Object.keys(spec.current).length) chips.append(el("span", { className: "st-chip cfg", textContent: "CONFIGURED", title: "this stack has config values on disk (Pulumi.<stack>.yaml)" }));
+  const needs = (spec.needs || []).map(String);
+  if (needs.length) chips.append(el("span", { className: "st-chip need", textContent: `NEEDS ${needs[0].toUpperCase()}${needs.length > 1 ? ` +${needs.length - 1}` : ""}`, title: `needs first: ${needs.join(", ")}` }));
+  if (chips.children.length) head.append(chips);
   if (spec.cost) head.append(el("span", { className: "cost-chip", textContent: costLine(spec.cost).split(" · ")[0], title: `about ${costLine(spec.cost)} in ${spec.cost.region}` }));
   head.append(el("span", { className: `eng ${spec.engine === "terraform" ? "tf" : ""}`, textContent: spec.engine === "terraform" ? "TF" : "PULUMI" }));
+  head.append(el("span", { className: "card-chev", ariaHidden: "true", textContent: "›" }));
+  head.title = openCard === spec.id ? `fold ${spec.title}` : `open ${spec.title}: cost, settings, PREVIEW and RUN`;
   head.setAttribute("aria-expanded", String(openCard === spec.id));
   head.addEventListener("click", () => {
     openCard = openCard === spec.id ? null : spec.id;
@@ -4015,7 +4039,7 @@ function cardBody(spec, preset = {}) {
   const body = el("div", { className: "card-body" });
   const watch = el("div", { id: "pip-watch" });
   watch.hidden = true;
-  body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), needsRow(spec, preset), bundleRows(spec, preset));
+  body.append(noteBlock(spec.note || ""), costBlock(spec), needsRow(spec, preset), bundleRows(spec, preset));
   // PUBLIC · URL · lamp · OPEN, filled when the map knows the stack's public
   // load balancers (renderCardOpen, on every chrome render).
   const openRow = el("div", { className: "card-open" });
@@ -4274,22 +4298,28 @@ function drawAddonTree() {
 }
 
 function drawPipForm() {
-  const title = el("div", { className: "ptitle" }, iconImg("stack"), "STACKS");
+  const own = pipModules.filter((spec) => !spec.addon);
+  const title = el("div", { className: "ptitle" }, iconImg("stack"), el("span", { textContent: "STACKS" }), el("span", { className: "pcount", textContent: `${own.length + pipTerraform.length} STACKS · CLICK ONE TO OPEN` }));
   pipEl.replaceChildren(title);
   if (!pipModules.length && !pipTerraform.length) {
-    pipEl.append(el("div", { className: "quiet", textContent: "no upgrade" }));
+    pipEl.append(el("div", { className: "quiet pempty", textContent: "No stacks found: the upgrades/ folder has no Pulumi or Terraform stack." }));
     return;
   }
-  for (const spec of pipModules) {
-    if (spec.addon) continue;
-    const card = el("section", { className: "card" });
-    card.dataset.id = spec.id;
-    card.append(cardHead(spec));
-    if (openCard === spec.id) {
-      card.classList.add("open");
-      card.append(cardBody(spec));
+  const section = (icon, label, note) => el("div", { className: "pdiv", role: "separator" }, iconImg(icon), el("span", { textContent: label }), el("span", { className: "ro", textContent: note }));
+  const groups = [["stack", "AWS ACCOUNT", "OWN STACKS", own.filter((spec) => !(spec.needs || []).length)], ["cluster", "ON THE EKS CLUSTER", "NEED EKS FIRST", own.filter((spec) => (spec.needs || []).length)]];
+  for (const [icon, label, note, list] of groups) {
+    if (!list.length) continue;
+    pipEl.append(section(icon, label, `${note} · ${list.length}`));
+    for (const spec of list) {
+      const card = el("section", { className: "card" });
+      card.dataset.id = spec.id;
+      card.append(cardHead(spec));
+      if (openCard === spec.id) {
+        card.classList.add("open");
+        card.append(cardBody(spec));
+      }
+      pipEl.append(card);
     }
-    pipEl.append(card);
   }
   if (pipModules.some((spec) => spec.addon)) {
     pipEl.append(el("div", { className: "pdiv addons", role: "separator" }, iconImg("addon"), el("span", { textContent: "CLUSTER ADD-ONS" }), el("span", { className: "ro", textContent: "ONE STACK EACH" })));
