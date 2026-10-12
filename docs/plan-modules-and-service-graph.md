@@ -173,38 +173,67 @@ Ratings from the prototype shots, 0–10:
 
 ## 7. Phases and effort (my build time)
 
-| phase | what | effort |
-|---|---|---|
-| 0 | this plan + SAMPLE prototype (done) | ~2 h |
-| 1 | module registry, profiles, config + aliases, settings MODULES drawer, gated creation, boots with no AWS | 5–6 h |
-| 2 | real static + ownership graph (Services/EndpointSlices/Ingress/Routes/NetworkPolicy, ownerRefs, CRDs, OLM CSV) | 6–8 h |
-| 3 | scale: grouping heuristics, server aggregation, lazy members, 2k-pod perf test | 3–4 h |
-| 4 | incident review: event recorder, restarts, rollouts, CR conditions, Alertmanager/CloudWatch alarms, window picker | 6–7 h |
-| 5 | **observe** module: opt-in install of Grafana Beyla + a small OTel collector → live L7 edges and RED metrics | 6–8 h |
-| later | live edges from an existing Prometheus (OTel servicegraph / Istio / Linkerd), Hubble Relay (Cilium), EKS flow monitor / VPC flow logs | 3–6 h each |
+Order changed 2026-10-12 (Gabriel): the brother owns his cluster and wants whatever gives the best picture deployed, so the observe bundle moves up to phase 3.
 
-**Recommended order:** 1 → 2 → 3 → 4 (a usable product for his team at about 22 h), then 5 (observe). Prometheus, Hubble and VPC flows come after that, only if a cluster already has them.
+| phase | what | status |
+|---|---|---|
+| 0 | this plan + SAMPLE prototype | done (#239) |
+| 1 | module registry, profiles (full / k8s-only / aws-only), config + feature aliases, settings MODULES toggles, gated AWS creation, empty-env boot test | done (#241) |
+| 2 | real static + ownership graph: Services, workloads, Ingress, **OpenShift Routes**, NetworkPolicies, ownerReferences, CRDs, **OLM CSVs**; read-only, no Secrets, namespace allowlist; degrades on plain Kubernetes | done (#242) |
+| 3 | **observe bundle** (7.2): one-click opt-in install that feeds live edges, RED metrics and incident history into the graph and the score | next |
+| 4 | scale: edge routing around cards, calmer overview, server aggregation, 2k-pod perf test | |
+| 5 | incident review on the bundle's data (event exporter history + RED + restarts/rollouts), window picker | |
+| 6 | **logs**: Loki in the observe bundle + a log-errors section in the morning report (7.3) | 6–8 h |
+| 7 | **agent onboarding**: a ready-made prompt + `vault.yaml` template so a coding agent registers services as vaults (7.4) | 2–3 h |
+| later | an existing Prometheus (OTel servicegraph / Istio / Linkerd), Hubble, EKS flow monitor / VPC flow logs | |
 
 ### 7.1 Answers (2026-10-12, Gabriel)
 
-- The brother's clusters are **plain Kubernetes** (not EKS) with **no metrics and no Prometheus**. Live edges therefore cannot come from an existing Prometheus; phase 5 brings its own (Beyla).
-- Gabriel tests the brother's scenario on his **local OpenShift cluster**, so OpenShift Routes and OLM ClusterServiceVersions are **in phase 2**. Both are read only when the API group exists; on plain Kubernetes they are skipped without an error (no Routes, grouping falls back to ownerReferences + Helm labels).
+- The brother's clusters are **plain Kubernetes** with **no metrics and no Prometheus**; he owns the cluster and agrees to an install.
+- Gabriel tests on his **local OpenShift (CRC)**, so Routes and OLM are in phase 2 and the bundle must run under OpenShift SCCs.
 
-### 7.2 Phase 5: the observe module
+### 7.2 Phase 3: the observe bundle
 
-- **What:** a one-click, opt-in install of **Grafana Beyla** (eBPF auto-instrumentation, no app changes) as a DaemonSet plus a **small OTel collector** (servicegraph connector + spanmetrics), into a namespace the user picks (default `cloudspider-observe`).
-- **Install is the only cluster write in the product.** It is a separate module (`observe`, off in every profile), behind a PREVIEW that lists every object, then an explicit INSTALL. It never runs from SAMPLE. It needs privileged pods (eBPF); on OpenShift that means a dedicated SCC bound to Beyla's ServiceAccount, shown in the preview.
-- **NetworkPolicies per our netpol convention:** default-deny in the namespace; Beyla → collector on OTLP 4317/4318 only; Cloud Spider → collector read port only; collector egress: none (DNS only).
-- **Retention:** the collector keeps short in-memory windows (default 15 min); nothing is persisted in the cluster. Cloud Spider pulls aggregates and keeps them in the local event recorder (phase 4).
-- **Uninstall:** one button removes everything by the `app.kubernetes.io/managed-by=cloudspider-observe` label (DaemonSet, Deployment, Services, ConfigMaps, RBAC, SCC binding, NetworkPolicies, then the namespace if we created it), and reports anything left over.
-- **Graph:** observed HTTP/gRPC edges (method + route, rate, error %, p95) become a **live** layer on top of static edges; a static edge that is never observed is shown dimmed, an observed edge without a static path is flagged.
-- **OLM is optional:** plain manifests first; an OLM bundle can come later for OpenShift catalogs.
+One opt-in module (`observe`, off in every profile; `modules.enable: [observe]`). Cloud Spider renders every manifest and shows a PREVIEW (each object, why it is needed, what privilege it asks for). Install and uninstall are the only cluster writes in the product and need: the module on, a **separate write context** named in config (`observe.context`; the viewer context stays read-only), and an explicit confirm. Nothing runs from SAMPLE.
 
+| piece | why | notes |
+|---|---|---|
+| **Grafana Beyla** DaemonSet | live L7 edges (HTTP/gRPC route, rate, errors, p95) with no app changes | eBPF: privileged, hostPID. **OpenShift:** a dedicated SCC (`cloudspider-observe-beyla`: privileged, hostPID, hostNetwork off) bound only to Beyla's ServiceAccount; the preview flags it in red and install refuses until the user ticks "allow privileged". |
+| **OTel collector** (Deployment, 1 replica) | receives Beyla OTLP; `servicegraph` connector → edges, `spanmetrics` → RED; Prometheus exporter for Cloud Spider to read | in-memory only, 15 min windows; no persistence in the cluster |
+| **kube-state-metrics** | rollouts, restarts, desired vs ready, for the score and the timeline | installed **only if missing** (detected by its Service / APIService) |
+| **metrics-server** | pod/node CPU and memory | only if `metrics.k8s.io` is missing; skipped on OpenShift (it ships its own) |
+| **event exporter** | keeps Kubernetes Events beyond the API server's hour, for incident review | writes to the collector (logs pipeline), Cloud Spider stores the history locally (state dir, size-capped) |
+| **NetworkPolicies** | our netpol convention | default-deny in the namespace; Beyla → collector 4317/4318; event exporter → collector; Cloud Spider (via API server service proxy) → collector metrics port; egress DNS + API server only |
+| RBAC | read pods/services/nodes for Beyla's Kubernetes metadata; events read for the exporter | ClusterRoles named `cloudspider-observe-*`, read-only verbs |
+
+- **Labels:** everything carries `app.kubernetes.io/managed-by=cloudspider-observe` and `app.kubernetes.io/part-of=cloudspider`.
+- **Uninstall:** removes by label in reverse order (workloads, Services, ConfigMaps, NetworkPolicies, RBAC, SCC, then the namespace if we created it) and lists anything left over.
+- **Graph:** observed edges become the TRACES layer; a static edge never observed is dimmed, an observed edge with no static path is flagged.
+- **Score:** RED + restarts feed K8S-OBS controls (other worker's area: only an input is added there).
+- **OLM:** optional later; plain manifests first.
+
+### 7.3 Phase 6: logs and the morning log-errors section
+
+- **Loki** joins the observe bundle (single binary, filesystem storage on a small local PV, default 5 Gi, **72 h retention**), fed by the OTel collector's logs pipeline (filelog receiver on the nodes via a small agent DaemonSet, or the collector's k8s log receiver; the preview says which). Its own NetworkPolicy: only the collector writes, only Cloud Spider (service proxy) reads. Uninstall removes the PVC too, after a confirm.
+- **Morning report: LOG ERRORS.** Last night's (the 22:00–07:00 window, configurable) errors and exceptions, grouped by service (the graph's node, from k8s metadata):
+  - a fingerprint per error (message with numbers/ids/hex stripped, plus the top stack frame), count, first seen, last seen;
+  - one sample stack trace (trimmed to 30 lines, secrets-looking tokens masked);
+  - **NEW** when the fingerprint was not seen the day before; **SPIKE** when the count is ≥ 3× yesterday's same window;
+  - links: the service in SERVICES (focused) and the minute in INCIDENT REVIEW.
+- Fallback without Loki: the same section from `kubectl logs --previous` of restarted pods only (read-only), marked partial.
+- Effort: Loki + pipeline in the bundle 3 h; fingerprinting + report section + links 3–4 h; tests on a recorded log fixture 1 h.
+
+### 7.4 Phase 7: agent onboarding (vaults from a repo or the cluster)
+
+- `docs/agent-onboarding.md`: a ready-made prompt the brother pastes into his coding agent. It tells the agent to read a repo (Dockerfiles, Helm charts, k8s manifests, OpenAPI, env vars naming other services) **or** the cluster through Cloud Spider's read-only `/api/cluster/graph`, and write one `vaults/<service>.yaml` per service.
+- `vaults/_template.yaml`: owner (team, contact), repo, the Kubernetes workload(s) it maps to (namespace/kind/name), SLOs (availability, latency p95, error rate, each with a target and window), dependencies (other vaults, databases, external APIs), runbook link.
+- Validation: `npm run vaults:check` (schema + the workloads exist in the graph), so the agent can loop until green. Nothing is written to the cluster.
+- Effort: template + schema check 1 h; prompt + doc + an example run on the demo app 1–2 h.
 
 ## 8. Open questions
 
 1. ~~Cluster flavour~~ answered: plain Kubernetes; OpenShift locally for testing (7.1).
-2. ~~Prometheus~~ answered: none; phase 5 installs Beyla + a collector (7.2).
+2. ~~Prometheus~~ answered: none; phase 3 installs the observe bundle (7.2).
 3. Is RBAC cluster-wide read, or namespaced? This affects grouping and the "partial" UX.
 4. How long should incident history be kept (hours, days)? This decides the size of the recorder.
 5. Should the minimal product be a separately branded build, or just `profile: k8s-only`?
