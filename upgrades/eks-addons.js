@@ -147,6 +147,32 @@ export function prefixDelegationOn(configurationValues) {
 export const MAX_PODS = { "t4g.small": ["32"], "t4g.medium": ["32", "58", "110"] };
 export const MAX_PODS_CHOICES = ["auto", "32", "58", "110"];
 
+// Capacity type of the managed node group (EKS card capacityType). SPOT
+// asks EKS for one of several similar Graviton types, so a shortage of one
+// does not leave the group empty; every type in a pool has the memory of
+// the card's instanceType, so the same kubelet maxPods fits all of them
+// (110 needs a 4 GiB node). EKS's managed spot group spreads its nodes over
+// the group's subnets (1a and 1b) and replaces an interrupted node itself.
+export const CAPACITY_TYPES = ["ON_DEMAND", "SPOT"];
+export const SPOT_POOLS = {
+  "t4g.small": ["t4g.small", "c7g.medium", "c6g.medium"],
+  "t4g.medium": ["t4g.medium", "m7g.medium", "m6g.medium"],
+};
+
+export function nodeInstanceTypes(instanceType, capacityType = "ON_DEMAND") {
+  return capacityType === "SPOT" ? SPOT_POOLS[instanceType] || [instanceType] : [instanceType];
+}
+
+// A SPOT pool mixes types whose ENI limits differ (8 pods on a c7g.medium,
+// 17 on a t4g.medium), so "auto" would make the cap depend on which type
+// AWS hands out: spot needs an explicit maxPods.
+export function capacityProblem(instanceType, capacityType = "ON_DEMAND", maxPods = "auto") {
+  const type = String(capacityType || "ON_DEMAND");
+  if (!CAPACITY_TYPES.includes(type)) return `capacityType must be ${CAPACITY_TYPES.join(" or ")}`;
+  if (type === "SPOT" && String(maxPods ?? "auto") === "auto") return `capacityType SPOT mixes ${nodeInstanceTypes(instanceType, "SPOT").join(", ")}, whose ENI pod limits differ: set maxPods (${(MAX_PODS[instanceType] || ["32"]).join(" or ")})`;
+  return "";
+}
+
 // kubelet's pod cap without maxPods: the ENI limit, one IP per pod
 // (ENIs x (IPs per ENI - 1) + 2).
 export const ENI_PODS = { "t4g.small": 11, "t4g.medium": 17 };

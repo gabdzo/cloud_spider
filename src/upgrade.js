@@ -62,13 +62,13 @@ export const UPGRADES = [
   {
     id: "eks",
     title: "EKS",
-    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the VPC CNI (with prefix delegation, so a node is not capped at its ENI IPs: 11 pods on a t4g.small, 17 on a t4g.medium), the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them. Prefix delegation alone does not raise a managed node's pod cap: maxPods auto keeps the node group as it is, at EKS's ENI limit (11 on a t4g.small, 17 on a t4g.medium); 32 (t4g.small) or 32, 58 or 110 (t4g.medium) REPLACES the node group once, the new group first, so new nodes take that many pods (PREVIEW shows the replace; RUN asks you to confirm it).",
+    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the VPC CNI (with prefix delegation, so a node is not capped at its ENI IPs: 11 pods on a t4g.small, 17 on a t4g.medium), the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them. Prefix delegation alone does not raise a managed node's pod cap: maxPods auto keeps the node group as it is, at EKS's ENI limit (11 on a t4g.small, 17 on a t4g.medium); 32 (t4g.small) or 32, 58 or 110 (t4g.medium) REPLACES the node group once, the new group first, so new nodes take that many pods (PREVIEW shows the replace; RUN asks you to confirm it). capacityType SPOT runs the nodes on spot from a pool of similar types (t4g.small, c7g.medium, c6g.medium for a t4g.small; t4g.medium, m7g.medium, m6g.medium for a t4g.medium), about a third of the on-demand price; it needs a maxPods number and REPLACES the node group once (new group first). Cheapest layout that survives a zone: nodeCount 2, SPOT, maxPods 110 on a t4g.medium, one node in eu-north-1a and one in 1b (EKS spreads a group over its two subnets).",
     dir: "upgrades/eks",
     stack: "upgrade",
     project: "cloudspider-upgrade",
     vault: "eks",
     needs: [],
-    cost: [{ price: "eks-cluster" }, { price: "ec2:t4g.small", param: "instanceType", prefix: "ec2:", perNode: true }, { price: "ebs-gp3-gb", qty: 20, perNode: true }, { price: "public-ipv4", perNode: true }],
+    cost: [{ price: "eks-cluster" }, { price: "ec2:t4g.small", param: "instanceType", prefix: "ec2:", perNode: true, spot: "capacityType" }, { price: "ebs-gp3-gb", qty: 20, perNode: true }, { price: "public-ipv4", perNode: true }],
     parameters: [
       { name: "clusterName", type: "string", default: "cloudspider-up" },
       { name: "instanceType", type: "string", default: "t4g.small", choices: ["t4g.small", "t4g.medium"] },
@@ -80,6 +80,8 @@ export const UPGRADES = [
       { name: "prefixDelegation", type: "string", default: "on", choices: ["on", "off"] },
       // kubelet's pod cap per node; a number REPLACES the node group once.
       { name: "maxPods", type: "string", default: "auto", choices: ["auto", "32", "58", "110"] },
+      // ON_DEMAND or SPOT (a pool of similar types); a change REPLACES the node group once.
+      { name: "capacityType", type: "string", default: "ON_DEMAND", choices: ["ON_DEMAND", "SPOT"] },
       { name: "podIdentityAgent", type: "string", default: "on", choices: ["on", "off"] },
       { name: "metricsServer", type: "string", default: "on", choices: ["on", "off"] },
       { name: "ebsCsiDriver", type: "string", default: "on", choices: ["on", "off"] },

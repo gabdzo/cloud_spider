@@ -3442,7 +3442,7 @@ function cardBody(spec, preset = {}) {
       field.addEventListener("input", () => promptConfirm(spec, body));
     }
     // The bill follows the instance type and node count picked here.
-    if (spec.costLines?.some((line) => line.param === parameter.name || (line.perNode && parameter.name === "nodeCount") || (line.when && parameter.name in line.when))) {
+    if (spec.costLines?.some((line) => line.param === parameter.name || (line.perNode && parameter.name === "nodeCount") || (line.when && parameter.name in line.when) || line.spot === parameter.name)) {
       field.addEventListener("change", () => repriceCard(spec));
       field.addEventListener("input", () => repriceCard(spec));
     }

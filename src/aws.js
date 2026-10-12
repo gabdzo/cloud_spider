@@ -503,7 +503,7 @@ export async function describeUpgradeNodegroup(clusterName, nodegroupName) {
     const eks = new EKSClient({ region: "eu-north-1" });
     const out = await eks.send(new DescribeNodegroupCommand({ clusterName, nodegroupName }));
     const group = out.nodegroup || {};
-    return { found: true, instanceType: group.instanceTypes?.[0] || "", desired: group.scalingConfig?.desiredSize ?? null, min: group.scalingConfig?.minSize ?? null, max: group.scalingConfig?.maxSize ?? null, subnets: group.subnets || [] };
+    return { found: true, instanceType: group.instanceTypes?.[0] || "", instanceTypes: group.instanceTypes || [], capacityType: group.capacityType || "", desired: group.scalingConfig?.desiredSize ?? null, min: group.scalingConfig?.minSize ?? null, max: group.scalingConfig?.maxSize ?? null, subnets: group.subnets || [] };
   } catch (error) {
     const code = error?.name || error?.Code || "";
     if (/NotFound/.test(code)) return { found: false };

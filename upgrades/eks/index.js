@@ -3,7 +3,7 @@ import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
-import { EKS_OWNED, PREFIX_DELEGATION, adoptList, eksOwnPlan, maxPodsProblem, nodeConfigUserData, ownerText, podsPerNodeText, readAddon } from "../eks-addons.js";
+import { EKS_OWNED, PREFIX_DELEGATION, adoptList, capacityProblem, eksOwnPlan, maxPodsProblem, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon } from "../eks-addons.js";
 
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
@@ -146,6 +146,12 @@ const prefixDelegation = isOn("vpcCni") && isOn("prefixDelegation");
 const maxPods = String(config.get("maxPods") || "auto");
 const maxPodsError = maxPodsProblem(instanceType, maxPods, prefixDelegation);
 if (maxPodsError) throw new Error(maxPodsError);
+// ON_DEMAND (default, what a group made before this setting has) or SPOT
+// (several similar types, about a third of the price; an interrupted node is
+// replaced by EKS). A change REPLACES the node group, new one first.
+const capacityType = String(config.get("capacityType") || "ON_DEMAND").toUpperCase();
+const capacityError = capacityProblem(instanceType, capacityType, maxPods);
+if (capacityError) throw new Error(capacityError);
 
 async function ownAddon(item, dependsOn) {
   if (!isOn(item.key)) return;
@@ -217,9 +223,9 @@ const nodes = new aws.eks.NodeGroup(
     ...(launchTemplate ? { launchTemplate: { id: launchTemplate.id, version: launchTemplate.latestVersion.apply(String) } } : {}),
     nodeRoleArn: nodeRole.arn,
     subnetIds: [subnetA.id, subnetB.id],
-    instanceTypes: [instanceType],
+    instanceTypes: nodeInstanceTypes(instanceType, capacityType),
     amiType: "AL2023_ARM_64_STANDARD",
-    capacityType: "ON_DEMAND",
+    capacityType,
     // Changing nodeCount updates this node group in place (EKS
     // UpdateNodegroupConfig): the cluster, VPC and subnets do not change.
     scalingConfig: { desiredSize: nodeCount, minSize: nodeCount, maxSize: nodeCount },
@@ -318,3 +324,4 @@ export const eksAddons = Object.keys(addons);
 // limit even with prefix delegation on.
 export const podsPerNode = podsPerNodeText(instanceType, maxPods);
 export const vpcCniPrefixDelegation = prefixDelegation;
+export const nodeCapacity = { capacityType, instanceTypes: nodeInstanceTypes(instanceType, capacityType) };

@@ -27,6 +27,13 @@ export const PRICES = {
   alb: { usd: 0.024, per: "hour", text: "Application Load Balancer" },
 };
 
+// Spot: EC2 spot in eu-north-1 for the t4g/c7g/m7g mediums ran at roughly a
+// third of on-demand in 2026 (it moves by the hour and the zone). A line with
+// `spot: "<param>"` is priced at this share when that parameter is SPOT
+// (costFor turns it into spot: true for estimate); the
+// card says the figure is rough.
+export const SPOT_SHARE = 0.35;
+
 // Billed per request or per GB moved: $0 when nobody uses it.
 export const USAGE = {
   sqs: "SQS requests (first 1M a month free)",
@@ -53,9 +60,11 @@ export function estimate(lines = []) {
     const price = PRICES[line.price];
     if (!price) throw new Error(`unknown price ${line.price}`);
     const qty = line.qty ?? 1;
-    const perHour = price.per === "hour" ? price.usd * qty : (price.usd * qty) / HOURS_PER_MONTH;
+    const share = line.spot === true ? SPOT_SHARE : 1;
+    const perHour = (price.per === "hour" ? price.usd * qty : (price.usd * qty) / HOURS_PER_MONTH) * share;
     hourly += perHour;
-    items.push({ text: qty === 1 ? price.text : `${qty} × ${price.text}`, month: round(perHour * HOURS_PER_MONTH, 2) });
+    const text = line.spot === true ? `${price.text} spot (~${Math.round(SPOT_SHARE * 100)}% of on-demand, varies)` : price.text;
+    items.push({ text: qty === 1 ? text : `${qty} × ${text}`, month: round(perHour * HOURS_PER_MONTH, 2) });
   }
   return {
     hour: round(hourly, 4),
@@ -81,7 +90,7 @@ export function costFor(lines = [], params = {}) {
     let price = line.price;
     if (line.param && params[line.param] && PRICES[`${line.prefix || ""}${params[line.param]}`]) price = `${line.prefix || ""}${params[line.param]}`;
     const qty = (line.qty ?? 1) * (line.perNode ? nodes : 1);
-    return { price, qty };
+    return line.spot && String(params[line.spot] || "").toUpperCase() === "SPOT" ? { price, qty, spot: true } : { price, qty };
   });
 }
 
