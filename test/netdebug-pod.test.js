@@ -247,3 +247,10 @@ test("Cluster › graph links into FROM INSIDE", () => {
   assert.equal(s.ns, "web");
   assert.equal(s.debug, "shopapi.shop:");
 });
+
+test("FROM INSIDE checkboxes undo the page's generic input box (Pip-Boy regression)", async () => {
+  const { ND_CSS } = await import("../src/netdebug/style.js").catch(() => ({}));
+  const css = ND_CSS || (await import("node:fs")).readFileSync(new URL("../src/netdebug/style.js", import.meta.url), "utf8");
+  assert.match(css, /\.nd-insiderow \.nd-check input\[type="checkbox"\] \{[^}]*min-height: 0;[^}]*padding: 0;[^}]*border: 0;/);
+  assert.match(css, /\.nd-insiderow input\.nd-node-in \{ flex: none; width: 9em; \}/);
+});
