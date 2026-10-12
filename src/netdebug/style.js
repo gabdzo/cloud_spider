@@ -189,4 +189,13 @@ export const ND_CSS = `
   :root[data-theme="pro"] #netdebug .nd-why { border-radius: 8px; }
   :root[data-theme="pro"] #netdebug .nd-wn { border-radius: 50%; }
   :root[data-theme="pro"] #netdebug .nd-wverdict { border-radius: 0 6px 6px 0; }
+  /* Narrow (<=900px): the dock must not bury the path. It hugs the edges,
+     caps at 42% of the stage, the bar wraps (URL on its own line), and the
+     idle intro keeps only its TRY chips. */
+  @media (max-width: 900px) {
+    #netdebug { left: 6px; right: 6px; bottom: 6px; max-height: 42%; }
+    #netdebug .nd-bar { flex-wrap: wrap; gap: 6px 8px; }
+    #netdebug .nd-url { flex: 1 1 220px; min-width: 0; }
+    #netdebug .nd-empty > p { display: none; }
+  }
 `;

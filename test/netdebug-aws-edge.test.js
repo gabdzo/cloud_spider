@@ -26,7 +26,7 @@ test("CloudFront path patterns: first behaviour in order, else the default; case
   const d = dist({ behaviors: [{ pathPattern: "/static/*", targetOriginId: "static" }, { pathPattern: "/static/big/*", targetOriginId: "never" }] });
   assert.equal(matchBehavior(d, "/static/big/x").targetOriginId, "static");
   assert.equal(matchBehavior(d, "/").pathPattern, "*");
-  assert.equal(originLoadBalancer({ domain: "dualstack.api-alb-sample.eu-north-1.elb.amazonaws.com" }, samplePathGraph()).name, "api-alb");
+  assert.equal(originLoadBalancer({ domain: "dualstack.k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com" }, samplePathGraph()).name, "k8s-demo-api");
 });
 
 test("A-CF-02: an https origin on the ALB's elb name FAILs (certificate), the hand-off goes to the ALB", () => {
@@ -35,7 +35,7 @@ test("A-CF-02: an https origin on the ALB's elb name FAILs (certificate), the ha
   const o = by(rows, "A-CF-02");
   assert.equal(o.status, "FAIL");
   assert.match(o.text, /never covers \*\.elb\.amazonaws\.com: CloudFront answers 502/);
-  assert.equal(o.observed.handoff.name, "api-alb");
+  assert.equal(o.observed.handoff.name, "k8s-demo-api");
   assert.deepEqual(aws.handoff.request, { host: "cdn.sample.test", path: "/", protocol: "HTTPS", port: 443 });
 });
 
@@ -43,10 +43,10 @@ test("A-CF-02: http-only to a port with no listener FAILs; S3 without OAC/OAI FA
   const d = dist();
   d.origins[0] = { ...d.origins[0], domain: "origin.sample.test", protocolPolicy: "http-only", httpPort: 8080 };
   assert.equal(by(cf(d).rows, "A-CF-02").status, "PASS", "a name that is not the elb name: no listener join");
-  d.origins[0].domain = "api-alb-sample.eu-north-1.elb.amazonaws.com";
+  d.origins[0].domain = "k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com";
   const r = by(cf(d).rows, "A-CF-02");
   assert.equal(r.status, "FAIL");
-  assert.match(r.text, /api-alb has no HTTP listener on 8080/);
+  assert.match(r.text, /k8s-demo-api has no HTTP listener on 8080/);
   d.origins[0].httpPort = 80;
   assert.equal(by(cf(d).rows, "A-CF-02").status, "PASS");
   d.origins[1].oac = "";
@@ -81,9 +81,9 @@ test("CloudFront: denied is UNKNOWN with the permission; another account's distr
 
 test("ALB: routeOn picks the rule, target health explains an empty or a half-healthy target group", () => {
   const graph = samplePathGraph();
-  const alb = { kind: "alb", arn: "sample-lb-api", name: "api-alb" };
+  const alb = { kind: "alb", arn: "sample-lb-api", name: "k8s-demo-api" };
   const web = albChecks({ classification: alb, graph }, parseTarget("https://web.sample.test/"));
-  assert.match(by(web, "A-ELB-01").text, /api-alb HTTPS:443 → rule 2 \(host web\.sample\.test\) forwards to k8s-shop-web/);
+  assert.match(by(web, "A-ELB-01").text, /k8s-demo-api HTTPS:443 → rule 2 \(host web\.sample\.test\) forwards to k8s-shop-web/);
   assert.equal(by(web, "A-ELB-02").status, "FAIL");
   assert.equal(by(web, "A-ELB-02").text, "k8s-shop-web has no registered targets");
   assert.equal(by(web, "A-ELB-02").command, "aws elbv2 describe-target-health --target-group-arn sample-tg-web");
@@ -96,7 +96,7 @@ test("ALB: routeOn picks the rule, target health explains an empty or a half-hea
   assert.match(by(other, "A-ELB-01").text, /the default rule answers 404 itself \(fixed response\): no rule serves nobody\.sample\.test/);
   assert.equal(by(other, "A-ELB-02").status, "NOT_APPLICABLE");
   const port = albChecks({ classification: alb, graph }, parseTarget("https://web.sample.test:8443/"));
-  assert.match(by(port, "A-ELB-01").text, /api-alb has no listener on 8443/);
+  assert.match(by(port, "A-ELB-01").text, /k8s-demo-api has no listener on 8443/);
   assert.ok(albChecks({ classification: alb, graph: null, graphError: "AccessDenied" }, parseTarget("web.sample.test")).every((r) => r.status === "UNKNOWN"));
   assert.ok(albChecks({ classification: { kind: "external" }, graph }, parseTarget("google.com")).every((r) => r.status === "NOT_APPLICABLE"));
 });
@@ -129,14 +129,14 @@ test("sample cdn.sample.test: CloudFront's 502 is explained by its origin, high 
 test("sample web.sample.test: the ALB 503 finding names the empty target group; the chain breaks into ALB", async () => {
   const report = await sampleRun("web.sample.test");
   const alb = report.findings.find((f) => f.walkthrough === "alb-503");
-  assert.match(alb.statement, /api-alb answered 503 itself \(server: awselb, no app headers\): k8s-shop-web has no registered targets/);
+  assert.match(alb.statement, /k8s-demo-api answered 503 itself \(server: awselb, no app headers\): k8s-shop-web has no registered targets/);
   assert.ok(alb.supports.includes("A-ELB-02"));
   assert.deepEqual(alb.next, ["aws elbv2 describe-target-health --target-group-arn sample-tg-web"]);
   const m = ndModel({ report });
   assert.deepEqual(m.chain.map((n) => n.label), ["CLIENT", "DNS", "TCP", "TLS", "HTTP", "ALB", "VPC"]);
   const lb = m.chain.at(-2);
   assert.equal(m.chain.at(-1).edgeIn, "after");
-  assert.equal(lb.fact, "api-alb · 0/0 healthy");
+  assert.equal(lb.fact, "k8s-demo-api · 0/0 healthy");
   assert.equal(lb.edgeIn, "broken");
 });
 

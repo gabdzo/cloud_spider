@@ -34,7 +34,10 @@ test("cluster: pods, nodes, ingress, Kyverno reports, ops tabs; add-ons say SAMP
   const cluster = sampleClusterSnapshot();
   assert.deepEqual(cluster.nodes.map((n) => n.metadata.labels["topology.kubernetes.io/zone"]), ["eu-north-1a", "eu-north-1b"]);
   assert.ok(cluster.nodes.every((n) => n.metadata.labels["eks.amazonaws.com/capacityType"] === "SPOT"));
-  assert.equal(cluster.ingresses[0].status.loadBalancer.ingress[0].hostname.split(".")[0], "k8s-shop-shopapi-5a1e0c");
+  const host = (ns) => cluster.ingresses.find((i) => i.metadata.namespace === ns)?.status.loadBalancer.ingress[0].hostname;
+  assert.equal(host("shop").split(".")[0], "k8s-shop-shopapi-5a1e0c");
+  // the demo namespace has its ingress too: the SNIFF sample ALB (k8s-demo-api)
+  assert.equal(host("demo"), samplePathGraph().loadBalancers.find((l) => l.name === "k8s-demo-api").dns);
   assert.ok(samplePlace().fixtures.some((f) => f.name === "k8s-shop-shopapi-5a1e0c" || f.id === "alb-sample-shop"));
   const ops = sampleOps();
   assert.equal(ops.clusterName, "cloudspider-up");

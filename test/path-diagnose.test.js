@@ -36,7 +36,7 @@ test("the whole load balancer puts the empty target group before the deeper brea
   assert.match(listener80.caption, /redirects to HTTPS:443/);
   const lb = result.nodes.find((node) => node.id === LB);
   assert.equal(lb.status, "hang");
-  assert.match(lb.sentence, /^12 requests timed out at api-alb in the last 15 minutes/);
+  assert.match(lb.sentence, /^12 requests timed out at k8s-demo-api in the last 15 minutes/);
   assert.equal(result.findings.at(-1).symptom, true);
 });
 
@@ -54,7 +54,7 @@ test("a failed load balancer is the first finding", () => {
   const graph = samplePathGraph();
   graph.loadBalancers[0].state = "failed";
   graph.loadBalancers[0].stateReason = "subnet out of IPs";
-  assert.equal(headline(diagnose(graph, LB)), "api-alb is failed. subnet out of IPs");
+  assert.equal(headline(diagnose(graph, LB)), "k8s-demo-api is failed. subnet out of IPs");
 });
 
 test("an internet-facing load balancer in subnets with no internet gateway route is broken", () => {
@@ -62,14 +62,14 @@ test("an internet-facing load balancer in subnets with no internet gateway route
   graph.routeTables[0].routes = [{ dest: "10.43.0.0/16", target: "local", state: "active" }];
   assert.equal(
     headline(diagnose(graph, LB)),
-    "sample-public-a, sample-public-b have no route to an internet gateway. The internet cannot reach api-alb there.",
+    "sample-public-a, sample-public-b have no route to an internet gateway. The internet cannot reach k8s-demo-api there.",
   );
 });
 
 test("a load balancer with no listener says nothing answers", () => {
   const graph = samplePathGraph();
   graph.listeners = [];
-  assert.equal(headline(diagnose(graph, LB)), "api-alb has no listener. Nothing answers on this load balancer.");
+  assert.equal(headline(diagnose(graph, LB)), "k8s-demo-api has no listener. Nothing answers on this load balancer.");
 });
 
 test("a healthy target the security groups do not explain is unknown, not broken", () => {
@@ -107,7 +107,7 @@ test("a load balancer with no security group leaves reach unknown", () => {
   const result = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" });
   const edge = result.edges.find((item) => item.to === SLOW);
   assert.equal(edge.status, "unknown");
-  assert.equal(edge.sentence, "api-alb has no security group. The targets must allow the callers' addresses on 8080.");
+  assert.equal(edge.sentence, "k8s-demo-api has no security group. The targets must allow the callers' addresses on 8080.");
 });
 
 test("a target group used by two rules is drawn once", () => {
@@ -156,7 +156,7 @@ const routes = (graph, text) => matchHost(graph, text).map(({ lbArn, ruleArn }) 
 
 test("a host matches by load balancer DNS, by exact rule host, and by wildcard", () => {
   const graph = samplePathGraph();
-  assert.deepEqual(routes(graph, "dualstack.api-alb-sample.eu-north-1.elb.amazonaws.com"), [
+  assert.deepEqual(routes(graph, "dualstack.k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com"), [
     { lbArn: LB, ruleArn: "sample-rule-443-default" },
   ]);
   graph.rules.find((rule) => rule.arn === "sample-rule-443-web").hosts = ["*.shop.test"];

@@ -24,7 +24,7 @@ test("a pasted URL follows its rule only", () => {
 
 test("a host no rule names draws only the rule it would land on", () => {
   const view = pathResult(samplePathGraph(), { region: "sample", host: "nothing.example.com" });
-  assert.equal(view.hostNote, "no rule in sample names nothing.example.com. If nothing.example.com points at api-alb, this is the path it takes. Route 53 is not read.");
+  assert.equal(view.hostNote, "no rule in sample names nothing.example.com. If nothing.example.com points at k8s-demo-api, this is the path it takes. Route 53 is not read.");
   assert.equal(view.selected, "sample-lb-api");
   assert.deepEqual(
     view.diagram.nodes.filter((node) => node.kind === "rule").map((node) => node.id),
@@ -46,8 +46,8 @@ test("an unknown load balancer id falls back to the first one", () => {
   const view = pathResult(samplePathGraph(), { region: "sample", lb: "arn:aws:elasticloadbalancing:other" });
   assert.equal(view.selected, "sample-lb-api");
   assert.deepEqual(view.loadBalancers.map(({ arn, name, dns }) => ({ arn, name, dns })), [
-    { arn: "sample-lb-api", name: "api-alb", dns: "api-alb-sample.eu-north-1.elb.amazonaws.com" },
+    { arn: "sample-lb-api", name: "k8s-demo-api", dns: "k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com" },
   ]);
   // SNIFF's DEBUG prefills this URL for a public balancer.
-  assert.match(view.loadBalancers[0].url, /^http:\/\/api-alb-sample\.eu-north-1\.elb\.amazonaws\.com\//);
+  assert.match(view.loadBalancers[0].url, /^http:\/\/k8s-demo-api-7b31d2\.eu-north-1\.elb\.amazonaws\.com\//);
 });

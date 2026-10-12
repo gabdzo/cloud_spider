@@ -14,7 +14,7 @@ import { parseTarget } from "../src/netdebug/target.js";
 
 const ORIGIN = "http://127.0.0.1:9241";
 const e = (number, egress, action, cidr, from = null, to = null, protocol = "6") => ({ number, egress, action, cidr, from, to, protocol });
-const ALB = { kind: "alb", arn: "sample-lb-api", name: "api-alb" };
+const ALB = { kind: "alb", arn: "sample-lb-api", name: "k8s-demo-api" };
 const by = (rows, id) => rows.find((r) => r.id === id);
 const vpc = () => structuredClone({ ...SAMPLE_VPC, errors: {} });
 
@@ -42,7 +42,7 @@ test("A-VPC-01/02: the sample SG blocks 10.43.12.31:8080; a NACL without ephemer
   v.nacls[1].entries = v.nacls[1].entries.map((x) => (x.egress && x.number === 100 ? { ...x, protocol: "6", from: 0, to: 1023 } : x));
   const r = by(vpcChecks({ classification: ALB, graph, vpc: v }, t), "A-VPC-02");
   assert.equal(r.status, "FAIL");
-  assert.match(r.text, /^acl-sample-private \(sample-private-a\) outbound drops 10\.43\.11\.20 → api-alb \(return to ephemeral ports\): ports 1024-65535 by rule \*\. NACLs are stateless/);
+  assert.match(r.text, /^acl-sample-private \(sample-private-a\) outbound drops 10\.43\.11\.20 → k8s-demo-api \(return to ephemeral ports\): ports 1024-65535 by rule \*\. NACLs are stateless/);
   assert.match(r.command, /association\.subnet-id,Values=sample-private-a/);
 });
 
@@ -101,7 +101,7 @@ test("the collector reads the VPC once per run and the REJECTs for at most 4 tar
     flowLogs: async (r, ids) => (calls.push(`flowLogs ${ids}`), { flowLogs: SAMPLE_VPC.flowLogs }),
     rejects: async (r, group) => (calls.push(`rejects ${group}`), { records: [] }),
   };
-  const local = { system: { addresses: [{ address: "13.48.10.21" }], cnames: ["api-alb-sample.eu-north-1.elb.amazonaws.com"] } };
+  const local = { system: { addresses: [{ address: "13.48.10.21" }], cnames: ["k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com"] } };
   const aws = await collectAws(parseTarget("api.sample.test"), local, { graph: async () => graph, vpc: reader });
   assert.equal(aws.classification.kind, "alb");
   assert.deepEqual(calls.filter((c) => !c.startsWith("rejects")), ["nacls sample sample-eks-vpc", "endpoints sample-eks-vpc", "subnets sample-eks-vpc", "flowLogs sample-eks-vpc"]);

@@ -6,7 +6,7 @@
 import { samplePathGraph } from "../path-sample.js";
 
 const ZONE = { id: "Z0SAMPLE", name: "sample.test.", private: false, count: 6 };
-const ALB = "dualstack.api-alb-sample.eu-north-1.elb.amazonaws.com.";
+const ALB = "dualstack.k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com.";
 export const SAMPLE_RECORDS = [
   { name: "sample.test.", type: "NS", ttl: 172800, values: ["ns-1.awsdns-01.org."], alias: null, policy: "simple", setId: "", healthCheckId: "" },
   { name: "web.sample.test.", type: "A", ttl: null, values: [], alias: { dnsName: ALB, zoneId: "Z23TAZ7LKFBNRK", evaluate: true }, policy: "simple", setId: "", healthCheckId: "" },
@@ -23,10 +23,10 @@ export const SAMPLE_DISTRIBUTION = {
   enabled: true,
   status: "Deployed",
   origins: [
-    { id: "api-alb", domain: "api-alb-sample.eu-north-1.elb.amazonaws.com", path: "", s3: false, oai: "", oac: "", protocolPolicy: "https-only", httpPort: 80, httpsPort: 443, readTimeout: 30, sslProtocols: ["TLSv1.2"] },
+    { id: "k8s-demo-api", domain: "k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com", path: "", s3: false, oai: "", oac: "", protocolPolicy: "https-only", httpPort: 80, httpsPort: 443, readTimeout: 30, sslProtocols: ["TLSv1.2"] },
     { id: "static", domain: "sample-static.s3.eu-north-1.amazonaws.com", path: "", s3: true, oai: "", oac: "E2OACSAMPLE", protocolPolicy: "", httpPort: null, httpsPort: null, readTimeout: null, sslProtocols: [] },
   ],
-  defaultBehavior: behavior("*", "api-alb"),
+  defaultBehavior: behavior("*", "k8s-demo-api"),
   behaviors: [behavior("/static/*", "static")],
   customErrors: [{ code: 503, responseCode: "", page: "", ttl: 10 }],
   cert: { acm: "arn:aws:acm:us-east-1:000000000000:certificate/sample", iam: "", default: false, minProtocol: "TLSv1.2_2021" },
