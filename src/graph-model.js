@@ -106,17 +106,70 @@ export function minutes(hhmm) {
   return h * 60 + m;
 }
 
-// Events placed on the review window, 0..1, oldest first.
-export function timeline(scene) {
-  const a = minutes(scene.window.start);
-  const span = Math.max(1, minutes(scene.window.end) - a);
-  const at = (t) => Math.min(1, Math.max(0, (minutes(t) - a) / span));
+// Incident review (docs/plan-modules-and-service-graph.md §4.5 events):
+// kind rollout | restart | warning | alarm | ok; `at` (epoch ms) when the
+// source has it, else `t` (HH:MM) on the scene's window.
+export const EVENT_KINDS = ["rollout", "restart", "warning", "alarm", "ok"];
+const hhmmOf = (ms) => {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
+// Events placed on the review window, 0..1, oldest first. `index` is the
+// place in the full sorted list (stable across filters, so a selection
+// survives a filter change). opts: { kinds: Set, group, windowMin }.
+//   events: every event, with `shown` for what the filters keep
+//   shown:  the kept ones; counts: per kind among those in window + group
+export function timeline(scene, opts = {}) {
+  const all = scene.events || [];
+  const useAt = all.length > 0 && all.every((ev) => Number.isFinite(ev.at));
+  const key = (ev) => (useAt ? ev.at : minutes(ev.t) * 60_000);
+  let a;
+  let b;
+  if (useAt) {
+    b = scene.window?.endAt ?? Math.max(...all.map((ev) => ev.at));
+    a = opts.windowMin ? b - opts.windowMin * 60_000 : scene.window?.startAt ?? Math.min(...all.map((ev) => ev.at));
+  } else {
+    a = minutes(scene.window.start) * 60_000;
+    b = minutes(scene.window.end) * 60_000;
+  }
+  const span = Math.max(60_000, b - a);
+  const x = (ms) => Math.min(1, Math.max(0, (ms - a) / span));
+  const kinds = opts.kinds || new Set(EVENT_KINDS);
+  const sorted = [...all].sort((p, q) => key(p) - key(q));
+  const counts = Object.fromEntries(EVENT_KINDS.map((k) => [k, 0]));
+  const events = sorted.map((ev, index) => {
+    const ms = key(ev);
+    const inWindow = ms >= a - 1 && ms <= b + 1;
+    const inGroup = !opts.group || ev.group === opts.group;
+    if (inWindow && inGroup && Object.hasOwn(counts, ev.kind)) counts[ev.kind] += 1;
+    return { ...ev, index, x: x(ms), shown: inWindow && inGroup && kinds.has(ev.kind) };
+  });
+  const shown = events.filter((ev) => ev.shown);
+  let incident;
+  if (!useAt && scene.window.incident) incident = scene.window.incident.map((t) => x(minutes(t) * 60_000));
+  else {
+    const bad = shown.filter((ev) => ev.kind !== "rollout" && ev.kind !== "ok");
+    incident = bad.length ? [bad[0].x, bad[bad.length - 1].x] : [0, 0];
+  }
   return {
-    start: scene.window.start,
-    end: scene.window.end,
-    incident: scene.window.incident.map(at),
-    events: [...scene.events].sort((x, y) => minutes(x.t) - minutes(y.t)).map((ev, index) => ({ ...ev, index, x: at(ev.t) })),
+    start: useAt ? hhmmOf(a) : scene.window.start,
+    end: useAt ? hhmmOf(b) : scene.window.end,
+    incident,
+    events,
+    shown,
+    counts,
+    live: useAt,
   };
+}
+
+// The next / previous kept event from a selected index (wraps around).
+export function stepEvent(tl, index, dir) {
+  const list = tl.shown;
+  if (!list.length) return null;
+  const at = list.findIndex((ev) => ev.index === index);
+  if (at < 0) return dir > 0 ? list[0] : list[list.length - 1];
+  return list[(at + dir + list.length) % list.length];
 }
 
 // Totals for the header line.
