@@ -319,7 +319,7 @@ export function createGraphView(root) {
       ...(node.endpoints || node.svcPorts ? [endpointsSection(node)] : []),
       list("CALLED BY", calls.inbound),
       list("CALLS", calls.outbound),
-      ...(hidden ? [h("p", { className: "gv-cnone", text: `${hidden} possible link${hidden === 1 ? "" : "s"} (config, not seen talking) hidden · SHOW POSSIBLE LINKS to list them` })] : []),
+      ...(hidden ? [h("p", { className: "gv-cnone", text: `${hidden} possible link${hidden === 1 ? "" : "s"} from config hidden · SHOW POSSIBLE LINKS to list them` })] : []),
       node.ns && /^[a-z0-9-]+$/.test(svcName) ? h("a", { className: "gv-inside", href: `#path?debug=${encodeURIComponent(`${svcName}.${node.ns}:`)}&inside=1`, text: "DEBUG FROM INSIDE ›", title: "SNIFF › FROM INSIDE: a short-lived debug pod checks DNS, TCP, HTTP, hops and NetworkPolicy to this Service" }) : "",
     );
   }
