@@ -217,3 +217,13 @@ test("kube-state-metrics runs as a numeric non-root UID off OpenShift (image use
   assert.equal(ksm("kubernetes").runAsNonRoot, true);
   assert.equal(ksm("openshift").runAsUser, undefined);
 });
+
+test("allow-apiserver-egress also allows the kubernetes Service ClusterIP (EKS policy agent matches pre-DNAT)", async () => {
+  const { specsFor, fillCidrs } = await import("../upgrades/netpol.js");
+  const spec = specsFor("cloudspider-observe").find((s) => s.name === "allow-apiserver-egress").spec;
+  const withIp = fillCidrs(spec, "10.43.0.0/16", "172.20.0.1");
+  assert.deepEqual(withIp.egress[0].to.map((p) => p.ipBlock.cidr), ["10.43.0.0/16", "172.20.0.1/32"]);
+  const without = fillCidrs(spec, "10.43.0.0/16", undefined);
+  assert.deepEqual(without.egress[0].to.map((p) => p.ipBlock.cidr), ["10.43.0.0/16"]);
+  assert.ok(!JSON.stringify(without).includes("apisvc"));
+});

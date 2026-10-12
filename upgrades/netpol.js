@@ -34,7 +34,10 @@ export function namespaceSpecs({ intra = true, https = false, podIdentity = fals
   if (kubelet) out.push({ name: "allow-kubelet-egress", spec: { podSelector: kubelet === true ? {} : kubelet, policyTypes: ["Egress"], egress: [{ to: [{ ipBlock: { cidr: "vpc" } }], ports: tcp(10250) }] } });
   // apiServer: the Kubernetes API by its endpoint (NetworkPolicy sees the
   // port after the Service DNAT: 443 on EKS, 6443 on kubeadm/CRC/OpenShift).
-  if (apiServer) out.push({ name: "allow-apiserver-egress", spec: { podSelector: apiServer === true ? {} : apiServer, policyTypes: ["Egress"], egress: [{ to: [{ ipBlock: { cidr: "vpc" } }], ports: tcp(443, 6443) }] } });
+  // "apisvc" is the default/kubernetes ClusterIP: the AWS VPC CNI policy
+  // agent matches ipBlocks before the DNAT, so on EKS the endpoint range alone
+  // leaves 172.20.0.1 blocked. ship() fills it in, or drops it when unknown.
+  if (apiServer) out.push({ name: "allow-apiserver-egress", spec: { podSelector: apiServer === true ? {} : apiServer, policyTypes: ["Egress"], egress: [{ to: [{ ipBlock: { cidr: "vpc" } }, { ipBlock: { cidr: "apisvc" } }], ports: tcp(443, 6443) }] } });
   for (const flow of egressTo) {
     out.push({ name: flow.name, spec: { podSelector: flow.podSelector || {}, policyTypes: ["Egress"], egress: [{ to: [{ ...(flow.namespace === "*" ? { namespaceSelector: {} } : nsSel(flow.namespace)), podSelector: flow.to || {} }], ports: flow.ports.map((p) => (typeof p === "object" ? p : { protocol: "TCP", port: p })) }] } });
   }
@@ -98,9 +101,16 @@ export const specsFor = (namespace) => {
 };
 
 // Make one namespace's policies. vpcCidr: an Output or string.
-export function ship({ k8s, pulumi, opts, namespace, vpcCidr, labels = {} }) {
+export function fillCidrs(spec, cidr, apiServiceIp) {
+  const text = JSON.stringify(spec).replaceAll('"vpc"', JSON.stringify(cidr));
+  const out = JSON.parse(apiServiceIp ? text.replaceAll('"apisvc"', JSON.stringify(`${apiServiceIp}/32`)) : text);
+  if (!apiServiceIp) for (const rule of out.egress || []) if (rule.to) rule.to = rule.to.filter((peer) => peer.ipBlock?.cidr !== "apisvc");
+  return out;
+}
+
+export function ship({ k8s, pulumi, opts, namespace, vpcCidr, apiServiceIp, labels = {} }) {
   return specsFor(namespace).map(({ name, spec }) => {
-    const resolved = JSON.stringify(spec).includes('"vpc"') ? pulumi.output(vpcCidr).apply((cidr) => JSON.parse(JSON.stringify(spec).replaceAll('"vpc"', JSON.stringify(cidr)))) : spec;
+    const resolved = JSON.stringify(spec).includes('"vpc"') ? pulumi.all([vpcCidr, apiServiceIp]).apply(([cidr, ip]) => fillCidrs(spec, cidr, ip)) : spec;
     return new k8s.networking.v1.NetworkPolicy(`netpol-${namespace}-${name}`, { metadata: { name, namespace, labels: { "app.kubernetes.io/part-of": "cloudspider", "cloudspider.io/netpol": "namespace-baseline", ...labels } }, spec: resolved }, opts);
   });
 }
