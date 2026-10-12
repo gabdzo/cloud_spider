@@ -3,6 +3,7 @@
 // the kube-network and aws net collectors leave, shaped by the netdebug
 // readers, so a debug run and a scan judge a resource the same way.
 import { cidrContains } from "../../cidr.js";
+import { isUserNamespace } from "../../svc-endpoints.js";
 import { danglingRecords } from "../../netdebug/aws-dns.js";
 import { naclVerdict } from "../../netdebug/aws-vpc.js";
 import { corednsPdb } from "../../netdebug/kube-checks.js";
@@ -82,6 +83,18 @@ export const networkEvaluators = {
       else items.push({ id, pass: zones.length >= minZones, detail: zones.length >= minZones ? `${ready.length} ready in ${zones.join(", ")}` : `${ready.length} ready, only in ${zones[0]}: one zone outage takes it down` });
     }
     return { items, unknown };
+  },
+
+  // NET-K8S-003: every Service with a selector in the user's namespaces has
+  // at least one ready endpoint (0 = every request to it fails).
+  "service-has-ready-endpoints"({ data }) {
+    const slices = data["kube-endpointslices"].items || [];
+    const items = (data["kube-services"].items || []).filter((s) => s.selector && isUserNamespace(s.namespace)).map((s) => {
+      const id = `${s.namespace}/${s.name}`;
+      const ready = slices.filter((x) => `${x.namespace}/${x.service}` === id).flatMap((x) => x.endpoints).filter((e) => e.ready).length;
+      return { id, pass: ready > 0, detail: ready ? `${ready} ready endpoint${ready === 1 ? "" : "s"}` : "0 ready endpoints: the selector matches no ready pod, requests fail" };
+    });
+    return { items };
   },
 
   // NET-DNS-001: no alias/CNAME points at a load balancer or CloudFront

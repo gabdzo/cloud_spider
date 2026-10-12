@@ -163,6 +163,7 @@ export function createGraphView(root) {
       els.stats,
       els.legend,
       els.badgeKey,
+      (els.findings = h("div", { className: "gv-findings", hidden: true })),
       els.detail,
       h("div", { className: "gv-main" }, els.stage, (els.side = h("aside", { className: "gv-side", "aria-label": "calls of the selected service", hidden: true }))),
       els.tl,
@@ -222,7 +223,9 @@ export function createGraphView(root) {
       h("b", { className: "gv-glabel", text: group.label }),
       h("small", { className: "gv-tag", text: tag, title: tag === "OP" ? BADGES.OP : tag === "NS" ? BADGES.NS : tag === "LBL" ? BADGES.LBL : "resources without the Group by label" }));
     const meta = h("span", { className: "gv-meta", text: [group.namespaces ? `${group.namespaces} ns` : "", group.crds ? `${group.crds} CRDs` : "", group.pods ? `${group.pods} pods` : ""].filter(Boolean).join(" · ") });
-    const talkEl = h("span", { className: `gv-talk ${talk.errors ? "t-err" : talk.live ? "t-live" : "t-none"}`, title: "live links: measured traffic touching this group; config links are only declared", text: talk.text });
+    const noEp = (scene.findings || []).filter((f) => scene.nodes.find((n) => n.id === f.node && (n.group === group.id || (group.nodes || []).some((m) => m.id === n.id))));
+    const talkEl0 = h("span", { className: `gv-talk ${talk.errors ? "t-err" : talk.live ? "t-live" : "t-none"}`, title: "live links: measured traffic touching this group; config links are only declared", text: talk.text });
+    const talkEl = noEp.length ? h("span", { className: "gv-talkwrap" }, talkEl0, h("span", { className: "gv-noep", title: noEp.map((f) => `${f.id}: ${f.why}`).join("\n"), text: `${noEp.length} NO ENDPOINTS` })) : talkEl0;
     const toggle = h("button", { type: "button", className: "gv-open", "aria-expanded": String(group.open), title: group.open ? "fold" : "open: its services, how they call each other, live or not", text: group.open ? "−" : "+", onclick: (ev) => toggleOpen(group.id, ev) });
     card.append(h("div", { className: "gv-gtop" }, head, h("span", { className: "gv-gsum" }, meta, talkEl), toggle));
     if (group.open) {
@@ -238,20 +241,38 @@ export function createGraphView(root) {
     return card;
   }
 
-  function nodeCard(node) {
+  function nodeCard(shown) {
+    const node = { ...(scene.nodes.find((n) => n.id === shown.id) || {}), ...shown };
     const t = nodeTraffic(node.id, scene.edges);
+    const ep = node.endpoints;
+    const flags = node.flags || [];
     const badge = KIND_TAG[node.kind] || "·";
     const pods = node.pods && typeof node.pods === "object" ? node.pods : null;
     return h("button", {
       type: "button",
-      className: `gv-node gv-card k-${node.kind}${node.match ? " match" : ""}${state.selected === node.id ? " sel" : ""}${t.errors >= 1 ? " t-err" : t.talking ? " t-live" : " t-none"}`,
+      className: `gv-node gv-card k-${node.kind}${flags.some((f) => f.id === "no-endpoints") ? " no-ep" : ""}${node.match ? " match" : ""}${state.selected === node.id ? " sel" : ""}${t.errors >= 1 ? " t-err" : t.talking ? " t-live" : " t-none"}`,
       dataset: { id: node.id },
       title: `${node.label} · ${KIND_NAME[node.kind] || node.kind} · ${node.ns}\n${t.talking ? `talking: ${t.live} live link${t.live === 1 ? "" : "s"}` : "not seen talking"} — click for its calls`,
       onclick: (ev) => selectNode(node.id, ev),
     },
       h("span", { className: "gv-crow" }, h("small", { className: `gv-ntag t-${badge}`, title: BADGES[badge] || node.kind, text: badge }), h("b", { className: "gv-cname", text: node.label })),
       h("span", { className: "gv-cmeta", text: [KIND_NAME[node.kind] || node.kind, node.ns, pods ? `${pods.ready}/${pods.total} ready` : ""].filter(Boolean).join(" · ") }),
+      ep ? h("span", { className: `gv-cep${ep.ready === 0 ? " bad" : ep.notReady ? " warn" : ""}`, title: "EndpointSlices: ready / all endpoints of this Service", text: `endpoints ${ep.ready}/${ep.ready + ep.notReady} ready` }) : null,
+      ...flags.map((f) => h("span", { className: `gv-flag f-${f.id}`, title: f.why, text: f.text })),
       h("span", { className: "gv-crate", text: t.talking ? `${t.rps}/s${t.errors ? ` · ${t.errors}% err` : ""}` : "not seen talking" }));
+  }
+
+  function endpointsSection(node) {
+    const ep = node.endpoints;
+    const ports = node.svcPorts || [];
+    return h("section", { className: "gv-calls gv-eps" },
+      h("h5", { text: ep ? `ENDPOINTS · ${ep.ready}/${ep.ready + ep.notReady} ready` : "ENDPOINTS · not readable (EndpointSlices forbidden or missing)" }),
+      ep ? (ep.list.length ? h("ul", {}, ...ep.list.map((e) => h("li", { className: e.terminating ? "c-config" : e.ready ? "c-live" : "c-error", title: `ready ${e.ready} · serving ${e.serving} · terminating ${e.terminating}` },
+        h("i", { className: "gv-cdot", "aria-hidden": "true" }),
+        h("span", { className: "gv-epod", text: e.pod || e.ip }),
+        h("small", { className: "gv-ckind", text: [e.ip, e.node, e.zone].filter(Boolean).join(" · ") }),
+        h("span", { className: "gv-crate", text: e.terminating ? "terminating" : e.ready ? "ready" : e.serving ? "serving, not ready" : "not ready" })))) : h("p", { className: "gv-cnone bad", text: "none: requests to this Service fail" })) : null,
+      ports.length ? h("p", { className: "gv-eports", text: `ports: ${ports.map((p) => `${p.name ? `${p.name} ` : ""}${p.port}→${p.targetPort}/${p.protocol}`).join(", ")}` }) : null);
   }
 
   function renderSide() {
@@ -271,6 +292,8 @@ export function createGraphView(root) {
       h("header", {}, h("small", { className: `gv-ntag t-${KIND_TAG[node.kind] || "x"}`, title: BADGES[KIND_TAG[node.kind]] || "", text: KIND_TAG[node.kind] || "·" }), h("b", { text: node.label }),
         h("button", { type: "button", className: "gv-btn gv-sclose", text: "×", title: "close (Esc)", "aria-label": "close", onclick: (ev) => selectNode(node.id, ev) })),
       h("p", { className: "gv-smeta", text: `${KIND_NAME[node.kind] || node.kind} · ${node.ns}` }),
+      ...(node.flags || []).map((f) => h("p", { className: `gv-sflag f-${f.id}`, text: `${f.text}: ${f.why}` })),
+      node.endpoints || node.svcPorts ? endpointsSection(node) : null,
       list("CALLED BY", calls.inbound),
       list("CALLS", calls.outbound),
       node.ns && /^[a-z0-9-]+$/.test(svcName) ? h("a", { className: "gv-inside", href: `#path?debug=${encodeURIComponent(`${svcName}.${node.ns}:`)}&inside=1`, text: "DEBUG FROM INSIDE ›", title: "SNIFF › FROM INSIDE: a short-lived debug pod checks DNS, TCP, HTTP, hops and NetworkPolicy to this Service" }) : null,
@@ -362,6 +385,9 @@ export function createGraphView(root) {
     els.proto.textContent = live.on ? "LIVE · READ-ONLY" : "SAMPLE · PROTOTYPE";
     els.liveNote.textContent = live.on ? (live.loading ? "reading…" : live.at ? `read ${new Date(live.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "") : "";
     view = visibleGraph(scene, state);
+    const fs = scene.findings || [];
+    els.findings.hidden = !fs.length;
+    els.findings.replaceChildren(...(fs.length ? [h("b", { text: `FINDING · ${fs.length} Service${fs.length === 1 ? "" : "s"} with 0 ready endpoints` }), ...fs.map((f) => h("button", { type: "button", className: "gv-finding", title: f.why, text: f.id, onclick: (ev) => { const n = scene.nodes.find((x) => x.id === f.node); if (n) state.expanded.add(n.group); selectNode(f.node, ev); } }))] : []));
     for (const button of els.scen.children) button.setAttribute("aria-pressed", String(button.dataset.scenario === state.scenario));
     for (const button of els.layers.children) button.setAttribute("aria-pressed", String(state.layers.has(button.dataset.layer)));
     const stats = sceneStats(scene);

@@ -4,9 +4,9 @@
 // namespaces. Missing APIs (Routes and OLM on plain Kubernetes) come back
 // in `absent`, forbidden ones in a note; neither stops the graph.
 
-const CLUSTER = ["pods", "services", "deployments", "statefulsets", "daemonsets", "ingresses", "networkPolicies", "events", "routes", "csvs"];
-const NAMESPACED = { pods: "nsPods", services: "nsServices", deployments: "nsDeployments", statefulsets: "nsStatefulsets", daemonsets: "nsDaemonsets", ingresses: "nsIngresses", networkPolicies: "nsNetworkPolicies", events: "nsEvents", routes: "nsRoutes", csvs: "nsCsvs" };
-const OPTIONAL = new Set(["routes", "csvs", "crds", "events", "networkPolicies", "namespaces"]);
+const CLUSTER = ["pods", "services", "deployments", "statefulsets", "daemonsets", "ingresses", "networkPolicies", "events", "routes", "csvs", "endpointSlicesAll"];
+const NAMESPACED = { pods: "nsPods", services: "nsServices", deployments: "nsDeployments", statefulsets: "nsStatefulsets", daemonsets: "nsDaemonsets", ingresses: "nsIngresses", networkPolicies: "nsNetworkPolicies", events: "nsEvents", routes: "nsRoutes", csvs: "nsCsvs", endpointSlicesAll: "nsEndpointSlices" };
+const OPTIONAL = new Set(["routes", "csvs", "crds", "events", "networkPolicies", "namespaces", "endpointSlicesAll"]);
 
 export async function readGraph(kube) {
   const target = await kube.target();

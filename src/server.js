@@ -70,7 +70,7 @@ export const FILES = new Set([
   "graph-model.js",
   "graph-view.js",
   "graph-group.js",
-  "graph-layers.js",
+  "graph-layers.js", "svc-endpoints.js",
   "kube-group.js",
   "log-errors-view.js",
   "kube-empty.js",
@@ -1436,6 +1436,18 @@ const page = `<!doctype html>
   #kube-graph .gv-edge.hot { opacity: 1; filter: drop-shadow(0 0 3px var(--glow-bright)); }
   #kube-graph .gv-edge.faint { opacity: 0.3; }
   #kube-graph .gv-edge.quiet { opacity: 0.3; stroke-width: 1px; }
+  #kube-graph .gv-findings { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; padding: 6px 10px; border: 2px solid #ff4b3e; background: rgba(255,75,62,.12); color: #ff8a80; }
+  #kube-graph .gv-findings[hidden] { display: none; }
+  #kube-graph .gv-finding { font: inherit; background: #ff4b3e; color: #120000; border: 0; padding: 1px 8px; cursor: pointer; font-weight: 700; }
+  #kube-graph .gv-cep { font-size: 11px; opacity: .9; }
+  #kube-graph .gv-cep.warn { color: #ffb347; }
+  #kube-graph .gv-cep.bad { color: #ff6b5e; font-weight: 700; }
+  #kube-graph .gv-flag, #kube-graph .gv-noep { display: inline-block; align-self: flex-start; background: #ff4b3e; color: #120000; font-weight: 700; font-size: 11px; padding: 1px 6px; margin: 2px 4px 0 0; letter-spacing: .04em; }
+  #kube-graph .gv-flag.f-port, #kube-graph .gv-flag.f-selector { background: #ffb347; }
+  #kube-graph .gv-card.no-ep { border-color: #ff4b3e !important; box-shadow: 0 0 0 2px rgba(255,75,62,.45); }
+  #kube-graph .gv-sflag { color: #ff8a80; font-size: 12px; margin: 4px 0; }
+  #kube-graph .gv-eports { font-size: 11px; opacity: .85; margin: 4px 0 0; }
+  #kube-graph .gv-cnone.bad { color: #ff6b5e; font-weight: 700; }
   /* SERVICES v2 (graph-layers.js): opened groups take a full row, layered cards, talking vs not */
   #kube-graph .gv-main { display: flex; gap: 12px; align-items: flex-start; }
   #kube-graph .gv-main .gv-stage { flex: 1 1 auto; min-width: 0; }
@@ -2645,6 +2657,9 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #kube-graph .gv-edge.owns { stroke: var(--warn); }
   :root[data-theme="pro"] #kube-graph .gv-edge.err { stroke: var(--err); }
   :root[data-theme="pro"] #kube-graph .gv-edge.hot { filter: none; }
+  :root[data-theme="pro"] #kube-graph .gv-findings { background: #fdecec; border-color: #d33; color: #8a1111; }
+  :root[data-theme="pro"] #kube-graph .gv-flag, :root[data-theme="pro"] #kube-graph .gv-noep { background: #d33; color: #fff; }
+  :root[data-theme="pro"] #kube-graph .gv-cep { color: #456; }
   :root[data-theme="pro"] #kube-graph .gv-meta { color: var(--text-2); }
   :root[data-theme="pro"] #kube-graph .gv-talk.t-live { color: var(--accent); }
   :root[data-theme="pro"] #kube-graph .gv-talk.t-err { color: var(--err); }
