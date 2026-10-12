@@ -78,7 +78,7 @@ export function overlapProbe(opts = {}) {
     for (let e = hit; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
       if (e.contains(underEl)) return false;
       const st = getComputedStyle(e);
-      if (/(fixed|absolute)/.test(st.position) && opaque(st)) return true;
+      if (/(fixed|absolute|sticky)/.test(st.position) && opaque(st)) return true;
     }
     return false;
   };

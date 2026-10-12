@@ -51,6 +51,7 @@ import { FRAME_MS, PIP } from "./theme.js";
 import { createVaultState, VPC_FOLD_KEY } from "./vault-state.js";
 import { VAULT, placeVaults, vaultAt } from "./vault-layout.js";
 import { badgeAt, ownedRows, parseVaultHash, vaultSummary, vaultTally } from "./vault-page.js";
+import { HEALTH_CLASS, createInsightView } from "./vault-insight-view.js";
 import { formatUrlState, parseUrlState } from "./url-state.js";
 import { paintVaultCard } from "./vault-draw.js";
 import { plateText } from "./vault-schema.js";
@@ -1682,13 +1683,23 @@ function vaultCard(vault, home = "") {
   button.dataset.focus = `card:${vault.key}`;
   button.setAttribute("aria-label", `${summary.plate} ${summary.title}: ${summary.lightText}.${home ? ` In vault ${home}.` : ""} Open its page.`);
   button.addEventListener("click", () => openVaultPage(vault.key));
-  const status = vel("p", "vpg-status");
-  status.append(vel("i", "vpg-lamp"), vel("span", "", summary.lightText));
   const facts = vel("div", "vpg-lines");
-  for (const line of summary.lines) facts.append(vel("span", "", line));
   const stack = vel("span", `vpg-stack ${summary.stack.state}`, summary.stack.state === "live" ? (vault.auto ? "LIVE · AUTO" : "LIVE") : summary.stack.state === "down" ? "NOT UP" : summary.stack.state === "error" ? "STACK?" : "TAGS");
   if (vault.auto) stack.title = `listed automatically: its stack is up (${vault.file}). Copy it into vaults/ to customise: npm run vaults:new -- ${vault.name} ${vault.name}`;
-  button.append(doorCanvas(vault), stack, vel("h3", "", summary.title), status, facts);
+  if (vault.insight) {
+    // health, version and place say it; one line for what and how big
+    const h = vault.insight.health;
+    li.classList.add(`h-${HEALTH_CLASS[h.state]}`);
+    const size = [vault.stackInfo?.resources ? `${vault.stackInfo.resources} RESOURCES` : "", vault.owned?.length ? `${vault.owned.length} ON MAP` : "", summary.checks.total ? `CHECKS ${summary.checks.ok}/${summary.checks.total}` : ""].filter(Boolean).join(" · ");
+    facts.append(vel("span", "", [[vault.type, vault.owner].filter(Boolean).join(" · ").toUpperCase(), size].filter(Boolean).join(" · ")));
+    button.setAttribute("aria-label", `${summary.plate} ${summary.title}: ${h.word}, ${vault.insight.version.word}${vault.insight.location.text ? `, at ${vault.insight.location.text}` : ""}.${home ? ` In vault ${home}.` : ""} Open its page.`);
+    button.append(doorCanvas(vault), stack, vel("h3", "", summary.title), insightView.cardInsight(vault), facts);
+  } else {
+    const status = vel("p", "vpg-status");
+    status.append(vel("i", "vpg-lamp"), vel("span", "", summary.lightText));
+    for (const line of summary.lines) facts.append(vel("span", "", line));
+    button.append(doorCanvas(vault), stack, vel("h3", "", summary.title), status, facts);
+  }
   if (home) button.append(vel("span", "vpg-home", `IN VAULT ${home}`));
   li.append(button);
   return li;
@@ -1700,7 +1711,12 @@ function vaultList() {
   const sub = vaultsFor === null
     ? "reading the vault files…"
     : [`${tally.total} VAULT${tally.total === 1 ? "" : "S"}`, `${tally.live} LIVE`, tally.ok ? `${tally.ok} OK` : "", tally.fail ? `${tally.fail} FAILING` : "", tally.trouble ? `${tally.trouble} IN TROUBLE` : "", tally.damaged ? `${tally.damaged} DAMAGED` : ""].filter(Boolean).join(" · ");
-  const out = [pageHead("VAULTS", sub, { label: "◂ MAP", go: closeVaultPage })];
+  const read = vaults.filter((vault) => vault.insight);
+  const count = (state) => read.filter((vault) => vault.insight.health.state === state).length;
+  const healthSub = read.length && vaultsFor !== null
+    ? [`${tally.total} VAULT${tally.total === 1 ? "" : "S"}`, count("ok") ? `${count("ok")} UP OK` : "", count("issues") ? `${count("issues")} WITH ISSUES` : "", count("down") ? `${count("down")} DOWN` : "", count("unknown") ? `${count("unknown")} UNKNOWN` : "", read.filter((v) => v.insight.version.state === "outdated").length ? `${read.filter((v) => v.insight.version.state === "outdated").length} OUTDATED` : "", tally.damaged ? `${tally.damaged} DAMAGED` : ""].filter(Boolean).join(" · ")
+    : sub;
+  const out = [pageHead("VAULTS", healthSub, { label: "◂ MAP", go: closeVaultPage })];
   if (vaultsData.note) out.push(vel("p", "vpg-note", vaultsData.note));
   const groups = groupVaults(vaults, vaultAddons.tree, { primary: vaultAddons.primary });
   const titleOf = (key) => vaultSummary(vaults.find((vault) => vault.key === key) || { key, name: key }).title;
@@ -1758,19 +1774,52 @@ function vaultDetail(vault, key) {
     return [pageHead("VAULT NOT FOUND", vaultsFor === null ? "reading the vault files…" : `no vault called ${key}`, back)];
   }
   const summary = vaultSummary(vault);
-  const out = [pageHead(`${summary.plate} · ${summary.title}`, `${summary.lightText} · ${summary.stack.text}`, back)];
-  const body = vel("div", `vpg-detail ${summary.light}`);
+  const insight = vault.insight;
+  const sub = insight ? [insight.health.word, insight.version.word, insight.location.text].filter(Boolean).join(" · ") : `${summary.lightText} · ${summary.stack.text}`;
+  const out = [pageHead(`${summary.plate} · ${summary.title}`, sub, back)];
+  const body = vel("div", `vpg-detail ${summary.light}${insight ? ` h-${HEALTH_CLASS[insight.health.state]}` : ""}`);
   const side = vel("div", "vpg-side");
   side.append(doorCanvas(vault, 1.5));
   const stack = vel("p", `vpg-stack big ${summary.stack.state}`, summary.stack.text);
   side.append(stack);
+  if (insight) side.append(insightView.sideInsight(vault));
   const panel = vaultPanel({ vault });
   panel.querySelector(".vp-close")?.remove();
   body.append(side, panel);
   out.push(body);
-  if (!vault.damaged) out.push(ownedBlock(vault));
+  if (!vault.damaged) {
+    out.push(insight
+      ? insightView.relations(vault, {
+          mode: vaultRelMode,
+          setMode: (m) => {
+            vaultRelMode = m;
+            vaultPageShown = "";
+            renderVaultPage();
+          },
+          list: () => ownedBlock(vault),
+        })
+      : ownedBlock(vault));
+  }
   if (vault.logGroups?.length && !vaultLogState.has(vault.key)) loadVaultLogs(vault.key);
   return out;
+}
+
+let vaultRelMode = "diagram";
+const insightView = createInsightView({ vel, onMap: (id) => showOnMap(id), onJump: (vault) => jumpToVault(vault) });
+
+// SHOW ON MAP from a vault's page: its own door cell when the map has one,
+// else its first resource on the map, else its VPC.
+function jumpToVault(vault) {
+  const ids = vault.insight?.location?.mapIds || vault.owned || [];
+  const placed = placedMap();
+  const first = ids.find((id) => buildingAt(placed, null, null, id) || fixtureAt(placed, null, null, id));
+  if (first) return showOnMap(first);
+  const vpc = (vault.insight?.location?.vpcs || []).map((id) => placed.settlements?.find((s) => s.id === id)).find(Boolean);
+  vaultPageFrom = null;
+  closeVaultPage();
+  const cell = placed.vaults?.cells.find((item) => item.key === vault.key);
+  const hit = cell || vpc;
+  if (hit) revealPanel({ x: hit.x, y: hit.y, w: Math.min(hit.w, map.clientWidth), h: Math.min(hit.h || 80, map.clientHeight) });
 }
 
 function ownedBlock(vault) {
