@@ -279,7 +279,24 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     const opts = [h("option", { value: "", text: out?.error ? "SERVICE… (none: " + out.error + ")" : list.length ? `SERVICE… (${list.length})` : "SERVICE… (none)" })];
     for (const svc of list) for (const t of svc.targets || []) opts.push(h("option", { value: t, text: `${svc.namespace}/${svc.name} ${t.replace(/^.*:/, ":")} ${t.split(":")[0]} · ${svc.ready}/${svc.total} ready${svc.total && !svc.ready ? " · NO ENDPOINTS" : ""}` }));
     svcSel.replaceChildren(...opts);
+    // Namespaces the cluster does not have stay listed but disabled, so the
+    // pod is never sent to a namespace the API would 404.
+    nsMissing = new Set((out?.namespaces || []).filter((n) => n.exists === false).map((n) => n.name));
+    markNamespaces();
   };
+  let nsMissing = new Set();
+  function markNamespaces() {
+    for (const o of nsSel.options) {
+      const gone = nsMissing.has(o.value);
+      o.disabled = gone;
+      o.text = gone ? `${o.value} (missing)` : o.value;
+      o.title = gone ? `namespace ${o.value} does not exist on the cluster` : "";
+    }
+    if (nsSel.selectedOptions[0]?.disabled) {
+      const ok = [...nsSel.options].find((o) => !o.disabled);
+      if (ok) nsSel.value = ok.value;
+    }
+  }
   svcSel.addEventListener("change", () => {
     if (!svcSel.value) return;
     field.value = svcSel.value;
@@ -306,7 +323,10 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     if (inside) loadServices();
     field.placeholder = inside ? "shopapi.shop:3000 · tcp://shopdb.shop:5432 · https://api.example.com — from inside the cluster" : "https://… or a host: only what you type is probed";
     const want = sample() ? ["cloudspider-debug", "web", "shop"] : [podCfg?.namespace || "cloudspider-debug", ...(podCfg?.sourceNamespaces || [])];
-    if ([...nsSel.options].map((o) => o.value).join() !== want.join()) nsSel.replaceChildren(...want.map((n) => h("option", { value: n, text: n })));
+    if ([...nsSel.options].map((o) => o.value).join() !== want.join()) {
+      nsSel.replaceChildren(...want.map((n) => h("option", { value: n, text: n })));
+      markNamespaces();
+    }
   }
   insideBtn.addEventListener("click", () => {
     inside = !inside;

@@ -125,6 +125,9 @@ export function createPodRunner({ cfg = {}, writeContexts = [], kubeFor = () => 
     }
     const cfgFor = sample ? { ...c, namespace: "cloudspider-debug", sourceNamespaces: SAMPLE_POD_NAMESPACES } : c;
     const names = reads.namespaces.map((n) => n.metadata?.name);
+    // A namespace that does not exist made the API 404 the pod create
+    // ("the pod was not created: not found"). Say which one, before any write.
+    if (!sample && names.length && !names.includes(sourceNs)) return { status: 400, error: `namespace ${sourceNs} does not exist on ${context}`, hint: `Pick a namespace that exists, create it (kubectl --context ${context} create namespace ${sourceNs}), or set network.pod.namespace in cloudspider.yaml.` };
     const plan = buildPlan(body, { cfg: cfgFor, namespaces: names, runId, endpoints: reads.endpoints });
     if (plan.error) return { status: 400, error: plan.error };
     const guard = podGuard({ context, plan, writeContexts, cfg: c, confirm: body.confirm || {}, openshift: reads.openshift, sample });
@@ -138,9 +141,13 @@ export function createPodRunner({ cfg = {}, writeContexts = [], kubeFor = () => 
       if (sample) return { context: "sample", scope: "sample", services: SAMPLE_POD_SERVICES.map((s) => ({ ...s, targets: s.ports.map((p) => serviceTarget(s, p)) })) };
       if (c.enabled !== true) return { status: 403, error: "the debug pod is off" };
       const ctx = String(context || writeContexts[0] || "");
-      const got = await listServices(kubeFor(ctx), { namespaces: [...new Set([c.namespace, ...(c.sourceNamespaces || [])])] });
+      const kube = kubeFor(ctx);
+      const allowed = [...new Set([c.namespace, ...(c.sourceNamespaces || [])])];
+      const got = await listServices(kube, { namespaces: allowed });
       if (got.error) return { status: 502, error: got.error };
-      return { context: ctx, scope: got.scope, services: got.services.map((s) => ({ ...s, targets: s.ports.map((p) => serviceTarget(s, p)) })) };
+      const seen = kube ? (await kube.read("namespaces")).json?.items?.map((n) => n.metadata?.name) : null;
+      const namespaces = allowed.map((name) => ({ name, exists: seen ? seen.includes(name) : null }));
+      return { context: ctx, scope: got.scope, namespaces, services: got.services.map((s) => ({ ...s, targets: s.ports.map((p) => serviceTarget(s, p)) })) };
     },
     // Shown before the confirm: everything that would be created.
     async plan(body = {}) {

@@ -12,6 +12,7 @@ export async function runPod({ writer, spec, timeoutMs = 120_000, pollMs = 1000,
   step(`creating pod ${ns}/${name}`);
   const made = await writer.createPod(ns, spec);
   await audit({ action: "netdebug.pod.create", namespace: ns, object: name, image: spec.spec.containers[0].image, runId, result: made.error ? `error: ${made.error}` : "created" });
+  if (made.missing) return { error: `the pod was not created: namespace ${ns} not found on the cluster` };
   if (made.error) return { error: `the pod was not created: ${made.error}` };
   let pod = made.json || null;
   let timedOut = false;
