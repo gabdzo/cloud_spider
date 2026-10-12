@@ -76,8 +76,13 @@ export const LEGACY_CLUSTER = "cloudspider-up"
 // never a rename of the cluster that is already up.
 // legacyName: the cluster the old stack actually holds (its `name` output),
 // in case it is not cloudspider-up.
+export const observeSlug = (context) => String(context).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "default"
+
 export function stackFor(spec, values = {}, legacyName = LEGACY_CLUSTER) {
   if (spec?.addon) return `${spec.stack}-${values.clusterName || LEGACY_CLUSTER}`
+  // One observe bundle per cluster, all in one local backend: the stack is
+  // per kube context, or a second cluster's up would take over the first's.
+  if (spec?.id === "observe" && values.context) return `${spec.stack}-${observeSlug(values.context)}`
   if (spec?.id !== "eks") return spec?.stack || ""
   const name = values.clusterName || LEGACY_CLUSTER
   return name === (legacyName || LEGACY_CLUSTER) ? spec.stack : `eks-${name}`

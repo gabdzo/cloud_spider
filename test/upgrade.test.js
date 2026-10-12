@@ -509,3 +509,11 @@ test("run output goes through maskKubeconfig before the pane and the run log", (
   const src = readFileSync(new URL("../src/upgrade.js", import.meta.url), "utf8");
   assert.match(src, /const text = maskKubeconfig\(String\(chunk\)\.trimEnd\(\)\);/);
 });
+
+test("observe: one stack per kube context, legacy name without one", () => {
+  const spec = UPGRADES.find((item) => item.id === "observe");
+  assert.equal(stackFor(spec, {}), "observe");
+  assert.equal(stackFor(spec, { context: "crc-admin" }), "observe-crc-admin");
+  assert.equal(stackFor(spec, { context: "arn:aws:eks:eu-north-1:1:cluster/Up" }), "observe-arn-aws-eks-eu-north-1-1-cluster-up");
+  assert.notEqual(stackFor(spec, { context: "a" }), stackFor(spec, { context: "b" }));
+});
