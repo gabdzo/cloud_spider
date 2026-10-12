@@ -136,7 +136,9 @@ export function ndModel(run, { filter = "all" } = {}) {
   const checks = r.checks || [];
   const who = checks.find((c) => c.id === "L-HTTP-03")?.observed?.answeredBy;
   const chain = [];
-  for (const step of CHAIN) {
+  // A FROM INSIDE run brings its own hop-by-hop path (pod-result.js podPath).
+  if (Array.isArray(r.path)) chain.push(...r.path.map((n) => ({ ...n })));
+  else for (const step of CHAIN) {
     if (step.layer === "client") {
       chain.push({ layer: "client", label: "CLIENT", status: "PASS", fact: r.context?.sample ? "sample run" : "this machine" });
       continue;
@@ -176,7 +178,9 @@ export function ndModel(run, { filter = "all" } = {}) {
     from: r.from || ["local"],
     verdict: r.summary.verdict,
     summary: r.summary,
-    meta: `${r.context?.sample ? "sample · " : ""}${r.from.join(" + ")} · ${(r.durationMs / 1000).toFixed(1)} s · ${r.id}`,
+    inside: Array.isArray(r.path),
+    pod: r.pod || null,
+    meta: `${r.context?.sample ? "sample · " : ""}${r.pod ? `pod ${r.context?.namespace}${r.context?.node ? ` on ${r.context.node}` : ""} · ` : ""}${r.from.join(" + ")} · ${(r.durationMs / 1000).toFixed(1)} s · ${r.id}`,
     chain,
     timing: timingOf(checks),
     counts,
@@ -236,8 +240,103 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   const fold = h("button", { className: "nd-fold", type: "button", "aria-expanded": "true", title: "fold the DEBUG panel", text: "▾" });
   const modes = h("span", { className: "nd-modes", role: "group", "aria-label": "where the checks run from" });
   const body = h("div", { className: "nd-body" });
-  const bar = h("div", { className: "nd-bar" }, h("b", { className: "nd-title", text: "DEBUG" }), field, modes, runBtn, meta, exports, fold);
-  root.replaceChildren(bar, body);
+  // FROM INSIDE (N9): a debug pod in a namespace (and node) you pick.
+  let inside = false;
+  let podCfg = null;
+  let confirmPlan = null;
+  const insideBtn = h("button", { className: "nd-btn nd-insidebtn", type: "button", "aria-pressed": "false", hidden: true, text: "FROM INSIDE", title: "probe from a short-lived debug pod in the cluster: DNS, TCP, HTTP, hops, MTU and NetworkPolicy" });
+  const nsSel = h("select", { className: "nd-ns", "aria-label": "namespace the debug pod runs in" });
+  const nodeIn = h("input", { className: "nd-node-in", type: "text", placeholder: "node (any)", "aria-label": "node to run on", spellcheck: "false", autocomplete: "off" });
+  const asIn = h("input", { className: "nd-as", type: "text", placeholder: "as labels: app=web", "aria-label": "labels the debug pod carries (NetworkPolicy source)", spellcheck: "false", autocomplete: "off" });
+  const httpIn = h("input", { type: "checkbox", "aria-label": "HTTP GET too" });
+  const rawIn = h("input", { type: "checkbox", "aria-label": "tcptraceroute (NET_RAW)" });
+  const rawLabel = h("label", { className: "nd-check", hidden: true }, rawIn, "TCP TRACE");
+  const insideRow = h("div", { className: "nd-insiderow", hidden: true },
+    h("span", { className: "nd-label", text: "POD IN" }), nsSel, nodeIn, asIn,
+    h("label", { className: "nd-check" }, httpIn, "HTTP"), rawLabel,
+    h("span", { className: "nd-quiet", text: "read-only otherwise · deleted after the run · TTL" }));
+  const bar = h("div", { className: "nd-bar" }, h("b", { className: "nd-title", text: "DEBUG" }), field, insideBtn, modes, runBtn, meta, exports, fold);
+  root.replaceChildren(bar, insideRow, body);
+  const loadPodCfg = async () => {
+    podCfg = await fetchJson("/api/netdebug/pod/config").catch(() => null);
+    syncInside();
+  };
+  function syncInside() {
+    const can = Boolean(podCfg?.enabled) || sample();
+    insideBtn.hidden = !can;
+    if (!can) inside = false;
+    insideBtn.setAttribute("aria-pressed", String(inside));
+    insideRow.hidden = !inside;
+    rawLabel.hidden = !(podCfg?.allowRawTrace || sample());
+    field.placeholder = inside ? "shopapi.shop:3000 · 10.128.0.12:8080 · https://api.example.com — from inside the cluster" : "https://… or a host: only what you type is probed";
+    const want = sample() ? ["cloudspider-debug", "web", "shop"] : [podCfg?.namespace || "cloudspider-debug", ...(podCfg?.sourceNamespaces || [])];
+    if ([...nsSel.options].map((o) => o.value).join() !== want.join()) nsSel.replaceChildren(...want.map((n) => h("option", { value: n, text: n })));
+  }
+  insideBtn.addEventListener("click", () => {
+    inside = !inside;
+    confirmPlan = null;
+    syncInside();
+    draw();
+  });
+  const podBody = (extra = {}) => {
+    const asLabels = Object.fromEntries(asIn.value.split(/[,\s]+/).filter((x) => x.includes("=")).map((x) => x.split("=")));
+    return { target: field.value.trim(), namespace: nsSel.value, node: nodeIn.value.trim(), asLabels, http: httpIn.checked, rawTrace: rawIn.checked, sample: sample() === true, ...extra };
+  };
+  const planInside = async () => {
+    if (!field.value.trim()) return field.focus();
+    runBtn.disabled = true;
+    const out = await fetchJson("/api/netdebug/pod/plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(podBody()) }).catch((err) => ({ error: err?.message || "the server did not answer" }));
+    runBtn.disabled = false;
+    if (out.error) {
+      run = { error: out.error, hint: out.hint || "" };
+      confirmPlan = null;
+    } else {
+      confirmPlan = out;
+      run = null;
+    }
+    draw();
+  };
+  const startInside = async (confirm) => {
+    runBtn.disabled = true;
+    run = { target: { input: field.value.trim() }, steps: [{ text: "starting the debug pod", state: "running" }] };
+    confirmPlan = null;
+    filter = "all";
+    draw();
+    const out = await fetchJson("/api/netdebug/pod", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(podBody({ confirm })) }).catch((err) => ({ error: err?.message || "the server did not answer" }));
+    if (!out.id) {
+      run = { error: out.error || "nothing ran", hint: out.hint || "" };
+      runBtn.disabled = false;
+      draw();
+      return;
+    }
+    poll(out.id, ++polling);
+  };
+  function drawConfirm(p) {
+    const typed = h("input", { className: "nd-confirm-in", type: "text", placeholder: p.confirmWith, "aria-label": `type ${p.confirmWith} to confirm`, spellcheck: "false", autocomplete: "off" });
+    const typedCtx = p.work ? h("input", { className: "nd-confirm-in", type: "text", placeholder: p.context, "aria-label": `type ${p.context} to confirm the work context` }) : null;
+    const go = h("button", { type: "button", className: "nd-btn nd-primary", text: p.sample ? "RUN SAMPLE" : "CREATE POD AND RUN" });
+    const ok = () => p.sample || (typed.value === p.confirmWith && (!typedCtx || typedCtx.value === p.context));
+    const sync = () => (go.disabled = !ok() || (p.needs.length > 0 && !p.sample));
+    typed.addEventListener("input", sync);
+    typedCtx?.addEventListener("input", sync);
+    go.addEventListener("click", () => ok() && startInside({ namespace: typed.value || p.confirmWith, context: typedCtx?.value || "" }));
+    sync();
+    const t = p.plan.target;
+    const c = p.spec.spec.containers[0];
+    return h("section", { className: "nd-confirm", "aria-label": "debug pod: what will be created" },
+      p.work ? h("div", { className: "nd-work", role: "alert", text: `WORK CONTEXT ${p.context}` }) : null,
+      h("div", { className: "nd-fhead" }, h("b", { text: `DEBUG POD → ${t.kind === "service" ? `${t.name}.${t.namespace}:${t.port}` : `${t.host}:${t.port}`}` }), h("span", { className: "nd-quiet", text: p.sample ? "sample: nothing is created" : `context ${p.context}` })),
+      h("ul", { className: "nd-plan" },
+        h("li", { text: `pod ${p.spec.metadata.name} in ${p.plan.source.namespace}${p.plan.source.node ? ` on ${p.plan.source.node}` : ""} · TTL ${p.plan.ttlSeconds} s · deleted after the run` }),
+        h("li", { text: `image ${c.image.replace(/@sha256:(.{12}).*/, "@sha256:$1…")}` }),
+        h("li", { text: `${p.plan.raw ? "root with only NET_RAW (tcptraceroute), no escalation" : "non-root, read-only root, no capabilities, no service account token"} · cpu 100m · 64Mi` }),
+        h("li", { text: `checks: ${Object.entries(p.plan.checks).filter(([, v]) => v).map(([k]) => k.toUpperCase()).join(" · ")}${t.endpoints?.length ? ` · ${t.endpoints.length} endpoint${t.endpoints.length === 1 ? "" : "s"} direct` : ""}` }),
+        Object.keys(p.plan.source.labels || {}).length ? h("li", { text: `labels as ${Object.entries(p.plan.source.labels).map(([k, v]) => `${k}=${v}`).join(", ")} (NetworkPolicy source)` }) : null),
+      p.needs.length && !p.sample ? h("div", { className: "nd-error", role: "alert" }, h("b", { text: "NOT YET" }), ...p.needs.map((n) => h("small", { text: n }))) : null,
+      p.scc ? h("details", { className: "nd-drill" }, h("summary", {}, h("span", { className: "nd-label", text: "OPENSHIFT SCC (an admin applies it)" })), h("pre", { text: JSON.stringify(p.scc, null, 2) })) : null,
+      h("details", { className: "nd-drill" }, h("summary", {}, h("span", { className: "nd-label", text: "POD SPEC" })), h("pre", { className: "nd-spec", text: JSON.stringify(p.spec, null, 2) })),
+      h("div", { className: "nd-confirmrow" }, p.sample ? null : h("span", { className: "nd-label", text: "TYPE THE NAMESPACE" }), p.sample ? null : typed, typedCtx, go, h("button", { type: "button", className: "nd-btn", text: "CANCEL", onclick: () => ((confirmPlan = null), draw()) })));
+  }
 
   const start = async ({ keepWhy = false } = {}) => {
     if (!keepWhy) {
@@ -286,9 +385,9 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     }
     runBtn.disabled = false;
   };
-  runBtn.addEventListener("click", () => start());
+  runBtn.addEventListener("click", () => (inside ? planInside() : start()));
   field.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") start();
+    if (event.key === "Enter") inside ? planInside() : start();
   });
   fold.addEventListener("click", () => {
     open = !open;
@@ -302,7 +401,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       chip("LOCAL", true, "DNS, TCP, TLS and HTTP from this machine"),
       chip("AWS", from.includes("aws"), "Route 53, CloudFront, ALB, VPC reads (read-only); on when the target is in this account"),
       chip("KUBE", from.includes("kube"), "Service, EndpointSlices, NetworkPolicies, CoreDNS through the viewer role (read-only); on when the target group belongs to a connected cluster"),
-      chip("IN-CLUSTER", from.includes("pod"), "a debug pod in the cluster: off (opt-in: network.pod.enabled and a context in kube.writeContexts)"),
+      chip("IN-CLUSTER", from.includes("pod"), from.includes("pod") ? "a short-lived debug pod in the cluster ran these checks" : "a debug pod in the cluster: FROM INSIDE (opt-in: network.pod.enabled and a context in kube.writeContexts)"),
     );
   }
 
@@ -313,7 +412,8 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       const node = h("li", { className: "nd-node", dataset: { status: n.status, layer: n.layer }, role: "button", tabindex: "0", title: `${n.label}: ${STATE_TEXT[n.status]} · click: only its checks` },
         h("span", { className: "nd-glyph", text: GLYPH[n.status] }),
         h("b", { text: n.label }),
-        h("small", { text: n.fact }));
+        h("small", { text: n.fact }),
+        n.live ? h("small", { className: "nd-live", title: `observe bundle, live: called by ${n.live.callers.join(", ")}`, text: `LIVE ${n.live.rps} rps · ${(n.live.errorRate * 100).toFixed(1)}% err · p95 ${n.live.p95ms} ms` }) : null);
       const pick = () => {
         filter = filter === n.layer ? "all" : n.layer;
         draw();
@@ -422,6 +522,18 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       body.replaceChildren();
       return;
     }
+    if (confirmPlan && model.state !== "running") {
+      body.replaceChildren(drawConfirm(confirmPlan));
+      return;
+    }
+    if (model.state === "empty" && inside) {
+      const try_ = (text, ns, as = "") => h("button", { type: "button", className: "nd-chip", text: `${text}${ns ? ` from ${ns}` : ""}`, onclick: () => ((field.value = text), ns && (nsSel.value = ns), (asIn.value = as), planInside()) });
+      body.replaceChildren(h("div", { className: "nd-empty" },
+        h("p", { text: "FROM INSIDE starts a short-lived netshoot pod in the namespace you pick (its NetworkPolicy source) and runs a fixed probe: DNS (short name and FQDN), TCP to the Service and to each pod, HTTP, the hops (tracepath; tcptraceroute with NET_RAW) and the path MTU. Then it says which NetworkPolicy allows or blocks the path." }),
+        h("p", { className: "nd-quiet", text: "Nothing else is written: no exec, no secrets; the pod is deleted after its log is read and expires by itself (TTL)." }),
+        h("div", { className: "nd-tries" }, h("span", { className: "nd-label", text: "TRY" }), ...(sample() ? [try_("shopapi.shop:3000", "cloudspider-debug"), try_("shopapi.shop:3000", "web", "app=web"), try_("https://api.example.com/healthz", "cloudspider-debug")] : [try_("kubernetes.default:443", "")]))));
+      return;
+    }
     if (model.state === "empty") {
       const try_ = (text) => h("button", { type: "button", className: "nd-chip", text, onclick: () => ((field.value = text), start()) });
       body.replaceChildren(h("div", { className: "nd-empty" },
@@ -453,7 +565,18 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   }
 
   return {
+    setInside({ target = "", namespace = "" } = {}) {
+      inside = true;
+      confirmPlan = null;
+      run = null;
+      field.value = target;
+      syncInside();
+      if (namespace && [...nsSel.options].some((o) => o.value === namespace)) nsSel.value = namespace;
+      if (!root.hidden) draw();
+      field.focus();
+    },
     show() {
+      loadPodCfg();
       if (!shown) {
         shown = true;
         if (!field.value && hostInput?.value?.trim()) field.value = hostInput.value.trim();
@@ -467,6 +590,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     reset() {
       polling += 1;
       run = null;
+      confirmPlan = null;
       filter = "all";
       runBtn.disabled = false;
       if (!root.hidden) draw();

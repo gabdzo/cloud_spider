@@ -1,6 +1,7 @@
 // The page's state in the URL hash, so a reload, a shared link and the
 // browser's back/forward all land on the same screen:
 //   #<view>?sample=1&learn=<lab>&stacks=<card>&lb=<arn>&host=<host>
+//   #path?debug=<target>&inside=1&ns=<ns>  FROM INSIDE prefilled (Cluster › graph)
 //   #path?debug=<url>&why=1  one-shot: DEBUG runs <url> (and opens the ALB
 //                            503 walkthrough); not written back
 // view is "" (the map), "path", "cluster", "vaults" or "vaults/<key>".
@@ -36,6 +37,8 @@ export function parseUrlState(hash) {
     host: view === "path" ? params.get("host") || "" : "",
     debug: view === "path" ? (params.get("debug") || "").slice(0, 2048) : "",
     why: view === "path" && params.get("why") === "1",
+    inside: view === "path" && params.get("inside") === "1",
+    ns: view === "path" ? (params.get("ns") || "").slice(0, 63) : "",
   };
 }
 

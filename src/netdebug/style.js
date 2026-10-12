@@ -68,6 +68,22 @@ export const ND_CSS = `
   #netdebug .nd-tries { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
   #netdebug .nd-error { display: flex; gap: 10px; align-items: baseline; color: var(--n-bad); border-left: 3px solid var(--n-bad); padding: 6px 10px; background: var(--n-raised); }
   #netdebug .nd-error small { color: var(--n-text2); }
+  #netdebug .nd-insiderow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--n-line); background: var(--n-raised); }
+  #netdebug .nd-insiderow[hidden] { display: none; }
+  #netdebug .nd-insiderow select, #netdebug .nd-insiderow input[type="text"], #netdebug .nd-confirm-in { font: inherit; font-size: 12px; color: var(--n-text); background: var(--n-ink); border: 1px solid var(--n-line); padding: 2px 6px; }
+  #netdebug .nd-node-in { width: 9em; }
+  #netdebug .nd-as { width: 12em; }
+  #netdebug .nd-check { display: inline-flex; gap: 4px; align-items: center; font-size: 11px; color: var(--n-text2); white-space: nowrap; }
+  #netdebug .nd-check input { width: 13px; height: 13px; margin: 0; flex: none; }
+  #netdebug .nd-check[hidden] { display: none; }
+  #netdebug .nd-insidebtn[aria-pressed="true"] { color: var(--n-ink); background: var(--n-accent); border-color: var(--n-accent); }
+  #netdebug .nd-confirm { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--n-strong); background: var(--n-raised); }
+  #netdebug .nd-plan { margin: 0; padding-left: 18px; color: var(--n-text2); font-size: 12px; display: grid; gap: 2px; }
+  #netdebug .nd-confirmrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #netdebug .nd-work { color: var(--n-ink); background: var(--n-bad); padding: 4px 10px; font-weight: 700; letter-spacing: .12em; }
+  #netdebug .nd-spec, #netdebug .nd-confirm pre { max-height: 240px; overflow: auto; font-size: 11px; color: var(--n-text2); margin: 6px 0 0; }
+  #netdebug .nd-live { display: block; color: var(--n-info); font-size: 10.5px; }
+  #netdebug .nd-node[data-layer="policy"] b { letter-spacing: .08em; }
   #netdebug .nd-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
   #netdebug .nd-steps li { display: flex; gap: 8px; color: var(--n-text2); }
   #netdebug .nd-steps li[data-state="running"] { color: var(--n-text); }

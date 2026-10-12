@@ -1448,7 +1448,8 @@ async function applyUrl() {
     // typed and RUN pressed; the walkthrough opens with the report.
     if (mode === "path" && want.debug && want.debug !== lastDebugLink) {
       lastDebugLink = want.debug;
-      netdebugView.setTarget(want.debug, { go: true, whyOpen: want.why });
+      if (want.inside) netdebugView.setInside({ target: want.debug, namespace: want.ns });
+      else netdebugView.setTarget(want.debug, { go: true, whyOpen: want.why });
     }
     if (Boolean(want.stacks) !== pipOpen) {
       if (want.stacks && learnApi?.isOpen()) await learnApi.setOpen(false);
