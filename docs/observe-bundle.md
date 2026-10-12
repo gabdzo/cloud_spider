@@ -33,7 +33,7 @@ Pod Security `privileged`). Already have kube-state-metrics: `kubeStateMetrics=s
 service proxy with the viewer context; needs `services/proxy` `get` on
 `otel-collector` and `loki` in `cloudspider-observe`. Answer: `edges`
 (graph shape: `from`/`to` = `<ns>/<service>`, `source: "trace"`, `rps`,
-`errors` %, `p95` ms, `observed`), `red`, `restarts`, `events`.
+`errors` %, `p95ms`, `window`, `at`; plan §4.5), `red`, `restarts`, `events`.
 `mergeLive(scene, live)` in `src/observe/live.js` folds it into a SERVICES scene.
 
 ## Footprint

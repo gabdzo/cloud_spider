@@ -128,7 +128,7 @@ test("live: Prometheus text → edges in the graph shape with rate, error %, p95
   assert.equal(first.warming, true);
   assert.equal(first.edges[0].rps, 0);
   const live = liveFromScrapes({ at: 60_000, text: SG(700, 30) }, { at: 0, text: SG(100, 0) });
-  assert.deepEqual(live.edges, [{ from: "demo/web", to: "demo/api", kind: "http", source: "trace", rps: 10, errors: 5, p95: 100, observed: true }]);
+  assert.deepEqual(live.edges, [{ from: "demo/web", to: "demo/api", kind: "http", source: "trace", rps: 10, errors: 5, p95ms: 100, window: 60, at: 60_000 }]);
   assert.deepEqual(live.red["demo/api"].errors, 5);
   // A counter reset (Beyla restarted) is not a negative rate.
   assert.ok(liveFromScrapes({ at: 60_000, text: SG(5, 0) }, { at: 0, text: SG(700, 30) }).edges[0].rps >= 0);
@@ -139,10 +139,13 @@ test("live: Loki Events, merge into a scene, reader over fixed proxy paths", asy
   assert.equal(ev.length, 1);
   assert.equal(ev[0].kind, "restart");
   assert.equal(ev[0].node, "demo/api");
-  const scene = { nodes: [{ id: "demo/web" }, { id: "demo/api" }, { id: "demo/db" }], edges: [{ from: "demo/api", to: "demo/db", kind: "tcp", source: "static" }] };
-  const merged = mergeLive(scene, { edges: [{ from: "demo/web", to: "demo/api", source: "trace", observed: true }, { from: "x/y", to: "demo/api" }], red: {}, events: ev });
-  assert.equal(merged.edges.length, 2);
-  assert.ok(merged.edges[0].unused && merged.edges[1].undeclared);
+  const scene = { nodes: [{ id: "demo/web" }, { id: "demo/deployment:api" }, { id: "demo/db" }], edges: [{ from: "demo/web", to: "demo/deployment:api", kind: "http", source: "static" }] };
+  const merged = mergeLive(scene, { edges: [{ from: "demo/web", to: "demo/api", source: "trace" }, { from: "x/y", to: "demo/api" }], red: { "demo/api": { rps: 1, errors: 0, p95ms: 5 } }, events: ev });
+  assert.equal(merged.edges.length, 2, "a live twin is its own edge");
+  assert.deepEqual(merged.edges[1], { from: "demo/web", to: "demo/deployment:api", source: "trace" });
+  assert.equal(merged.live.dropped, 1);
+  assert.equal(merged.nodes[1].red.p95ms, 5);
+  assert.equal(merged.events[0].node, "demo/deployment:api");
   assert.match(PATHS.observeMetrics(), /cloudspider-observe\/services\/otel-collector:metrics\/proxy\/metrics$/);
   assert.match(PATHS.observeEvents(1, 2), /loki:http\/proxy\/loki\/api\/v1\/query_range\?query=%7Bservice_name%3D%22k8s-events%22%7D&start=1&end=2/);
   const kube = { context: "t", readText: async () => ({ text: SG(1, 0) }), read: async () => ({ missing: true }) };

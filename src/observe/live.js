@@ -3,10 +3,12 @@
 // Prometheus endpoint (Beyla's service graph + RED, kube-state-metrics) and
 // Loki (Kubernetes Events kept past the API server's hour). Turned into the
 // SERVICES graph shape (src/graph-sample.js):
-//   edges:  [{ from, to, kind, source: "trace", rps, errors, p95, observed: true }]
-//           from/to are "<namespace>/<service>", like graph-build.js node ids;
-//           errors is a percentage, like the sample's
-//   red:    { "<ns>/<svc>": { rps, errors, p95 } } (server side)
+//   (the contract: docs/plan-modules-and-service-graph.md §4.5)
+//   edges:  [{ from, to, kind: http|grpc, source: "trace", rps, errors, p95ms, window, at }]
+//           from/to are "<namespace>/<service>"; mergeLive maps them onto
+//           the scene's ids (a workload with no Service: ns/deployment:name);
+//           errors is a percentage (5xx / gRPC non-OK)
+//   red:    { "<ns>/<svc>": { rps, errors, p95ms } } → nodes[].red
 //   events: [{ t: "HH:MM", at, kind, group, node, text }]
 // Rates need two scrapes: the first read answers counts with rps 0 and
 // `warming: true`; later reads use the delta to the previous one.
@@ -90,7 +92,7 @@ const rate = (cur, prev, secs) => {
   return {
     rps: base && secs > 0 ? +(dTotal / secs).toFixed(2) : 0,
     errors: dTotal > 0 ? +((100 * dFailed) / dTotal).toFixed(1) : 0,
-    p95: Math.round(quantile(buckets) * 1000),
+    p95ms: Math.round(quantile(buckets) * 1000),
   };
 };
 
@@ -101,7 +103,7 @@ export function liveFromScrapes(cur, prev = null) {
   const p = prev ? countersOf(parseProm(prev.text)) : { edges: {}, red: {} };
   const edges = Object.entries(c.edges).map(([key, e]) => {
     const [from, to] = key.split(">");
-    return { from, to, kind: e.kind, source: "trace", ...rate(e, prev ? p.edges[key] || { total: 0, failed: 0, buckets: {} } : null, secs), observed: true };
+    return { from, to, kind: e.kind, source: "trace", ...rate(e, prev ? p.edges[key] || { total: 0, failed: 0, buckets: {} } : null, secs), window: Math.round(secs), at: cur.at };
   });
   const red = Object.fromEntries(Object.entries(c.red).map(([id, s]) => [id, rate(s, prev ? p.red[id] || { total: 0, failed: 0, buckets: {} } : null, secs)]));
   return { edges, red, warming: !prev };
@@ -134,17 +136,30 @@ export function eventsFromLoki(json) {
   return out.sort((a, b) => a.at - b.at);
 }
 
-// Merge live edges into a graph scene (the graph worker's buildGraph output):
-// an observed edge with a static twin marks it observed; one without is
-// added (and flagged undeclared); static edges never observed are dimmed.
+// Merge live data into a SERVICES scene (§4.5): live edges are their own
+// edges next to static ones (the view's layers toggle them); ids resolve to
+// the scene's node (Service ns/name, else ns/deployment|statefulset|daemonset:name);
+// edges whose ends the scene does not know are dropped and counted.
+export function resolveId(ids, id) {
+  if (ids.has(id)) return id;
+  const [ns, name] = [id.slice(0, id.indexOf("/")), id.slice(id.indexOf("/") + 1)];
+  for (const k of ["deployment", "statefulset", "daemonset"]) if (ids.has(`${ns}/${k}:${name}`)) return `${ns}/${k}:${name}`;
+  if (name === "kubernetes" && ids.has("default/kubernetes")) return "default/kubernetes";
+  return "";
+}
 export function mergeLive(scene, live) {
-  const key = (e) => `${e.from}>${e.to}`;
-  const seen = new Map(live.edges.map((e) => [key(e), e]));
   const ids = new Set((scene.nodes || []).map((n) => n.id));
-  const edges = (scene.edges || []).map((e) => (e.source === "static" ? (seen.has(key(e)) ? { ...e, observed: true } : { ...e, unused: true }) : e));
-  const declared = new Set(edges.map(key));
-  for (const e of live.edges) if (!declared.has(key(e)) && ids.has(e.from) && ids.has(e.to)) edges.push({ ...e, undeclared: true });
-  return { ...scene, edges, events: [...(scene.events || []), ...(live.events || [])], red: live.red };
+  const edges = [...(scene.edges || [])];
+  let dropped = 0;
+  for (const e of live.edges || []) {
+    const from = resolveId(ids, e.from), to = resolveId(ids, e.to);
+    if (from && to) edges.push({ ...e, from, to }); else dropped++;
+  }
+  const red = {};
+  for (const [id, r] of Object.entries(live.red || {})) { const n = resolveId(ids, id); if (n) red[n] = r; }
+  const nodes = (scene.nodes || []).map((n) => (red[n.id] ? { ...n, red: red[n.id] } : n));
+  const events = [...(scene.events || []), ...(live.events || []).map((ev) => ({ ...ev, node: resolveId(ids, ev.node) || ev.node }))];
+  return { ...scene, nodes, edges, events, live: { dropped, warming: !!live.warming } };
 }
 
 // One read: metrics (and Loki events when logs are on) through the kube
