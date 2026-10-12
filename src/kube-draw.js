@@ -5,21 +5,22 @@
 import { FONT_PX } from "./layout.js";
 import { campfireFrame } from "./pixel-art.js";
 import { icon } from "./sprites/icons.js";
-import { PIP, STATUS, WORLD, font, rgba } from "./theme.js";
+import { INK, STATUS, WORLD, inkFont, rgba } from "./theme.js";
 import { brackets, clip, drawSprite } from "./draw-kit.js";
-import { backdropLayer } from "./path-draw.js";
+import { backdropLayer, proCard, proDot, syncInk } from "./path-draw.js";
 import { KUBE_LAYOUT, cardText, expandChip, middle, pathOf } from "./kube-layout.js";
 import { placedMatches } from "./kube-search.js";
 import { nodeChips } from "./node-labels.js";
 
-const FONT = font(FONT_PX);
-const SMALL = font(FONT_PX - 2);
-const TINY = font(FONT_PX - 3);
+let FONT = inkFont(FONT_PX, false);
+let SMALL = inkFont(FONT_PX - 2, false);
+let TINY = inkFont(FONT_PX - 3, false);
+let PRO = false;
 const L = KUBE_LAYOUT;
 
 // One colour per node, so a pod's chip says where it runs. Text ("N1")
 // carries the same fact for anyone who can't tell the colours apart.
-export const NODE_CHIPS = [PIP.bright, WORLD.amber, WORLD.vault, WORLD.toxic, WORLD.flame, WORLD.tan, WORLD.glow];
+export const NODE_CHIPS = [INK.bright, WORLD.amber, WORLD.vault, WORLD.toxic, WORLD.flame, WORLD.tan, WORLD.glow];
 export const chipColor = (i) => NODE_CHIPS[i % NODE_CHIPS.length];
 
 const KIND_ICON = { "control-plane": "cluster", namespace: "namespace", ingress: "url", service: "lb", workload: "stack", pod: "pod", "pod-group": "pod", node: "node" };
@@ -30,6 +31,10 @@ const COLUMN_TITLE = { ingress: "INGRESS", service: "SERVICES", workload: "WORKL
 // match: null, or { ids } from kube-search.js: matching cards are ringed,
 // the rest dimmed.
 export function paintKube(ctx, { placed, selectedId, hoverId, animTime, width, height, reducedMotion, scrollTop = 0, stickyTop = scrollTop, match = null }) {
+  PRO = syncInk();
+  FONT = inkFont(FONT_PX, PRO);
+  SMALL = inkFont(FONT_PX - 2, PRO);
+  TINY = inkFont(FONT_PX - 3, PRO);
   ctx.imageSmoothingEnabled = false;
   ctx.textBaseline = "alphabetic";
   ctx.clearRect(0, 0, width, height);
@@ -56,20 +61,20 @@ export function paintKube(ctx, { placed, selectedId, hoverId, animTime, width, h
     else if (node.kind === "control-plane") drawControlPlane(ctx, node, node.id === selectedId);
     else drawCard(ctx, node, { selected: node.id === selectedId, lit: on && focused, hover: node.id === hoverId, phase });
     if (focused && !on && node.kind !== "control-plane") {
-      ctx.fillStyle = rgba(PIP.ink, 0.55);
+      ctx.fillStyle = rgba(INK.ink, 0.55);
       ctx.fillRect(node.x - 2, node.y - 2, node.w + 4, node.h + 4);
     }
     if (hits && node.kind !== "control-plane") {
       if (hits.has(node.id)) {
         // A search hit: a hot double ring, like a marked part on a schematic.
-        ctx.strokeStyle = PIP.hot;
+        ctx.strokeStyle = INK.hot;
         ctx.lineWidth = 2;
         ctx.strokeRect(node.x - 3.5, node.y - 3.5, node.w + 7, node.h + 7);
-        ctx.strokeStyle = rgba(PIP.hot, 0.35);
+        ctx.strokeStyle = rgba(INK.hot, 0.35);
         ctx.lineWidth = 1;
         ctx.strokeRect(node.x - 6.5, node.y - 6.5, node.w + 13, node.h + 13);
       } else if (!focused || on) {
-        ctx.fillStyle = rgba(PIP.ink, 0.62);
+        ctx.fillStyle = rgba(INK.ink, 0.62);
         ctx.fillRect(node.x - 2, node.y - 2, node.w + 4, node.h + 4);
       }
     }
@@ -85,23 +90,23 @@ export function paintKube(ctx, { placed, selectedId, hoverId, animTime, width, h
 }
 
 function drawStickyHead(ctx, lane, columns, y) {
-  const color = STATUS[lane.status] || PIP.mid;
+  const color = STATUS[lane.status] || INK.mid;
   const h = L.LANE_BAR + L.LANE_HEAD - 4;
-  ctx.fillStyle = rgba(PIP.ink, 0.96);
+  ctx.fillStyle = rgba(INK.ink, 0.96);
   ctx.fillRect(lane.x, y, lane.w, h);
-  ctx.fillStyle = rgba(PIP.dark, 0.9);
+  ctx.fillStyle = rgba(INK.dark, 0.9);
   ctx.fillRect(lane.x, y, lane.w, L.LANE_BAR - 6);
   ctx.fillStyle = color;
   ctx.fillRect(lane.x, y, 4, L.LANE_BAR - 6);
   ctx.font = SMALL;
-  ctx.fillStyle = PIP.hot;
+  ctx.fillStyle = INK.hot;
   ctx.fillText(`${lane.ns}  ·  ${lane.caption || ""}`, lane.x + 14, y + 16);
   ctx.font = TINY;
   for (const col of columns || []) {
-    ctx.fillStyle = rgba(PIP.mid, 0.85);
+    ctx.fillStyle = rgba(INK.mid, 0.85);
     ctx.fillText(COLUMN_TITLE[col.kind] || col.kind.toUpperCase(), col.x + 2, y + L.LANE_BAR + 8);
   }
-  ctx.fillStyle = rgba(PIP.bright, 0.35);
+  ctx.fillStyle = rgba(INK.bright, 0.35);
   ctx.fillRect(lane.x, y + h, lane.w, 1);
 }
 
@@ -122,7 +127,7 @@ function tracePath(ctx, points) {
 }
 
 function drawTrace(ctx, edge, { lit, faded, flow, animTime }) {
-  const color = STATUS[edge.status] || PIP.mid;
+  const color = STATUS[edge.status] || INK.mid;
   const pts = edge.points;
   const end = pts[pts.length - 1];
   const start = pts[0];
@@ -130,7 +135,7 @@ function drawTrace(ctx, edge, { lit, faded, flow, animTime }) {
   ctx.lineJoin = "round";
   ctx.setLineDash([]);
   // Road bed so traces read over the backdrop.
-  ctx.strokeStyle = rgba(PIP.ink, lit ? 0.95 : 0.7);
+  ctx.strokeStyle = rgba(INK.ink, lit ? 0.95 : 0.7);
   ctx.lineWidth = lit ? 7 : 4;
   tracePath(ctx, pts);
   ctx.stroke();
@@ -151,7 +156,7 @@ function drawTrace(ctx, edge, { lit, faded, flow, animTime }) {
   ctx.setLineDash([]);
   // Current running along the selected path only.
   if (flow) {
-    ctx.strokeStyle = rgba(PIP.hot, 0.9);
+    ctx.strokeStyle = rgba(INK.hot, 0.9);
     ctx.lineWidth = 2;
     ctx.setLineDash([3, 11]);
     ctx.lineDashOffset = -((animTime || 0) / 45) % 14;
@@ -172,7 +177,7 @@ function drawTrace(ctx, edge, { lit, faded, flow, animTime }) {
   if (edge.status === "broken" && pts.length >= 2) {
     const [ax, ay] = pts[pts.length - 2];
     const mx = Math.round((ax + end[0]) / 2);
-    ctx.fillStyle = PIP.ink;
+    ctx.fillStyle = INK.ink;
     ctx.fillRect(mx - 5, ay - 5, 10, 10);
     ctx.fillStyle = color;
     for (let i = -3; i <= 3; i += 2) {
@@ -193,44 +198,44 @@ function chevron(ctx, x, y, open, color) {
 }
 
 function drawLane(ctx, lane, columns, hover) {
-  const color = STATUS[lane.status] || PIP.mid;
+  const color = STATUS[lane.status] || INK.mid;
   const { x, y, w, h } = lane;
   if (lane.open) {
-    ctx.fillStyle = rgba(PIP.ink, 0.42);
+    ctx.fillStyle = rgba(INK.ink, 0.42);
     ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = rgba(PIP.dim, 0.75);
+    ctx.strokeStyle = rgba(INK.dim, 0.75);
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    brackets(ctx, x - 2, y - 2, w + 4, h + 4, rgba(color, 0.8), 10, 2);
+    if (!PRO) brackets(ctx, x - 2, y - 2, w + 4, h + 4, rgba(color, 0.8), 10, 2);
   }
   // Title bar.
   const barH = L.LANE_BAR;
-  ctx.fillStyle = rgba(lane.open ? PIP.dark : PIP.ink, lane.open ? 0.9 : 0.85);
+  ctx.fillStyle = rgba(lane.open ? INK.dark : INK.ink, lane.open ? 0.9 : 0.85);
   ctx.fillRect(x, y, w, barH);
   if (!lane.open) {
-    ctx.strokeStyle = rgba(PIP.dim, hover ? 1 : 0.7);
+    ctx.strokeStyle = rgba(INK.dim, hover ? 1 : 0.7);
     ctx.lineWidth = 1;
     ctx.strokeRect(x + 0.5, y + 0.5, w - 1, barH - 1);
   }
   if (hover) {
-    ctx.fillStyle = rgba(PIP.bright, 0.08);
+    ctx.fillStyle = rgba(INK.bright, 0.08);
     ctx.fillRect(x, y, w, barH);
   }
   ctx.fillStyle = color;
   ctx.fillRect(x, y, 4, barH);
-  chevron(ctx, x + 14, y + 10, lane.open, PIP.bright);
+  chevron(ctx, x + 14, y + 10, lane.open, INK.bright);
   drawSprite(ctx, icon("namespace"), x + 32, y + 7, 1);
   ctx.font = FONT;
-  ctx.fillStyle = PIP.hot;
+  ctx.fillStyle = INK.hot;
   const name = lane.ns;
   ctx.fillText(name, x + 56, y + 20);
   ctx.font = SMALL;
-  ctx.fillStyle = PIP.mid;
+  ctx.fillStyle = INK.mid;
   const facts = [`NAMESPACE`, lane.caption, lane.workloads ? `${lane.workloads} workload${lane.workloads === 1 ? "" : "s"}` : ""].filter(Boolean).join("  ·  ");
   ctx.fillText(facts, x + 56 + Math.ceil(ctx.measureText(name).width * 1.08) + 18, y + 20);
   ctx.font = TINY;
-  ctx.fillStyle = hover ? PIP.bright : PIP.dim;
-  const hint = lane.open ? "[ FOLD ]" : "[ OPEN ]";
+  ctx.fillStyle = hover ? INK.bright : INK.dim;
+  const hint = PRO ? (lane.open ? "Fold" : "Open") : lane.open ? "[ FOLD ]" : "[ OPEN ]";
   const hintX = x + w - 14 - ctx.measureText(hint).width;
   ctx.fillText(hint, hintX, y + 19);
   // What this namespace would not let us read: amber chips, never a failure.
@@ -251,9 +256,9 @@ function drawLane(ctx, lane, columns, hover) {
   // Column captions.
   ctx.font = TINY;
   for (const col of columns) {
-    ctx.fillStyle = rgba(PIP.mid, 0.7);
+    ctx.fillStyle = rgba(INK.mid, 0.7);
     ctx.fillText(COLUMN_TITLE[col.kind] || col.kind.toUpperCase(), col.x + 2, y + barH + 16);
-    ctx.fillStyle = rgba(PIP.dim, 0.5);
+    ctx.fillStyle = rgba(INK.dim, 0.5);
     ctx.fillRect(col.x, y + barH + 20, col.w, 1);
   }
 }
@@ -261,29 +266,30 @@ function drawLane(ctx, lane, columns, hover) {
 // ---- cards ---------------------------------------------------------------
 
 function frame(ctx, n, color, { selected, lit, hover }) {
-  ctx.fillStyle = rgba(PIP.ink, 0.95);
+  if (PRO) return proCard(ctx, n.x, n.y, n.w, n.h, { color, selected, lit: lit || hover, radius: 6 });
+  ctx.fillStyle = rgba(INK.ink, 0.95);
   ctx.fillRect(n.x, n.y, n.w, n.h);
-  ctx.fillStyle = rgba(PIP.bright, lit || hover ? 0.09 : 0.04);
+  ctx.fillStyle = rgba(INK.bright, lit || hover ? 0.09 : 0.04);
   ctx.fillRect(n.x, n.y, n.w, Math.round(n.h / 2));
-  ctx.strokeStyle = rgba(lit || selected ? PIP.mid : PIP.dim, 0.95);
+  ctx.strokeStyle = rgba(lit || selected ? INK.mid : INK.dim, 0.95);
   ctx.lineWidth = 1;
   ctx.strokeRect(n.x + 0.5, n.y + 0.5, n.w - 1, n.h - 1);
   ctx.fillStyle = color;
   ctx.fillRect(n.x + 3, n.y + 5, 3, n.h - 10);
-  if (selected) brackets(ctx, n.x - 5, n.y - 5, n.w + 10, n.h + 10, PIP.hot, 9, 2);
-  else if (lit || hover) brackets(ctx, n.x - 3, n.y - 3, n.w + 6, n.h + 6, rgba(PIP.bright, 0.85), 7, 2);
+  if (selected) brackets(ctx, n.x - 5, n.y - 5, n.w + 10, n.h + 10, INK.hot, 9, 2);
+  else if (lit || hover) brackets(ctx, n.x - 3, n.y - 3, n.w + 6, n.h + 6, rgba(INK.bright, 0.85), 7, 2);
 }
 
 // Small outlined tags, right to left from `right`; returns the left edge.
 // Spot and Karpenter read brighter than the defaults (on-demand, node group).
-const TAG_COLOR = { zone: () => PIP.bright, capacity: (c) => (c.text === "SPOT" ? STATUS.hang : PIP.mid), source: (c) => (c.text === "KARP" ? PIP.hot : PIP.mid) };
+const TAG_COLOR = { zone: () => INK.bright, capacity: (c) => (c.text === "SPOT" ? STATUS.hang : INK.mid), source: (c) => (c.text === "KARP" ? INK.hot : INK.mid) };
 function placeChips(ctx, chips, right, y) {
   ctx.font = TINY;
   let x = right;
   for (const chip of [...chips].reverse()) {
     const w = Math.ceil(ctx.measureText(chip.text).width) + 8;
     x -= w;
-    const color = (TAG_COLOR[chip.kind] || (() => PIP.mid))(chip);
+    const color = (TAG_COLOR[chip.kind] || (() => INK.mid))(chip);
     ctx.fillStyle = rgba(color, 0.14);
     ctx.fillRect(x, y, w, 14);
     ctx.strokeStyle = color;
@@ -311,11 +317,11 @@ function nodeChip(ctx, x, y, index, w = 28) {
 
 // One-line card for crowded lanes: icon, name, short state on the right.
 function drawCompactCard(ctx, n, { selected, lit, hover, phase }) {
-  const color = STATUS[n.status] || PIP.mid;
+  const color = STATUS[n.status] || INK.mid;
   frame(ctx, n, color, { selected, lit, hover });
   drawSprite(ctx, icon(KIND_ICON[n.kind] || n.kind), n.x + 12, n.y + 9, 1);
   if (n.kind === "pod-group") {
-    ctx.fillStyle = rgba(PIP.dim, 0.9);
+    ctx.fillStyle = rgba(INK.dim, 0.9);
     ctx.fillRect(n.x + 4, n.y + n.h, n.w - 8, 2);
   }
   const { label, caption } = cardText(n);
@@ -338,22 +344,25 @@ function drawCompactCard(ctx, n, { selected, lit, hover, phase }) {
     if (n.status === "ok") capText = "";
     else if (capText.length > 5) capText = `${capText.slice(0, 4)}…`;
   }
-  ctx.fillStyle = n.status === "broken" ? STATUS.broken : n.status === "hang" ? STATUS.hang : PIP.mid;
+  ctx.fillStyle = n.status === "broken" ? STATUS.broken : n.status === "hang" ? STATUS.hang : INK.mid;
   if (capText) ctx.fillText(capText, right - ctx.measureText(capText).width, n.y + 21);
   ctx.font = SMALL;
-  ctx.fillStyle = PIP.hot;
+  ctx.fillStyle = INK.hot;
   const room = right - (n.x + 34) - (capText ? ctx.measureText(capText).width + 10 : 0);
   ctx.fillText(middle(label, Math.max(4, Math.floor(room / L.SMALL_CHAR))), n.x + 34, n.y + 21);
   if (n.chip != null) nodeChip(ctx, n.x + n.w - 34, n.y + 9, n.chip);
-  if (n.status === "broken") drawSprite(ctx, campfireFrame(phase), n.x + n.w - (n.chip != null ? 54 : 24) - (n.expandable ? 42 : 0), n.y + 1, 1);
+  if (n.status === "broken") {
+    if (PRO) proDot(ctx, n.x + n.w - (n.chip != null ? 46 : 14) - (n.expandable ? 42 : 0), n.y + 10, STATUS.broken, 4);
+    else drawSprite(ctx, campfireFrame(phase), n.x + n.w - (n.chip != null ? 54 : 24) - (n.expandable ? 42 : 0), n.y + 1, 1);
+  }
   if (n.expandable) {
     const c = expandChip(n);
-    ctx.fillStyle = rgba(PIP.dark, 0.95);
+    ctx.fillStyle = rgba(INK.dark, 0.95);
     ctx.fillRect(c.x, c.y, c.w, c.h);
-    ctx.strokeStyle = PIP.mid;
+    ctx.strokeStyle = INK.mid;
     ctx.strokeRect(c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1);
     ctx.font = TINY;
-    ctx.fillStyle = PIP.bright;
+    ctx.fillStyle = INK.bright;
     ctx.fillText(n.expanded ? "FOLD" : "LIST", c.x + 4, c.y + 12);
   }
 }
@@ -364,12 +373,12 @@ function drawCard(ctx, n, opts) {
     return;
   }
   const { selected, lit, hover, phase } = opts;
-  const color = STATUS[n.status] || PIP.mid;
+  const color = STATUS[n.status] || INK.mid;
   frame(ctx, n, color, { selected, lit, hover });
   drawSprite(ctx, icon(KIND_ICON[n.kind] || n.kind), n.x + 12, n.y + 8, 1);
   if (n.kind === "pod-group") {
     // Stacked cards behind: replicas folded into one.
-    ctx.fillStyle = rgba(PIP.dim, 0.9);
+    ctx.fillStyle = rgba(INK.dim, 0.9);
     ctx.fillRect(n.x + 4, n.y + n.h, n.w - 8, 2);
     ctx.fillRect(n.x + 8, n.y + n.h + 3, n.w - 16, 2);
   }
@@ -379,55 +388,58 @@ function drawCard(ctx, n, opts) {
   const room = n.x + n.w - left - 8 - Math.max(chipW, fireW);
   const { label, caption } = cardText(n);
   ctx.font = FONT;
-  ctx.fillStyle = PIP.hot;
+  ctx.fillStyle = INK.hot;
   ctx.fillText(middle(label, Math.max(4, Math.floor(room / L.CHAR))), left, n.y + 21);
   const tag = n.kind === "workload" ? WORKLOAD_TAG[n.workloadKind] || "WORKLOAD" : KIND_TAG[n.kind] || n.kind.toUpperCase();
   ctx.font = TINY;
   const tagW = Math.ceil(ctx.measureText(tag).width) + 8;
-  ctx.fillStyle = rgba(PIP.dim, 0.55);
+  ctx.fillStyle = rgba(INK.dim, 0.55);
   ctx.fillRect(n.x + 10, n.y + 30, tagW, 14);
-  ctx.fillStyle = PIP.bright;
+  ctx.fillStyle = INK.bright;
   ctx.fillText(tag, n.x + 14, n.y + 41);
   ctx.font = SMALL;
-  ctx.fillStyle = n.status === "broken" ? STATUS.broken : n.status === "hang" ? STATUS.hang : PIP.mid;
+  ctx.fillStyle = n.status === "broken" ? STATUS.broken : n.status === "hang" ? STATUS.hang : INK.mid;
   const capLeft = n.x + 14 + tagW + 2;
   const capRoom = n.x + n.w - capLeft - 8 - (n.expandable ? 44 : 0);
   const cap = caption.replace(/^(deployment|daemonset|statefulset) /, "");
   ctx.fillText(clip(cap, Math.max(4, Math.floor(capRoom / L.SMALL_CHAR))), capLeft, n.y + 42);
   if (n.chip != null) nodeChip(ctx, n.x + n.w - 34, n.y + 7, n.chip);
-  if (n.status === "broken") drawSprite(ctx, campfireFrame(phase), n.x + n.w - (chipW ? 54 : 24), n.y + 4, 1);
+  if (n.status === "broken") {
+    if (PRO) proDot(ctx, n.x + n.w - (chipW ? 46 : 14), n.y + 12, STATUS.broken, 4);
+    else drawSprite(ctx, campfireFrame(phase), n.x + n.w - (chipW ? 54 : 24), n.y + 4, 1);
+  }
   if (n.expandable) {
     const c = expandChip(n);
-    ctx.fillStyle = rgba(PIP.dark, 0.95);
+    ctx.fillStyle = rgba(INK.dark, 0.95);
     ctx.fillRect(c.x, c.y, c.w, c.h);
-    ctx.strokeStyle = PIP.mid;
+    ctx.strokeStyle = INK.mid;
     ctx.strokeRect(c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1);
     ctx.font = TINY;
-    ctx.fillStyle = PIP.bright;
+    ctx.fillStyle = INK.bright;
     ctx.fillText(n.expanded ? "FOLD" : "LIST", c.x + 4, c.y + 12);
   }
 }
 
 function bar(ctx, x, y, w, label, pct) {
   const hot = pct >= 85;
-  const color = hot ? STATUS.hang : PIP.bright;
+  const color = hot ? STATUS.hang : INK.bright;
   ctx.font = TINY;
-  ctx.fillStyle = PIP.mid;
+  ctx.fillStyle = INK.mid;
   ctx.fillText(label, x, y + 8);
   const bx = x + 30;
   const bw = w - 30 - 36;
-  ctx.fillStyle = rgba(PIP.dark, 0.95);
+  ctx.fillStyle = rgba(INK.dark, 0.95);
   ctx.fillRect(bx, y, bw, 9);
   // Segmented fill, like a Pip-Boy meter.
   const fill = Math.round((bw * Math.max(0, Math.min(100, pct))) / 100);
   ctx.fillStyle = color;
   for (let s = 0; s < fill; s += 5) ctx.fillRect(bx + s, y + 1, Math.min(4, fill - s), 7);
-  ctx.fillStyle = hot ? STATUS.hang : PIP.hot;
+  ctx.fillStyle = hot ? STATUS.hang : INK.hot;
   ctx.fillText(`${pct}%`, bx + bw + 6, y + 8);
 }
 
 function drawHost(ctx, n, { selected, lit }) {
-  const color = STATUS[n.status] || PIP.mid;
+  const color = STATUS[n.status] || INK.mid;
   frame(ctx, n, color, { selected, lit, hover: false });
   if (n.folded) {
     // A short chip: index, name, pods, load when there is any.
@@ -435,11 +447,11 @@ function drawHost(ctx, n, { selected, lit }) {
     const load = n.host?.load || {};
     const tail = `${n.host?.pods ?? 0}p${load.cpuPct != null ? ` ${load.cpuPct}%` : ""}`;
     ctx.font = TINY;
-    ctx.fillStyle = load.hot ? STATUS.hang : PIP.mid;
+    ctx.fillStyle = load.hot ? STATUS.hang : INK.mid;
     const tw = Math.ceil(ctx.measureText(tail).width);
     ctx.fillText(tail, n.x + n.w - 10 - tw, n.y + 21);
     ctx.font = SMALL;
-    ctx.fillStyle = PIP.hot;
+    ctx.fillStyle = INK.hot;
     ctx.fillText(middle(n.label, Math.floor((n.w - 56 - tw) / L.SMALL_CHAR)), n.x + 44, n.y + 21);
     return;
   }
@@ -448,13 +460,13 @@ function drawHost(ctx, n, { selected, lit }) {
   // Zone, capacity, source chips on the right of the name row.
   const chipsLeft = placeChips(ctx, nodeChips(n.host), n.x + n.w - 10, n.y + 9);
   ctx.font = FONT;
-  ctx.fillStyle = PIP.hot;
+  ctx.fillStyle = INK.hot;
   const left = n.x + 70;
   ctx.fillText(middle(n.label, Math.floor((chipsLeft - left - 6) / L.CHAR)), left, n.y + 21);
   const host = n.host || {};
   const load = host.load || {};
   ctx.font = SMALL;
-  ctx.fillStyle = PIP.mid;
+  ctx.fillStyle = INK.mid;
   const facts = [host.ready === false ? "NotReady" : host.ready ? "Ready" : "node", host.type, `${host.pods ?? 0} pods`].filter(Boolean).join(" · ");
   ctx.fillText(clip(facts, Math.floor((n.w - 24) / L.SMALL_CHAR)), n.x + 12, n.y + 41);
   if (load.cpuPct != null) {
@@ -463,26 +475,26 @@ function drawHost(ctx, n, { selected, lit }) {
     bar(ctx, n.x + 12 + Math.floor(bw) + 8, n.y + 48, Math.min(150, n.w - 32 - Math.floor(bw)), "MEM", load.memPct);
   } else if (!n.quietLoad) {
     ctx.font = TINY;
-    ctx.fillStyle = PIP.dim;
+    ctx.fillStyle = INK.dim;
     ctx.fillText("no metrics-server", n.x + 12, n.y + 58);
   }
 }
 
 function drawControlPlane(ctx, n, selected) {
-  const color = STATUS[n.status] || PIP.mid;
+  const color = STATUS[n.status] || INK.mid;
   frame(ctx, n, color, { selected, lit: false, hover: false });
-  ctx.fillStyle = rgba(PIP.bright, 0.08);
+  ctx.fillStyle = rgba(INK.bright, 0.08);
   ctx.fillRect(n.x + 10, n.y + 10, 36, 36);
   drawSprite(ctx, icon("cluster"), n.x + 12, n.y + 12, 2);
   ctx.font = FONT;
-  ctx.fillStyle = PIP.hot;
+  ctx.fillStyle = INK.hot;
   ctx.fillText(middle(n.label, Math.floor((n.w - 66) / L.CHAR)), n.x + 56, n.y + 25);
   ctx.font = SMALL;
-  ctx.fillStyle = PIP.mid;
+  ctx.fillStyle = INK.mid;
   ctx.fillText(clip(`CONTROL PLANE ${n.caption || ""}`, Math.floor((n.w - 66) / L.SMALL_CHAR)), n.x + 56, n.y + 45);
   if (n.loadNote) {
     ctx.font = TINY;
-    ctx.fillStyle = PIP.dim;
+    ctx.fillStyle = INK.dim;
     ctx.fillText(clip(n.loadNote, Math.floor((n.w - 66) / L.SMALL_CHAR)), n.x + 56, n.y + 58);
   }
 }
