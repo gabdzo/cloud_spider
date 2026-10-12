@@ -2788,7 +2788,7 @@ async function route(app, req, res) {
   // with the Cluster view and cached 30 s on the server.
   if (req.method === "GET" && url.pathname === "/api/map/kube") {
     if (url.searchParams.get("sample") === "1") {
-      send(res, 200, { clusters: [{ name: "sample-cluster", diagram: diagramFromKube(sampleMapSnapshot(), {}), at: Date.now() }], sample: true });
+      send(res, 200, { clusters: [{ name: "cloudspider-up", diagram: diagramFromKube(sampleMapSnapshot(), {}), at: Date.now() }], sample: true });
       return;
     }
     await app.boot();

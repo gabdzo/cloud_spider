@@ -3978,7 +3978,7 @@ function drawAddonTree() {
       el("header", { className: "ad-plate" },
         iconImg("cluster"),
         el("b", { textContent: cluster.cluster }),
-        el("span", { className: `ad-live ${cluster.live ? "on" : "off"}`, textContent: cluster.live ? "LIVE" : "NO CLUSTER" }),
+        el("span", { className: `ad-live ${cluster.live ? "on" : "off"}`, textContent: addonData.sample ? (cluster.live ? "SAMPLE" : "SAMPLE · NO CLUSTER") : cluster.live ? "LIVE" : "NO CLUSTER", title: addonData.sample ? "sample data: no cluster is read" : "" }),
         el("span", { className: "ad-count", textContent: count }),
       ),
     );

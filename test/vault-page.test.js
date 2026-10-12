@@ -99,7 +99,7 @@ test("the vault page lists what a vault owns and where it lives; VPCs and missin
   const rows = ownedRows(vaults()[2], samplePlace());
   const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
   assert.equal(byId["sample-node-a"].kind, "EC2");
-  assert.match(byId["sample-node-a"].where, /^sample-eks · sample-private-a$/);
+  assert.match(byId["sample-node-a"].where, /^cloudspider-up · sample-private-a$/);
   assert.equal(byId["sample-node-a"].onMap, true);
   assert.equal(byId["eks-sample"].kind, "EKS");
   assert.equal(byId["sample-eks-vpc"].onMap, false);
