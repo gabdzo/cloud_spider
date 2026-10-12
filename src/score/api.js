@@ -38,11 +38,24 @@ export function publicScan(scan) {
 // What to do next about each FAIL: an add-on FIX, a Stacks card to open
 // (card), or, when its add-on is already on the cluster (tree: the add-on
 // tree, src/addons.js), no FIX but the reason it still fails (already).
+// The card that fixes a result's first failing resource (remediation.cardFor:
+// an exact id, or a prefix ending in "/").
+export function cardForResult(r) {
+  if (!r?.cardFor) return null;
+  for (const bad of (r.resources || []).filter((x) => !x.pass)) {
+    const id = String(bad.id || "");
+    const hit = Object.entries(r.cardFor).find(([key]) => key === id || (key.endsWith("/") && id.startsWith(key)));
+    if (hit) return { id: hit[1] };
+  }
+  return null;
+}
+
 export function suggestionsOf(scan, tree = null) {
   const node = (tree || []).find((item) => item.cluster === scan?.clusterName);
-  return (scan?.results || []).filter((r) => r.status === "FAIL" && (r.addon || r.card)).map((r) => {
+  return (scan?.results || []).filter((r) => r.status === "FAIL" && (r.addon || r.card || cardForResult(r))).map((r) => {
     const base = { control: r.id, title: r.title, severity: r.severity };
     if (r.card) return { ...base, card: r.card };
+    if (!r.addon) return { ...base, card: cardForResult(r) };
     const have = node?.addons?.find((a) => a.id === r.addon && ["installed", "present"].includes(a.state));
     if (!have) return { ...base, addon: r.addon };
     const bad = (r.resources || []).find((x) => !x.pass);

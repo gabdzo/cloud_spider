@@ -24,6 +24,8 @@ function runOne(control, { evaluators, evidence, profile }) {
     effort: control.remediation.effort,
     addon: control.remediation.addon || null,
     card: control.remediation.card || null,
+    cardFor: control.remediation.cardFor || null,
+    remedy: control.remediation.summary || "",
     status: "NOT_ASSESSED",
     reason: null,
     p: 0,

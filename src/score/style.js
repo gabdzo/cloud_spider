@@ -46,6 +46,7 @@ export const SCORE_CSS = `
   ${TONES}
   #score .sc-label { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--s-text2); }
   #score .sc-muted { color: var(--s-muted); }
+  #score .sc-remedy { color: var(--s-text, inherit); opacity: 0.9; margin-top: 2px; }
   #score .sc-small { font-size: 11.5px; }
   #score .sc-top { display: grid; grid-template-columns: minmax(210px, 260px) 1fr minmax(190px, 240px); gap: 14px; }
   #score .sc-gauge, #score .sc-meta, #score .sc-side, #score .sc-cat, #score .sc-pane, #score .sc-nextcard, #score .sc-empty { background: var(--s-raised); border: 1px solid var(--s-line); padding: 12px 14px; }

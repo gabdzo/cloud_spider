@@ -11,5 +11,5 @@ evaluator: default-deny-ingress
 aggregation: proportional
 requires: [kube-pods, kube-networkPolicies]
 whyItMatters: "Without a default-deny policy every pod can reach every other pod: one compromised pod can talk to the database."
-remediation: { summary: "Add a NetworkPolicy with an empty podSelector and policyTypes [Ingress] in each app namespace, then allow what is needed.", effort: S }
+remediation: { summary: "Add a NetworkPolicy with an empty podSelector and policyTypes [Ingress] in each app namespace, then allow what is needed. Cloud Spider stacks do this: shop and cnpg-system come from the Postgres on EKS card (pgcluster), demo from the EKS demo app card: RUN the latest of that card.", effort: S, cardFor: { shop: pgcluster, cnpg-system: pgcluster, demo: demo } }
 verification: "Every namespace with app pods has a NetworkPolicy selecting all pods with Ingress and no ingress rules."
