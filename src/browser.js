@@ -183,6 +183,8 @@ let region = "";
 let animTime = 0;
 let pulling = false;
 let sample = false;
+// #?sample=1&doors=1, read before the page rewrites the hash (sampleDoors).
+const doorsAsked = new URLSearchParams(location.hash.replace(/^#\??/, "")).get("doors") === "1";
 let mode = "map";
 let pathData = null;
 let pathSelected = null;
@@ -805,6 +807,20 @@ function applyClusterFocus() {
   else if (node.pod) showPod(node);
 }
 
+// SAMPLE with #?sample=1&doors=1 shows the vaults as a row of cells above
+// the region (the map's other vault drawing; normally they live on VAULTS).
+function sampleDoors() {
+  return sample && doorsAsked;
+}
+
+// The map shortens long names (middle ellipsis); the tooltip has them whole.
+function mapTitle(placed, x, y) {
+  const hit = fixtureAt(placed, x, y) || buildingAt(placed, x, y);
+  if (hit) return [hit.label || hit.name || hit.id, hit.caption || hit.type || hit.kind].filter(Boolean).join(" · ");
+  const vpc = (placed.settlements || []).find((s) => x >= s.x && x < s.x + s.w && y >= s.y && y < s.y + 36);
+  return vpc ? String(vpc.label || vpc.id || "").replace(/ {2,}/g, " · ") : "";
+}
+
 function placedMap() {
   const width = map.clientWidth || 0;
   const rowLimit = width ? Math.min(ROW_LIMIT, width) : ROW_LIMIT;
@@ -813,8 +829,8 @@ function placedMap() {
   const flowLimit = window.innerWidth >= 1600 && width > ROW_LIMIT ? width : 0;
   const vaults = vaultsData.vaults;
   const extra = {
-    key: `${flowLimit}|${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}|${mapView}|${mapTagKey}|${mapKube.sig}|${JSON.stringify(mapKube.choices)}`,
-    options: { flowLimit, vaults, vaultMode: "page", isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey, kube: mapKube.models.size ? { models: mapKube.models, choice: (cluster) => mapKube.choices[cluster] || "auto" } : null },
+    key: `${flowLimit}|${sampleDoors() ? "doors" : ""}|${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}|${mapView}|${mapTagKey}|${mapKube.sig}|${JSON.stringify(mapKube.choices)}`,
+    options: { flowLimit, vaults, vaultMode: "page", ...(sampleDoors() ? { vaultMode: "doors" } : {}), isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey, kube: mapKube.models.size ? { models: mapKube.models, choice: (cluster) => mapKube.choices[cluster] || "auto" } : null },
   };
   const placed = layoutCache.get(place || EMPTY_PLACE, rowLimit, extra);
   // A reload with the same vaults keeps the layout but brings new check
@@ -3299,7 +3315,8 @@ canvas.addEventListener("mousemove", (event) => {
     if (canvas.style.cursor !== cursor) canvas.style.cursor = cursor;
     return;
   }
-  if (canvas.title) canvas.title = "";
+  const title = mode === "map" ? mapTitle(placedMap(), event.offsetX, event.offsetY) : "";
+  if (canvas.title !== title) canvas.title = title;
   if (mode !== "map" || !vaultsData.vaults.length) {
     if (canvas.style.cursor) canvas.style.cursor = "";
     return;
