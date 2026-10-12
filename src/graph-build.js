@@ -58,6 +58,15 @@ function podState(pod) {
   return "ok";
 }
 
+// Labels kept on graph nodes for SERVICES "Group by" (graph-group.js);
+// per-pod hashes say nothing about grouping.
+const NOISY_LABEL = /^(pod-template-hash|controller-revision-hash|pod-template-generation|statefulset\.kubernetes\.io\/pod-name|apps\.kubernetes\.io\/pod-index)$/;
+export function nodeLabels(...sets) {
+  const out = {};
+  for (const set of sets) for (const [k, v] of Object.entries(set || {})) if (!NOISY_LABEL.test(k) && v !== "" && v !== undefined) out[k] = String(v);
+  return out;
+}
+
 function hhmm(ms) {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -121,8 +130,9 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
       continue;
     }
     const kind = svc.spec?.type === "LoadBalancer" || EDGE_NS.test(name) ? "ingress" : /webhook/.test(name) ? "webhook" : ports.some((p) => DB_PORTS.has(p)) ? "db" : OPERATOR_NAME.test(name) ? "operator" : "service";
-    const id = node(`${ns}/${name}`, { group: ns, kind, label: name, ns, ports });
     const sel = svc.spec?.selector;
+    const firstPod = sel && Object.keys(sel).length ? podsIn(ns).find((pod) => selects(sel, meta(pod).labels)) : null;
+    const id = node(`${ns}/${name}`, { group: ns, kind, label: name, ns, ports, labels: nodeLabels(firstPod && meta(firstPod).labels, meta(svc).labels) });
     if (!sel || !Object.keys(sel).length) continue;
     for (const pod of podsIn(ns)) {
       if (!selects(sel, meta(pod).labels)) continue;
@@ -142,20 +152,20 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
       continue;
     }
     const k = OPERATOR_NAME.test(name) ? "operator" : /webhook/.test(name) ? "webhook" : "workload";
-    workloadNode.set(key, node(`${ns}/${kind.toLowerCase()}:${name}`, { group: ns, kind: k, label: name, ns }));
+    workloadNode.set(key, node(`${ns}/${kind.toLowerCase()}:${name}`, { group: ns, kind: k, label: name, ns, labels: nodeLabels(w.spec?.template?.metadata?.labels, meta(w).labels) }));
   }
   const nodeOfPod = (pod) => serviceOfPod.get(`${nsOf(pod)}/${meta(pod).name}`) || workloadNode.get(`${nsOf(pod)}/${workloadOf(pod)}`) || "";
 
   // Entry points: Ingress and OpenShift Routes → Services.
   for (const ing of list("ingresses")) {
     const ns = nsOf(ing);
-    const id = node(`${ns}/ingress:${meta(ing).name}`, { group: ns, kind: "ingress", label: `ingress ${meta(ing).name}`, ns });
+    const id = node(`${ns}/ingress:${meta(ing).name}`, { group: ns, kind: "ingress", label: `ingress ${meta(ing).name}`, ns, labels: nodeLabels(meta(ing).labels) });
     const backends = [ing.spec?.defaultBackend, ...(ing.spec?.rules || []).flatMap((r) => (r.http?.paths || []).map((p) => p.backend))];
     for (const b of backends) if (b?.service?.name) edge(id, `${ns}/${b.service.name}`, "http", "static");
   }
   for (const route of list("routes")) {
     const ns = nsOf(route);
-    const id = node(`${ns}/route:${meta(route).name}`, { group: ns, kind: "ingress", label: `route ${route.spec?.host || meta(route).name}`, ns });
+    const id = node(`${ns}/route:${meta(route).name}`, { group: ns, kind: "ingress", label: `route ${route.spec?.host || meta(route).name}`, ns, labels: nodeLabels(meta(route).labels) });
     for (const to of [route.spec?.to, ...(route.spec?.alternateBackends || [])]) if (to?.kind === "Service" && to.name) edge(id, `${ns}/${to.name}`, "http", "static");
   }
 

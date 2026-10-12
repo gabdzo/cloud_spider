@@ -68,6 +68,7 @@ export const FILES = new Set([
   "graph-route.js",
   "graph-model.js",
   "graph-view.js",
+  "graph-group.js",
   "log-errors-view.js",
   "kube-empty.js",
   "slo.js",
@@ -1373,6 +1374,14 @@ const page = `<!doctype html>
   #kube-graph .gv-layer[aria-pressed="false"] { text-decoration: line-through; opacity: 0.7; }
   #kube-graph .gv-search { flex: 1 1 200px; min-width: 150px; max-width: 320px; font: inherit; font-size: 12px; padding: 5px 9px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
   #kube-graph .gv-search:focus { border-color: var(--pip-bright); box-shadow: 0 0 8px var(--glow-soft); }
+  #kube-graph .gv-groupby { align-items: center; gap: 6px; }
+  #kube-graph .gv-gblabel { white-space: nowrap; font-size: 10px; letter-spacing: 0.16em; color: var(--pip-dim); }
+  #kube-graph :is(.gv-gbsel, .gv-gbcustom) { font: inherit; font-size: 12px; padding: 4px 6px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
+  #kube-graph .gv-gbcustom { width: 150px; }
+  #kube-graph .gv-gbcustom[hidden] { display: none; }
+  #kube-graph .gv-gbcustom.bad { border-color: var(--status-broken); }
+  #kube-graph :is(.gv-gbsel, .gv-gbcustom):focus { border-color: var(--pip-bright); box-shadow: 0 0 8px var(--glow-soft); }
+  #kube-graph .gv-group.unlabeled { border-style: dashed; }
   #kube-graph .gv-stats { margin: 0; color: var(--pip-dim); letter-spacing: 0.06em; }
   #kube-graph .gv-detail { margin: 0; padding: 6px 10px; color: var(--pip-bright); background: rgba(2, 10, 5, 0.6); border-left: 3px solid var(--pip-bright); min-height: 16px; }
   #kube-graph .gv-stage { position: relative; flex: 1 0 auto; }
@@ -2522,6 +2531,10 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #kube-graph .gv-btn[aria-pressed="true"] { background: var(--surface-2); color: var(--text); border-color: var(--accent); box-shadow: none; }
   :root[data-theme="pro"] #kube-graph .gv-search { color: var(--text); }
   :root[data-theme="pro"] #kube-graph .gv-search:focus { border-color: var(--accent); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph .gv-gblabel { color: var(--text-2); font-family: var(--font-ui); letter-spacing: 0.04em; font-weight: 500; }
+  :root[data-theme="pro"] #kube-graph :is(.gv-gbsel, .gv-gbcustom) { color: var(--text); background: var(--raised); border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-ui); }
+  :root[data-theme="pro"] #kube-graph :is(.gv-gbsel, .gv-gbcustom):focus { border-color: var(--accent); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph .gv-gbcustom.bad { border-color: var(--err); }
   :root[data-theme="pro"] #kube-graph .gv-stats { color: var(--text-3); letter-spacing: 0; }
   :root[data-theme="pro"] #kube-graph .gv-detail { color: var(--text); background: var(--surface); border-left-color: var(--accent); border-radius: 0 6px 6px 0; }
   :root[data-theme="pro"] #kube-graph .gv-band { border: 1px solid var(--border); border-radius: 10px; background: var(--raised); }
