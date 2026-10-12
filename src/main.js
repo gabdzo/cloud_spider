@@ -37,6 +37,7 @@ import { createNetdebug } from "./netdebug/api.js";
 import { createAwsCollector } from "./netdebug/aws.js";
 import { createKubeCollector } from "./netdebug/kube-collect.js";
 import { createCloudFrontReader, createRoute53Reader, createVpcReader } from "./netdebug/aws-readers.js";
+import { awsOff, modulesView, resolveModules, scorePacks } from "./modules.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // cloudspider.yaml (config.js): defaults < file < env < flags. A bad value
@@ -62,7 +63,19 @@ const host = config.server.host;
 const pageOrigin = `http://${host.includes(":") ? `[${host}]` : host}:${port}`;
 const stateDir = resolvePath(root, config.storage.path);
 const storage = createStorage({ backend: config.storage.backend, dir: stateDir });
-const aws = createAws();
+// Modules (modules.js): with aws off (profile k8s-only) no AWS factory below
+// runs; each takes a stub that refuses with "AWS module off". awsMade counts
+// the factories that did run, and /api/config reports it (the boot test).
+const mods = resolveModules(config);
+for (const line of mods.notes) process.stdout.write(`modules: ${line}\n`);
+process.stdout.write(`modules: ${mods.profile} (${mods.enabled.join(", ")})\n`);
+const awsMade = [];
+function awsMake(name, make) {
+  if (!mods.has("aws")) return awsOff(name);
+  awsMade.push(name);
+  return make();
+}
+const aws = awsMake("aws", () => createAws());
 const vaults = {
   live: createVaultView({ store: createVaultStore({ dir: vaultsDir() }), checker: createCheckRunner(), stacks: createStackReader() }),
   sample: createVaultView({
@@ -96,9 +109,9 @@ const app = createApp({
   trail: aws.trail,
   logs: aws.logs,
   metrics: aws.metrics,
-  path: createPathAws(),
-  peers: { read: (region, cluster) => readPeerWorld({ ec2: new EC2Client({ region }), rds: new RDSClient({ region }) }, { cluster }) },
-  cost: config.cost.enabled ? createCost({ storage, ttl: config.cost.cacheTtlMinutes * 60_000 }) : costOff(),
+  path: awsMake("path", () => createPathAws()),
+  peers: { read: (region, cluster) => awsMake("peers", () => readPeerWorld({ ec2: new EC2Client({ region }), rds: new RDSClient({ region }) }, { cluster })) },
+  cost: config.cost.enabled && mods.has("cost") ? awsMake("cost", () => createCost({ storage, ttl: config.cost.cacheTtlMinutes * 60_000 })) : costOff(),
   costTtl: config.cost.cacheTtlMinutes * 60_000,
   upgrade: stacks,
   connector,
@@ -113,7 +126,7 @@ const app = createApp({
   addons: createAddons({ eks: aws.eks, kube }),
   logGroup: config.aws.logGroup,
   regionsAllow: config.aws.regions,
-  settings: effectiveConfig(loaded),
+  settings: { ...effectiveConfig(loaded), modules: modulesView(mods, { awsClients: awsMade }) },
   pageOrigin,
   clock: () => Date.now(),
   write(line) {
@@ -128,8 +141,8 @@ app.score = createScoreApi({
   app,
   pageOrigin,
   history: createScanHistory({ storage }),
-  settings: config.scorecard,
-  aws: { clients: createScanClients(), regions: config.scorecard.regions.length ? config.scorecard.regions : [config.aws.region || process.env.AWS_REGION || "eu-north-1"] },
+  settings: { ...config.scorecard, packs: scorePacks(config.scorecard.packs, mods) },
+  aws: { clients: mods.has("aws") ? awsMake("score", () => createScanClients()) : null, regions: config.scorecard.regions.length ? config.scorecard.regions : [config.aws.region || process.env.AWS_REGION || "eu-north-1"] },
   catalog: () => loadCatalog(),
   profiles: () => loadProfiles(),
   // The app's live context list: a context CONNECT added after start is
@@ -142,11 +155,11 @@ app.score = createScoreApi({
 // Network debugging (PATH › DEBUG): local probes of a URL the user typed,
 // reports under storage.path/netdebug, probes in the audit log.
 app.netdebug = createNetdebug({ settings: config.network, pageOrigin, dir: join(stateDir, "netdebug"), auditFile: join(stateDir, "audit.jsonl") });
-app.netdebug.addCollector(createAwsCollector({
+if (mods.has("aws")) app.netdebug.addCollector(createAwsCollector({
   graph: () => app.pathGraph(),
-  route53: config.network.aws.route53 ? createRoute53Reader() : null,
-  cloudfront: config.network.aws.cloudfront ? createCloudFrontReader() : null,
-  vpc: config.network.aws.vpc ? createVpcReader() : null,
+  route53: config.network.aws.route53 ? awsMake("route53", () => createRoute53Reader()) : null,
+  cloudfront: config.network.aws.cloudfront ? awsMake("cloudfront", () => createCloudFrontReader()) : null,
+  vpc: config.network.aws.vpc ? awsMake("vpc", () => createVpcReader()) : null,
   flowLogs: config.network.aws.flowLogs,
 }));
 // N6: from the ALB's target group into the cluster (viewer role, GET only).
@@ -201,22 +214,22 @@ watchFile(contextsFile, { interval: 2000 }, (now, before) => {
 });
 
 const refresh = config.ui.refresh;
-setInterval(() => {
+if (mods.has("map")) setInterval(() => {
   app.poll().catch((error) => app.fail("DescribeInstances", error));
 }, refresh.mapSeconds * 1000);
 
 // The pod health watch: each context on its own clock (default 60 s).
-setInterval(() => {
+if (mods.has("kubernetes")) setInterval(() => {
   app.watchKube().catch(() => {});
 }, refresh.kubeSeconds * 1000);
-setTimeout(() => app.watchKube().catch(() => {}), 3000);
+if (mods.has("kubernetes")) setTimeout(() => app.watchKube().catch(() => {}), 3000);
 
 // SLOs without an open page: checks, ledgers and 1-minute ALB points.
-setInterval(() => {
+if (mods.has("vaults")) setInterval(() => {
   app.watchSlos().catch(() => {});
 }, refresh.sloSeconds * 1000);
 
-setInterval(() => {
+if (mods.has("radio")) setInterval(() => {
   app.refreshRadio(false).catch((error) => app.fail("LookupEvents", error));
 }, refresh.radioSeconds * 1000);
 
