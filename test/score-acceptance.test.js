@@ -44,8 +44,10 @@ async function fix(api, scanId, control) {
 test("ACCEPTANCE: fresh cluster scores low; three add-on fixes later the score has visibly risen", async () => {
   const { api, app } = world();
   const first = await api.scan(ORIGIN, {});
-  assert.equal(first.scan.card.verdict, "AT_RISK");
-  assert.ok(first.scan.card.overall < 30);
+  // Since K8S-SEC-010 security has its 3 assessed controls on an empty
+  // cluster and qualifies (mostly PASS); platform still fails throughout.
+  assert.ok(["AT_RISK", "CONDITIONAL"].includes(first.scan.card.verdict), first.scan.card.verdict);
+  assert.ok(first.scan.card.overall < 70, `overall ${first.scan.card.overall}`);
   assert.deepEqual([...new Set(first.suggestions.map((s) => s.addon).filter(Boolean))].sort(), ["cert-manager", "karpenter", "keda", "kyverno", "lbc", "metrics-server", "pod-identity"]);
 
   let scanId = first.scan.id;
@@ -60,7 +62,7 @@ test("ACCEPTANCE: fresh cluster scores low; three add-on fixes later the score h
   // metrics-server comes with the EKS stack: its FIX reruns that stack.
   assert.deepEqual(app.runs, ["preview eks-fresh", "up eks-fresh", "preview kyverno-fresh", "up kyverno-fresh", "preview cert-manager-fresh", "up cert-manager-fresh"]);
   assert.ok(scores.every((s, i) => i === 0 || s > scores[i - 1]), scores.join(" → "));
-  assert.ok(scores.at(-1) - scores[0] >= 50, scores.join(" → "));
+  assert.ok(scores.at(-1) - scores[0] >= 15, scores.join(" → "));
   const view = await api.view({});
   assert.equal(view.trend.length, 4);
   assert.equal(view.suggestions.some((s) => s.addon === "kyverno"), false, "an installed add-on is no longer suggested");

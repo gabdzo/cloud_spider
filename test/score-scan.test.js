@@ -18,8 +18,10 @@ test("a fresh EKS cluster scores low, with a verdict and a fix on every platform
   const s = await scan(freshCluster({ scanner: true }));
   assert.equal(s.clusterName, "fresh");
   assert.equal(s.profileDefaulted, true);
-  assert.equal(s.card.verdict, "AT_RISK");
-  assert.ok(s.card.overall < 30, `overall ${s.card.overall}`);
+  // Security qualifies on an empty cluster since K8S-SEC-010 (3 assessed).
+  assert.ok(["AT_RISK", "CONDITIONAL"].includes(s.card.verdict), s.card.verdict);
+  assert.ok(s.card.overall < 70, `overall ${s.card.overall}`);
+  assert.equal(s.results.find((r) => r.id === "K8S-SEC-010").status, "FAIL");
   const failing = s.results.filter((r) => r.status === "FAIL");
   assert.ok(failing.length >= 6);
   for (const r of failing.filter((x) => x.category === "platform")) assert.ok(r.addon, r.id);
@@ -30,7 +32,7 @@ test("installing metrics-server, Kyverno and cert-manager raises the score", asy
   let world = freshCluster({ scanner: true });
   for (const id of ["metrics-server", "kyverno", "cert-manager"]) world = ADDON_FOOTPRINT[id](world);
   const after = await scan(world);
-  assert.ok(after.card.overall > before.card.overall + 30, `${before.card.overall} → ${after.card.overall}`);
+  assert.ok(after.card.overall > before.card.overall + 15, `${before.card.overall} → ${after.card.overall}`);
   assert.deepEqual(["K8S-PLT-001", "K8S-PLT-002", "K8S-PLT-004"].map((id) => after.results.find((r) => r.id === id).status), ["PASS", "PASS", "PASS"]);
 });
 
