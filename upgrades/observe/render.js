@@ -265,7 +265,8 @@ export function renderBundle(raw = {}) {
     add("kube-state-metrics: rollouts, restarts, desired vs ready (no Secrets: not in its resource list)", {
       apiVersion: "apps/v1", kind: "Deployment", metadata: meta("kube-state-metrics", ns, "ksm"),
       spec: { replicas: 1, selector: sel("ksm"), template: { metadata: { labels: labels("ksm") }, spec: { serviceAccountName: "kube-state-metrics",
-        containers: [{ name: "ksm", image: IMAGES.ksm, args: ["--resources=cronjobs,daemonsets,deployments,horizontalpodautoscalers,jobs,namespaces,nodes,persistentvolumeclaims,pods,replicasets,services,statefulsets,poddisruptionbudgets"], ports: [{ containerPort: PORTS.ksm, name: "metrics" }], resources: R.ksm, securityContext: hardened }] } } },
+        // The image's user is "nobody" (not numeric): runAsNonRoot needs a UID off OpenShift.
+        containers: [{ name: "ksm", image: IMAGES.ksm, args: ["--resources=cronjobs,daemonsets,deployments,horizontalpodautoscalers,jobs,namespaces,nodes,persistentvolumeclaims,pods,replicasets,services,statefulsets,poddisruptionbudgets"], ports: [{ containerPort: PORTS.ksm, name: "metrics" }], resources: R.ksm, securityContext: openshift ? hardened : { ...hardened, runAsUser: 65534, runAsGroup: 65534 } }] } } },
     });
     add("kube-state-metrics Service", { apiVersion: "v1", kind: "Service", metadata: meta("kube-state-metrics", ns, "ksm"), spec: { selector: sel("ksm").matchLabels, ports: [{ name: "metrics", port: PORTS.ksm }] } });
   } else notes.push("kubeStateMetrics=skip: the cluster's own kube-state-metrics is used (not scraped by the bundle)");
