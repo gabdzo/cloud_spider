@@ -7,6 +7,7 @@
 //      DaemonSets the catalog recognises, so an add-on another stack made
 //      (the demo stack's metrics-server) shows as PRESENT
 // Nothing here changes anything.
+import { workloadIs } from "./workload-match.js";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +39,7 @@ export function detectAddons(snapshot) {
       const ns = item?.metadata?.namespace || "";
       for (const addon of ADDONS) {
         const names = addon.detect?.[kind] || [];
-        if (!names.includes(name) || found[addon.id]) continue;
+        if (found[addon.id] || !names.some((wanted) => workloadIs({ name, labels: item?.metadata?.labels, templateLabels: item?.spec?.template?.metadata?.labels }, wanted))) continue;
         found[addon.id] = { version: workloadVersion(item), where: `${kind} ${ns}/${name}`, ready: ready(item, kind) };
       }
     }

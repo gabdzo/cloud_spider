@@ -1,5 +1,6 @@
 // Evaluators for Kubernetes controls. Each takes { data, params, now } and
 // returns { items: [{ id, pass, detail }], unknown, notApplicable }. Pure.
+import { workloadIs } from "../../workload-match.js";
 import { ADDONS } from "../../../upgrades/addons/catalog.js";
 import { sourceText } from "../../node-labels.js";
 
@@ -19,7 +20,7 @@ export const kubeEvaluators = {
       ...(params.deployments || []).map((name) => ({ kind: "deployment", name, list: data["kube-deployments"]?.items || [] })),
       ...(params.daemonsets || []).map((name) => ({ kind: "daemonset", name, list: data["kube-daemonsets"]?.items || [] })),
     ];
-    const found = wanted.flatMap((w) => w.list.filter((item) => item.name === w.name).map((item) => ({ ...w, item })));
+    const found = wanted.flatMap((w) => w.list.filter((item) => workloadIs(item, w.name)).map((item) => ({ ...w, item })));
     if (!found.length) return { items: [{ id: cluster, pass: false, detail: `none of ${wanted.map((w) => w.name).join(", ")} runs` }] };
     const ready = found.find((f) => f.item.ready >= Math.max(1, f.kind === "daemonset" ? f.item.desired : f.item.replicas ?? 1));
     if (ready) return { items: [{ id: cluster, pass: true, detail: `${ready.kind} ${ref(ready.item)} is ready` }] };
