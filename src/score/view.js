@@ -139,7 +139,8 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
   async function load() {
     if (sample()) {
       clearTimeout(timer);
-      model = sampleModel();
+      const view = await getJson(`/api/score/sample?target=${target}`);
+      model = view?.scan ? { ...scoreModel(view), sample: true, reports: [] } : sampleModel();
       fixState = null;
       plan = null;
       draw();
@@ -163,6 +164,11 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
     }
   }
   async function act(body) {
+    if (sample()) {
+      plan = { error: "SAMPLE: FIX is off here. Turn SAMPLE off and FIX plans, previews and asks you to approve on your own cluster." };
+      draw();
+      return;
+    }
     const out = await post("/api/score/fix", { scanId: model.scanId, ...body });
     if (body.phase === "plan") plan = { ...out, control: body.control };
     else if (out.error) plan = { error: out.error };
@@ -177,6 +183,10 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
     b.addEventListener("click", async () => {
       b.disabled = true;
       b.textContent = "SCANNING…";
+      if (sample()) {
+        await load();
+        return;
+      }
       const out = await post("/api/score/scan", { context: context(), target });
       if (out.error) {
         model = scoreModel(out);

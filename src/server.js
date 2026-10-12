@@ -3,6 +3,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sampleScoreView } from "./score/sample-scan.js";
 import { sampleAlbRoutes, sampleMorning, samplePlace, sampleTrail } from "./sample.js";
 import { samplePathGraph } from "./path-sample.js";
 import { pathResult } from "./path-view.js";
@@ -2542,6 +2543,11 @@ async function route(app, req, res) {
   const off = featureOff(app.settings?.()?.config?.features, req.method, url.pathname);
   if (off) {
     send(res, 403, { error: `turned off in cloudspider.yaml (features.${off})` });
+    return;
+  }
+  // SAMPLE scorecard (score/sample-scan.js): the real engine on a scripted story.
+  if (req.method === "GET" && url.pathname === "/api/score/sample") {
+    send(res, 200, await sampleScoreView(url.searchParams.get("target") === "aws" ? "aws" : "kubernetes"));
     return;
   }
   if (await scoreRoute(req, res, url, app.score, { send, readJson })) return;
