@@ -30,7 +30,10 @@ await pulumi.runtime.setMocks(
       // What AWS fills in on a new EKS cluster (upgrades/eks builds its own
       // kubeconfig from these).
       const cluster = args.type === "aws:eks/cluster:Cluster" ? { endpoint: "https://mock.eks", certificateAuthority: { data: "bW9jaw==" }, version: args.inputs.version } : {};
-      return { id: `${args.name}-id`, state: { arn: `arn:aws:mock:::${args.name}`, privateIp: `${args.name}-ip`, ...cluster, ...args.inputs } };
+      // A Kubernetes object without metadata.name gets Pulumi's auto-name
+      // (<logical name>-<random>); the mock uses a fixed suffix.
+      const autoName = args.type.startsWith("kubernetes:") && args.inputs?.metadata && !args.inputs.metadata.name ? { metadata: { ...args.inputs.metadata, name: `${args.name}-mock0000` } } : {};
+      return { id: `${args.name}-id`, state: { arn: `arn:aws:mock:::${args.name}`, privateIp: `${args.name}-ip`, ...cluster, ...args.inputs, ...autoName } };
     },
     call(args) {
       const token = String(args.token);

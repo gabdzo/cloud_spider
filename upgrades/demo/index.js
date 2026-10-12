@@ -196,7 +196,12 @@ service:
       processors: [memory_limiter, resource/node, batch]
       exporters: [otlp_grpc/gateway]
 `;
-const collectorConfigMap = new k8s.core.v1.ConfigMap("otel-collector", { metadata: { name: "otel-collector", namespace: ns }, data: { "config.yaml": collectorConfig } }, inNs);
+// The two collector ConfigMaps carry no fixed name: Pulumi names them
+// otel-collector-<random> / otel-gateway-<random>. A config change then makes
+// a new ConfigMap first, the DaemonSet / Deployment roll in place onto it,
+// and the old one is deleted last. A fixed name forced delete-before-replace,
+// and that replaced the workloads too (preview 2026-10-12).
+const collectorConfigMap = new k8s.core.v1.ConfigMap("otel-collector", { metadata: { namespace: ns }, data: { "config.yaml": collectorConfig } }, inNs);
 const collectorLabels = { app: "otel-collector" };
 // Pod labels on top of the selector's (a selector cannot change): the name
 // label our Kyverno policy require-app-name-label asks for.
@@ -268,7 +273,8 @@ service:
       processors: [memory_limiter, batch]
       exporters: [prometheus]
 `;
-const gatewayConfigMap = new k8s.core.v1.ConfigMap("otel-gateway", { metadata: { name: "otel-gateway", namespace: ns }, data: { "config.yaml": gatewayConfig } }, inNs);
+// No fixed name either (see collectorConfigMap).
+const gatewayConfigMap = new k8s.core.v1.ConfigMap("otel-gateway", { metadata: { namespace: ns }, data: { "config.yaml": gatewayConfig } }, inNs);
 const gatewayLabels = { app: "otel-gateway" };
 new k8s.apps.v1.Deployment("otel-gateway", {
   metadata: meta("otel-gateway"),

@@ -84,3 +84,22 @@ test("otelcol-contrib validate passes on both rendered configs (OTELCOL_CONTRIB)
     await run(process.env.OTELCOL_CONTRIB, ["validate", `--config=${file}`], { env: { ...process.env, K8S_NODE_IP: "127.0.0.1", K8S_NODE_NAME: "node-1" } });
   }
 });
+
+// 2026-10-12 preview on cloudspider-up: a config change (health_check) to the
+// fixed-name ConfigMaps was a delete-before-replace, and Pulumi replaced the
+// DaemonSet and Deployment that mount them too. Auto-named ConfigMaps are
+// created first under a new name; the workloads only see their volume's
+// configMap.name change, an in-place (rolling) update.
+test("collector ConfigMaps are auto-named and the workloads mount them by output name (config change = new ConfigMap + rolling update)", { skip: ready }, async () => {
+  const resources = await demo();
+  for (const [name, kind] of [["otel-collector", "DaemonSet"], ["otel-gateway", "Deployment"]]) {
+    const map = resources.find((r) => r.type === "kubernetes:core/v1:ConfigMap" && r.name === name);
+    assert.equal(map.inputs.metadata.name, undefined, `${name}: no fixed ConfigMap name`);
+    const workload = one(resources, kind, name);
+    assert.equal(workload.metadata.name, name, `${kind} ${name} keeps its fixed name (updated in place)`);
+    const volume = workload.spec.template.spec.volumes.find((v) => v.name === "conf");
+    assert.equal(volume.configMap.name, `${name}-mock0000`, `${kind} ${name} mounts the auto-named ConfigMap`);
+  }
+  const source = readFileSync(join(root, "upgrades/demo/index.js"), "utf8");
+  assert.doesNotMatch(source, /deleteBeforeReplace|replaceOnChanges/, "nothing forces a workload replace");
+});
