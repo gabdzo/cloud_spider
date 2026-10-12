@@ -327,3 +327,20 @@ test("the Service picker: scheme and port per Service port", async () => {
   assert.equal(got2.scope, "namespaces");
   assert.equal(got2.services[0].name, "api");
 });
+
+test("SAMPLE shopdb: allowed from shop as app=shopapi, blocked from web, policy agrees", async () => {
+  const nd = createNetdebug({ pageOrigin: "http://x", pod: { cfg: { enabled: false } } });
+  const run = async (namespace, asLabels) => {
+    const out = await nd.startPod("http://x", { target: "tcp://shopdb.shop:5432", tls: true, namespace, asLabels, sample: true });
+    await nd.settle(out.id);
+    return (await nd.get(out.id)).report.checks;
+  };
+  const ok = await run("shop", { app: "shopapi" });
+  assert.equal(ok.find((c) => c.id === "P-TCP-01").status, "PASS");
+  assert.equal(ok.find((c) => c.id === "P-TLS-01").status, "PASS");
+  assert.ok(ok.filter((c) => c.id === "K-NP-03").every((c) => c.status === "PASS"));
+  const no = await run("web", {});
+  assert.equal(no.find((c) => c.id === "P-TCP-01").status, "FAIL");
+  assert.equal(no.find((c) => c.id === "P-TLS-01").status, "NOT_ASSESSED");
+  assert.ok(no.some((c) => c.id === "K-NP-03" && c.status === "FAIL"));
+});
