@@ -2,6 +2,8 @@ import { moduleOff } from "./modules.js";
 import { graphScenario } from "./graph-sample.js";
 import { buildGraph } from "./graph-build.js";
 import { readGraph } from "./graph-read.js";
+import { createObserve, mergeLive } from "./observe.js";
+import { observeSample } from "./observe-sample.js";
 import { originAllowed } from "./origin.js";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
@@ -2701,6 +2703,7 @@ export function listen(app, port = 9241, host = "127.0.0.1") {
 }
 
 const graphCache = new Map();
+const observeReader = createObserve();
 async function liveGraph(kube, context, ttl = 20_000) {
   const key = context || kube.context || "";
   const hit = graphCache.get(key);
@@ -3051,6 +3054,27 @@ async function route(app, req, res) {
       return;
     }
     send(res, 200, await liveGraph(kube, context));
+    return;
+  }
+  // Observe bundle (src/observe.js): live edges, RED and Events read from
+  // the bundle's gateway and Loki through the API server's service proxy.
+  // ?merge=1 lays them over the context's graph.
+  if (req.method === "GET" && url.pathname === "/api/observe/live") {
+    const merge = url.searchParams.get("merge") === "1";
+    if (url.searchParams.get("sample") === "1") {
+      const live = observeSample();
+      send(res, 200, merge ? mergeLive(graphScenario("bare"), live) : live);
+      return;
+    }
+    const context = url.searchParams.get("context") || "";
+    const kube = app.kubeOf?.(context);
+    if (!kube) {
+      send(res, 200, { error: "no kube context", unset: true });
+      return;
+    }
+    const graph = await liveGraph(kube, context);
+    const live = await observeReader.read(kube, { context, graph: graph?.error ? null : graph });
+    send(res, 200, merge && !graph?.error ? mergeLive(graph, live) : live);
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/cluster/telemetry") {

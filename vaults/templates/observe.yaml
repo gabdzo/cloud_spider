@@ -1,0 +1,25 @@
+# Template: the observe bundle (upgrades/observe, Pulumi project
+# cloudspider-observe, stack observe; local state, no AWS). When it is up,
+# make it living with: npm run vaults:new -- observe observe
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: observe
+  number: 240
+  title: Observe bundle
+  description: Grafana Beyla, OTel collectors and Loki in namespace cloudspider-observe, feeding live edges, RED and Events into the SERVICES graph.
+  owner: gabriel
+  tags: [upgrade, observability, kubernetes]
+spec:
+  type: data
+  stack:
+    dir: upgrades/observe
+    name: observe
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/observe
+  slos:
+    - name: resources-present
+      sli: availability
+      source: resources
+      target: 99%
+      window: 30d

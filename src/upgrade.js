@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
-import { hostname as osHostname } from "node:os";
+import { homedir, hostname as osHostname } from "node:os";
 import { judgeLock, lockRefusal, parseLocks, pendingOps, processNameOf, staleNote } from "./pulumi-locks.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -239,6 +239,32 @@ export const UPGRADES = [
     ],
   },
   {
+    id: "observe",
+    title: "Observe bundle",
+    note: "Opt-in live data for the SERVICES graph on any Kubernetes or OpenShift cluster (kubeContext names it; it never uses the current context by default). Grafana Beyla (eBPF DaemonSet): live HTTP/gRPC calls between pods with rate, errors and p95, no app changes. OTel collectors: Kubernetes Events, restarts and desired vs ready (k8s_cluster), kubelet stats and container logs. Loki keeps logs and Events on a small PVC for retentionHours. All in namespace cloudspider-observe with its own NetworkPolicies and read-only ClusterRoles cloudspider-observe-*. allowPrivileged=on is required for Beyla and the log agent (privileged + hostPID / hostPath); on OpenShift it creates two dedicated SCCs bound only to their ServiceAccounts. Footprint (profile crc, 1 node): ~175m CPU and ~420Mi requested, ~1.0Gi memory limit, 2Gi disk (each extra node adds the two DaemonSets: 75m, 160Mi). No cloud cost; it uses the cluster's own CPU, memory and disk. Take it down removes every object it made (namespace included).",
+    dir: "upgrades/observe",
+    stack: "observe",
+    project: "cloudspider-observe",
+    vault: "observe",
+    // No AWS: state in a local file backend (Pulumi.yaml), no AWS tags.
+    localState: true,
+    needs: [],
+    namespaces: ["cloudspider-observe"],
+    daemonSets: [{ namespace: "cloudspider-observe", name: "beyla", labels: { "app.kubernetes.io/name": "beyla" } }, { namespace: "cloudspider-observe", name: "otel-agent", labels: { "app.kubernetes.io/name": "otel-agent" } }],
+    cost: [],
+    parameters: [
+      { name: "kubeContext", type: "string", default: "", pattern: /^[A-Za-z0-9_.:@/-]{0,200}$/ },
+      { name: "platform", type: "string", default: "kubernetes", choices: ["kubernetes", "openshift"], labels: { kubernetes: "plain Kubernetes (kind, k3s, kubeadm, EKS…)", openshift: "OpenShift / CRC: OpenShift DNS + host-network NetworkPolicy rules, SCCs when allowPrivileged=on" } },
+      { name: "allowPrivileged", type: "string", default: "off", choices: ["off", "on"], labels: { off: "off · no Beyla, no node agent: cluster state + Events only (no live edges, no container logs)", on: "on · ⚠ Beyla runs PRIVILEGED with hostPID (eBPF sees every process on each node); the log agent mounts /var/log/pods. OpenShift: creates SCCs cloudspider-observe-beyla and -agent" }, warn: "on" },
+      { name: "profile", type: "string", default: "crc", choices: ["crc", "standard"], labels: { crc: "crc · tight: ~175m CPU / ~420Mi requested on 1 node, 2Gi Loki, 24h", standard: "standard · ~350m CPU / ~800Mi on 1 node (+150m / 288Mi per extra node), 5Gi Loki, 72h" } },
+      { name: "nodeCidr", type: "string", default: "", pattern: /^(\d{1,3}(\.\d{1,3}){3}\/\d{1,2})?$/ },
+      { name: "logs", type: "string", default: "on", choices: ["on", "off"], labels: { on: "on · Loki + container logs + Events history", off: "off · no Loki, no PVC (metrics and live edges only)" } },
+      { name: "kubeStateMetrics", type: "string", default: "off", choices: ["off", "on"], labels: { off: "off · k8s_cluster covers restarts and rollouts", on: "on · also install kube-state-metrics (skip if the cluster has one)" } },
+      { name: "retentionHours", type: "string", default: "", choices: ["", "24", "72", "168"] },
+      { name: "storageClass", type: "string", default: "", pattern: /^([a-z0-9]([-a-z0-9.]{0,61}[a-z0-9])?)?$/ },
+    ],
+  },
+  {
     id: "site",
     title: "Static site",
     note: "A private S3 bucket with one page, served over HTTPS by CloudFront through origin access control. A new distribution takes a few minutes to deploy.",
@@ -321,7 +347,11 @@ export function checkParams(spec, input = {}) {
     if (parameter.choices && !parameter.choices.includes(text)) {
       return { error: `${parameter.name} must be ${parameter.choices.join(" or ")}` };
     }
-    if (!parameter.choices && !NAME.test(text)) {
+    // pattern: a parameter's own rule (kube context names hold "/" and ":").
+    if (parameter.pattern && !parameter.pattern.test(text)) {
+      return { error: `${parameter.name} is not valid here` };
+    }
+    if (!parameter.choices && !parameter.pattern && !NAME.test(text)) {
       return { error: `${parameter.name} must be a short lowercase name` };
     }
     values[parameter.name] = text;
@@ -679,6 +709,12 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       if (!verb) return refuse({ module, action, error: "action must be preview, up or destroy" });
       const checked = checkParams(spec, params);
       if (checked.error) return refuse({ module, action: verb, error: checked.error });
+      if (spec.id === "observe" && verb !== "destroy") {
+        if (!checked.values.kubeContext) return refuse({ module, action: verb, error: "kubeContext is required: the kube context of the cluster to install into (the current context is never used by default)" });
+        if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(checked.values.nodeCidr || "")) return refuse({ module, action: verb, error: "nodeCidr is required: the nodes' address range, e.g. 192.168.126.0/24 on CRC (kubectl get nodes -o wide)" });
+      }
+      // A local file backend must exist before Pulumi can open it.
+      if (spec.localState) mkdirSync(join(env.HOME || homedir(), ".cloudspider", `pulumi-${spec.id}`), { recursive: true });
       const stack = stackFor(spec, checked.values, legacyName);
       const directory = join(cwd, spec.dir);
       const steps = upgradeSteps(spec, stack, verb, checked.values);

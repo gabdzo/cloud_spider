@@ -3633,7 +3633,7 @@ askThis.addEventListener("click", () => {
 
 const CARD_ICON = {
   eks: "cluster", signal: "radio", barrel: "stack", camp: "bucket",
-  rds: "database", pgcluster: "database", shopapi: "pod", demo: "pod", observability: "radio", site: "url", worker: "queue", openshift: "openshift", "tf-rds": "terraform",
+  rds: "database", pgcluster: "database", shopapi: "pod", demo: "pod", observability: "radio", observe: "radio", site: "url", worker: "queue", openshift: "openshift", "tf-rds": "terraform",
   "pod-identity": "secret", "metrics-server": "addon", kyverno: "policy", karpenter: "node", "scaling-demo": "scale", lbc: "lb", "cert-manager": "secret", keda: "queue",
 };
 

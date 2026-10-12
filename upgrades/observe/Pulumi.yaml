@@ -1,0 +1,5 @@
+name: cloudspider-observe
+runtime: nodejs
+description: "The observe bundle on any Kubernetes or OpenShift cluster: Grafana Beyla (eBPF live edges + RED), OTel collectors (k8s events, cluster state, kubelet stats, container logs), Loki with a short retention, optional kube-state-metrics. Local state, no AWS."
+backend:
+  url: "file://~/.cloudspider/pulumi-observe"

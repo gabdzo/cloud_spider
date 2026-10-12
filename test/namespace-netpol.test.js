@@ -21,6 +21,7 @@ const CREATORS = {
   "upgrades/pgcluster/index.js": ["shop", "cnpg-system"],
   "upgrades/demo/index.js": ["demo"],
   "upgrades/observability/index.js": ["amazon-cloudwatch"],
+  "upgrades/observe/index.js": ["cloudspider-observe"],
   "upgrades/addons/scaling-demo.js": ["scaling-demo"],
   "upgrades/addons/keda.js": ["keda-demo"],
   // helmRelease: every Helm add-on with its own namespace.

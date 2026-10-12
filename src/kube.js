@@ -79,6 +79,10 @@ export const PATHS = {
   // The OTel gateway's Prometheus text, through the API server's service
   // proxy. The viewer role may get services/proxy on this one Service only.
   otelMetrics: (ns, name) => `/api/v1/namespaces/${checkName(ns)}/services/${checkName(name)}/proxy/metrics`,
+  // The observe bundle's Loki (upgrades/observe), through the same proxy:
+  // LogQL query_range only, a capped limit, nanosecond start/end.
+  lokiQuery: (ns, name, query, startNs, endNs, limit = 200) =>
+    `/api/v1/namespaces/${checkName(ns)}/services/${checkName(name)}:3100/proxy/loki/api/v1/query_range?query=${encodeURIComponent(String(query).slice(0, 500))}&start=${Number(startNs) || 0}&end=${Number(endNs) || 0}&limit=${Math.min(1000, Math.max(1, Number(limit) || 200))}&direction=backward`,
   podLog: (ns, name, container, tail = 80, previous = false) =>
     `/api/v1/namespaces/${checkName(ns)}/pods/${checkName(name)}/log?tailLines=${Math.min(500, Math.max(1, Number(tail) || 80))}${container ? `&container=${checkName(container)}` : ""}${previous ? "&previous=true" : ""}`,
   pod: (ns, name) => `/api/v1/namespaces/${checkName(ns)}/pods/${checkName(name)}`,
