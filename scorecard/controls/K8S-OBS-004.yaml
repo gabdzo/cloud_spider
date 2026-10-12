@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-OBS-004
+revision: 1
+title: "Apps emit traces and they arrive"
+category: observability
+target: kubernetes
+evidenceType: runtime
+severity: { default: medium }
+confidence: medium
+evaluator: obs-traces
+aggregation: all-or-nothing
+requires: [obs-agents, obs-aws]
+whyItMatters: "Without traces a slow request is a guess: which hop, which query."
+remediation: { summary: "Instrument the apps with OpenTelemetry and export to X-Ray (an ADOT or OTel collector with the awsxray exporter, or the CloudWatch Observability add-on's Application Signals). A collector with no traces arriving is a WARN.", effort: M, card: { id: observability, params: { containerInsights: "on" } } }
+verification: "xray:GetTraceSummaries returns traces of the last hour, or an OTel/ADOT/X-Ray collector runs (WARN)."

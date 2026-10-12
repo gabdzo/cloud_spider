@@ -131,6 +131,8 @@ app.score = createScoreApi({
   // The app's live context list: a context CONNECT added after start is
   // scannable without a restart.
   kubeFor: (name) => app.kubeOf(name),
+  // App vaults and their evaluated SLOs (K8S-OBS-006).
+  vaults: () => app.vaultsView(),
 });
 
 // Network debugging (PATH › DEBUG): local probes of a URL the user typed,

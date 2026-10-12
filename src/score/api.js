@@ -12,6 +12,7 @@ import { kubeRbac } from "./collectors/kube-rbac.js";
 import { kubeWorkloads } from "./collectors/kube-workloads.js";
 import { kubeProtect } from "./collectors/kube-protect.js";
 import { kubeAws } from "./collectors/kube-aws.js";
+import { kubeObs } from "./collectors/kube-obs.js";
 import { accountOf } from "./aws-clients.js";
 import { awsCloudtrail } from "./collectors/aws-cloudtrail.js";
 import { awsEks } from "./collectors/aws-eks.js";
@@ -27,7 +28,7 @@ import { runScan } from "./scan.js";
 import { permissionReport } from "./permissions.js";
 import { renderReport } from "./report.js";
 
-export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac, kubeNetwork, kubeProtect, kubeAws];
+export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac, kubeNetwork, kubeProtect, kubeAws, kubeObs];
 export const AWS_COLLECTORS = [awsNetwork, awsElbv2, awsEks, awsRds, awsCloudtrail, awsObservability, awsRoute53, awsCloudfront, awsLbEdge, awsVpcNet, awsAcm];
 const SHORT = (name) => String(name || "").split("/").pop();
 
@@ -67,7 +68,7 @@ export function suggestionsOf(scan, tree = null) {
   });
 }
 
-export function createScoreApi({ app, kubeFor, aws = null, history, catalog, profiles, settings = {}, pageOrigin, collectors = KUBE_COLLECTORS, clock = () => new Date(), runner = null, fixOptions = {} }) {
+export function createScoreApi({ app, kubeFor, aws = null, history, catalog, profiles, settings = {}, vaults = null, pageOrigin, collectors = KUBE_COLLECTORS, clock = () => new Date(), runner = null, fixOptions = {} }) {
   // cluster → the kube context it was scanned through, so the rescan after
   // a fix reads the cluster that was fixed, whatever was scanned meanwhile.
   const contextOf = new Map();
@@ -93,7 +94,7 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
     // The cluster's AWS side (ECR scans, AWS Backup) reads with the app's AWS
     // credentials when it has them.
     const awsSide = aws?.clients && aws.regions?.length ? { clients: aws.clients, regions: aws.regions, account: (awsAccount ??= accountOf(aws.clients, aws.regions[0])) } : null;
-    const scan = await runScan({ target: "kubernetes", catalog: cat, profiles: prof.profiles, collectors, evaluators: EVALUATORS, context: { kube, aws: awsSide }, environment: settings.environment || "", clock });
+    const scan = await runScan({ target: "kubernetes", catalog: cat, profiles: prof.profiles, collectors, evaluators: EVALUATORS, context: { kube, aws: awsSide, vaults }, environment: settings.environment || "", clock });
     scan.clusterName = SHORT(scan.clusterName);
     scan.requestContext = context;
     contextOf.set(scan.clusterName, context);

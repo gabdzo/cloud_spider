@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-OBS-002
+revision: 1
+title: "Container logs are shipped off the node"
+category: observability
+target: kubernetes
+evidenceType: runtime
+severity: { default: high }
+confidence: medium
+evaluator: obs-container-logs
+aggregation: all-or-nothing
+requires: [obs-agents, obs-aws]
+whyItMatters: "kubectl logs reads from the node: a replaced node, an evicted or restarted pod takes the evidence with it."
+remediation: { summary: "Turn on Container Insights on the Observability card: the CloudWatch Observability add-on runs Fluent Bit and ships container logs to /aws/containerinsights/<cluster>/application (kept 7 days). Or run Fluent Bit / an OTel filelog pipeline yourself.", effort: S, card: { id: observability, params: { containerInsights: "on" } } }
+verification: "Fluent Bit, Fluentd, the CloudWatch agent, Vector or the CloudWatch Observability add-on runs in the cluster."

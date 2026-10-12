@@ -12,6 +12,7 @@ import { CloudFrontClient } from "@aws-sdk/client-cloudfront";
 import { ACMClient } from "@aws-sdk/client-acm";
 import { ECRClient } from "@aws-sdk/client-ecr";
 import { BackupClient } from "@aws-sdk/client-backup";
+import { XRayClient } from "@aws-sdk/client-xray";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 
 const RETRY = { maxAttempts: 5, retryMode: "adaptive" };
@@ -37,6 +38,7 @@ export function createScanClients({ extra = {} } = {}) {
     acm: (region) => make("acm", ACMClient, region),
     ecr: (region) => make("ecr", ECRClient, region),
     backup: (region) => make("backup", BackupClient, region),
+    xray: (region) => make("xray", XRayClient, region),
     sts: (region) => make("sts", STSClient, region),
     ...extra,
   };

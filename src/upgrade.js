@@ -89,6 +89,8 @@ export const UPGRADES = [
       { name: "podIdentityAgent", type: "string", default: "on", choices: ["on", "off"] },
       { name: "metricsServer", type: "string", default: "on", choices: ["on", "off"] },
       { name: "ebsCsiDriver", type: "string", default: "on", choices: ["on", "off"] },
+      // K8S-OBS-003: api, audit, authenticator to /aws/eks/<cluster>/cluster (in place).
+      { name: "controlPlaneLogs", type: "string", default: "off", choices: ["off", "on"], labels: { off: "off · no audit trail (SCORE FAILs K8S-OBS-003)", on: "on · api, audit, authenticator, kept 7 days (~$0.50/GB ingested; a quiet demo ~$0.05-0.15/day)" }, warn: "off" },
     ],
   },
   {
@@ -211,6 +213,25 @@ export const UPGRADES = [
     daemonSets: [{ namespace: "demo", name: "otel-collector", labels: { app: "otel-collector" } }],
     cost: [{ usage: "logs" }],
     parameters: [{ name: "clusterName", type: "string", default: "cloudspider-up" }],
+  },
+  {
+    id: "observability",
+    title: "Observability",
+    note: "Observability for the EKS cluster. containerInsights=on: the CloudWatch Observability EKS add-on (CloudWatch agent + Fluent Bit: Container Insights metrics, container logs, dashboards; credentials through EKS Pod Identity), its log groups kept retentionDays (7). About $0.30-0.60/day on a 2-node demo, mostly metrics and log ingestion ($0.50/GB). alarms=on: an SNS topic and a basic alarm set: per ALB of the cluster 5XX (load balancer and target) and unhealthy targets, plus node not ready with Container Insights. $0.10 per alarm per month (about 4-6 here). alertEmail: an email subscription, opt-in (AWS mails a confirm link). Needs the cluster with its Pod Identity agent.",
+    dir: "upgrades/observability",
+    stack: "observability",
+    project: "cloudspider-observability",
+    vault: "observability",
+    needs: ["eks"],
+    eksAddons: ["eks-pod-identity-agent"],
+    cost: [{ usage: "logs", when: { containerInsights: "on" } }, { price: "cw-alarm", qty: 6, when: { alarms: "on" } }],
+    parameters: [
+      { name: "clusterName", type: "string", default: "cloudspider-up" },
+      { name: "containerInsights", type: "string", default: "off", choices: ["off", "on"], labels: { off: "off · no metrics history or container logs (SCORE FAILs K8S-OBS-001/002)", on: "on · CloudWatch Observability add-on, ~$0.30-0.60/day" }, warn: "off" },
+      { name: "alarms", type: "string", default: "on", choices: ["on", "off"], labels: { on: "on · ALB 5XX, unhealthy targets, node not ready → SNS (~$0.02/day)", off: "off · nobody is told (SCORE FAILs K8S-OBS-005)" }, warn: "off" },
+      { name: "alertEmail", type: "string", default: "" },
+      { name: "retentionDays", type: "string", default: "7", choices: ["1", "7", "14", "30"] },
+    ],
   },
   {
     id: "site",

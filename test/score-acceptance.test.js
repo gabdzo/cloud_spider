@@ -46,7 +46,7 @@ test("ACCEPTANCE: fresh cluster scores low; three add-on fixes later the score h
   const first = await api.scan(ORIGIN, {});
   assert.equal(first.scan.card.verdict, "AT_RISK");
   assert.ok(first.scan.card.overall < 30);
-  assert.deepEqual([...new Set(first.suggestions.map((s) => s.addon))].sort(), ["cert-manager", "karpenter", "keda", "kyverno", "lbc", "metrics-server", "pod-identity"]);
+  assert.deepEqual([...new Set(first.suggestions.map((s) => s.addon).filter(Boolean))].sort(), ["cert-manager", "karpenter", "keda", "kyverno", "lbc", "metrics-server", "pod-identity"]);
 
   let scanId = first.scan.id;
   const scores = [first.scan.card.overall];

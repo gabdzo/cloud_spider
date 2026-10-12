@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-OBS-005
+revision: 1
+title: "Alarms with an action cover the cluster and its load balancers"
+category: observability
+target: kubernetes
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: obs-alerting
+aggregation: proportional
+requires: [obs-agents, obs-aws]
+whyItMatters: "A dashboard nobody watches does not page anyone: users find the outage first."
+remediation: { summary: "Observability card: alarms on (ALB 5XX and unhealthy targets per load balancer, node not ready for the cluster, all to an SNS topic) and alertEmail for the email opt-in. Ten alarms cost $1/month.", effort: S, card: { id: observability, params: { alarms: "on" } } }
+verification: "cloudwatch:DescribeAlarms lists an alarm with an SNS action on ClusterName=<cluster> and 5XX + UnHealthyHostCount alarms on each of the cluster's load balancers."
