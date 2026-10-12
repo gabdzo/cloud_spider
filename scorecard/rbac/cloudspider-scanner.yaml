@@ -25,6 +25,23 @@ rules:
   - apiGroups: [metrics.k8s.io]
     resources: [nodes, pods]
     verbs: [get, list]
+  - apiGroups: [""]
+    resources: [serviceaccounts, persistentvolumeclaims, persistentvolumes]
+    verbs: [get, list]
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters, backups, scheduledbackups]
+    verbs: [get, list]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources: [objectstores]
+    verbs: [get, list]
+  - apiGroups: [velero.io]
+    resources: [schedules, backups]
+    verbs: [get, list]
+  # NET-DNS-004: the CoreDNS metrics port through the service proxy, only that name.
+  - apiGroups: [""]
+    resources: [services/proxy]
+    resourceNames: ["kube-dns:metrics"]
+    verbs: [get]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

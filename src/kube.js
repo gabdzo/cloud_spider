@@ -109,6 +109,15 @@ export const PATHS = {
   // The scorecard's NET-K8S-002 (src/score/collectors/kube-network.js).
   endpointSlicesAll: () => "/apis/discovery.k8s.io/v1/endpointslices",
   corednsMetrics: () => "/api/v1/namespaces/kube-system/services/kube-dns:metrics/proxy/metrics",
+  // Protections (src/score/collectors/kube-protect.js): service accounts,
+  // volumes and what backs them up. A CRD that is not installed answers 404.
+  serviceAccounts: () => "/api/v1/serviceaccounts",
+  pvcs: () => "/api/v1/persistentvolumeclaims",
+  pvs: () => "/api/v1/persistentvolumes",
+  cnpgClusters: () => "/apis/postgresql.cnpg.io/v1/clusters",
+  cnpgBackups: () => "/apis/postgresql.cnpg.io/v1/backups",
+  cnpgScheduledBackups: () => "/apis/postgresql.cnpg.io/v1/scheduledbackups",
+  veleroSchedules: () => "/apis/velero.io/v1/schedules",
   podEvents: (ns, name) =>
     `/api/v1/namespaces/${checkName(ns)}/events?fieldSelector=${encodeURIComponent(`involvedObject.kind=Pod,involvedObject.name=${checkName(name)}`)}`,
 };

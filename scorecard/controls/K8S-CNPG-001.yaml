@@ -1,0 +1,18 @@
+kind: Control
+id: K8S-CNPG-001
+revision: 1
+title: "CloudNativePG clusters run a standby (2+ instances, all ready)"
+category: reliability
+target: kubernetes
+evidenceType: runtime
+severity: { default: high }
+confidence: high
+evaluator: cnpg-instances
+aggregation: proportional
+requires: [kube-cnpg]
+params: { minInstances: 2 }
+whyItMatters: "One instance means a node, volume or zone problem is an outage until it is rebuilt; with a standby CNPG fails over in seconds."
+remediation: { summary: "Set spec.instances to 2 or more (CNPG adds streaming standbys and fails over by itself). Postgres on EKS card: instances 2 (the default).", effort: S, cardFor: { "shop/": pgcluster } }
+verification: "kubectl get clusters.postgresql.cnpg.io -A shows INSTANCES >= 2 and READY = INSTANCES."
+references:
+  - { source: "CloudNativePG: Replication", url: "https://cloudnative-pg.io/documentation/current/replication/" }

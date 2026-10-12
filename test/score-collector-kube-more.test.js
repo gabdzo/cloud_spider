@@ -45,7 +45,7 @@ test("cluster role bindings: subjects and role names only", async () => {
 test("the scanner RBAC manifest only grants get and list", async () => {
   const docs = parseAllDocuments(await readFile(new URL("../scorecard/rbac/cloudspider-scanner.yaml", import.meta.url), "utf8")).map((d) => d.toJSON());
   const role = docs.find((d) => d.kind === "ClusterRole");
-  for (const rule of role.rules) assert.deepEqual(rule.verbs, ["get", "list"]);
+  for (const rule of role.rules) assert.ok(JSON.stringify(rule.verbs) === '["get","list"]' || (JSON.stringify(rule.verbs) === '["get"]' && rule.resourceNames?.length), JSON.stringify(rule));
   assert.equal(role.rules.some((r) => r.resources.includes("secrets")), false);
 });
 

@@ -1,0 +1,18 @@
+kind: Control
+id: K8S-CNPG-003
+revision: 1
+title: "CloudNativePG clusters are backed up, last backup recent"
+category: reliability
+target: kubernetes
+evidenceType: runtime
+severity: { default: high }
+confidence: high
+evaluator: cnpg-backups
+aggregation: proportional
+requires: [kube-cnpg]
+params: { maxAgeHours: 26 }
+whyItMatters: "Replicas copy mistakes too: a dropped table or a lost cluster comes back only from a backup."
+remediation: { summary: "Back up with the Barman Cloud plugin (CNPG-I; the in-tree barmanObjectStore is removed in CNPG 1.31): an ObjectStore on S3, spec.plugins with isWALArchiver, a daily ScheduledBackup (method: plugin), credentials via EKS Pod Identity. Postgres on EKS card: backups on (the default).", effort: M, cardFor: { "shop/": pgcluster } }
+verification: "Each Cluster has a backup method, a ScheduledBackup, and a Backup in phase completed that stopped less than 26 h ago."
+references:
+  - { source: "Barman Cloud plugin", url: "https://cloudnative-pg.github.io/plugin-barman-cloud/docs/usage/" }

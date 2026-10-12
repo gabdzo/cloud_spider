@@ -12,7 +12,8 @@ test("the EKS stack binds the read-only scanner role to the viewer group", () =>
 });
 
 test("scanner rules: get/list only, no Secrets, and the same as the shipped manifest", () => {
-  for (const rule of SCANNER_RULES) assert.deepEqual(rule.verbs, ["get", "list"]);
+  // get/list, or get alone on named objects (the CoreDNS metrics proxy).
+  for (const rule of SCANNER_RULES) assert.ok(JSON.stringify(rule.verbs) === '["get","list"]' || (JSON.stringify(rule.verbs) === '["get"]' && rule.resourceNames?.length), JSON.stringify(rule));
   assert.equal(SCANNER_RULES.some((r) => r.resources.includes("secrets")), false);
   const docs = parseAllDocuments(readFileSync(new URL("../scorecard/rbac/cloudspider-scanner.yaml", import.meta.url), "utf8")).map((d) => d.toJSON());
   const role = docs.find((d) => d.kind === "ClusterRole");

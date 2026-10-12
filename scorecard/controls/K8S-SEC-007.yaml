@@ -1,13 +1,15 @@
 kind: Control
 id: K8S-SEC-007
-revision: 1
-title: "Service accounts do not automount tokens by default"
+revision: 2
+title: "Pods on default service accounts do not mount API tokens"
 category: security
 target: kubernetes
 evidenceType: config
 severity: { default: low }
 confidence: high
-blockedBy: "GET /api/v1/serviceaccounts (path not added yet)"
-whyItMatters: "An automounted token gives every pod API credentials it may not need."
-remediation: { summary: "Set automountServiceAccountToken: false on service accounts that do not call the API.", effort: S }
-verification: "Service accounts in app namespaces set automountServiceAccountToken: false."
+evaluator: sa-token-automount
+aggregation: proportional
+requires: [kube-pods, kube-serviceaccounts]
+whyItMatters: "An automounted token gives every pod API credentials it may not need; a compromised app then talks to the API server."
+remediation: { summary: "Set automountServiceAccountToken: false on pods that do not call the API (or on the namespace's default service account); give pods that do call it a dedicated service account. Shop API and the demo app set it on their cards' stacks.", effort: S, cardFor: { "shop/": shopapi, "demo/": demo } }
+verification: "No Running app pod on its namespace's default service account has a token mounted (pod or service account sets automountServiceAccountToken: false)."

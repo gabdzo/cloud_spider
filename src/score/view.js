@@ -25,7 +25,7 @@ export function scoreModel(view) {
   const fixable = new Map((view.suggestions || []).map((s) => [s.control, s]));
   const rows = [...scan.results]
     .sort((a, b) => ORDER[a.status] - ORDER[b.status] || (b.gate === true) - (a.gate === true) || a.id.localeCompare(b.id))
-    .map((r) => ({ id: r.id, title: r.title, status: r.status, statusText: STATUS_TEXT[r.status] || r.status, severity: r.severity, gate: r.gate === true, reason: r.reason || failingLine(r), fix: fixable.get(r.id)?.already ? "" : fixable.get(r.id)?.addon || "", card: fixable.get(r.id)?.card || null, already: fixable.get(r.id)?.already || "", remedy: ["FAIL", "UNKNOWN"].includes(r.status) || r.warn ? r.remedy || "" : "" }));
+    .map((r) => ({ id: r.id, title: r.title, status: r.status, statusText: r.warn && r.status === "PASS" ? "WARN" : STATUS_TEXT[r.status] || r.status, warn: Boolean(r.warn), severity: r.severity, gate: r.gate === true, reason: r.reason || failingLine(r), fix: fixable.get(r.id)?.already ? "" : fixable.get(r.id)?.addon || "", card: fixable.get(r.id)?.card || null, already: fixable.get(r.id)?.already || "", remedy: ["FAIL", "UNKNOWN"].includes(r.status) || r.warn ? r.remedy || "" : "" }));
   const counts = Object.fromEntries(Object.keys(ORDER).map((s) => [s, scan.results.filter((r) => r.status === s).length]));
   const rank = new Map((card.priorities || []).map((p, i) => [p.id, i]));
   // Actionable first (FIX or OPEN a card); an add-on that is already there
@@ -380,7 +380,8 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
       const row = el("div", "sc-row");
       row.dataset.status = r.status;
       const status = el("span", "sc-chip", r.statusText);
-      status.dataset.status = r.status;
+      // WARN (a pass with a caveat) wears the amber of UNKNOWN.
+      status.dataset.status = r.warn && r.status === "PASS" ? "UNKNOWN" : r.status;
       const what = el("div", "sc-what");
       const line = el("div", "sc-title");
       line.append(el("span", "sc-id", r.id), el("span", "", r.title));

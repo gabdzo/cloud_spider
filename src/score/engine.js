@@ -72,5 +72,9 @@ function runOne(control, { evaluators, evidence, profile }) {
   if (unknown.length) return done("UNKNOWN", `${unknown.length} resource(s) undecided: ${unknown[0].reason}`);
   if (truncated) return done("UNKNOWN", "truncated: the list did not finish, so a pass cannot be claimed");
   if (!items.length) return control.emptyIs === "pass" ? done("PASS", null, { p: 1 }) : done("NOT_APPLICABLE", "no-resources");
+  // PASS with a warning: every item passes, some with a caveat (a public
+  // image nobody scans for you). Scored as a pass, shown as WARN with its fix.
+  const warns = items.filter((item) => item.warn);
+  if (warns.length) return done("PASS", `${warns.length} of ${items.length} with a warning: ${warns[0].detail}`, { p: 1, warn: true });
   return done("PASS", null, { p: 1 });
 }

@@ -14,7 +14,8 @@ test("a fresh cluster without the scanner RBAC: denied reads, the controls they 
   const report = permissionReport(scan);
   assert.equal(report.ok, false);
   assert.deepEqual(report.reads.map((r) => r.read).sort(), ["GET clusterrolebindings", "GET nodes"]);
-  assert.deepEqual(report.reads.find((r) => r.read === "GET nodes").controls, ["K8S-REL-004"]);
+  // K8S-CNPG-002 reads node zones too (instances per zone).
+  assert.deepEqual(report.reads.find((r) => r.read === "GET nodes").controls, ["K8S-CNPG-002", "K8S-REL-004"]);
   assert.deepEqual(report.reads.find((r) => r.read === "GET clusterrolebindings").controls, ["K8S-SEC-002"]);
   assert.equal(report.grants.length, 1);
   assert.match(report.grants[0], /cloudspider-scanner\.yaml/);

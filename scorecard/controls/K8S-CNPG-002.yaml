@@ -1,0 +1,17 @@
+kind: Control
+id: K8S-CNPG-002
+revision: 1
+title: "CloudNativePG instances are spread across zones"
+category: reliability
+target: kubernetes
+evidenceType: runtime
+severity: { default: high }
+confidence: high
+evaluator: cnpg-zones
+aggregation: proportional
+requires: [kube-cnpg, kube-pods, kube-nodes]
+whyItMatters: "A standby in the primary's zone dies with it; EBS volumes are zonal, so the placement made at creation is the one you keep."
+remediation: { summary: "Set spec.affinity.topologyKey: topology.kubernetes.io/zone with enablePodAntiAffinity (podAntiAffinityType: required) before adding instances, and have nodes in 2+ zones. Postgres on EKS card: its default does this.", effort: M, cardFor: { "shop/": pgcluster } }
+verification: "The Running instance pods of each Cluster are on nodes in 2+ topology.kubernetes.io/zone values, and the Cluster pins it (zone anti-affinity or a zone topologySpreadConstraint)."
+references:
+  - { source: "CloudNativePG: Scheduling", url: "https://cloudnative-pg.io/documentation/current/scheduling/" }

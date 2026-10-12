@@ -1,13 +1,18 @@
 kind: Control
 id: K8S-SEC-008
-revision: 1
-title: "Images are scanned for known vulnerabilities"
+revision: 2
+title: "Running images are scanned for known vulnerabilities"
 category: security
 target: kubernetes
 evidenceType: config
 severity: { default: high }
 confidence: high
-blockedBy: "image vulnerability data (no collector; import from a scanner later)"
+evaluator: image-scanning
+aggregation: proportional
+requires: [kube-images]
+params: { maxCritical: 0 }
 whyItMatters: "Known-vulnerable images are the most common way into a cluster."
-remediation: { summary: "Scan images in CI and in the registry.", effort: S }
-verification: "A scanner report covers every running image."
+remediation: { summary: "Private ECR: turn on scan on push (or enhanced scanning in the registry) and fix critical findings. Public images (WARN): pin a digest and scan them in CI, or pull them through an ECR pull-through cache repository with scanning on.", effort: M }
+verification: "Every running image from your ECR has a completed scan with no critical findings; public images are listed as WARN; AWS-managed add-on images pass."
+references:
+  - { source: "Amazon ECR image scanning", url: "https://docs.aws.amazon.com/AmazonECR/latest/userguide/image-scanning.html" }

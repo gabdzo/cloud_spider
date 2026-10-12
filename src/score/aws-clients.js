@@ -10,6 +10,9 @@ import { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
 import { Route53Client } from "@aws-sdk/client-route-53";
 import { CloudFrontClient } from "@aws-sdk/client-cloudfront";
 import { ACMClient } from "@aws-sdk/client-acm";
+import { ECRClient } from "@aws-sdk/client-ecr";
+import { BackupClient } from "@aws-sdk/client-backup";
+import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 
 const RETRY = { maxAttempts: 5, retryMode: "adaptive" };
 
@@ -32,6 +35,15 @@ export function createScanClients({ extra = {} } = {}) {
     r53: () => make("r53", Route53Client, "us-east-1"),
     cf: () => make("cf", CloudFrontClient, "us-east-1"),
     acm: (region) => make("acm", ACMClient, region),
+    ecr: (region) => make("ecr", ECRClient, region),
+    backup: (region) => make("backup", BackupClient, region),
+    sts: (region) => make("sts", STSClient, region),
     ...extra,
   };
+}
+
+// The scanning account's id (STS GetCallerIdentity), once per client set.
+export function accountOf(clients, region) {
+  let memo = null;
+  return () => (memo ??= clients.sts(region).send(new GetCallerIdentityCommand({})).then((out) => out.Account || "").catch(() => ""));
 }

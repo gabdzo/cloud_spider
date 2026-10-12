@@ -13,6 +13,6 @@ requires: [kube-coredns-metrics]
 params: { maxRatio: 0.01 }
 whyItMatters: "SERVFAIL means the upstream resolver or a plugin failed: apps see random name lookup errors that look like their own bugs."
 remediation: { summary: "Look at the forward upstreams (VPC resolver limits: 1024 packets/s per ENI), add NodeLocal DNSCache, and check the CoreDNS logs for the failing names.", effort: M }
-verification: "kubectl get --raw /api/v1/namespaces/kube-system/services/kube-dns:metrics/proxy/metrics | grep 'rcode=\"SERVFAIL\"' stays under 1% of coredns_dns_responses_total. The counters run since the pods started (the design's 15-minute window needs two scans' worth of history). Reading them needs get on services/proxy kube-dns:metrics; without it this control is UNKNOWN."
+verification: "kubectl get --raw /api/v1/namespaces/kube-system/services/kube-dns:metrics/proxy/metrics | grep 'rcode=\"SERVFAIL\"' stays under 1% of coredns_dns_responses_total. The counters run since the pods started (the design's 15-minute window needs two scans' worth of history). Reading them needs get on services/proxy kube-dns:metrics: the scanner ClusterRole grants exactly that one name (upgrades/eks/scanner-rbac.js, scorecard/rbac/cloudspider-scanner.yaml); without it this control is UNKNOWN."
 references:
   - { source: "docs/design/network-debugging.md §8 (K-DNS-03)", url: "https://coredns.io/plugins/metrics/" }
