@@ -79,6 +79,15 @@ export function layerNodes(nodes, edges) {
   }
   const used = [...new Set(nodes.map((n) => depth.get(n.id)))].sort((a, b) => a - b);
   const cols = used.map((d) => nodes.filter((n) => depth.get(n.id) === d).sort((a, b) => a.label.localeCompare(b.label)));
+  // Nothing orders them (no traffic, links allowed every way): wrap the one
+  // tall column into columns of 3 so the row stays wide, not a long stack.
+  if (cols.length === 1 && cols[0].length > 3) {
+    const per = Math.max(3, Math.ceil(cols[0].length / 4));
+    const wrapped = [];
+    for (let i = 0; i < cols[0].length; i += per) wrapped.push(cols[0].slice(i, i + per));
+    wrapped.unordered = true;
+    return wrapped;
+  }
   return cols;
 }
 

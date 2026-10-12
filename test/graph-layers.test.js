@@ -88,3 +88,10 @@ test("Group by label sums plain pod counts, never pod objects", async () => {
   const out = regroup(scene, "team");
   assert.equal(typeof out.groups[0].pods, "number");
 });
+
+test("an unordered mesh wraps into several columns instead of one stack", async () => {
+  const { layerNodes } = await import("../src/graph-layers.js");
+  const nodes = ["a", "b", "c", "d", "e"].map((id) => ({ id, kind: "service", label: id }));
+  const edges = nodes.flatMap((x) => nodes.filter((y) => y !== x).map((y) => ({ from: x.id, to: y.id, kind: "tcp", source: "static" })));
+  assert.ok(layerNodes(nodes, edges).length >= 2);
+});

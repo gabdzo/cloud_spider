@@ -232,7 +232,7 @@ export function createGraphView(root) {
       const cols = layerNodes(group.nodes, scene.edges);
       const row = h("div", { className: "gv-layered" });
       cols.forEach((col, i) => {
-        const colEl = h("div", { className: "gv-col" }, h("small", { className: "gv-colhead", text: i === 0 && col.every((n) => n.kind === "ingress") ? "ENTRY" : i === cols.length - 1 && col.every((n) => n.kind === "db" || n.kind === "cr") ? "DATA / RESOURCES" : `STEP ${i + (cols[0].every((n) => n.kind === "ingress") ? 0 : 1)}` }));
+        const colEl = h("div", { className: "gv-col" }, h("small", { className: "gv-colhead", text: cols.unordered ? (i === 0 ? "NO ORDER SEEN (no traffic yet)" : "") : i === 0 && col.every((n) => n.kind === "ingress") ? "ENTRY" : i === cols.length - 1 && col.every((n) => n.kind === "db" || n.kind === "cr") ? "DATA / RESOURCES" : `STEP ${i + (cols[0].every((n) => n.kind === "ingress") ? 0 : 1)}` }));
         for (const node of col) colEl.append(nodeCard(node));
         row.append(colEl);
       });
