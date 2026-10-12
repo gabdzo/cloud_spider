@@ -16,15 +16,17 @@ const { PRO_GLYPHS, glyphKey } = await import("../src/map-pro-icons.js");
 
 // Changed on purpose (UX pass 2, docs/ux-review-2026-10-12.md): the map
 // legend is one flat KEY strip instead of a box per item.
+// Changed on purpose (UX overlaps B): the PUBLIC tab moved to the card's
+// left edge so the vault number badge no longer covers it.
 const PIP_GOLDEN = {
-  w1440: ["cfb8d10d46772680", { width: 1440 }],
-  w760: ["e20e32948635cc0a", { width: 760, animTime: 1234 }],
+  w1440: ["2b824d8108d69c0b", { width: 1440 }],
+  w760: ["c5b61f889c573937", { width: 760, animTime: 1234 }],
   // Changed on purpose (#pro-map-2): side-by-side VPCs leave a chip row
   // above the first row so peering chips clear the ARCH / BY TAG switch.
-  w1920flow: ["51958092b1666b5d", { width: 1920, flow: true, animTime: 5000 }],
-  tag: ["050f2c5ce9d5efd2", { width: 1440, view: "tag" }],
-  selBuilding: ["11472f447c1379be", { width: 1440, select: "building" }],
-  selFixture: ["7c572b0518118a31", { width: 1440, select: "fixture" }],
+  w1920flow: ["0f66f7d26f4bb58f", { width: 1920, flow: true, animTime: 5000 }],
+  tag: ["80a3239930bbbeb4", { width: 1440, view: "tag" }],
+  selBuilding: ["73ec311d3241f9a9", { width: 1440, select: "building" }],
+  selFixture: ["7014b61dd4cc0387", { width: 1440, select: "fixture" }],
 };
 
 function render(opts, theme) {
