@@ -5,7 +5,7 @@ import { ALL_POLICIES, DEFAULT_DENY_POLICY, EXCEPTIONS, GENERATE_RBAC } from "./
 // kyverno-policies.js, all in Audit mode. Reports land in PolicyReports (wgpolicyk8s.io), which Cloud
 // Spider's viewer may read. One replica per controller; cleanup off.
 export default function kyverno({ pulumi, aws, k8s, addon }) {
-  const { k, config } = setup({ pulumi, aws, k8s, addon });
+  const { k, config, netpol } = setup({ pulumi, aws, k8s, addon });
   // defaultDeny (card option, on by default): new namespaces get a
   // default-deny NetworkPolicy (kyverno-policies.js DEFAULT_DENY_POLICY).
   const defaultDeny = (config.get("defaultDeny") || "on") === "on";
@@ -21,7 +21,7 @@ export default function kyverno({ pulumi, aws, k8s, addon }) {
     // PolicyExceptions (kyverno-policies.js EXCEPTIONS) only in the kyverno
     // namespace, where only this stack writes.
     features: { policyExceptions: { enabled: true, namespace: addon.namespace } },
-  });
+  }, { netpol });
   for (const item of policies) {
     new k8s.apiextensions.CustomResource(`policy-${item.name}`, {
       apiVersion: "kyverno.io/v1",

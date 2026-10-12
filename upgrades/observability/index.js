@@ -1,5 +1,8 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
+import * as k8s from "@pulumi/kubernetes";
+import { eksProvider } from "../eks-kube.js";
+import { ship } from "../netpol.js";
 import { DescribeLoadBalancersCommand, DescribeTagsCommand, DescribeTargetGroupsCommand, ElasticLoadBalancingV2Client } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { inheritTags, stackTags } from "../tags.js";
 import { readAddon } from "../eks-addons.js";
@@ -40,6 +43,14 @@ if (containerInsights) {
     tags,
   });
   new aws.iam.RolePolicyAttachment("cloudwatch-agent", { role: role.name, policyArn: "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy" });
+  // The add-on's namespace first, with its NetworkPolicies (upgrades/netpol.js):
+  // under Kyverno's generate-default-deny a namespace the add-on made itself
+  // would start closed and the agent could not reach CloudWatch.
+  const provider = eksProvider({ pulumi, aws, k8s, clusterName, region });
+  const cwNs = new k8s.core.v1.Namespace("amazon-cloudwatch", { metadata: { name: "amazon-cloudwatch", labels: { "app.kubernetes.io/part-of": "cloudspider-observability" } } }, { provider });
+  const vpcCidr = aws.ec2.getVpcOutput({ id: aws.eks.getClusterOutput({ name: clusterName }).vpcConfig.vpcId }).cidrBlock;
+  const cwPolicies = ship({ k8s, pulumi, opts: { provider, dependsOn: [cwNs] }, namespace: "amazon-cloudwatch", vpcCidr });
+  groups.push(cwNs, ...cwPolicies);
   const existing = await readAddon(aws.eks.getAddon, clusterName, "amazon-cloudwatch-observability");
   if (existing.exists && existing.project && existing.project !== "observability") throw new Error(`amazon-cloudwatch-observability belongs to ${existing.project}; this stack leaves it alone`);
   new aws.eks.Addon("cloudwatch-observability", {
