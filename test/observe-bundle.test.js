@@ -210,3 +210,10 @@ test("OpenShift SCCs admit the hardened pods (RuntimeDefault seccomp) and the wo
   const index = await readFile(new URL("../upgrades/observe/index.js", import.meta.url), "utf8");
   assert.match(index, /dependsOn: \[ns, \.\.\.security\]/);
 });
+
+test("kube-state-metrics runs as a numeric non-root UID off OpenShift (image user is 'nobody')", () => {
+  const ksm = (platform) => renderBundle({ ...on, platform }).items.find((i) => i.obj.kind === "Deployment" && i.obj.metadata.name === "kube-state-metrics").obj.spec.template.spec.containers[0].securityContext;
+  assert.equal(ksm("kubernetes").runAsUser, 65534);
+  assert.equal(ksm("kubernetes").runAsNonRoot, true);
+  assert.equal(ksm("openshift").runAsUser, undefined);
+});
