@@ -38,6 +38,9 @@ export function createGraphView(root) {
   state.expanded = initialExpanded(scene);
   let view = null;
   let shown = false;
+  // live: the selected kube context's graph (/api/cluster/graph); otherwise
+  // the SAMPLE scenarios.
+  const live = { on: false, context: "", loading: false, error: "", at: 0 };
   const resize = typeof ResizeObserver === "function" ? new ResizeObserver(() => shown && drawEdges()) : null;
 
   const els = {};
@@ -50,6 +53,10 @@ export function createGraphView(root) {
     els.search = h("input", { className: "gv-search", type: "search", placeholder: "find: service, namespace, operator…", "aria-label": "find in the graph", oninput: (ev) => ((state.query = ev.target.value), render()) });
     els.layers = h("div", { className: "gv-seg gv-layers", role: "group", "aria-label": "data sources" });
     for (const layer of LAYERS) els.layers.append(h("button", { type: "button", className: `gv-btn gv-layer gv-l-${layer}`, dataset: { layer }, title: LAYER_HINT[layer], text: LAYER_LABEL[layer], onclick: () => toggleLayer(layer) }));
+    els.liveBox = h("div", { className: "gv-seg gv-live", hidden: true });
+    els.refresh = h("button", { type: "button", className: "gv-btn", text: "REFRESH", title: "read the cluster again (GETs only)", onclick: () => loadLive(true) });
+    els.liveNote = h("span", { className: "gv-livenote" });
+    els.liveBox.append(els.liveNote, els.refresh);
     els.fold = h("button", { type: "button", className: "gv-btn", text: "FOLD ALL", title: "close every group", onclick: () => ((state.expanded = new Set()), (state.focus = null), render()) });
     els.stats = h("p", { className: "gv-stats" });
     els.detail = h("p", { className: "gv-detail", "aria-live": "polite" });
@@ -62,8 +69,8 @@ export function createGraphView(root) {
     els.tl = h("section", { className: "gv-timeline", "aria-label": "incident review" });
     root.append(
       h("header", { className: "gv-head" },
-        h("div", { className: "gv-title" }, h("b", { text: "SERVICES" }), h("span", { className: "gv-proto", text: "SAMPLE · PROTOTYPE" })),
-        els.scen, els.search, els.layers, els.fold),
+        h("div", { className: "gv-title" }, h("b", { text: "SERVICES" }), (els.proto = h("span", { className: "gv-proto", text: "SAMPLE · PROTOTYPE" }))),
+        els.scen, els.liveBox, els.search, els.layers, els.fold),
       els.stats,
       els.detail,
       els.stage,
@@ -140,8 +147,56 @@ export function createGraphView(root) {
     return card;
   }
 
+  function emptyScene() {
+    return { id: "live", title: live.context || "cluster", note: "", bands: [{ id: "edge", label: "EDGE" }, { id: "apps", label: "APPS" }, { id: "platform", label: "PLATFORM" }], groups: [], nodes: [], edges: [], events: [], window: { start: "00:00", end: "00:30", incident: ["00:00", "00:00"] } };
+  }
+  async function loadLive(fresh = false) {
+    if (!live.on || live.loading) return;
+    live.loading = true;
+    live.error = "";
+    if (shown) render();
+    try {
+      const q = new URLSearchParams(live.context ? { context: live.context } : {});
+      if (fresh) q.set("t", String(Date.now()));
+      const body = await fetch(`/api/cluster/graph?${q}`).then((r) => r.json());
+      if (body.error) {
+        live.error = body.error;
+        scene = emptyScene();
+      } else {
+        const first = !scene || scene.id !== "live" || !scene.groups.length;
+        scene = body;
+        if (first) state.expanded = initialExpanded(scene);
+      }
+      live.at = Date.now();
+    } catch (error) {
+      live.error = error?.message || "the graph did not load";
+    }
+    live.loading = false;
+    if (shown) render();
+  }
+  function setLive(on, context = "") {
+    const changed = on !== live.on || (on && context !== live.context);
+    live.on = on;
+    live.context = context;
+    if (!changed) return;
+    Object.assign(state, { query: "", focus: null, selected: null, event: null });
+    if (on) {
+      scene = emptyScene();
+      state.expanded = new Set();
+      if (shown) loadLive();
+    } else {
+      scene = graphScenario(state.scenario);
+      state.expanded = initialExpanded(scene);
+    }
+    if (shown) render();
+  }
+
   function render() {
     if (!els.stage) build();
+    els.scen.hidden = live.on;
+    els.liveBox.hidden = !live.on;
+    els.proto.textContent = live.on ? "LIVE · READ-ONLY" : "SAMPLE · PROTOTYPE";
+    els.liveNote.textContent = live.on ? (live.loading ? "reading…" : live.at ? `read ${new Date(live.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "") : "";
     view = visibleGraph(scene, state);
     for (const button of els.scen.children) button.setAttribute("aria-pressed", String(button.dataset.scenario === state.scenario));
     for (const button of els.layers.children) button.setAttribute("aria-pressed", String(state.layers.has(button.dataset.layer)));
@@ -172,6 +227,10 @@ export function createGraphView(root) {
     } else if (state.focus) {
       const group = scene.groups.find((g) => g.id === state.focus);
       els.detail.textContent = `FOCUS ${group?.label}: ${view.total} links to ${view.bands.flatMap((b) => b.groups).filter((g) => g.neighbor).length} groups · click a service for its calls · Esc leaves focus`;
+    } else if (live.on && live.error) {
+      els.detail.textContent = `The graph could not be read: ${live.error}`;
+    } else if (live.on && !scene.groups.length) {
+      els.detail.textContent = live.loading ? "Reading Services, workloads, Ingress/Routes, NetworkPolicies and owners (GETs only)…" : "Nothing in this context's namespaces yet.";
     } else {
       els.detail.textContent = "Click a group to focus it, + to open it, or an event below to jump to where it happened.";
     }
@@ -257,6 +316,7 @@ export function createGraphView(root) {
       shown = true;
       root.hidden = false;
       render();
+      if (live.on && !live.at) loadLive();
     },
     hide() {
       shown = false;
@@ -264,6 +324,8 @@ export function createGraphView(root) {
     },
     // for tests and screenshots
     state,
+    setLive,
+    loadLive,
     pick,
     render,
   };
