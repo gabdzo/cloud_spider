@@ -92,7 +92,13 @@ export const kubeEvaluatorsMore = {
   "policy-reports-clean"({ data, status }) {
     if (status["kube-policyReports"] === "absent") return { notApplicable: "no policy reports API (no Kyverno: see K8S-PLT-001)" };
     const reports = [...data["kube-policyReports"].items, ...(data["kube-clusterPolicyReports"]?.items || [])].filter((r) => !r.namespace || !SYSTEM_NAMESPACES.has(r.namespace));
-    const fails = reports.flatMap((r) => r.fails.map((f) => ({ ...f, namespace: r.namespace })));
+    // Only live workloads count: a ReplicaSet without pods (an old Deployment
+    // revision kept for rollback, or one scaled to 0) is ignored; the
+    // Deployment's own report carries what the live template does
+    // (cloudspider-up 2026-10-12: old api/web/loadgen ReplicaSets kept
+    // K8S-SEC-009 failing after their Deployments were fixed).
+    const live = liveReplicaSets(data["kube-pods"]?.items || []);
+    const fails = reports.flatMap((r) => r.fails.map((f) => ({ ...f, namespace: r.namespace }))).filter((f) => !String(f.resource).startsWith("ReplicaSet/") || live.has(`${f.namespace}/${String(f.resource).slice("ReplicaSet/".length)}`));
     const ids = [...new Set(fails.map((f) => f.policy))];
     // One item per failing policy, plus one passing item when reports exist and none fail.
     if (!fails.length) return { items: reports.length ? [{ id: "policy-reports", pass: true, detail: "" }] : [] };
@@ -121,3 +127,17 @@ export const kubeEvaluatorsMore = {
     return { items: data["kube-deployments"].items.filter(isApp).map((w) => ({ id: ref(w), pass: w.containers.every((c) => tagOf(c.image) !== "latest"), detail: w.containers.filter((c) => tagOf(c.image) === "latest").map((c) => c.image).join(", ") })) };
   },
 };
+
+// "<namespace>/<ReplicaSet name>" of every ReplicaSet that has a pod: a
+// Deployment's pod is named <ReplicaSet>-<suffix> and labelled
+// pod-template-hash=<the ReplicaSet's hash>.
+export function liveReplicaSets(pods = []) {
+  const live = new Set();
+  for (const pod of pods) {
+    const hash = pod.labels?.["pod-template-hash"];
+    if (!hash) continue;
+    const at = String(pod.name || "").lastIndexOf(`-${hash}-`);
+    if (at > 0) live.add(`${pod.namespace}/${pod.name.slice(0, at)}-${hash}`);
+  }
+  return live;
+}

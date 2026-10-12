@@ -62,3 +62,15 @@ test("zones FAIL names each node's zone and source, and says what to do for each
   // Two zones pass with the short line.
   assert.equal(run([{ name: "x", ready: true, zone: "a" }, { name: "y", ready: true, zone: "b" }]).items[0].detail, "Ready nodes in 2 zone(s): a, b");
 });
+
+test("policy reports: a ReplicaSet without pods (old revision, scaled to 0) is ignored; a live one and the Deployment count", () => {
+  const pods = { items: [{ namespace: "demo", name: "api-854b9cb6bb-xw8lw", labels: { app: "api", "pod-template-hash": "854b9cb6bb" } }] };
+  const reports = { items: [
+    { namespace: "demo", fails: [{ policy: "require-app-name-label", resource: "ReplicaSet/api-5d5d7b585b" }] },
+    { namespace: "keda-demo", fails: [{ policy: "require-readiness-probe", resource: "ReplicaSet/jobs-worker-964ffb6b4" }] },
+  ] };
+  const run = (r) => E["policy-reports-clean"]({ data: { "kube-policyReports": r, "kube-clusterPolicyReports": { items: [] }, "kube-pods": pods }, status: { "kube-policyReports": "ok" } });
+  assert.deepEqual(run(reports).items, [{ id: "policy-reports", pass: true, detail: "" }], "only old / scaled-to-0 ReplicaSets fail: clean");
+  const liveFail = { items: [...reports.items, { namespace: "demo", fails: [{ policy: "require-app-name-label", resource: "ReplicaSet/api-854b9cb6bb" }, { policy: "require-readiness-probe", resource: "Deployment/loadgen" }] }] };
+  assert.deepEqual(run(liveFail).items.map((i) => [i.id, i.pass, i.detail]), [["require-app-name-label", false, "demo/ReplicaSet/api-854b9cb6bb"], ["require-readiness-probe", false, "demo/Deployment/loadgen"]]);
+});
