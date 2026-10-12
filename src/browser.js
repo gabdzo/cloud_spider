@@ -65,6 +65,7 @@ import { sloBlock, sloFacts } from "./slo-view.js";
 import { renderSpend } from "./spend-view.js";
 import { createSettings, readHidden, visibleModules } from "./settings-view.js";
 import { KUBE_MAP_KEY, compoundHit, compoundHover, kubeModel, readKubeChoices } from "./map-kube.js";
+import { mountWhere } from "./where.js";
 
 const ui = createUi();
 // The morning report (SRE overview): three sentences from the server's
@@ -5423,3 +5424,5 @@ fetch("/api/config")
     if (!location.hash && view && view !== "map") history.replaceState(null, "", `${location.pathname}${location.search}#${view}`);
   })
   .finally(() => queueUrl());
+
+mountWhere();
