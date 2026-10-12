@@ -2063,6 +2063,7 @@ function showSample(next) {
   errorEl.textContent = "";
   clickGround(ui);
   setStatus(ui, "sample, not the account");
+  scoreApi?.refresh();
   renderChrome();
   draw();
 }
@@ -2086,6 +2087,7 @@ function leaveSample() {
   setTimeout(pullMapKube, 0);
   if (pipOpen) pullAddons(true);
   if (pipOpen && openCard) refreshUpgrade(true);
+  scoreApi?.refresh();
 }
 
 function pathStatus(body) {
@@ -3220,7 +3222,7 @@ function openScoreCard(card, cluster) {
   liveWant = { cluster, values: Object.fromEntries(Object.entries(card.params || {}).map(([k, v]) => [k, String(v)])) };
   openEksCard(cluster);
 }
-const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key"), context: () => clusterData?.context || clusterContext, openCard: openScoreCard, onChange: () => syncUrl() });
+const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key"), context: () => clusterData?.context || clusterContext, openCard: openScoreCard, onChange: () => syncUrl(), sample: () => sample });
 scoreApi = scoreView;
 // SCORE covers the map like LEARN: one big panel at a time. Opening it folds
 // LEARN, STACKS and ASK; opening any of those folds SCORE (before, SCORE
