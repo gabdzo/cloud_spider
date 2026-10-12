@@ -2,7 +2,7 @@ import { diagnose, headline, hostOf, matchHost, requestOf, routeOn } from "./pat
 
 export function pathResult(graph, { lb = "", host = "", region = "" } = {}) {
   const loadBalancers = graph.loadBalancers
-    .map(({ arn, name, dns }) => ({ arn, name, dns }))
+    .map(({ arn, name, dns, scheme, type }) => ({ arn, name, dns, public: scheme === "internet-facing", url: openUrl({ dns, type }, graph.tags?.[arn]) }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const notes = [...(graph.notes || [])];
   const empty = { region, loadBalancers, selected: "", host: "", hostNote: "", diagram: null, findings: [], notes, error: "" };
@@ -41,4 +41,18 @@ export function pathResult(graph, { lb = "", host = "", region = "" } = {}) {
     findings: result.findings,
     headline: headline(result),
   };
+}
+
+// The URL SNIFF prefills for a load balancer: http://<dns><path>, the path
+// from its tag cloudspider:open-path (Shop API: /items), else /. None for a
+// network or gateway load balancer.
+export function openUrl(lb, tags = []) {
+  if (!lb?.dns || ["network", "gateway"].includes(lb.type)) return "";
+  const tag = (key) => {
+    const found = (tags || []).find((item) => (item.key ?? item.Key) === key);
+    return found ? String(found.value ?? found.Value ?? "") : "";
+  };
+  const path = tag("cloudspider:open-path") || "/";
+  const scheme = tag("cloudspider:open-scheme") === "https" ? "https" : "http";
+  return `${scheme}://${lb.dns}${path.startsWith("/") ? path : `/${path}`}`;
 }

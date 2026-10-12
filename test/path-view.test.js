@@ -45,7 +45,9 @@ test("a redirect and a passed-over rule are both said", () => {
 test("an unknown load balancer id falls back to the first one", () => {
   const view = pathResult(samplePathGraph(), { region: "sample", lb: "arn:aws:elasticloadbalancing:other" });
   assert.equal(view.selected, "sample-lb-api");
-  assert.deepEqual(view.loadBalancers, [
+  assert.deepEqual(view.loadBalancers.map(({ arn, name, dns }) => ({ arn, name, dns })), [
     { arn: "sample-lb-api", name: "api-alb", dns: "api-alb-sample.eu-north-1.elb.amazonaws.com" },
   ]);
+  // SNIFF's DEBUG prefills this URL for a public balancer.
+  assert.match(view.loadBalancers[0].url, /^http:\/\/api-alb-sample\.eu-north-1\.elb\.amazonaws\.com\//);
 });

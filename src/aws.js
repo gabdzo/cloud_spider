@@ -16,6 +16,8 @@ import { RDSClient, DescribeDBInstancesCommand } from "@aws-sdk/client-rds";
 import {
   ElasticLoadBalancingV2Client,
   DescribeLoadBalancersCommand,
+  DescribeTargetGroupsCommand,
+  DescribeTargetHealthCommand,
   DescribeTagsCommand as DescribeElbTagsCommand,
 } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { LambdaClient } from "@aws-sdk/client-lambda";
@@ -350,17 +352,13 @@ export async function describeDiagram(region, clientFactory = diagramClients) {
     do {
       const out = await elb.send(new DescribeLoadBalancersCommand({ Marker: marker }));
       for (const lb of out.LoadBalancers || []) {
-        fixtures.push({
-          id: lb.LoadBalancerArn,
-          vpcId: lb.VpcId,
-          kind: "alb",
-          name: lb.LoadBalancerName,
-          status: lb.State?.Code === "active" ? "ok" : "broken",
-        });
+        fixtures.push(balancerFixture(lb));
       }
       marker = out.NextMarker;
     } while (marker);
     await tagLoadBalancers(elb, fixtures.filter((item) => item.kind === "alb"));
+    await targetsOfBalancers(elb, fixtures.filter((item) => item.kind === "alb"));
+    for (const item of fixtures.filter((f) => f.kind === "alb")) Object.assign(item, balancerFacts(item));
   } catch (error) {
     errors.push(`DescribeLoadBalancers: ${publicError(error).error}`);
   }
@@ -450,6 +448,68 @@ async function readNodegroups(eks, clusterName) {
     }
   }
   return groups;
+}
+
+// A load balancer on the map: its scheme (internet-facing = PUBLIC), DNS
+// name, zones and subnets, so the map can draw it across its AZs, wire it
+// from the IGW, and open it.
+export function balancerFixture(lb) {
+  const zones = (lb.AvailabilityZones || []).map((zone) => ({ zone: zone.ZoneName || "", subnetId: zone.SubnetId || "" }));
+  return {
+    id: lb.LoadBalancerArn,
+    vpcId: lb.VpcId,
+    kind: "alb",
+    lbType: lb.Type || "application",
+    name: lb.LoadBalancerName,
+    status: lb.State?.Code === "active" ? "ok" : lb.State?.Code === "provisioning" ? "unknown" : "broken",
+    state: lb.State?.Code || "",
+    scheme: lb.Scheme || "",
+    public: lb.Scheme === "internet-facing",
+    dns: lb.DNSName || "",
+    zones: zones.map((item) => item.zone).filter(Boolean),
+    lbSubnetIds: zones.map((item) => item.subnetId).filter(Boolean),
+  };
+}
+
+const tagValue = (tags, key) => (Array.isArray(tags) ? tags.find((tag) => tag.Key === key)?.Value : tags?.[key]) || "";
+
+// What the tags and targets say: the EKS cluster and Ingress the AWS Load
+// Balancer Controller made it for (elbv2.k8s.aws/cluster,
+// ingress.k8s.aws/stack), the path to open (tag cloudspider:open-path, else
+// /), the URL, and how its targets are.
+export function balancerFacts(item) {
+  const path = tagValue(item.tags, "cloudspider:open-path") || "/";
+  const scheme = tagValue(item.tags, "cloudspider:open-scheme") === "https" ? "https" : "http";
+  const targets = item.targets || [];
+  const healthy = targets.filter((t) => t.state === "healthy").length;
+  return {
+    cluster: tagValue(item.tags, "elbv2.k8s.aws/cluster") || "",
+    ingress: tagValue(item.tags, "ingress.k8s.aws/stack") || tagValue(item.tags, "service.k8s.aws/stack") || "",
+    url: item.dns && item.lbType !== "network" ? `${scheme}://${item.dns}${path.startsWith("/") ? path : `/${path}`}` : "",
+    targetCount: targets.length,
+    healthyCount: healthy,
+    targetZones: [...new Set(targets.filter((t) => t.state === "healthy").map((t) => t.zone).filter(Boolean))].sort(),
+    targetHealth: !targets.length ? "unused" : healthy === targets.length ? "healthy" : healthy ? "draining" : "unhealthy",
+  };
+}
+
+// Target groups and their targets' health per balancer (a few calls; on a
+// failure the balancer just has no targets listed).
+async function targetsOfBalancers(elb, albs) {
+  for (const item of albs) {
+    try {
+      const groups = await elb.send(new DescribeTargetGroupsCommand({ LoadBalancerArn: item.id }));
+      item.targets = [];
+      for (const group of groups.TargetGroups || []) {
+        const health = await elb.send(new DescribeTargetHealthCommand({ TargetGroupArn: group.TargetGroupArn }));
+        for (const t of health.TargetHealthDescriptions || []) {
+          item.targets.push({ id: t.Target?.Id || "", port: t.Target?.Port || 0, zone: t.Target?.AvailabilityZone || "", type: group.TargetType || "", state: t.TargetHealth?.State || "" });
+        }
+      }
+    } catch {
+      item.targets = item.targets || [];
+    }
+  }
 }
 
 // Vaults can claim load balancers by tag. Tags are a second call, 20 ARNs at

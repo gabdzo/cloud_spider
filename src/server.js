@@ -1576,6 +1576,18 @@ const page = `<!doctype html>
     .lx-top .ptitle { padding: 4px 8px; }
   }
   /* ---- end learn ---- */
+  /* Public endpoints: what the internet can reach, with OPEN and a lamp. */
+  #public-strip { position: absolute; z-index: 3; left: 50%; transform: translateX(-50%); bottom: 10px; display: flex; flex-direction: column; gap: 4px; max-width: min(92%, 980px); }
+  #public-strip .ps-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--pip-ink); border: 1px solid var(--status-hang); box-shadow: 0 0 10px color-mix(in srgb, var(--status-hang) 45%, transparent); font-size: 12px; letter-spacing: 0.06em; }
+  #public-strip .ps-tag { background: var(--status-hang); color: var(--pip-ink); padding: 1px 6px; font-weight: 700; letter-spacing: 0.12em; }
+  #public-strip .ps-name { color: var(--pip-bright); white-space: nowrap; }
+  #public-strip .ps-url { color: var(--pip-mid, var(--pip-bright)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+  #public-strip a.cmd { min-height: 22px; padding: 0 8px; font-size: 11px; text-decoration: none; }
+  .reach-lamp { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .reach-lamp::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--pip-dark); }
+  .reach-lamp[data-state="ok"]::before { background: var(--status-ok); box-shadow: 0 0 6px var(--status-ok); }
+  .reach-lamp[data-state="fail"]::before { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
+  .reach-lamp[data-state="fail"] { color: var(--status-broken); }
   #map-view { position: absolute; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 3px 6px; background: var(--pip-ink); border: 1px solid var(--pip-dark); box-shadow: 0 0 0 1px var(--pip-ink), 0 4px 10px var(--pip-ink); }
   #map-view button.cmd { min-height: 24px; padding: 0 8px; font-size: 11px; letter-spacing: 0.12em; }
   #map-view button.cmd[aria-pressed="true"] { background: var(--pip-bright); color: var(--pip-ink); border-color: var(--pip-bright); text-shadow: none; }
@@ -2196,6 +2208,7 @@ const page = `<!doctype html>
           <option value="fine">fine</option>
         </select>
         <div id="vpc-folds"></div>
+        <div id="public-strip" role="region" aria-label="public endpoints" hidden></div>
         <div id="map-view" role="group" aria-label="map view" hidden>
           <button id="view-arch" class="cmd" type="button" aria-pressed="true" title="VPCs, zones and subnets, like an AWS diagram">ARCH</button>
           <button id="view-tag" class="cmd" type="button" aria-pressed="false" title="one walled camp per tag value">BY TAG</button>
@@ -2676,6 +2689,12 @@ async function route(app, req, res) {
       app.kickLinks();
     }
     send(res, 200, app.view());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/reach") {
+    await app.boot();
+    send(res, 200, await app.reach(url.searchParams.get("url") || ""));
     return;
   }
 

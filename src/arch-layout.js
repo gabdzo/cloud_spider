@@ -86,7 +86,7 @@ export function cardFace(item, place) {
   else if (item.kind === "rds") caption = [item.engine || "RDS", item.size].filter(Boolean).join(" · ");
   else if (item.kind === "function") caption = ["LAMBDA", item.runtime, item.vpcId && (item.subnetIds || []).length > 1 ? `${item.subnetIds.length} subnets` : ""].filter(Boolean).join(" · ");
   else if (item.kind === "endpoint") caption = `${(item.endpointType || "").toUpperCase() || "VPC"} ENDPOINT`;
-  else if (item.kind === "alb") caption = "LOAD BALANCER";
+  else if (item.kind === "alb") caption = albCaption(item);
   else if (item.kind === "cdn") caption = "CLOUDFRONT";
   else if (item.kind === "eks") {
     const nodes = (place?.instances || []).filter((node) => tagOf(node, "eks:cluster-name") === item.name);
@@ -100,6 +100,27 @@ export function cardFace(item, place) {
     caption = bits.join(" · ");
   }
   return { ...item, caption };
+}
+
+// "PUBLIC ALB · 2 AZs · 2/2 healthy": internet-facing says so first.
+export function albCaption(item) {
+  const kind = item.lbType === "network" ? "NLB" : item.lbType === "gateway" ? "GWLB" : "ALB";
+  const bits = [item.public ? `PUBLIC ${kind}` : item.scheme === "internal" ? `INTERNAL ${kind}` : "LOAD BALANCER"];
+  if ((item.zones || []).length) bits.push(`${item.zones.length} AZ${item.zones.length === 1 ? "" : "s"}`);
+  if (item.targetCount) bits.push(`${item.healthyCount}/${item.targetCount} healthy`);
+  return bits.join(" · ");
+}
+
+// Which public load balancers front each EKS cluster (by the controller's
+// elbv2.k8s.aws/cluster tag): cluster name -> [{ id, name, url }].
+export function exposures(fixtures = []) {
+  const out = new Map();
+  for (const lb of fixtures) {
+    if (lb.kind !== "alb" || !lb.public || !lb.cluster) continue;
+    if (!out.has(lb.cluster)) out.set(lb.cluster, []);
+    out.get(lb.cluster).push({ id: lb.id, name: lb.ingress || lb.name, url: lb.url || "" });
+  }
+  return out;
 }
 
 export function buildingFace(item) {
@@ -231,7 +252,8 @@ export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fi
   const label = vpc.name ? `${vpc.name}  ${vpc.cidr || ""}`.trim() : `${vpc.id}  ${vpc.cidr || ""}`.trim();
   const subnets = (place.subnets || []).filter((item) => item.vpcId === vpc.id).sort(byId);
   const subnetIds = new Set(subnets.map((item) => item.id));
-  const mine = fixtures.filter((item) => item.vpcId === vpc.id).map((item) => cardFace(item, place));
+  const exposed = exposures(fixtures);
+  const mine = fixtures.filter((item) => item.vpcId === vpc.id).map((item) => cardFace(item, place)).map((item) => (item.kind === "eks" && exposed.has(item.name) ? { ...item, exposedBy: exposed.get(item.name) } : item));
   const edge = mine.filter((item) => !homeSubnet(item, subnetIds) && !(item.kind === "endpoint" && item.endpointType === "Gateway") && item.kind !== "endpoint");
   const services = mine.filter((item) => !homeSubnet(item, subnetIds) && item.kind === "endpoint");
   const inYard = (subnet) => mine.filter((item) => homeSubnet(item, subnetIds) === subnet.id).sort((a, b) => KIND_ORDER(a) - KIND_ORDER(b) || byId(a, b));
@@ -340,6 +362,21 @@ export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fi
   }
   for (const cluster of cards.filter((item) => item.kind === "eks")) {
     for (const node of shacks.filter((item) => tagOf(item, "eks:cluster-name") === cluster.name)) edges.push(edgeBetween(cluster, node, "control"));
+  }
+  // The internet's way in: IGW (the gate in the top wall) to each public
+  // load balancer, then the balancer to the EKS cluster its controller made
+  // it for (target health on the wire), or to its EC2 targets.
+  for (const lb of cards.filter((item) => item.kind === "alb")) {
+    if (lb.public && gate === "igw") {
+      const gateX = x + Math.floor((right - x + A.INSET) / 2);
+      edges.push({ from: `${vpc.id}:igw`, to: lb.id, state: "public", x1: gateX, y1: y + 30, x2: lb.x + Math.floor(lb.w / 2), y2: lb.y });
+    }
+    const cluster = lb.cluster ? cards.find((item) => item.kind === "eks" && item.name === lb.cluster) : null;
+    if (cluster) edges.push(edgeBetween(lb, cluster, lb.targetCount ? (lb.healthyCount ? "" : "unhealthy") : "unused"));
+    for (const target of lb.targets || []) {
+      const shack = target.type === "instance" ? byIdAll.get(target.id) : null;
+      if (shack && !edges.some((e) => e.from === lb.id && e.to === shack.id)) edges.push(edgeBetween(lb, shack, target.state || ""));
+    }
   }
   for (const fn of cards.filter((item) => (item.uses || []).length)) {
     for (const dep of fn.uses) if (byIdAll.has(dep)) edges.push(edgeBetween(byIdAll.get(dep), fn, ""));

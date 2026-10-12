@@ -336,7 +336,7 @@ function drawGateLabel(ctx, settlement) {
   ctx.fillText(label, gateX, settlement.y + 34);
 }
 
-const LINK_STATE = { unhealthy: "bad", unavailable: "bad", "unhealthy.draining": "bad", unused: "off", draining: "off", route: "route", control: "control" };
+const LINK_STATE = { public: "public", unhealthy: "bad", unavailable: "bad", "unhealthy.draining": "bad", unused: "off", draining: "off", route: "route", control: "control" };
 // Wire looks by kind: hue, dash, pulse speed (0 = still).
 const WIRE = {
   ok: { hue: PIP.bright, core: PIP.mid, dash: [8, 6], speed: 40, halo: 0.18 },
@@ -344,6 +344,8 @@ const WIRE = {
   off: { hue: PIP.dim, core: PIP.dark, dash: [3, 7], speed: 0, halo: 0.08 },
   route: { hue: WORLD.amber, core: WORLD.amber, dash: [10, 5, 2, 5], speed: 70, halo: 0.14 },
   control: { hue: PIP.dim, core: PIP.dim, dash: [2, 5], speed: 0, halo: 0.06 },
+  // The internet's way in (IGW → public load balancer): hot amber, fast.
+  public: { hue: WORLD.amber, core: PIP.hot, dash: [12, 4], speed: 25, halo: 0.3 },
 };
 
 // Balancer-to-target and camp lines: glowing phosphor traces with a pulse
@@ -574,7 +576,35 @@ function drawFixture(ctx, fixture, ui, phase) {
   drawSprite(ctx, icon(fixture.kind), x + 8, y + Math.round((h - 32) / 2), 2);
   if (broken) drawSprite(ctx, campfireFrame(phase), x + w - 26, y + 6, 1);
   if (idle) drawIdleFire(ctx, fixture, phase);
+  if (fixture.public || fixture.exposedBy?.length) drawPublicBadge(ctx, fixture, phase);
   if (ui.selection?.id === fixture.id) brackets(ctx, x - 6, y - 6, w + 12, h + 12, PIP.hot, 12, 3);
+}
+
+// Exposed to the internet: an amber glow and a PUBLIC tab on the card's top
+// edge (a public load balancer), or "PUBLIC VIA <ingress>" (the EKS cluster
+// behind it). Unmistakable on purpose: this is what anyone can reach.
+export function publicBadgeText(fixture) {
+  if (fixture.public) return "PUBLIC · INTERNET";
+  const via = (fixture.exposedBy || []).map((item) => item.name).filter(Boolean);
+  return via.length ? `PUBLIC VIA ${via.length === 1 ? via[0] : `${via.length} ALBs`}`.toUpperCase() : "";
+}
+
+function drawPublicBadge(ctx, fixture, phase) {
+  const text = publicBadgeText(fixture);
+  if (!text) return;
+  const { x, y, w } = fixture;
+  const pulse = 0.25 + 0.15 * Math.sin((phase || 0) * Math.PI * 2);
+  ctx.strokeStyle = rgba(WORLD.amber, pulse + 0.3);
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x - 2.5, y - 2.5, w + 5, fixture.h + 5);
+  ctx.font = SMALL;
+  const tw = Math.min(w - 12, Math.ceil(ctx.measureText(text).width) + 12);
+  const tx = x + w - tw - 6;
+  const ty = y - 9;
+  ctx.fillStyle = WORLD.amber;
+  ctx.fillRect(tx, ty, tw, 15);
+  ctx.fillStyle = PIP.ink;
+  ctx.fillText(clipTo(ctx, text, tw - 10, SMALL), tx + 5, ty + 11);
 }
 
 // A small fire on the card's top edge with a bottle cap beside it and a

@@ -1,7 +1,7 @@
 import { cidrContains } from "./cidr.js";
 import { isInstanceId } from "./ids.js";
 
-const DEPTH = { lb: 0, listener: 1, rule: 2, tg: 3, target: 4, node: 5, cluster: 6 };
+const DEPTH = { internet: -1, lb: 0, listener: 1, rule: 2, tg: 3, target: 4, node: 5, cluster: 6 };
 const CONTROLLER_STACK = ["service.k8s.aws/stack", "ingress.k8s.aws/resource", "ingress.k8s.aws/stack"];
 
 export function diagnose(graph, lbArn, { ruleArn = null } = {}) {
@@ -18,7 +18,14 @@ export function diagnose(graph, lbArn, { ruleArn = null } = {}) {
   };
   const link = (from, to, status = "ok", sentence = "") => edges.push({ from, to, status, sentence });
 
-  add(lbNode(graph, lb));
+  // Internet-facing: the path starts at the internet (anyone), through the
+  // IGW to the load balancer; a subnet without that route breaks the first wire.
+  if (lb.scheme === "internet-facing") {
+    add({ id: `internet:${lb.arn}`, kind: "internet", label: "INTERNET", caption: "anyone · 0.0.0.0/0 · via IGW", status: "ok", sentence: `${lb.name} is internet-facing: anyone can reach http://${lb.dns}/`, symptom: false });
+  }
+  const head = lbNode(graph, lb);
+  add(head);
+  if (lb.scheme === "internet-facing") link(`internet:${lb.arn}`, lb.arn, head.status === "broken" && lb.state === "active" ? "broken" : "ok");
   const focus = ruleArn
     ? graph.listeners.flatMap((listener) => rulesFor(graph, listener)).find((rule) => rule.arn === ruleArn) || null
     : null;
@@ -26,8 +33,8 @@ export function diagnose(graph, lbArn, { ruleArn = null } = {}) {
     .filter((listener) => listener.lbArn === lb.arn)
     .filter((listener) => !focus || listener.arn === focus.listenerArn)
     .sort((a, b) => a.port - b.port);
-  if (!listeners.length && (nodes[0].status === "ok" || nodes[0].symptom)) {
-    Object.assign(nodes[0], {
+  if (!listeners.length && (head.status === "ok" || head.symptom)) {
+    Object.assign(head, {
       status: "broken",
       symptom: false,
       sentence: `${lb.name} has no listener. Nothing answers on this load balancer.`,

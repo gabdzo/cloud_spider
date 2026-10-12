@@ -479,6 +479,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
       }
     },
     whyOpen: () => why,
+    target: () => field.value.trim(),
     isShown: () => !root.hidden,
     model: () => ndModel(run, { filter }),
   };
