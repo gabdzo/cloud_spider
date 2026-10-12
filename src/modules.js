@@ -95,7 +95,7 @@ const ROUTES = [
   ["/api/cost", "cost"],
   ["/api/upgrade", "stacks"], ["/api/stacks", "stacks"], ["/api/terraform", "stacks"],
   ["/api/vaults", "vaults"],
-  ["/api/cluster/graph", "graph"], ["/api/cluster/timeline", "timeline"],
+  ["/api/cluster/graph", "graph"], ["/api/observe", "observe"], ["/api/cluster/timeline", "timeline"],
   ["/api/cluster", "kubernetes"], ["/api/kube", "kubernetes"], ["/api/addons", "kubernetes"],
   ["/api/learn", "learn"], ["/api/agent", "ask"], ["/api/score", "score"],
 ];

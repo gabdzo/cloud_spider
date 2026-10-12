@@ -2,6 +2,7 @@ import { moduleOff } from "./modules.js";
 import { graphScenario } from "./graph-sample.js";
 import { buildGraph } from "./graph-build.js";
 import { readGraph } from "./graph-read.js";
+import { detect, planView, renderBundle } from "./observe/bundle.js";
 import { originAllowed } from "./origin.js";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
@@ -3037,6 +3038,25 @@ async function route(app, req, res) {
   // SERVICES: the static + ownership graph of a kube context (graph-read.js
   // reads, graph-build.js shapes). Read-only GETs, no Secrets, the
   // context's namespace allowlist. Cached 20 s per context.
+  // OBSERVE: the bundle PREVIEW (observe/bundle.js). Rendered from what the
+  // context's graph read found (OpenShift? kube-state-metrics?). Read-only:
+  // nothing is applied from here.
+  if (req.method === "GET" && url.pathname === "/api/observe/plan") {
+    const context = url.searchParams.get("context") || "";
+    const kube = app.kubeOf?.(context);
+    let found = { openshift: url.searchParams.get("openshift") === "1", hasKubeStateMetrics: false };
+    if (kube && url.searchParams.get("detect") !== "0") {
+      const reads = await readGraph(kube).catch(() => null);
+      if (reads && !reads.error) found = detect(reads);
+    }
+    try {
+      const bundle = renderBundle({ ...found, namespace: url.searchParams.get("namespace") || undefined, allowPrivileged: url.searchParams.get("allowPrivileged") === "1" });
+      send(res, 200, planView(bundle));
+    } catch (error) {
+      send(res, 400, { error: error.message });
+    }
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/api/cluster/graph") {
     if (url.searchParams.get("sample") === "1") {
       send(res, 200, graphScenario(url.searchParams.get("scenario") === "bundle" ? "bundle" : "bare"));
