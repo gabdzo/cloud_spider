@@ -27,7 +27,10 @@ const opts = Object.fromEntries(["platform", "allowPrivileged", "profile", "kube
 const bundle = renderBundle(opts);
 for (const w of bundle.warnings) pulumi.log.warn(w);
 
-const provider = new k8s.Provider("observe", { context, enableServerSideApply: true });
+// enableConfigMapMutable: a config change updates the ConfigMap in place
+// (the provider otherwise replaces it, and a fixed-name replace fails with
+// "already exists"); the config-checksum annotation then rolls the pods.
+const provider = new k8s.Provider("observe", { context, enableServerSideApply: true, enableConfigMapMutable: true });
 const KINDS = {
   "v1/Namespace": k8s.core.v1.Namespace,
   "v1/ServiceAccount": k8s.core.v1.ServiceAccount,
