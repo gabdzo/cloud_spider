@@ -184,3 +184,22 @@ test("a 429 is retried twice before the read fails; other statuses are not", asy
   assert.equal((await broken.kube.read("namespaces")).error, "the cluster said 500");
   assert.equal(broken.seen.length, 1);
 });
+
+test("tls-server-name: a tunnelled server (127.0.0.1) is checked against the cluster's own name", async () => {
+  const config = {
+    clusters: [{ name: "crc", cluster: { server: "https://127.0.0.1:16443", "tls-server-name": "api.crc.testing", "certificate-authority-data": Buffer.from("CA").toString("base64") } }],
+    users: [{ name: "dev", user: { token: "t0k" } }],
+    contexts: [{ name: "crc-developer", context: { cluster: "crc", user: "dev" } }],
+  };
+  assert.equal(pickContext(config, "crc-developer").tlsServerName, "api.crc.testing");
+  assert.equal(pickContext(CONFIG, "cloudspider-viewer").tlsServerName, "", "absent: Node checks the URL's host");
+  const seen = [];
+  const kube = createKube({
+    env: { KUBECONFIG: "/kc" },
+    context: "crc-developer",
+    read: async () => stringify(config),
+    get: async (url, opts) => { seen.push(opts); return { status: 200, body: JSON.stringify({ items: [] }) }; },
+  });
+  await kube.snapshot();
+  assert.ok(seen.length > 0 && seen.every((o) => o.servername === "api.crc.testing" && o.ca === "CA" && o.token === "t0k"));
+});

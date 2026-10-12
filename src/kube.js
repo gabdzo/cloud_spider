@@ -36,6 +36,11 @@ export function pickContext(config, name) {
     server: cluster.server.replace(/\/$/, ""),
     caData: cluster["certificate-authority-data"] || "",
     caFile: cluster["certificate-authority"] || "",
+    // kubectl's tls-server-name: the name the API server's certificate is
+    // checked against (and sent as SNI) when the server URL is a tunnel or an
+    // IP, e.g. https://127.0.0.1:16443 to CRC's api.crc.testing. OpenShift
+    // serves another certificate for another SNI, so this matters.
+    tlsServerName: cluster["tls-server-name"] || "",
     token: user.token || "",
     exec: user.exec?.command ? { command: user.exec.command, args: user.exec.args || [], env: user.exec.env || [] } : null,
     clusterName: clusterNameFrom(cluster.server, user.exec?.args || [], context.cluster),
@@ -199,9 +204,9 @@ function runExec(run, exec, env, timeout = EXEC_TIMEOUT_MS) {
   });
 }
 
-function httpsGet(url, { ca, token, timeout = TIMEOUT_MS }) {
+function httpsGet(url, { ca, token, servername = "", timeout = TIMEOUT_MS }) {
   return new Promise((resolve) => {
-    const req = request(url, { method: "GET", ca: ca || undefined, headers: { authorization: `Bearer ${token}`, accept: "application/json" }, timeout }, (res) => {
+    const req = request(url, { method: "GET", ca: ca || undefined, ...(servername ? { servername } : {}), headers: { authorization: `Bearer ${token}`, accept: "application/json" }, timeout }, (res) => {
       let body = "";
       res.setEncoding("utf8");
       res.on("data", (chunk) => {
@@ -270,14 +275,14 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     if (t.error) return { error: t.error, unset: true };
     const tok = await token(t);
     if (tok.error) return { error: tok.error };
-    let res = await get(`${t.server}${path}`, { ca: t.ca, token: tok.token });
+    let res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token });
     // 429: the API server's flow control said "later" (it does right after
     // an add-on install floods it). Try again twice before calling the read
     // failed, so one busy second does not turn a control UNKNOWN.
     for (const ms of RETRY_429_MS) {
       if (res.status !== 429) break;
       await wait(ms);
-      res = await get(`${t.server}${path}`, { ca: t.ca, token: tok.token });
+      res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token });
     }
     if (res.error) return { error: res.error };
     if (res.status === 401) {
