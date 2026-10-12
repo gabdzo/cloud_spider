@@ -245,7 +245,9 @@ test("Beyla's memory limit leaves room for a busy node (320Mi was OOMKilled on E
 test("the collector drops Beyla series Cloud Spider never reads, keeps the live-edge ones", () => {
   const cfg = collectorConfig({ namespace: "cloudspider-observe", profile: "crc", logs: "on", kubeStateMetrics: "install" });
   assert.ok(cfg.service.pipelines.metrics.processors.includes("filter/unused"));
-  const rules = cfg.processors["filter/unused"].metrics.metric.map((r) => new RegExp(r.match(/"(\^.*\$)"/)[1].replace(/\\\\/g, "\\")));
+  const rules = cfg.processors["filter/unused"].metrics.metric.map((r) => new RegExp(r.match(/"(\^.*\$)"/)[1]));
+  // OTTL strings follow Go's quoting: a lone backslash escape like "\." fails to parse (seen live)
+  for (const r of cfg.processors["filter/unused"].metrics.metric) assert.ok(!r.includes("\\"), r);
   const dropped = (n) => rules.some((re) => re.test(n));
   for (const n of ["http.client.request.body.size", "http.server.response.body.size", "http.client.request.duration", "rpc.client.duration"]) assert.ok(dropped(n), n);
   for (const n of ["http.server.request.duration", "rpc.server.duration", "traces_service_graph_request_total"]) assert.ok(!dropped(n), n);

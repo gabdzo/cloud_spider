@@ -124,7 +124,7 @@ export function collectorConfig(o) {
       // body-size histograms and the client-side durations were ~80% of a
       // 23 MB metrics page on cloudspider-up. Live edges come from the
       // service graph and the server-side durations, which stay.
-      "filter/unused": { error_mode: "ignore", metrics: { metric: [String.raw`IsMatch(name, "^http\.(client|server)\.(request|response)\.body\.size$")`, String.raw`IsMatch(name, "^(http\.client\.request\.duration|rpc\.client\.duration)$")`] } },
+      "filter/unused": { error_mode: "ignore", metrics: { metric: ['IsMatch(name, "^http[.](client|server)[.](request|response)[.]body[.]size$")', 'IsMatch(name, "^(http[.]client[.]request[.]duration|rpc[.]client[.]duration)$")'] } },
     },
     exporters: {
       prometheus: { endpoint: `0.0.0.0:${PORTS.prom}`, metric_expiration: "15m", resource_to_telemetry_conversion: { enabled: true } },
