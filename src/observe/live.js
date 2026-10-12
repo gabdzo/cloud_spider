@@ -80,8 +80,15 @@ export function countersOf(samples) {
       const key = `${idOf(nsOf(l, "client", alias), l.client)}>${idOf(nsOf(l, "server", alias), l.server)}`;
       const e = edge(key);
       if (/grpc/i.test(l.connection_type || l.rpc_system || "")) e.kind = "grpc";
-      if (name === "traces_service_graph_request_total") e.total += value;
-      else if (name === "traces_service_graph_request_failed_total") e.failed += value;
+      // Beyla reports a call from both ends: the same edge's counter comes
+      // once per reporting service (service_name="api" and ="db"), and on
+      // cloudspider-up failed_total came from both while request_total came
+      // from one, doubling the error % (5.3% read as 10-17%). Sum within a
+      // reporter (its pods), take the larger reporter's count per edge.
+      const by = (e.by ??= {});
+      const r = (by[l.service_name || l.job || ""] ??= { total: 0, failed: 0 });
+      if (name === "traces_service_graph_request_total") { r.total += value; e.total = Math.max(...Object.values(by).map((x) => x.total)); }
+      else if (name === "traces_service_graph_request_failed_total") { r.failed += value; e.failed = Math.max(...Object.values(by).map((x) => x.failed)); }
       else if (name === "traces_service_graph_request_server_seconds_bucket") e.buckets[l.le] = (e.buckets[l.le] || 0) + value;
       continue;
     }
@@ -198,7 +205,10 @@ export async function readLive(kube, { now = Date.now(), sinceMs = 3 * 3600_000,
   // only every export interval, so a delta over a few seconds (the graph and
   // the observe card polling back to back) read 0/s on busy edges.
   const ring = [].concat(cache.get(ctx) || []).filter((s) => now - s.at <= 300_000);
-  const prev = ring.filter((s) => now - s.at >= 30_000).pop() || ring.find((s) => now - s.at > 0) || null;
+  // The oldest kept scrape (up to 5 min, at least 30 s): a 5% error rate at
+  // ~2 calls/s is a handful of failures per 30 s, so short windows swung
+  // between 0% and 17%.
+  const prev = ring.find((s) => now - s.at >= 30_000) || ring.find((s) => now - s.at > 0) || null;
   const cur = { at: now, text: got.text };
   if (!ring.length || now - ring[ring.length - 1].at > 10_000) ring.push(cur);
   cache.set(ctx, ring);
