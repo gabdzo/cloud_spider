@@ -8,6 +8,8 @@ function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
+  // name/detail lines cut with an ellipsis (.ko-what) keep the full text as a tooltip
+  if (text !== undefined && (tag === "b" || tag === "small")) node.title = String(text);
   return node;
 }
 

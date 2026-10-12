@@ -22,6 +22,8 @@ export function overlapProbe(opts = {}) {
   const shown = (el) => {
     for (let e = el; e && e !== document.documentElement; e = e.parentElement) {
       if (e.hidden || e.getAttribute("aria-hidden") === "true") return false;
+      // content of a closed <details> keeps a box but is not painted
+      if (e.parentElement?.tagName === "DETAILS" && !e.parentElement.open && e.tagName !== "SUMMARY") return false;
       const s = getComputedStyle(e);
       if (s.display === "none" || s.visibility === "hidden" || Number(s.opacity) === 0) return false;
     }
