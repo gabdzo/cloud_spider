@@ -6,11 +6,19 @@ import { kubeStatus } from "./kube-workloads.js";
 
 const ns = (item) => item?.metadata?.namespace || "";
 const name = (item) => item?.metadata?.name || "";
+// The resource a failed result is about. Kyverno 1.10+ writes one report per
+// resource and names it in the report's `scope`, leaving results[].resources
+// empty (cloudspider-up 2026-10-11: every finding read "demo/" and the
+// old-ReplicaSet filter of K8S-SEC-009 never matched).
+const subject = (result, report) => {
+  const r = result?.resources?.[0] || report?.scope;
+  return r?.kind && r?.name ? `${r.kind}/${r.name}` : "";
+};
 const SHAPE = {
   networkPolicies: (i) => ({ namespace: ns(i), name: name(i), podSelector: i?.spec?.podSelector || {}, policyTypes: i?.spec?.policyTypes || [], ingress: (i?.spec?.ingress || []).length, egress: (i?.spec?.egress || []).length }),
   pdbs: (i) => ({ namespace: ns(i), name: name(i), selector: i?.spec?.selector?.matchLabels || {}, expressions: i?.spec?.selector?.matchExpressions || [] }),
   hpas: (i) => ({ namespace: ns(i), name: name(i), target: i?.spec?.scaleTargetRef?.name || "", kind: i?.spec?.scaleTargetRef?.kind || "" }),
-  policyReports: (i) => ({ namespace: ns(i), name: name(i), fails: (i?.results || []).filter((r) => r.result === "fail").map((r) => ({ policy: r.policy || "", rule: r.rule || "", severity: r.severity || "", resource: r.resources?.[0] ? `${r.resources[0].kind}/${r.resources[0].name}` : "" })) }),
+  policyReports: (i) => ({ namespace: ns(i), name: name(i), fails: (i?.results || []).filter((r) => r.result === "fail").map((r) => ({ policy: r.policy || "", rule: r.rule || "", severity: r.severity || "", resource: subject(r, i) })) }),
 };
 SHAPE.clusterPolicyReports = SHAPE.policyReports;
 const LISTS = Object.keys(SHAPE);

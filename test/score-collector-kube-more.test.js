@@ -24,6 +24,12 @@ test("policy reports keep only failing results, minimised", async () => {
   assert.deepEqual(items[0].fails, [{ policy: "disallow-privileged", rule: "p", severity: "high", resource: "Pod/web" }]);
 });
 
+test("policy reports: a scoped Kyverno report names its resource in scope (results carry none)", async () => {
+  const world = { networkPolicies: [], pdbs: [], hpas: [], clusterPolicyReports: [], policyReports: [{ metadata: { namespace: "demo", name: "uid-1" }, scope: { apiVersion: "apps/v1", kind: "ReplicaSet", name: "api-5d5d7b585b", namespace: "demo" }, results: [{ result: "fail", policy: "require-app-name-label", rule: "r", severity: "medium" }] }] };
+  const items = byKey(await kubePolicy.collect({ kube: fakeKube(world) })).get("kube-policyReports").fields.items;
+  assert.equal(items[0].fails[0].resource, "ReplicaSet/api-5d5d7b585b");
+});
+
 test("nodes: forbidden on a fresh cluster, zones read when allowed", async () => {
   assert.equal((await kubeNodes.collect({ kube: fakeKube(freshCluster()) }))[0].status, "denied");
   const n = (name, zone) => ({ metadata: { name, labels: { "topology.kubernetes.io/zone": zone } }, status: { conditions: [{ type: "Ready", status: "True" }], nodeInfo: { kubeletVersion: "v1.33" } } });
