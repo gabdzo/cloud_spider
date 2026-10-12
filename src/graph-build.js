@@ -13,6 +13,8 @@
 export const WIDE_NS = 8;
 const DB_PORTS = new Set([5432, 3306, 6379, 27017, 9042, 5672, 9092, 11211]);
 const HTTP_PORTS = new Set([80, 443, 8080, 8443, 3000, 5000, 8000, 9090]);
+// managedFields writers too common to point at one operator.
+const GENERIC_WRITERS = new Set(["manager", "operator", "controller", "kubectl", "kubectl-client-side-apply", "kubectl-create", "kubectl-edit", "kubectl-patch", "kubectl-rollout", "helm", "kube-controller-manager", "Go-http-client", "pulumi-kubernetes"]);
 const PLATFORM_NS = /^(kube-|openshift|olm$|operators$|cert-manager|monitoring|istio|linkerd|kyverno|karpenter|keda|calico|cilium|tigera|ingress-|gatekeeper|external-secrets|argocd|flux)/;
 const EDGE_NS = /(^|-)(ingress|router|gateway|edge)(-|$)/;
 const OPERATOR_NAME = /(operator|controller-manager)$|-controller$/;
@@ -219,6 +221,33 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
     }
   }
 
+  // Operators that manage operands without ownerReferences (Red Hat's
+  // cert-manager operator writes cert-manager/* from a cluster-scoped CR):
+  // the workload's managedFields name its writer. A writer that is one of a
+  // CSV's deployments or containers (and no other CSV's, and not a generic
+  // name) makes the workload that operator's operand.
+  const writerOf = new Map(); // manager name → CSV node ("" when shared)
+  for (const csv of csvs) {
+    const id = `${nsOf(csv)}/csv:${meta(csv).name}`;
+    for (const d of csv.spec?.install?.spec?.deployments || []) {
+      for (const name of [d.name, ...(d.spec?.template?.spec?.containers || []).map((c) => c.name)]) {
+        if (!name || GENERIC_WRITERS.has(name)) continue;
+        writerOf.set(name, writerOf.has(name) && writerOf.get(name) !== id ? "" : id);
+      }
+    }
+  }
+  const managedBy = new Map(); // workload node → CSV node
+  const csvNamespaces = new Set(csvs.map(nsOf));
+  for (const [kind, w] of workloads) {
+    if (csvNamespaces.has(nsOf(w))) continue;
+    const op = (meta(w).managedFields || []).map((f) => writerOf.get(f.manager)).find(Boolean);
+    const wid = workloadNode.get(`${nsOf(w)}/${kind}/${meta(w).name}`);
+    if (op && wid) {
+      managedBy.set(wid, op);
+      edge(op, wid, "owns", "owner");
+    }
+  }
+
   // OLM across namespaces: a namespace whose custom resources all belong to
   // one CSV, and at least half of whose other nodes those CRs own, is that
   // operator's operand: it folds into the operator's card.
@@ -240,10 +269,11 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
   for (const [ns, mine] of byNs) {
     if (csvNsSet.has(ns)) continue;
     const crs = mine.filter((n) => n.kind === "cr");
-    if (!crs.length) continue;
-    const ops = new Set(crs.map((n) => csvOwnerOf.get(n.id) || ""));
+    const managed = mine.filter((n) => managedBy.has(n.id));
+    if (!crs.length && !managed.length) continue;
+    const ops = new Set([...crs.map((n) => csvOwnerOf.get(n.id) || ""), ...managed.map((n) => managedBy.get(n.id))]);
     if (ops.size !== 1 || ops.has("")) continue;
-    const owned = new Set(crs.flatMap((c) => ownedBy.get(c.id) || []));
+    const owned = new Set([...crs.flatMap((c) => ownedBy.get(c.id) || []), ...managed.map((n) => n.id)]);
     const rest = mine.filter((n) => n.kind !== "cr");
     if (rest.length && owned.size * 2 < rest.length) continue;
     foldInto.set(ns, nodes.get([...ops][0]).group);

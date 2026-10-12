@@ -14,7 +14,7 @@ export const MODULES = [
   { id: "kubernetes", label: "Cluster", needs: [], doc: "the Cluster screen (read-only Kubernetes)" },
   { id: "graph", label: "Services", needs: ["kubernetes"], doc: "service + ownership graph" },
   { id: "timeline", label: "Incident review", needs: ["kubernetes"], doc: "local event recorder and timeline" },
-  { id: "observe", label: "Observe", needs: ["kubernetes"], doc: "opt-in observe bundle (upgrades/observe): Beyla + OTel collector + kube-state-metrics + Loki; live edges, RED, Events" },
+  { id: "observe", label: "Observe", needs: ["kubernetes", "stacks"], doc: "opt-in observe bundle (upgrades/observe): Beyla + OTel collector + kube-state-metrics + Loki; live edges, RED, Events" },
   { id: "score", label: "Score", needs: [], doc: "production-readiness scorecard (packs follow aws/kubernetes)" },
   { id: "learn", label: "Learn", needs: [], doc: "holotape labs" },
   { id: "ask", label: "Ask", needs: [], doc: "the local agent terminal" },
@@ -99,6 +99,13 @@ const ROUTES = [
   ["/api/cluster", "kubernetes"], ["/api/kube", "kubernetes"], ["/api/addons", "kubernetes"],
   ["/api/learn", "learn"], ["/api/agent", "ask"], ["/api/score", "score"],
 ];
+
+// With the aws module off, STACKS keeps only the cards that target a kube
+// context (the observe bundle); every other card builds AWS resources.
+export function kubeCard(card) {
+  const names = (card?.params || card?.parameters || []).map((p) => p.name);
+  return names.includes("context") && !names.includes("clusterName") && !names.includes("name");
+}
 
 export function routeModule(path) {
   if (/-sample$/.test(path) || path === "/api/sample") return "";

@@ -24,6 +24,7 @@ import { waitingLines } from "./run-waiting.js";
 import { bundleById, bundleConfirm, bundleSteps, stackBundlePlan } from "./stack-bundles.js";
 import { costFor, estimate } from "./stack-costs.js";
 import { UPGRADES } from "./upgrade.js";
+import { kubeCard } from "./modules.js";
 import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./addon-bundle.js";
 import { daemonSetCheck, daemonSetRoom, podRoom } from "../upgrades/addons/pod-room.js";
 import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.js";
@@ -62,6 +63,8 @@ const NEEDS_MS = 40_000;
 const WAIT_MS = Number(process.env.CLOUDSPIDER_WAIT_MS) || 20_000;
 
 export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL }) {
+  // The modules view main.js hands over (settings.modules): aws off = k8s-only.
+  const awsOffHere = () => settings?.modules?.modules?.find((m) => m.id === "aws")?.on === false;
   const stdout = [];
   const sink = {
     push(line) {
@@ -864,7 +867,8 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       return result;
     },
     upgrades() {
-      return upgrade?.list?.() || [];
+      const cards = upgrade?.list?.() || [];
+      return awsOffHere() ? cards.filter(kubeCard) : cards;
     },
     // Terraform stacks: listed with their commands; state is read-only.
     terraformStacks() {
@@ -1172,6 +1176,9 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     async upgradeRun(requestOrigin, body = {}) {
       if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the upgrade did not happen", hint: "Open Cloud Spider at the address npm start printed (http://127.0.0.1:9241); another page cannot run stacks." };
       if (!upgrade?.run) return { error: "upgrades are not set up", hint: "" };
+      if (awsOffHere() && !kubeCard(UPGRADES.find((item) => item.id === body.module))) {
+        return { error: `${body.module || "this card"} builds AWS resources and the aws module is off (profile ${settings?.modules?.profile || "k8s-only"})`, hint: "Only the observe bundle runs without AWS; set modules.profile: full to use the AWS cards." };
+      }
       // Every no is kept with the card's stack (upgrade.refuse) so the card
       // keeps showing it; the answer carries {error, hint} either way.
       const no = (error) => upgrade.refuse
