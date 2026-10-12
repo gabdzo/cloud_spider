@@ -123,7 +123,7 @@ export function groupTalk(groupId, scene) {
     else if (s === "error") (live += 1), (errors += 1);
     else if (s === "config") config += 1;
   }
-  return { live, errors, config, text: live ? `${live} live${errors ? ` · ${errors} with errors` : ""}` : "idle" };
+  return { live, errors, config, text: live ? `${live} live${errors ? ` · ${errors} with errors` : ""}` : scene?.liveError ? "no access" : "idle" };
 }
 
 // The side panel: who calls this node and whom it calls, with status.

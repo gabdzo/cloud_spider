@@ -195,10 +195,13 @@ const memory = new Map();
 // What liveFromScrapes and restartsOf read; the rest of the page is skipped
 // while it streams (it runs past the 4 MB body cap on a busy cluster).
 export const LIVE_FAMILIES = ["traces_service_graph_request", "http_server_request_duration_seconds", "rpc_server_duration_seconds", "kube_pod_container_status_restarts_total"];
+// What SERVICES says instead of "idle" when the viewer may not read the
+// collector (a 403 on the service proxy): traffic may well be flowing.
+export const NO_COLLECTOR_ACCESS = "no access to the collector (needs services/proxy get on otel-collector:metrics in cloudspider-observe; the bundle's Role binds the cloudspider-viewers group or viewerUser)";
 export async function readLive(kube, { now = Date.now(), sinceMs = 3 * 3600_000, cache = memory } = {}) {
   const got = kube.readLines ? await kube.readLines("observeMetrics", LIVE_FAMILIES) : await kube.readText("observeMetrics");
   if (got.missing) return { installed: false, note: "the observe bundle is not installed on this cluster (STACKS → Observe)" };
-  if (got.forbidden) return { installed: true, error: "this context may not read services/proxy in cloudspider-observe" };
+  if (got.forbidden) return { installed: true, forbidden: true, error: NO_COLLECTOR_ACCESS };
   if (got.error) return { installed: true, error: got.error };
   const ctx = kube.context || "default";
   // Rates over a baseline at least 30 s old: the collector's counters move
