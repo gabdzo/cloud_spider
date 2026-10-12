@@ -27,7 +27,7 @@ import { UPGRADES } from "./upgrade.js";
 import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./addon-bundle.js";
 import { daemonSetCheck, daemonSetRoom, podRoom } from "../upgrades/addons/pod-room.js";
 import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.js";
-import { sampleKubeSnapshot } from "./kube-sample.js";
+import { sampleClusterSnapshot } from "./kube-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, nodeGroupChange, runHint, watchLine } from "./upgrade-rules.js";
@@ -415,7 +415,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   const k9sEvents = new Map(); // context -> { at, items, note }
   async function k9sRead(name, sample, wantEvents) {
     if (sample) {
-      const snap = sampleKubeSnapshot();
+      const snap = sampleClusterSnapshot();
       return { ctx: { name: "sample", label: "SAMPLE" }, scope: "*", snap, events: snap.events || [], at: now() };
     }
     const ctx = contextFor(name);

@@ -14,7 +14,7 @@ import { scoreRoute } from "./score/routes.js";
 import { netdebugRoute } from "./netdebug/routes.js";
 import { defaults, effectiveConfig } from "./config.js";
 import { sampleCost } from "./cost.js";
-import { sampleKubeSnapshot, sampleMapSnapshot, samplePodDetail, samplePodInspect } from "./kube-sample.js";
+import { sampleClusterSnapshot, sampleKubeSnapshot, sampleMapSnapshot, samplePodDetail, samplePodInspect } from "./kube-sample.js";
 import { diagramFromKube } from "./kube-diagram.js";
 import { inspectPod } from "./kube-inspect.js";
 import { sampleTelemetry } from "./kube-telemetry.js";
@@ -2937,14 +2937,14 @@ async function route(app, req, res) {
 }
 
 export function sampleKubeCluster() {
-  const snap = sampleKubeSnapshot();
+  const snap = sampleClusterSnapshot();
   return {
     sample: true,
     error: "",
     region: "sample",
     headline: "",
     diagram: diagramFromKube(snap, { cluster: { name: snap.clusterName, version: "1.32", status: "ACTIVE" } }),
-    note: `sample, not the account. Inside ${snap.clusterName}: the demo app and the system pods on one node`,
+    note: `sample, not the account. Inside ${snap.clusterName}: the demo app, Shop API and the system pods on two nodes (1a, 1b)`,
   };
 }
 

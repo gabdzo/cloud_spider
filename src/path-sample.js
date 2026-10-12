@@ -1,8 +1,8 @@
 const LB = "sample-lb-api";
-const VPC = "sample-vpc";
+const VPC = "sample-eks-vpc";
 const ALL_OUT = [{ protocol: "-1", from: -1, to: -1, cidrs: ["0.0.0.0/0"], groupIds: [] }];
 const NODE_TAGS = [
-  { key: "eks:cluster-name", value: "shop" },
+  { key: "eks:cluster-name", value: "cloudspider-up" },
   { key: "eks:nodegroup-name", value: "general" },
 ];
 
@@ -98,9 +98,9 @@ export function samplePathGraph() {
     ],
     health: {
       "sample-tg-api": [
-        { id: "10.0.11.20", port: 8080, zone: "eu-north-1a", state: "healthy", reason: "", description: "" },
+        { id: "10.43.11.20", port: 8080, zone: "eu-north-1a", state: "healthy", reason: "", description: "" },
         {
-          id: "10.0.12.31",
+          id: "10.43.12.31",
           port: 8080,
           zone: "eu-north-1b",
           state: "unhealthy",
@@ -112,19 +112,19 @@ export function samplePathGraph() {
     },
     tags: {
       "sample-tg-api": [
-        { key: "elbv2.k8s.aws/cluster", value: "shop" },
+        { key: "elbv2.k8s.aws/cluster", value: "cloudspider-up" },
         { key: "service.k8s.aws/stack", value: "shop/api" },
       ],
       "sample-tg-web": [
-        { key: "elbv2.k8s.aws/cluster", value: "shop" },
+        { key: "elbv2.k8s.aws/cluster", value: "cloudspider-up" },
         { key: "service.k8s.aws/stack", value: "shop/web" },
       ],
     },
     subnets: [
-      { id: "sample-public-a", vpcId: VPC, cidr: "10.0.1.0/24", zone: "eu-north-1a" },
-      { id: "sample-public-b", vpcId: VPC, cidr: "10.0.2.0/24", zone: "eu-north-1b" },
-      { id: "sample-private-a", vpcId: VPC, cidr: "10.0.11.0/24", zone: "eu-north-1a" },
-      { id: "sample-private-b", vpcId: VPC, cidr: "10.0.12.0/24", zone: "eu-north-1b" },
+      { id: "sample-public-a", vpcId: VPC, cidr: "10.43.1.0/24", zone: "eu-north-1a" },
+      { id: "sample-public-b", vpcId: VPC, cidr: "10.43.2.0/24", zone: "eu-north-1b" },
+      { id: "sample-private-a", vpcId: VPC, cidr: "10.43.11.0/24", zone: "eu-north-1a" },
+      { id: "sample-private-b", vpcId: VPC, cidr: "10.43.12.0/24", zone: "eu-north-1b" },
     ],
     securityGroups: [
       {
@@ -148,7 +148,7 @@ export function samplePathGraph() {
         id: "sample-sg-node-b",
         name: "nodes-b",
         vpcId: VPC,
-        ingress: [{ protocol: "tcp", from: 22, to: 22, cidrs: ["10.0.0.0/16"], groupIds: [] }],
+        ingress: [{ protocol: "tcp", from: 22, to: 22, cidrs: ["10.43.0.0/16"], groupIds: [] }],
         egress: ALL_OUT,
       },
     ],
@@ -159,7 +159,7 @@ export function samplePathGraph() {
         main: false,
         subnetIds: ["sample-public-a", "sample-public-b"],
         routes: [
-          { dest: "10.0.0.0/16", target: "local", state: "active" },
+          { dest: "10.43.0.0/16", target: "local", state: "active" },
           { dest: "0.0.0.0/0", target: "igw-sample", state: "active" },
         ],
       },
@@ -168,13 +168,13 @@ export function samplePathGraph() {
         vpcId: VPC,
         main: true,
         subnetIds: [],
-        routes: [{ dest: "10.0.0.0/16", target: "local", state: "active" }],
+        routes: [{ dest: "10.43.0.0/16", target: "local", state: "active" }],
       },
     ],
     interfaces: [
       {
         id: "sample-eni-a",
-        ip: "10.0.11.20",
+        ip: "10.43.11.20",
         subnetId: "sample-private-a",
         groupIds: ["sample-sg-node-a"],
         instanceId: "sample-node-a",
@@ -182,7 +182,7 @@ export function samplePathGraph() {
       },
       {
         id: "sample-eni-b",
-        ip: "10.0.12.31",
+        ip: "10.43.12.31",
         subnetId: "sample-private-b",
         groupIds: ["sample-sg-node-b"],
         instanceId: "sample-node-b",
@@ -195,9 +195,9 @@ export function samplePathGraph() {
         state: "running",
         vpcId: VPC,
         subnetId: "sample-private-a",
-        privateIp: "10.0.11.10",
+        privateIp: "10.43.11.10",
         groupIds: ["sample-sg-node-a"],
-        name: "shop-node-a",
+        name: "cloudspider-up-node-a",
         tags: NODE_TAGS,
       },
       {
@@ -205,15 +205,15 @@ export function samplePathGraph() {
         state: "running",
         vpcId: VPC,
         subnetId: "sample-private-b",
-        privateIp: "10.0.12.10",
+        privateIp: "10.43.12.10",
         groupIds: ["sample-sg-node-b"],
-        name: "shop-node-b",
+        name: "cloudspider-up-node-b",
         tags: NODE_TAGS,
       },
     ],
     clusters: [
       {
-        name: "shop",
+        name: "cloudspider-up",
         status: "ACTIVE",
         version: "1.33",
         vpcId: VPC,

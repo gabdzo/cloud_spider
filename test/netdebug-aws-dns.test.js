@@ -38,7 +38,7 @@ test("classify: CloudFront, the account's ALB (alias, dualstack), an ENI address
   assert.equal(cf.kind, "cloudfront");
   assert.equal(classify({ host: "cdn.example.com", distributions: [{ id: "E2", domain: "d2.cloudfront.net", aliases: ["cdn.example.com"] }] }).via, "alias");
   assert.equal(classify({ host: "x", cnames: ["d999.cloudfront.net"] }).kind, "cloudfront-other");
-  const eni = classify({ host: "internal", ips: ["10.0.12.31"], graph });
+  const eni = classify({ host: "internal", ips: ["10.43.12.31"], graph });
   assert.equal(eni.kind, "eni");
   assert.equal(eni.subnetId, "sample-private-b");
   assert.equal(classify({ host: "google.com", ips: ["142.250.74.110"], graph }).kind, "external");

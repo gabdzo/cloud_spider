@@ -216,7 +216,7 @@ test("API: origin, refusals, rate limit, report saved and pruned, MD without the
     assert.match((await nd.start(ORIGIN, { target: "ftp://x" })).error, /only http/);
     const strict = createNetdebug({ pageOrigin: ORIGIN });
     assert.match((await strict.start(ORIGIN, { target: "http://localhost:9241/" })).error, /loopback/);
-    assert.match((await strict.start(ORIGIN, { target: "http://10.0.0.5/" })).error, /private address/);
+    assert.match((await strict.start(ORIGIN, { target: "http://10.43.0.5/" })).error, /private address/);
     const one = await nd.start(ORIGIN, { target: `https://shop.test:${s.port}/items?token=hunter2` });
     assert.equal(one.running, true);
     await nd.settle(one.id);

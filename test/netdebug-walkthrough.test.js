@@ -52,7 +52,7 @@ test("web.sample.test without the cluster: step 3 is unknown and says how to loo
 test("api.sample.test: 1 → 2 (1 of 2) → 4 (Timeout) → 5 (SG, with the flow log REJECTs)", async () => {
   const w = albWalkthrough(await sample("api.sample.test"));
   assert.deepEqual(path(w), [1, 2, 4, 5]);
-  assert.match(w.steps[2].answer, /^Target\.Timeout: 10\.0\.12\.31:8080 does not answer HTTP \/healthz in time/);
+  assert.match(w.steps[2].answer, /^Target\.Timeout: 10\.43\.12\.31:8080 does not answer HTTP \/healthz in time/);
   assert.match(w.verdict.text, /sample-sg-node-b does not allow tcp 8080 from sample-sg-alb\. The load balancer cannot reach this target; flow logs: 3 REJECTs/);
   assert.deepEqual(w.verdict.because, ["A-VPC-01", "A-VPC-05", "A-ELB-02"]);
 });

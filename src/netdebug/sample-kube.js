@@ -1,8 +1,8 @@
-// Sample cluster "shop" for SAMPLE mode (the clusters of path-sample.js).
+// Sample cluster "cloudspider-up" for SAMPLE mode (the clusters of path-sample.js).
 //   shop/web  selector app=web, but its pods are labelled app=shop-web: no
 //             endpoints, so the k8s-shop-web target group is empty (503)
-//   shop/api  2 pods, 10.0.12.31 not ready
-//   CoreDNS   2 replicas, both on shop-node-a (the drill's fault e)
+//   shop/api  2 pods, 10.43.12.31 not ready
+//   CoreDNS   2 replicas, both on cloudspider-up-node-a (the drill's fault e)
 const meta = (name, labels = {}, ns = "shop") => ({ name, namespace: ns, labels });
 const pod = (name, labels, ip, node, isReady, ports, ns = "shop") => ({ metadata: meta(name, labels, ns), spec: { nodeName: node, containers: [{ name: "app", ports }] }, status: { podIP: ip, phase: "Running", conditions: [{ type: "Ready", status: isReady ? "True" : "False" }] } });
 const list = (items) => ({ json: { items } });
@@ -12,29 +12,29 @@ const SERVICES = {
   api: { metadata: meta("api", { app: "api" }), spec: { selector: { app: "api" }, ports: [{ name: "http", port: 80, targetPort: 8080, protocol: "TCP" }] } },
 };
 const PODS = [
-  pod("shop-web-6d4f9c7b8-2xkqp", { app: "shop-web", "pod-template-hash": "6d4f9c7b8" }, "10.0.11.41", "shop-node-a", true, [{ name: "http", containerPort: 3000 }]),
-  pod("shop-web-6d4f9c7b8-v7m4n", { app: "shop-web", "pod-template-hash": "6d4f9c7b8" }, "10.0.12.44", "shop-node-b", true, [{ name: "http", containerPort: 3000 }]),
-  pod("shop-api-5b7d8f6c4-h2j9k", { app: "api", "pod-template-hash": "5b7d8f6c4" }, "10.0.11.20", "shop-node-a", true, [{ name: "http", containerPort: 8080 }]),
-  pod("shop-api-5b7d8f6c4-q8w3e", { app: "api", "pod-template-hash": "5b7d8f6c4" }, "10.0.12.31", "shop-node-b", false, [{ name: "http", containerPort: 8080 }]),
+  pod("shop-web-6d4f9c7b8-2xkqp", { app: "shop-web", "pod-template-hash": "6d4f9c7b8" }, "10.43.11.41", "cloudspider-up-node-a", true, [{ name: "http", containerPort: 3000 }]),
+  pod("shop-web-6d4f9c7b8-v7m4n", { app: "shop-web", "pod-template-hash": "6d4f9c7b8" }, "10.43.12.44", "cloudspider-up-node-b", true, [{ name: "http", containerPort: 3000 }]),
+  pod("shop-api-5b7d8f6c4-h2j9k", { app: "api", "pod-template-hash": "5b7d8f6c4" }, "10.43.11.20", "cloudspider-up-node-a", true, [{ name: "http", containerPort: 8080 }]),
+  pod("shop-api-5b7d8f6c4-q8w3e", { app: "api", "pod-template-hash": "5b7d8f6c4" }, "10.43.12.31", "cloudspider-up-node-b", false, [{ name: "http", containerPort: 8080 }]),
 ];
 const SLICES = {
   web: [{ metadata: meta("web-abc12", { "kubernetes.io/service-name": "web" }), addressType: "IPv4", endpoints: [] }],
   api: [{ metadata: meta("api-def34", { "kubernetes.io/service-name": "api" }), addressType: "IPv4", endpoints: [
-    { addresses: ["10.0.11.20"], conditions: { ready: true, serving: true, terminating: false }, nodeName: "shop-node-a", zone: "eu-north-1a", targetRef: { kind: "Pod", name: "shop-api-5b7d8f6c4-h2j9k" } },
-    { addresses: ["10.0.12.31"], conditions: { ready: false, serving: false, terminating: false }, nodeName: "shop-node-b", zone: "eu-north-1b", targetRef: { kind: "Pod", name: "shop-api-5b7d8f6c4-q8w3e" } },
+    { addresses: ["10.43.11.20"], conditions: { ready: true, serving: true, terminating: false }, nodeName: "cloudspider-up-node-a", zone: "eu-north-1a", targetRef: { kind: "Pod", name: "shop-api-5b7d8f6c4-h2j9k" } },
+    { addresses: ["10.43.12.31"], conditions: { ready: false, serving: false, terminating: false }, nodeName: "cloudspider-up-node-b", zone: "eu-north-1b", targetRef: { kind: "Pod", name: "shop-api-5b7d8f6c4-q8w3e" } },
   ] }],
 };
 const POLICIES = [
   { metadata: meta("default-deny-ingress"), spec: { podSelector: {}, policyTypes: ["Ingress"] } },
-  { metadata: meta("allow-alb-api"), spec: { podSelector: { matchLabels: { app: "api" } }, policyTypes: ["Ingress"], ingress: [{ from: [{ ipBlock: { cidr: "10.0.0.0/16" } }], ports: [{ protocol: "TCP", port: 8080 }] }] } },
-  { metadata: meta("allow-alb-web"), spec: { podSelector: { matchLabels: { app: "shop-web" } }, policyTypes: ["Ingress"], ingress: [{ from: [{ ipBlock: { cidr: "10.0.0.0/16" } }], ports: [{ protocol: "TCP", port: "http" }] }] } },
+  { metadata: meta("allow-alb-api"), spec: { podSelector: { matchLabels: { app: "api" } }, policyTypes: ["Ingress"], ingress: [{ from: [{ ipBlock: { cidr: "10.43.0.0/16" } }], ports: [{ protocol: "TCP", port: 8080 }] }] } },
+  { metadata: meta("allow-alb-web"), spec: { podSelector: { matchLabels: { app: "shop-web" } }, policyTypes: ["Ingress"], ingress: [{ from: [{ ipBlock: { cidr: "10.43.0.0/16" } }], ports: [{ protocol: "TCP", port: "http" }] }] } },
 ];
 const ds = (name, ready, desired, containers = [{ name }]) => ({ metadata: meta(name, {}, "kube-system"), spec: { template: { spec: { containers } } }, status: { numberReady: ready, desiredNumberScheduled: desired } });
 const DAEMONSETS = [
   ds("aws-node", 2, 2, [{ name: "aws-node" }, { name: "aws-network-policy-agent", args: ["--enable-ipv6=false", "--enable-network-policy=true"] }]),
   ds("kube-proxy", 2, 2),
 ];
-const COREDNS_PODS = ["coredns-7d8c9f5b4-4kd2x", "coredns-7d8c9f5b4-9pq7z"].map((n, i) => pod(n, { "k8s-app": "kube-dns" }, `10.0.11.${60 + i}`, "shop-node-a", true, [{ name: "dns", containerPort: 53 }], "kube-system"));
+const COREDNS_PODS = ["coredns-7d8c9f5b4-4kd2x", "coredns-7d8c9f5b4-9pq7z"].map((n, i) => pod(n, { "k8s-app": "kube-dns" }, `10.43.11.${60 + i}`, "cloudspider-up-node-a", true, [{ name: "dns", containerPort: 53 }], "kube-system"));
 const COREFILE = `.:53 {
     errors
     health {
@@ -64,7 +64,7 @@ coredns_forward_healthcheck_broken_total 0
 `;
 
 export function sampleKube(cluster) {
-  if (cluster !== "shop") return null;
+  if (cluster !== "cloudspider-up") return null;
   const kube = {
     async read(name, ...args) {
       switch (name) {

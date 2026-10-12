@@ -61,7 +61,7 @@ function fakeAws(over = {}) {
       return { items: [group("tg1", "ip", 8080), group("tg2", "instance", 80)] };
     },
     async targetHealth(_region, arn) {
-      return { items: arn === "tg1" ? [health("10.0.1.5", 8080)] : [health("i-0abc1234", 80)] };
+      return { items: arn === "tg1" ? [health("10.43.1.5", 8080)] : [health("i-0abc1234", 80)] };
     },
     async tags() {
       return { tags: {} };
@@ -80,7 +80,7 @@ function fakeAws(over = {}) {
         items: [
           {
             id: "eni-1",
-            ip: "10.0.1.5",
+            ip: "10.43.1.5",
             prefix: "",
             subnetId: "subnet-a",
             groupIds: ["sg-node"],
@@ -97,7 +97,7 @@ function fakeAws(over = {}) {
           state: "running",
           vpcId: "vpc-1",
           subnetId: "subnet-a",
-          privateIp: "10.0.1.9",
+          privateIp: "10.43.1.9",
           groupIds: ["sg-node"],
           name: "",
           tags: [],
@@ -142,7 +142,7 @@ test("ip targets match the VPC interfaces and every node is read once", async ()
     "instancesById",
     ["i-0abc1234", "i-0node0001"],
   ]);
-  assert.deepEqual(result.graph.health.tg1.map((item) => item.id), ["10.0.1.5"]);
+  assert.deepEqual(result.graph.health.tg1.map((item) => item.id), ["10.43.1.5"]);
   assert.deepEqual(calls.filter((call) => call[0] === "subnets"), [["subnets", "vpc-1"]]);
 });
 
