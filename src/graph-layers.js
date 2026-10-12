@@ -123,7 +123,7 @@ export function groupTalk(groupId, scene) {
     else if (s === "error") (live += 1), (errors += 1);
     else if (s === "config") config += 1;
   }
-  return { live, errors, config, text: live ? `talking: ${live} live link${live === 1 ? "" : "s"}${errors ? ` · ${errors} with errors` : ""}` : config ? `not seen talking (${config} config link${config === 1 ? "" : "s"})` : "no links" };
+  return { live, errors, config, text: live ? `talking: ${live} live link${live === 1 ? "" : "s"}${errors ? ` · ${errors} with errors` : ""}` : "no traffic seen" };
 }
 
 // The side panel: who calls this node and whom it calls, with status.
@@ -143,4 +143,42 @@ export function rateText(r) {
   if (r.status === "config") return "not seen talking";
   if (r.status === "owner") return "owns";
   return `${r.rps}/s${r.errors ? ` · ${r.errors}% err` : ""}`;
+}
+
+// graph v3: only observed traffic draws by default. A link that is only
+// declared (NetworkPolicy, Service wiring, ownerReferences) is "possible".
+export const isObserved = (e) => edgeStatus(e) === "live" || edgeStatus(e) === "error";
+
+// Which edges to draw: observed always; possible ones only with the toggle
+// on, and then only between groups or at the selected card (never the N²
+// mesh a namespace-wide allow makes).
+export function drawnEdges(edges, { possible = false, selected = null } = {}) {
+  return edges.filter((e) => {
+    if (isObserved(e)) return true;
+    if (!possible) return false;
+    const inner = !String(e.from).startsWith("g:") && !String(e.to).startsWith("g:");
+    if (!inner) return true;
+    return !!selected && (e.from === selected || e.to === selected);
+  });
+}
+
+// The possible links inside one group, bundled: a namespace-wide allow is
+// one sentence, not N² lines.
+export function possibleSummary(nodes, edges) {
+  const ids = new Set(nodes.map((n) => n.id));
+  const pairs = new Set();
+  for (const e of edges) {
+    if (isObserved(e) || !ids.has(e.from) || !ids.has(e.to) || e.from === e.to) continue;
+    pairs.add([e.from, e.to].sort().join("|"));
+  }
+  const n = ids.size;
+  const max = (n * (n - 1)) / 2;
+  if (!pairs.size) return { count: 0, mesh: false, text: "" };
+  const mesh = n >= 3 && pairs.size >= max * 0.6;
+  return { count: pairs.size, mesh, text: mesh ? `all ${n} may talk to each other (config: a namespace-wide allow) · select a card to see its own links` : `${pairs.size} possible link${pairs.size === 1 ? "" : "s"} (config) · select a card to see them` };
+}
+
+// live / idle / errors for the small status dot on a card.
+export function dotOf(t) {
+  return t.errors >= 1 ? "err" : t.talking ? "live" : "idle";
 }

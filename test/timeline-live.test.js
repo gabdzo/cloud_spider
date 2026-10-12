@@ -79,7 +79,9 @@ test("fan-in: six edges into one card enter at six distinct points, never stacke
 
 test("the timeline is docked (sticky) and foldable in both themes; the API route is served", () => {
   const server = readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
-  assert.match(server, /#kube-graph \.gv-timeline \{ position: sticky; bottom: -16px;/);
+  // docked: outside the one scrolling region (.gv-scroll), so nothing scrolls under it
+  assert.match(server, /#kube-graph > \.gv-scroll \{ flex: 1 1 auto; min-height: 0; overflow: auto;/);
+  assert.match(server, /#kube-graph \.gv-timeline \{ position: relative; z-index: 5; flex: none;/);
   assert.match(server, /url\.pathname === "\/api\/cluster\/timeline"/);
   const view = readFileSync(new URL("../src/graph-view.js", import.meta.url), "utf8");
   assert.match(view, /aPort: portOf\.get/);

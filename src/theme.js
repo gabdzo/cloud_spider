@@ -323,6 +323,9 @@ export function cssVars() {
   }
   // Dim TEXT (labels, meta lines) reads at ≥ 4.5:1; --pip-dim stays for
   // rules, borders and the canvas, where the dark ramp is the character.
+  // the cluster screens' top: under the sub-tabs and CONTEXT (browser.js
+  // layoutKubeBar measures and overrides it on the screen's host)
+  lines.push("--kube-top: 50px;");
   lines.push("--pip-dim-text: color-mix(in srgb, var(--pip-mid) 55%, var(--pip-dim));");
   lines.push(`--glow-bright: ${rgba(PIP.bright, 0.55)};`);
   lines.push(`--glow-soft: ${rgba(PIP.bright, 0.18)};`);
