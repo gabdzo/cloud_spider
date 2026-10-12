@@ -4,7 +4,7 @@ A local Pip-Boy page for one AWS account: the map of what runs where, the reques
 
 ## Start
 
-You need Node 20 or newer (22+ recommended; the AWS SDK drops Node 20 in 2027) and an AWS CLI profile that can read the account. kubectl and the cloudspider-viewer context are only needed for the Cluster view (docs/RUN-ME.md §7), Pulumi only for the Stacks panel.
+You need Node 22 or newer (package.json engines; the AWS SDK drops Node 20 in 2027) and an AWS CLI profile that can read the account. kubectl and the cloudspider-viewer context are only needed for the Cluster view (docs/RUN-ME.md §7), Pulumi only for the Stacks panel.
 
     npm ci
     AWS_PROFILE=default AWS_REGION=eu-north-1 CLOUDSPIDER_LOG_GROUP=/cloudspider/test npm start

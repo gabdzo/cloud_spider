@@ -101,9 +101,14 @@ export function parseContextsYaml(text) {
 
 // CLOUDSPIDER_KUBE_CONTEXT only counts when nothing else lists contexts;
 // say so instead of ignoring it silently (drill 2026-10-11, finding 6).
-function ignoredSingle(env, winner) {
+// singleFrom: where the value came from (config.js sources["kube.context"]:
+// "env …", "file …", "flag …"); main.js copies a file value into the env, so
+// the env alone cannot tell. Nothing to say when that context is listed.
+function ignoredSingle(env, winner, { singleFrom = "", listed = [] } = {}) {
   const one = String(env.CLOUDSPIDER_KUBE_CONTEXT || "").trim();
-  return one ? [`CLOUDSPIDER_KUBE_CONTEXT=${one} is ignored: ${winner} lists the contexts (add it there)`] : [];
+  if (!one || listed.includes(one)) return [];
+  if (/^(file|flag)/.test(singleFrom)) return [`kube.context ${one} is not used: ${winner} lists the contexts (remove kube.context, or add ${one} to the list)`];
+  return [`CLOUDSPIDER_KUBE_CONTEXT=${one} is ignored: ${winner} lists the contexts (add it there)`];
 }
 
 // configured: kube.contexts from cloudspider.yaml (config.js, already
@@ -117,10 +122,10 @@ export async function loadContexts(options = {}) {
   return { ...got, contexts: got.contexts.map((ctx) => ({ ...ctx, origin: ctx.origin || origin })) };
 }
 
-async function readContexts({ env = process.env, read, cwd = process.cwd(), configured = [] } = {}) {
+async function readContexts({ env = process.env, read, cwd = process.cwd(), configured = [], singleFrom = "" } = {}) {
   if (String(env.CLOUDSPIDER_KUBE_CONTEXTS || "").trim()) {
     const got = parseContextsEnv(env.CLOUDSPIDER_KUBE_CONTEXTS);
-    if (got.contexts.length) return { ...got, errors: [...got.errors, ...ignoredSingle(env, "CLOUDSPIDER_KUBE_CONTEXTS")], source: "CLOUDSPIDER_KUBE_CONTEXTS" };
+    if (got.contexts.length) return { ...got, errors: [...got.errors, ...ignoredSingle(env, "CLOUDSPIDER_KUBE_CONTEXTS", { singleFrom, listed: got.contexts.map((c) => c.name) })], source: "CLOUDSPIDER_KUBE_CONTEXTS" };
   }
   const errors = [];
   const fromConfig = unique((configured || []).map((raw, index) => entry(raw, `cloudspider.yaml kube.contexts #${index + 1}`, errors)).filter(Boolean), errors).map((ctx) => ({ ...ctx, origin: "config" }));
@@ -135,9 +140,9 @@ async function readContexts({ env = process.env, read, cwd = process.cwd(), conf
     const extra = fromFile.contexts.filter((c) => !names.has(c.name)).map((ctx) => ({ ...ctx, origin: "file" }));
     const fileErrors = fromFile.contexts.length ? fromFile.errors : [];
     const source = extra.length ? `cloudspider.yaml + ${CONTEXTS_FILE}` : "cloudspider.yaml";
-    return { contexts: [...fromConfig, ...extra], errors: [...errors, ...fileErrors, ...ignoredSingle(env, source)], source };
+    return { contexts: [...fromConfig, ...extra], errors: [...errors, ...fileErrors, ...ignoredSingle(env, source, { singleFrom, listed: [...fromConfig, ...extra].map((c) => c.name) })], source };
   }
-  if (fromFile.contexts.length) return { ...fromFile, errors: [...fromFile.errors, ...ignoredSingle(env, CONTEXTS_FILE)], source: CONTEXTS_FILE };
+  if (fromFile.contexts.length) return { ...fromFile, errors: [...fromFile.errors, ...ignoredSingle(env, CONTEXTS_FILE, { singleFrom, listed: fromFile.contexts.map((c) => c.name) })], source: CONTEXTS_FILE };
   const single = entry({ context: env.CLOUDSPIDER_KUBE_CONTEXT || DEFAULT_CONTEXT }, "CLOUDSPIDER_KUBE_CONTEXT", []);
   return { contexts: single ? [single] : [], errors: [], source: "CLOUDSPIDER_KUBE_CONTEXT" };
 }
