@@ -4873,7 +4873,8 @@ function hideConnectStrip() {
 }
 
 function renderConnectStrip(body) {
-  if (mode !== "cluster" || sample || clusterScreen !== "topology") {
+  // EKS CONNECT needs the aws module (modules.js); k8s-only has no EKS list.
+  if (mode !== "cluster" || sample || clusterScreen !== "topology" || (modulesVisible && !modulesVisible.includes("aws")) || kubeEmpty.isShown()) {
     hideConnectStrip();
     return;
   }

@@ -16,6 +16,7 @@ test("how-to-connect: read-only view role, the named context, and no Secrets acc
 test("the Cluster view shows it when the context is unset, in both themes, and serves the file", () => {
   const browser = readFileSync(new URL("../src/browser.js", import.meta.url), "utf8");
   assert.match(browser, /Boolean\(clusterData\?\.unset\) && !clusterData\?\.diagram/);
+  assert.match(browser, /modulesVisible && !modulesVisible\.includes\("aws"\)\) \|\| kubeEmpty\.isShown\(\)/, "no EKS strip without aws");
   const server = readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
   assert.ok(server.includes('"kube-empty.js"'));
   assert.match(server, /<section id="kube-empty"/);

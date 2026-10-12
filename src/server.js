@@ -65,6 +65,7 @@ export const FILES = new Set([
   "graph-model.js",
   "graph-view.js",
   "log-errors-view.js",
+  "kube-empty.js",
   "slo.js",
   "slo-view.js",
   "map-kube.js",
