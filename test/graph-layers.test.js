@@ -95,3 +95,21 @@ test("an unordered mesh wraps into several columns instead of one stack", async 
   const edges = nodes.flatMap((x) => nodes.filter((y) => y !== x).map((y) => ({ from: x.id, to: y.id, kind: "tcp", source: "static" })));
   assert.ok(layerNodes(nodes, edges).length >= 2);
 });
+
+test("v3: only observed traffic draws by default; possible links bundle and show at the selected card", async () => {
+  const { drawnEdges, possibleSummary, dotOf } = await import("../src/graph-layers.js");
+  const ids = ["a", "b", "c", "d"];
+  const nodes = ids.map((id) => ({ id, kind: "service", label: id }));
+  const mesh = ids.flatMap((x) => ids.filter((y) => y !== x).map((y) => ({ from: x, to: y, kind: "tcp", source: "static", rps: 0, errors: 0 })));
+  const live = { from: "a", to: "b", kind: "http", source: "trace", rps: 3, errors: 0 };
+  const edges = [...mesh, live, { from: "g:x", to: "g:y", kind: "tcp", source: "static", rps: 0 }];
+  assert.deepEqual(drawnEdges(edges), [live]);
+  assert.equal(drawnEdges(edges, { possible: true }).length, 2, "the live one and the group-to-group one; no mesh");
+  assert.equal(drawnEdges(edges, { possible: true, selected: "c" }).filter((e) => e.from === "c" || e.to === "c").length, 6);
+  const sum = possibleSummary(nodes, edges);
+  assert.equal(sum.mesh, true);
+  assert.match(sum.text, /all 4 may talk to each other/);
+  assert.equal(possibleSummary(nodes, [live]).count, 0);
+  assert.equal(dotOf({ talking: true, errors: 2 }), "err");
+  assert.equal(dotOf({ talking: false, errors: 0 }), "idle");
+});

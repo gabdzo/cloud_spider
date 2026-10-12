@@ -1273,7 +1273,7 @@ const page = `<!doctype html>
   #kube-tabs button[aria-pressed="true"] { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); box-shadow: 0 0 10px var(--glow-soft); }
   /* Kube context switcher (kube-contexts.js): a row of lit push-buttons,
      one per context, each with its health lamp and scope. */
-  #kube-ctx { position: absolute; z-index: 4; right: 14px; top: 8px; display: flex; align-items: stretch; gap: 0; padding: 3px; background: var(--btn-skirt); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-rim-hi), 0 2px 6px var(--btn-shade); max-width: calc(100% - 330px); overflow-x: auto; }
+  #kube-ctx { position: absolute; z-index: 4; right: 14px; top: 8px; display: flex; align-items: stretch; gap: 0; padding: 3px; background: var(--btn-skirt); border: 1px solid var(--btn-rim); box-shadow: inset 0 1px 0 var(--btn-rim-hi), 0 2px 6px var(--btn-shade); max-width: calc(100% - 28px); overflow-x: auto; }
   #kube-ctx[hidden] { display: none; }
   /* The EKS connection panel: a chip in the context switcher (or alone in
      its place), and the panel it opens below it. */
@@ -1288,7 +1288,7 @@ const page = `<!doctype html>
   .kc-chip[data-tone="fail"] i, #kube-connect .kc-lamp.fail { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
   .kc-chip b { font-weight: normal; letter-spacing: 0.2em; }
   .kc-chip small { font-size: 9px; color: var(--pip-dim-text); }
-  #kube-connect { position: absolute; z-index: 5; right: 14px; top: 52px; width: min(460px, calc(100% - 28px)); display: flex; flex-direction: column; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-mid); box-shadow: 0 0 12px var(--btn-glow-far), 0 6px 18px var(--btn-shade); font-size: 12px; overflow: hidden; }
+  #kube-connect { position: absolute; z-index: 5; right: 14px; top: calc(var(--kube-top, 50px) + 2px); width: min(460px, calc(100% - 28px)); display: flex; flex-direction: column; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-mid); box-shadow: 0 0 12px var(--btn-glow-far), 0 6px 18px var(--btn-shade); font-size: 12px; overflow: hidden; }
   #kube-connect.narrow { left: 14px; width: auto; }
   #kube-connect[hidden] { display: none; }
   #kube-connect .kc-head { flex: 0 0 auto; display: flex; gap: 8px; align-items: center; min-height: 40px; padding: 4px 4px 4px 9px; color: var(--pip-dim-text); background: var(--pip-screen); border-bottom: 1px solid var(--pip-dark); cursor: pointer; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
@@ -1325,7 +1325,7 @@ const page = `<!doctype html>
     #kube-ctx > b { display: none; }
     #kube-ctx button { min-width: 0; }
   }
-  #kube-tele { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 50px 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; }
+  #kube-tele { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: var(--kube-top, 50px) 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; }
   .kt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 6px 10px; border: 1px solid var(--pip-dark); background: var(--pip-ink); }
   .kt-why { color: var(--pip-mid); flex: 1; min-width: 200px; }
   .kt-hist { color: var(--pip-dim-text); letter-spacing: 0.1em; }
@@ -1365,7 +1365,7 @@ const page = `<!doctype html>
   .kt-flags em { font-style: normal; font-size: 9px; padding: 0 4px; border: 1px solid var(--pip-dim); color: var(--pip-mid); }
   .kt-flags em.bad { color: var(--status-broken); border-color: var(--status-broken); }
   /* ---- SERVICES (graph-view.js): service graph + incident review, SAMPLE prototype ---- */
-  #kube-graph { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 50px 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; display: flex; flex-direction: column; gap: 8px; outline: none; }
+  #kube-graph { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: var(--kube-top, 50px) 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; display: flex; flex-direction: column; gap: 8px; outline: none; }
   #kube-graph[hidden] { display: none; }
   #kube-empty { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 56px 24px 24px; background: var(--pip-screen); color: var(--pip-mid); font-size: 12px; }
   #kube-empty[hidden] { display: none; }
@@ -1403,7 +1403,7 @@ const page = `<!doctype html>
   #kube-graph .gv-group.unlabeled { border-style: dashed; }
   #kube-graph .gv-stats { margin: 0; color: var(--pip-dim-text); letter-spacing: 0.06em; }
   #kube-graph .gv-detail { margin: 0; padding: 6px 10px; color: var(--pip-bright); background: rgba(2, 10, 5, 0.6); border-left: 3px solid var(--pip-bright); min-height: 16px; }
-  #kube-graph .gv-stage { position: relative; flex: 1 0 auto; }
+  #kube-graph .gv-stage { position: relative; flex: 1 1 0; min-width: 0; }
   #kube-graph .gv-edges { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 3; }
   #kube-graph .gv-bands { position: relative; display: flex; flex-direction: column; gap: 20px; padding-top: 10px; }
   #kube-graph .gv-band { position: relative; padding: 18px 10px 10px; border: 1px dashed var(--pip-dark); }
@@ -1542,7 +1542,10 @@ const page = `<!doctype html>
   #kube-graph .gv-timeline { padding: 8px 10px 10px; border: 1px solid var(--pip-dark); background: rgba(2, 10, 5, 0.97); }
   /* Docked: the timeline stays on screen at the bottom of SERVICES however
      long the graph is; its list scrolls inside, ▾ folds it to one line. */
-  #kube-graph .gv-timeline { position: sticky; bottom: -16px; z-index: 5; flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 34vh; box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.55); }
+  #kube-graph { overflow: hidden; }
+  #kube-graph > .gv-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+  #kube-graph > .gv-head { flex: none; }
+  #kube-graph .gv-timeline { position: relative; z-index: 5; flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 28vh; box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.55); }
   #kube-graph .gv-timeline .gv-events { overflow: auto; min-height: 0; }
   #kube-graph .gv-timeline.folded { gap: 0; }
   #kube-graph .gv-tlfold { padding: 0 6px; min-width: 22px; }
@@ -1570,7 +1573,7 @@ const page = `<!doctype html>
   #kube-graph .gv-ev.e-alarm .gv-etag, #kube-graph .gv-ev.e-restart .gv-etag { background: var(--status-broken); }
   #kube-graph .gv-ev.e-warning .gv-etag, #kube-graph .gv-ev.e-rollout .gv-etag { background: var(--status-hang); }
   #kube-graph .gv-ev.e-ok .gv-etag { background: var(--status-ok); }
-  #kube-ops { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 50px 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; }
+  #kube-ops { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: var(--kube-top, 50px) 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; }
   .ko-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-top: 12px; align-items: start; }
   .ko-panel { padding: 0 0 10px; border: 2px solid var(--pip-dim); background: var(--pip-ink); box-shadow: inset 0 0 24px var(--glow-soft), 0 0 0 1px var(--pip-dark); min-width: 0; }
   .ko-head { display: flex; align-items: center; gap: 8px; padding: 4px 8px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.14em; border-bottom: 2px solid var(--pip-dark); }
@@ -1690,7 +1693,7 @@ const page = `<!doctype html>
   .k9-msg { margin-left: auto; color: var(--pip-mid); }
   .k9-msg.k9-bad { color: var(--status-broken); }
   @media (max-width: 899px) { #k9s { left: 6px; right: 6px; height: 62%; } .k9-input { width: 120px; } }
-  #kube-panel { position: absolute; z-index: 5; right: 12px; top: 48px; width: min(460px, calc(100% - 24px)); max-height: calc(100% - 60px); background: var(--pip-screen); }
+  #kube-panel { position: absolute; z-index: 5; right: 12px; top: var(--kube-top, 48px); width: min(460px, calc(100% - 24px)); max-height: calc(100% - 60px); background: var(--pip-screen); }
   .kp-title { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.12em; font-size: 11px; }
   .kp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kp-body { overflow: auto; padding: 6px 12px 10px; }
@@ -2789,6 +2792,23 @@ const page = `<!doctype html>
   #where:not([hidden]) { position: relative; z-index: 6; display: inline-block; background: var(--pip-ink); border: 1px solid var(--pip-dark); padding: 2px 10px; margin-left: 18px; }
   :root[data-theme="pro"] #where { text-shadow: none; background: transparent; border: 0; }
   :root[data-theme="pro"] #where b { color: var(--text, inherit); text-shadow: none; }
+
+  /* graph v3: wide responsive cards, status dots, empty state, no mesh */
+  #kube-graph .gv-layered { display: flex; gap: 96px; align-items: flex-start; }
+  #kube-graph .gv-col { flex: 1 1 0; min-width: 240px; max-width: 420px; display: flex; flex-direction: column; gap: 12px; }
+  #kube-graph .gv-cardgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px 18px; padding: 4px 2px 8px; }
+  #kube-graph .gv-card { width: 100%; max-width: none; min-width: 0; }
+  #kube-graph .gv-card .gv-cmeta, #kube-graph .gv-card .gv-cep, #kube-graph .gv-card .gv-cname { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+  #kube-graph .gv-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-right: 2px; background: var(--pip-dark); box-shadow: 0 0 0 1px var(--pip-dim); }
+  #kube-graph .gv-dot.d-live { background: var(--pip-bright); box-shadow: 0 0 6px var(--glow-bright); }
+  #kube-graph .gv-dot.d-err { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
+  #kube-graph .gv-empty { margin: 4px 0 8px; padding: 6px 10px; border-left: 3px solid var(--pip-dim); color: var(--pip-mid); }
+  #kube-graph .gv-possible-note { margin: 0 0 8px; padding: 4px 10px; border: 1px dashed var(--pip-dim); color: var(--pip-dim-text); }
+  #kube-graph .gv-head { flex-wrap: wrap; row-gap: 6px; }
+  :root[data-theme="pro"] #kube-graph .gv-dot { background: var(--border); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph .gv-dot.d-live { background: var(--ok); }
+  :root[data-theme="pro"] #kube-graph .gv-dot.d-err { background: var(--err); }
+  :root[data-theme="pro"] #kube-graph .gv-empty { border-left-color: var(--border-strong); color: var(--text-2); }
 </style>
 </head>
 <body>

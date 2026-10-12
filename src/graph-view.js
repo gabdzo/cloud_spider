@@ -7,7 +7,7 @@
 import { graphScenario } from "./graph-sample.js";
 import { routeEdge } from "./graph-route.js";
 import { GROUP_BY, GROUP_BY_KEY, cleanGroupBy, regroup } from "./graph-group.js";
-import { BADGES, KIND_BADGE, KIND_NAME, STATUS_TEXT, callsOf, edgeStatus, groupTalk, layerNodes, nodeTraffic, rateText } from "./graph-layers.js";
+import { BADGES, KIND_BADGE, KIND_NAME, STATUS_TEXT, callsOf, dotOf, drawnEdges, edgeStatus, groupTalk, isObserved, layerNodes, nodeTraffic, possibleSummary, rateText } from "./graph-layers.js";
 import { EVENT_KINDS, LAYERS, initialExpanded, initialLayers, sceneStats, stepEvent, timeline, visibleGraph } from "./graph-model.js";
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -54,7 +54,8 @@ function h(tag, props = {}, ...kids) {
 }
 
 export function createGraphView(root) {
-  const state = { scenario: "bare", expanded: new Set(), query: "", layers: new Set(LAYERS), focus: null, selected: null, event: null };
+  const POSSIBLE_KEY = "cloudspider.graph.possible";
+  const state = { scenario: "bare", expanded: new Set(), query: "", layers: new Set(LAYERS), focus: null, selected: null, event: null, possible: (() => { try { return localStorage.getItem(POSSIBLE_KEY) === "1"; } catch { return false; } })() };
   // Group by (graph-group.js): raw is the scene as read; scene is regrouped.
   const store = (() => {
     try {
@@ -142,6 +143,7 @@ export function createGraphView(root) {
     els.refresh = h("button", { type: "button", className: "gv-btn", text: "REFRESH", title: "read the cluster again (GETs only)", onclick: () => loadLive(true) });
     els.liveNote = h("span", { className: "gv-livenote" });
     els.liveBox.append(els.liveNote, els.refresh);
+    els.possible = h("button", { type: "button", className: "gv-btn gv-possible", text: "SHOW POSSIBLE LINKS", title: "possible links: declared by config (NetworkPolicy, Service wiring, owners), not seen talking. Off: only observed traffic is drawn", onclick: () => { state.possible = !state.possible; try { localStorage.setItem(POSSIBLE_KEY, state.possible ? "1" : "0"); } catch {} render(); } });
     els.fold = h("button", { type: "button", className: "gv-btn", text: "FOLD ALL", title: "close every group", onclick: () => ((state.expanded = new Set()), (state.focus = null), render()) });
     els.stats = h("p", { className: "gv-stats" });
     els.detail = h("p", { className: "gv-detail", "aria-live": "polite" });
@@ -159,13 +161,16 @@ export function createGraphView(root) {
     root.append(
       h("header", { className: "gv-head" },
         h("div", { className: "gv-title" }, h("b", { text: "SERVICES" }), (els.proto = h("span", { className: "gv-proto", text: "SAMPLE · PROTOTYPE" }))),
-        els.scen, els.liveBox, els.groupBox, els.search, els.layers, els.fold),
-      els.stats,
-      els.legend,
-      els.badgeKey,
-      (els.findings = h("div", { className: "gv-findings", hidden: true })),
-      els.detail,
-      h("div", { className: "gv-main" }, els.stage, (els.side = h("aside", { className: "gv-side", "aria-label": "calls of the selected service", hidden: true }))),
+        els.scen, els.liveBox, els.groupBox, els.search, els.layers, els.possible, els.fold),
+      // Only the middle scrolls: the toolbar stays on top and INCIDENT REVIEW
+      // docks below it, so nothing ever scrolls underneath either of them.
+      (els.scroll = h("div", { className: "gv-scroll" },
+        els.stats,
+        els.legend,
+        els.badgeKey,
+        (els.findings = h("div", { className: "gv-findings", hidden: true })),
+        els.detail,
+        h("div", { className: "gv-main" }, els.stage, (els.side = h("aside", { className: "gv-side", "aria-label": "calls of the selected service", hidden: true }))))),
       els.tl,
     );
     resize?.observe(els.stage);
@@ -229,14 +234,26 @@ export function createGraphView(root) {
     const toggle = h("button", { type: "button", className: "gv-open", "aria-expanded": String(group.open), title: group.open ? "fold" : "open: its services, how they call each other, live or not", text: group.open ? "−" : "+", onclick: (ev) => toggleOpen(group.id, ev) });
     card.append(h("div", { className: "gv-gtop" }, head, h("span", { className: "gv-gsum" }, meta, talkEl), toggle));
     if (group.open) {
-      const cols = layerNodes(group.nodes, scene.edges);
-      const row = h("div", { className: "gv-layered" });
-      cols.forEach((col, i) => {
-        const colEl = h("div", { className: "gv-col" }, h("small", { className: "gv-colhead", text: cols.unordered ? (i === 0 ? "NO ORDER SEEN (no traffic yet)" : "") : i === 0 && col.every((n) => n.kind === "ingress") ? "ENTRY" : i === cols.length - 1 && col.every((n) => n.kind === "db" || n.kind === "cr") ? "DATA / RESOURCES" : `STEP ${i + (cols[0].every((n) => n.kind === "ingress") ? 0 : 1)}` }));
-        for (const node of col) colEl.append(nodeCard(node));
-        row.append(colEl);
-      });
-      card.append(row);
+      const ids = new Set(group.nodes.map((n) => n.id));
+      const observed = scene.edges.filter((e) => isObserved(e) && ids.has(e.from) && ids.has(e.to));
+      const possible = possibleSummary(group.nodes, scene.edges);
+      if (!observed.length) {
+        // Nothing seen talking inside: a wide grid of cards, no fake order.
+        card.append(h("p", { className: "gv-empty", text: `no traffic seen between these in the observe window · Beyla draws calls as soon as services talk${possible.count && !state.possible ? ` · ${possible.count} possible link${possible.count === 1 ? "" : "s"} hidden (SHOW POSSIBLE LINKS)` : ""}` }));
+        if (state.possible && possible.text) card.append(h("p", { className: "gv-possible-note", text: possible.text }));
+        card.append(h("div", { className: "gv-cardgrid" }, ...group.nodes.slice().sort((a, b) => a.label.localeCompare(b.label)).map((node) => nodeCard(node))));
+      } else {
+        // Columns follow the observed calls only: who calls whom, left to right.
+        const cols = layerNodes(group.nodes, observed);
+        if (state.possible && possible.text) card.append(h("p", { className: "gv-possible-note", text: possible.text }));
+        const row = h("div", { className: "gv-layered" });
+        cols.forEach((col, i) => {
+          const colEl = h("div", { className: "gv-col" }, h("small", { className: "gv-colhead", text: cols.unordered ? "" : i === 0 && col.every((n) => n.kind === "ingress") ? "ENTRY" : i === cols.length - 1 && col.every((n) => n.kind === "db" || n.kind === "cr") ? "DATA / RESOURCES" : `STEP ${i + (cols[0].every((n) => n.kind === "ingress") ? 0 : 1)}` }));
+          for (const node of col) colEl.append(nodeCard(node));
+          row.append(colEl);
+        });
+        card.append(row);
+      }
     }
     return card;
   }
@@ -252,14 +269,14 @@ export function createGraphView(root) {
       type: "button",
       className: `gv-node gv-card k-${node.kind}${flags.some((f) => f.id === "no-endpoints") ? " no-ep" : ""}${node.match ? " match" : ""}${state.selected === node.id ? " sel" : ""}${t.errors >= 1 ? " t-err" : t.talking ? " t-live" : " t-none"}`,
       dataset: { id: node.id },
-      title: `${node.label} · ${KIND_NAME[node.kind] || node.kind} · ${node.ns}\n${t.talking ? `talking: ${t.live} live link${t.live === 1 ? "" : "s"}` : "not seen talking"} — click for its calls`,
+      title: `${node.label} · ${KIND_NAME[node.kind] || node.kind} · ${node.ns}${pods ? ` · ${pods.ready}/${pods.total} ready` : ""}${ep ? ` · endpoints ${ep.ready}/${ep.ready + ep.notReady}` : ""}\n${t.talking ? `talking: ${t.live} live link${t.live === 1 ? "" : "s"}${t.errors ? `, ${t.errors}% errors` : ""}` : "idle: no traffic seen"} — click for its calls`,
       onclick: (ev) => selectNode(node.id, ev),
     },
-      h("span", { className: "gv-crow" }, h("small", { className: `gv-ntag t-${badge}`, title: BADGES[badge] || node.kind, text: badge }), h("b", { className: "gv-cname", text: node.label })),
+      h("span", { className: "gv-crow" }, h("i", { className: `gv-dot d-${dotOf(t)}`, title: { live: "live: traffic seen", idle: "idle: no traffic seen", err: "errors in its traffic" }[dotOf(t)] }), h("small", { className: `gv-ntag t-${badge}`, title: BADGES[badge] || node.kind, text: badge }), h("b", { className: "gv-cname", text: node.label })),
       h("span", { className: "gv-cmeta", text: [KIND_NAME[node.kind] || node.kind, node.ns, pods ? `${pods.ready}/${pods.total} ready` : ""].filter(Boolean).join(" · ") }),
       ep ? h("span", { className: `gv-cep${ep.ready === 0 ? " bad" : ep.notReady ? " warn" : ""}`, title: "EndpointSlices: ready / all endpoints of this Service", text: `endpoints ${ep.ready}/${ep.ready + ep.notReady} ready` }) : null,
       ...flags.map((f) => h("span", { className: `gv-flag f-${f.id}`, title: f.why, text: f.text })),
-      h("span", { className: "gv-crate", text: t.talking ? `${t.rps}/s${t.errors ? ` · ${t.errors}% err` : ""}` : "not seen talking" }));
+      t.talking ? h("span", { className: "gv-crate", text: `${t.rps}/s${t.errors ? ` · ${t.errors}% err` : ""}` }) : null);
   }
 
   function endpointsSection(node) {
@@ -279,7 +296,10 @@ export function createGraphView(root) {
     const node = state.selected && scene.nodes.find((n) => n.id === state.selected);
     els.side.hidden = !node;
     if (!node) return els.side.replaceChildren();
-    const calls = callsOf(node.id, scene, state.layers);
+    const all = callsOf(node.id, scene, state.layers);
+    const keep = (r) => state.possible || r.status === "live" || r.status === "error";
+    const hidden = [...all.inbound, ...all.outbound].filter((r) => !keep(r)).length;
+    const calls = { inbound: all.inbound.filter(keep), outbound: all.outbound.filter(keep) };
     const list = (title, rows) => h("section", { className: "gv-calls" },
       h("h5", { text: `${title} · ${rows.length}` }),
       rows.length ? h("ul", {}, ...rows.map((r) => h("li", { className: `c-${r.status}`, title: STATUS_TEXT[r.status] },
@@ -296,6 +316,7 @@ export function createGraphView(root) {
       ...(node.endpoints || node.svcPorts ? [endpointsSection(node)] : []),
       list("CALLED BY", calls.inbound),
       list("CALLS", calls.outbound),
+      ...(hidden ? [h("p", { className: "gv-cnone", text: `${hidden} possible link${hidden === 1 ? "" : "s"} (config, not seen talking) hidden · SHOW POSSIBLE LINKS to list them` })] : []),
       node.ns && /^[a-z0-9-]+$/.test(svcName) ? h("a", { className: "gv-inside", href: `#path?debug=${encodeURIComponent(`${svcName}.${node.ns}:`)}&inside=1`, text: "DEBUG FROM INSIDE ›", title: "SNIFF › FROM INSIDE: a short-lived debug pod checks DNS, TCP, HTTP, hops and NetworkPolicy to this Service" }) : "",
     );
   }
@@ -390,6 +411,7 @@ export function createGraphView(root) {
     els.findings.replaceChildren(...(fs.length ? [h("b", { text: `FINDING · ${fs.length} Service${fs.length === 1 ? "" : "s"} with 0 ready endpoints` }), ...fs.map((f) => h("button", { type: "button", className: "gv-finding", title: f.why, text: f.id, onclick: (ev) => { const n = scene.nodes.find((x) => x.id === f.node); if (n) state.expanded.add(n.group); selectNode(f.node, ev); } }))] : []));
     for (const button of els.scen.children) button.setAttribute("aria-pressed", String(button.dataset.scenario === state.scenario));
     for (const button of els.layers.children) button.setAttribute("aria-pressed", String(state.layers.has(button.dataset.layer)));
+    els.possible.setAttribute("aria-pressed", String(state.possible));
     const stats = sceneStats(scene);
     els.stats.textContent = [
       scene.title,
@@ -483,24 +505,25 @@ export function createGraphView(root) {
   function groupOfId(id) {
     return scene.nodes.find((n) => n.id === id)?.group;
   }
+  // Orthogonal, through the gaps only: forward calls leave the right side,
+  // turn in the gutter just before the target's column and enter its left
+  // side; backward or same-column calls run down a lane right of both cards.
   function sideCurve(a, b, ap, bp) {
     const spread = (p, h) => (p && p.n > 1 ? (h * (p.i + 1)) / (p.n + 1) : h / 2);
-    if (b.x >= a.x + a.w - 1) {
+    const y1 = Math.round(a.y + spread(ap, a.h));
+    const y2 = Math.round(b.y + spread(bp, b.h));
+    if (b.x >= a.x + a.w + 8) {
       const x1 = a.x + a.w;
-      const y1 = a.y + spread(ap, a.h);
       const x2 = b.x - 2;
-      const y2 = b.y + spread(bp, b.h);
-      const dx = Math.max(24, (x2 - x1) / 2);
-      return { d: `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}` };
+      // turn in the middle of the gutter next to the target; the rate label
+      // sits there too, in the gap, never on a card
+      const xm = Math.round(Math.max(x1 + 8, x2 - Math.min(48, (x2 - x1) / 2)));
+      return { d: y1 === y2 ? `M${x1},${y1} H${x2}` : `M${x1},${y1} H${xm} V${y2} H${x2}`, lx: xm, ly: y1 === y2 ? y1 - 9 : Math.round((y1 + y2) / 2) };
     }
-    // same column or backwards: out of the bottom, back in from below
-    const x1 = a.x + a.w / 2;
-    const y1 = a.y + a.h;
-    const x2 = b.x + b.w / 2;
-    const y2 = b.y + b.h + 2;
-    const low = Math.max(y1, y2) + 26;
-    return { d: `M${x1},${y1} C${x1},${low} ${x2},${low} ${x2},${y2}` };
+    const xr = Math.round(Math.max(a.x + a.w, b.x + b.w) + 12);
+    return { d: `M${a.x + a.w},${y1} H${xr} V${y2} H${b.x + b.w + 2}`, lx: xr, ly: Math.round((y1 + y2) / 2) };
   }
+
 
   function drawEdges() {
     const svg = els.svg;
@@ -528,7 +551,8 @@ export function createGraphView(root) {
       if (!ports.has(id)) ports.set(id, []);
       ports.get(id).push({ key, x: at.get(other)?.x ?? 0 });
     };
-    for (const edge of view.edges) {
+    const shownEdges = drawnEdges(view.edges, { possible: state.possible, selected: state.selected });
+    for (const edge of shownEdges) {
       if (!at.get(edge.from) || !at.get(edge.to)) continue;
       addPort(edge.from, edge.to, `${edge.from}>${edge.to}`);
       addPort(edge.to, edge.from, `${edge.from}>${edge.to}`);
@@ -538,7 +562,7 @@ export function createGraphView(root) {
       list.sort((p, q) => p.x - q.x);
       list.forEach((p, i) => portOf.set(`${id}|${p.key}`, { i, n: list.length }));
     }
-    for (const edge of view.edges) {
+    for (const edge of shownEdges) {
       const a = at.get(edge.from);
       const b = at.get(edge.to);
       if (!a || !b) continue;
@@ -546,9 +570,9 @@ export function createGraphView(root) {
       // Inside one opened group (layered columns): left to right, side to
       // side, a smooth curve; backwards calls loop under the cards.
       const rowOf = (id) => els.stage.querySelector(`[data-id="${CSS.escape(id)}"]`)?.closest(".gv-layered");
-      const rowA = rowOf(edge.from);
-      const sameRow = !!rowA && rowA === rowOf(edge.to);
-      const { d } = sameRow ? sideCurve(a, b, portOf.get(`${edge.from}|${key}`), portOf.get(`${edge.to}|${key}`)) : routeEdge(a, b, obstacles, { gap: 12, lanes, aPort: portOf.get(`${edge.from}|${key}`), bPort: portOf.get(`${edge.to}|${key}`) });
+      const rowA = rowOf(edge.from) || els.stage.querySelector(`[data-id="${CSS.escape(edge.from)}"]`)?.closest(".gv-cardgrid");
+      const sameRow = !!rowA && rowA === (rowOf(edge.to) || els.stage.querySelector(`[data-id="${CSS.escape(edge.to)}"]`)?.closest(".gv-cardgrid"));
+      const { d, lx, ly } = sameRow ? sideCurve(a, b, portOf.get(`${edge.from}|${key}`), portOf.get(`${edge.to}|${key}`)) : routeEdge(a, b, obstacles, { gap: 12, lanes, aPort: portOf.get(`${edge.from}|${key}`), bPort: portOf.get(`${edge.to}|${key}`) });
       const src = edge.sources.includes("trace") ? "trace" : edge.sources.includes("flow") ? "flow" : edge.sources[0];
       const touch = hot && (edge.from === hot || edge.to === hot);
       const st = edgeStatus(edge);
@@ -558,7 +582,7 @@ export function createGraphView(root) {
       const name = (id) => scene.nodes.find((n) => n.id === id)?.label || scene.groups.find((g) => `g:${g.id}` === id)?.label || id.replace(/^g:/, "");
       const title = `${name(edge.from)} → ${name(edge.to)} · ${STATUS_TEXT[st]}${edge.rps && st !== "config" ? ` · ${edge.rps}/s` : ""}${edge.errors ? ` · ${edge.errors}% errors` : ""} · ${edge.kinds.join("/")} · from ${edge.sources.map((x) => ({ trace: "Beyla/OTel", flow: "flow logs", static: "config", owner: "ownerReferences" })[x] || x).join(" + ")}${edge.count > 1 ? ` · ${edge.count} links` : ""}`;
       paths.push(`<path class="${cls}" d="${d}" stroke-width="${width}" marker-end="url(#gv-arrow)" data-src="${src}"><title>${title.replace(/[<&]/g, "")}</title></path>`);
-      if ((st === "live" || st === "error") && edgeBadge(edge)) badges.push({ i: paths.length - 1, text: edgeBadge(edge), rps: edge.rps, touch, err: edge.errors >= 1 });
+      if ((st === "live" || st === "error") && edgeBadge(edge)) badges.push({ i: paths.length - 1, text: sameRow ? `${edge.rps}/s${edge.errors ? ` · ${edge.errors}%` : ""}` : edgeBadge(edge), rps: edge.rps, touch, err: edge.errors >= 1, at: sameRow && lx != null ? { x: lx, y: ly } : null });
     }
     svg.innerHTML = marker + paths.join("");
     // Badges at each live edge's midpoint (needs SVG geometry; skipped without it).
@@ -569,12 +593,13 @@ export function createGraphView(root) {
       const path = drawn[b.i];
       if (!path?.getTotalLength) continue;
       let pt;
-      try {
+      const w = Math.round(b.text.length * 6.4 + 12);
+      if (b.at) pt = { x: b.at.x - w / 2 - 6, y: b.at.y + 1 };
+      else try {
         pt = path.getPointAtLength(path.getTotalLength() / 2);
       } catch {
         continue;
       }
-      const w = Math.round(b.text.length * 6.4 + 12);
       const safe = b.text.replace(/[<&]/g, "");
       out.push(`<g class="gv-badge${b.err ? " err" : ""}${hot && !b.touch ? " faint" : ""}" transform="translate(${Math.round(pt.x + 6)},${Math.round(pt.y - 8)})"><rect width="${w}" height="15" rx="2"/><text x="5" y="11">${safe}</text></g>`);
     }

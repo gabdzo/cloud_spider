@@ -5433,3 +5433,37 @@ fetch("/api/config")
   .finally(() => queueUrl());
 
 mountWhere();
+
+// The cluster screens' top bar: sub-tabs on the left, the CONTEXT picker on
+// the right. When they would meet, the picker drops to its own row; the
+// screens below start under whichever is lower (--kube-top), so neither
+// ever covers a toolbar.
+function layoutKubeBar() {
+  const tabs = document.querySelector("#kube-tabs");
+  const ctx = document.querySelector("#kube-ctx");
+  const host = tabs?.parentElement;
+  if (!tabs || !ctx || !host) return;
+  ctx.style.top = "";
+  const box = host.getBoundingClientRect();
+  const t = tabs.hidden ? null : tabs.getBoundingClientRect();
+  let c = ctx.hidden ? null : ctx.getBoundingClientRect();
+  if (t && c && c.left < t.right + 12) {
+    ctx.style.top = `${Math.round(t.bottom - box.top + 6)}px`;
+    c = ctx.getBoundingClientRect();
+  }
+  const bottom = Math.max(t ? t.bottom : 0, c ? c.bottom : 0) - box.top;
+  const top = `${Math.max(44, Math.round(bottom + 8))}px`;
+  if (host.style.getPropertyValue("--kube-top") !== top) host.style.setProperty("--kube-top", top);
+}
+{
+  const kick = () => requestAnimationFrame(layoutKubeBar);
+  window.addEventListener("resize", kick);
+  const ro = typeof ResizeObserver === "function" ? new ResizeObserver(kick) : null;
+  for (const sel of ["#kube-tabs", "#kube-ctx"]) {
+    const el = document.querySelector(sel);
+    if (!el) continue;
+    ro?.observe(el);
+    new MutationObserver(kick).observe(el, { attributes: true, attributeFilter: ["hidden"], childList: true });
+  }
+  kick();
+}
