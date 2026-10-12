@@ -10,7 +10,14 @@ const ds = (name) => ({ ownerReferences: [{ kind: "DaemonSet", name }] });
 const daemon = (ns, name) => ({ ...meta(ns, name), spec: { template: { metadata: { labels: { "k8s-app": name } } } }, status: { desiredNumberScheduled: 1, numberReady: 1 } });
 
 export function sampleKubeSnapshot() {
-  const pod = (ns, name, owner, status, labels = {}) => ({ ...meta(ns, name, { ...owner, labels }), spec: { nodeName: NODE, containers: [{ name: name.split("-")[0], resources: { requests: REQUESTS[name.split("-")[0]] || { cpu: "25m", memory: "40Mi" } } }] }, status });
+  // Each container status carries its container's name, as the API has it
+  // (K9S describe matches them by name: a placeholder made a Running pod
+  // read "State: unknown, Ready: False, Restart Count: 0").
+  const pod = (ns, name, owner, status, labels = {}) => {
+    const container = name.split("-")[0];
+    const statuses = status.containerStatuses?.map((s) => (s.name === "c" ? { ...s, name: container } : s));
+    return { ...meta(ns, name, { ...owner, labels }), spec: { nodeName: NODE, containers: [{ name: container, resources: { requests: REQUESTS[container] || { cpu: "25m", memory: "40Mi" } } }] }, status: statuses ? { ...status, containerStatuses: statuses } : status };
+  };
   return {
     clusterName: "cloudspider-up",
     notes: [],
