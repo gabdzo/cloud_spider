@@ -137,7 +137,7 @@ export function hardwareVars() {
     "btn-off-top": rgba(PIP.dark, 0.95),
     "btn-off-mid": rgba(PIP.glass, 0.98),
     "btn-off-low": rgba(PIP.ink, 1),
-    "btn-off-label": PIP.dim,
+    "btn-off-label": PIP.mid,
     "btn-gloss": rgba(PIP.hot, 0.1),
     "btn-gloss-lit": rgba(PIP.hot, 0.42),
     "btn-shade": "rgba(0, 0, 0, 0.75)",
@@ -169,7 +169,7 @@ export function hardwareVars() {
     "plate-grime": rgba(WORLD.rustShade, 0.45),
     "plate-rust": rgba(WORLD.rust, 0.5),
     "plate-stencil": WORLD.text,
-    "plate-stencil-dim": rgba(WORLD.text, 0.45),
+    "plate-stencil-dim": rgba(WORLD.text, 0.68),
     "lever-hi": PALETTE[20],
     "lever-mid": PALETTE[18],
     "lever-lo": PALETTE[19],
@@ -321,12 +321,15 @@ export function cssVars() {
   for (const [group, values] of [["pip", PIP], ["world", WORLD], ["case", CASE], ["status", STATUS]]) {
     for (const [name, value] of Object.entries(values)) lines.push(`--${group}-${kebab(name)}: ${value};`);
   }
+  // Dim TEXT (labels, meta lines) reads at ≥ 4.5:1; --pip-dim stays for
+  // rules, borders and the canvas, where the dark ramp is the character.
+  lines.push("--pip-dim-text: color-mix(in srgb, var(--pip-mid) 55%, var(--pip-dim));");
   lines.push(`--glow-bright: ${rgba(PIP.bright, 0.55)};`);
   lines.push(`--glow-soft: ${rgba(PIP.bright, 0.18)};`);
   // Hardware buttons and the SAMPLE toggle (server.js header CSS).
   for (const [name, value] of Object.entries(hardwareVars())) lines.push(`--${name}: ${value};`);
   lines.push(`--font: ${FONT_STACK};`);
   lines.push(`--font-ui: ${FONT_STACK};`, `--font-mono: ${FONT_STACK};`, ...roleLines(ROLES.pip));
-  const pro = [...roleLines(ROLES.pro), ...Object.entries(proRemap()).map(([name, value]) => `--${name}: ${value};`), `--font: ${FONT_UI};`, `--font-ui: ${FONT_UI};`, `--font-mono: ${FONT_MONO};`];
+  const pro = [...roleLines(ROLES.pro), ...Object.entries(proRemap()).map(([name, value]) => `--${name}: ${value};`), `--font: ${FONT_UI};`, `--font-ui: ${FONT_UI};`, `--font-mono: ${FONT_MONO};`, "--pip-dim-text: color-mix(in srgb, var(--pip-mid) 40%, var(--pip-dim));"];
   return `:root { ${lines.join(" ")} }\n  :root[data-theme="pro"] { ${pro.join(" ")} }`;
 }
