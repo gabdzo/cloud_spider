@@ -142,6 +142,27 @@ Edges carry `source`. The UI's layer toggles (STATIC · FLOWS · TRACES · OWNER
 - OpenShift: Routes count as entry points, OLM CSVs drive grouping, and `oc` contexts are plain kubeconfig contexts.
 - The scorecard's kubernetes pack already avoids EKS-only assumptions, except for the controls tagged `eks`, which are skipped off-EKS.
 
+### 4.5 Graph data shape (the contract; live edges target this)
+
+`GET /api/cluster/graph?context=<ctx>` (graph-build.js) and the SAMPLE scenarios return one scene:
+
+```
+{ id, title, note,
+  bands:  [{ id: "edge"|"apps"|"platform", label }],
+  groups: [{ id, label, band, kind: "namespace"|"operator", namespaces, crds, pods, health: "ok"|"hang"|"broken" }],
+  nodes:  [{ id, group, kind, label, ns }],
+  edges:  [{ from, to, kind, source, rps, errors }],
+  events: [{ t: "HH:MM", at?: epoch ms, kind, group, node, text }],
+  window: { start: "HH:MM", end: "HH:MM", incident: ["HH:MM", "HH:MM"] } }
+```
+
+- **Node ids** (stable, what live data must map to): Service `ns/name`; workload with no Service `ns/deployment:name` (`statefulset:`, `daemonset:`); Ingress `ns/ingress:name`; Route `ns/route:name`; CR `ns/cr:Kind/name`; OLM CSV `ns/csv:name`; namespace-wide source `ns/*`; API server `default/kubernetes`. A pod maps to the Service that selects it, else its workload.
+- `node.kind`: service | db | webhook | operator | workload | ingress | cr | external | namespace.
+- `edge.kind`: http | grpc | tcp | admission | watch | owns. `edge.source`: static | owner | trace | flow.
+- **Live edges (observe ingest, worker A):** `source: "trace"`, `kind: "http"|"grpc"`, `rps` (requests/s over the window), `errors` (% 5xx / gRPC non-OK), plus optional `p95ms`, `route` (e.g. `GET /api/cart`), `window` (s), `at` (epoch ms of the read). Merge rule: a live edge with the same `from`/`to` as a static one is a separate edge (layers toggle independently); the view dims static edges with no live twin when TRACES is on.
+- **Events (incident history):** `kind`: rollout | restart | warning | alarm | ok; `node` uses the ids above; `at` in epoch ms is preferred, `t` is the display time.
+- **RED per node** (optional, same ingest): `nodes[].red = { rps, errors, p95ms }`.
+
 ## 5. Eng review
 
 - **Architecture.**
