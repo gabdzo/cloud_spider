@@ -35,7 +35,38 @@ export function resolveOutputs(entry, outputs = {}) {
 // readings it saw into the ledger (in memory, shared with the Cluster view)
 // and answers each vault's spec.slos. metrics is the /api/metrics answer,
 // cluster the kube context's cluster name.
+// Auto-discovery: every vaults/templates/*.yaml names its stack; when that
+// stack is up (exists, has resources) and no vault file in vaults/ has the
+// same name, the template is listed as a live vault, marked auto. A file in
+// vaults/ (npm run vaults:new) is the optional override: it wins by name.
+export async function autoVaults(fileVaults, templates, stacks) {
+  if (!stacks || !templates?.length) return [];
+  const taken = new Set(fileVaults.map((entry) => entry.name));
+  const candidates = templates.filter((entry) => entry.stack?.dir && entry.stack?.name && !taken.has(entry.name));
+  const up = await Promise.all(candidates.map(async (entry) => {
+    try {
+      const info = await stacks.read(entry.stack);
+      return !info?.error && (info?.stacks || []).some((item) => !item.missing) && info.count > 0;
+    } catch {
+      return false;
+    }
+  }));
+  return candidates.filter((_, index) => up[index]).map((entry) => ({ ...entry, key: entry.name, auto: true, slos: entry.slos?.length ? entry.slos : [DEFAULT_SLO] }));
+}
+
+// An auto-listed vault whose template names no SLO still gets one: its owned
+// resources healthy on each map read.
+export const DEFAULT_SLO = { name: "resources-healthy", sli: "availability", source: "resources", target: 99, window: "7d", threshold: null, percentile: null, description: "default for an auto-listed vault: its owned resources healthy on each read" };
+
 export function createVaultView({ store, checker, stacks = null, clock = Date.now }) {
+  // The folder's vaults plus the auto-discovered ones, in number order.
+  async function entries() {
+    const loaded = await store.load();
+    const templates = typeof store.templateEntries === "function" ? await store.templateEntries() : [];
+    const auto = await autoVaults(loaded.vaults, templates, stacks);
+    const rank = (entry) => (Number.isInteger(entry.number) && !entry.damaged ? entry.number : 1000);
+    return { ...loaded, vaults: [...loaded.vaults, ...auto].sort((a, b) => rank(a) - rank(b)) };
+  }
   const logCache = createLogCache({ clock });
   const ownLedger = createSloLedger({ clock });
   function byId(place) {
@@ -86,6 +117,7 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
       tags: entry.tags,
       links: entry.links,
       file: entry.file,
+      auto: Boolean(entry.auto),
       damaged: entry.damaged,
       errors: entry.errors,
       warnings: entry.warnings || [],
@@ -105,7 +137,7 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
   return {
     async view(place, { failures = [], slo = {} } = {}) {
       const ledger = slo.ledger || ownLedger;
-      const loaded = await store.load();
+      const loaded = await entries();
       const bound = await bind(loaded.vaults);
       const owned = matchVaults(bound, place);
       const resources = byId(place);
@@ -130,12 +162,13 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
             });
         return shape({ ...entry, logGroups: vaultLogGroups(entry.logGroups, functions) }, mine, checks, trouble, slos);
       });
-      const templates = typeof store.templates === "function" ? await store.templates() : [];
+      const autoNames = new Set(vaults.filter((vault) => vault.auto).map((vault) => vault.name));
+      const templates = (typeof store.templates === "function" ? await store.templates() : []).map((template) => ({ ...template, live: autoNames.has(template.name) }));
       return { dir: loaded.dir, note: loaded.note, vaults, templates };
     },
     // Last error lines from the vault's log groups (on open; cached 60 s).
     async logs(key, place, { logs, region }) {
-      const loaded = await store.load();
+      const loaded = await entries();
       const bound = await bind(loaded.vaults);
       const entry = bound.find((item) => item.key === key);
       if (!entry) return { error: "no such vault" };
@@ -148,7 +181,7 @@ export function createVaultView({ store, checker, stacks = null, clock = Date.no
     },
     // TEST: run this vault's checks now and wait for them.
     async test(key, place) {
-      const loaded = await store.load();
+      const loaded = await entries();
       const bound = await bind(loaded.vaults);
       const entry = bound.find((item) => item.key === key);
       if (!entry) return { error: "no such vault" };

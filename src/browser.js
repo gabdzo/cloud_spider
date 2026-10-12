@@ -298,12 +298,22 @@ function paintLamp(lamp, seen) {
   lamp.textContent = seen.status ? `${seen.status} · ${seen.ms} ms` : seen.error || "no answer";
   lamp.title = `GET ${seen.url} from this machine: ${lamp.textContent}`;
 }
+const reachPending = new Set();
 async function probeReach(urls) {
   for (const url of urls) {
-    const seen = await fetch(`/api/reach?url=${encodeURIComponent(url)}`).then((r) => r.json()).catch(() => null);
+    if (reachPending.has(url)) continue;
+    reachPending.add(url);
+    const seen = await fetch(`/api/reach?url=${encodeURIComponent(url)}`).then((r) => r.json()).catch(() => null).finally(() => reachPending.delete(url));
     if (!seen) continue;
     reachSeen.set(url, seen);
     for (const lamp of document.querySelectorAll(".reach-lamp")) if (lamp.dataset.url === url) paintLamp(lamp, seen);
+  }
+}
+function hostOfUrl(url) {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return "";
   }
 }
 function openLink(url, label = "OPEN ↗") {
@@ -1137,11 +1147,18 @@ function vaultPanel(cell) {
   for (const [key, label] of [["view", "VIEW"], ["repo", "REPO"], ["docs", "DOCS"], ["dashboard", "DASHBOARD"]]) {
     const href = vault.links?.[key];
     if (!href) continue;
-    const a = vel("a", "cmd", label);
+    // A view behind a public load balancer on the map: OPEN ↗ with its lamp.
+    const pub = key === "view" && publicEndpoints(place?.fixtures || []).some((item) => hostOfUrl(item.url) === hostOfUrl(href));
+    const a = vel("a", "cmd", pub ? "OPEN ↗" : label);
     a.href = href;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
+    a.title = href;
     nav.append(a);
+    if (pub && !sample) {
+      nav.append(reachLamp(href));
+      if (!reachSeen.has(href)) probeReach([href]);
+    }
   }
   const ask = vel("button", "cmd vp-ask", "ASK");
   ask.type = "button";
@@ -1455,7 +1472,8 @@ function vaultList() {
     status.append(vel("i", "vpg-lamp"), vel("span", "", summary.lightText));
     const facts = vel("div", "vpg-lines");
     for (const line of summary.lines) facts.append(vel("span", "", line));
-    const stack = vel("span", `vpg-stack ${summary.stack.state}`, summary.stack.state === "live" ? "LIVE" : summary.stack.state === "down" ? "NOT UP" : summary.stack.state === "error" ? "STACK?" : "TAGS");
+    const stack = vel("span", `vpg-stack ${summary.stack.state}`, summary.stack.state === "live" ? (vault.auto ? "LIVE · AUTO" : "LIVE") : summary.stack.state === "down" ? "NOT UP" : summary.stack.state === "error" ? "STACK?" : "TAGS");
+    if (vault.auto) stack.title = `listed automatically: its stack is up (${vault.file}). Copy it into vaults/ to customise: npm run vaults:new -- ${vault.name} ${vault.name}`;
     button.append(doorCanvas(vault), stack, vel("h3", "", summary.title), status, facts);
     li.append(button);
     grid.append(li);
@@ -1463,7 +1481,8 @@ function vaultList() {
   out.push(grid);
   const templates = vaultsData.templates || [];
   const shelf = vel("section", "vpg-templates");
-  shelf.append(vel("h4", "", `TEMPLATES · ${templates.length} · vaults/templates/ · not drawn, never live`));
+  const autoCount = templates.filter((item) => item.live).length;
+  shelf.append(vel("h4", "", `TEMPLATES · ${templates.length} · vaults/templates/ · ${autoCount ? `${autoCount} listed above automatically (stack up)` : "listed above automatically once their stack is up"}`));
   shelf.append(templateList(templates));
   out.push(shelf);
   return out;
