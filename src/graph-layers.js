@@ -123,7 +123,7 @@ export function groupTalk(groupId, scene) {
     else if (s === "error") (live += 1), (errors += 1);
     else if (s === "config") config += 1;
   }
-  return { live, errors, config, text: live ? `talking: ${live} live link${live === 1 ? "" : "s"}${errors ? ` · ${errors} with errors` : ""}` : config ? `not seen talking (${config} config link${config === 1 ? "" : "s"})` : "no links" };
+  return { live, errors, config, text: live ? `talking: ${live} live link${live === 1 ? "" : "s"}${errors ? ` · ${errors} with errors` : ""}` : "no traffic seen" };
 }
 
 // The side panel: who calls this node and whom it calls, with status.

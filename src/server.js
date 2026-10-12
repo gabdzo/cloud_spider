@@ -2794,8 +2794,8 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #where b { color: var(--text, inherit); text-shadow: none; }
 
   /* graph v3: wide responsive cards, status dots, empty state, no mesh */
-  #kube-graph .gv-layered { display: flex; gap: 96px; align-items: flex-start; }
-  #kube-graph .gv-col { flex: 1 1 0; min-width: 240px; max-width: 420px; display: flex; flex-direction: column; gap: 12px; }
+  #kube-graph .gv-layered { display: flex; gap: clamp(48px, 5vw, 96px); align-items: flex-start; }
+  #kube-graph .gv-col { flex: 1 1 0; min-width: 160px; max-width: 420px; display: flex; flex-direction: column; gap: 12px; }
   #kube-graph .gv-cardgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px 18px; padding: 4px 2px 8px; }
   #kube-graph .gv-card { width: 100%; max-width: none; min-width: 0; }
   #kube-graph .gv-card .gv-cmeta, #kube-graph .gv-card .gv-cep, #kube-graph .gv-card .gv-cname { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
