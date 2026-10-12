@@ -1,0 +1,17 @@
+kind: Control
+id: NET-VPC-005
+revision: 1
+title: "Peered VPCs have no overlapping CIDRs"
+category: networking
+target: aws
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: peering-no-overlap
+aggregation: proportional
+requires: [aws-peering]
+whyItMatters: "Overlapping CIDRs cannot be routed across a peering (the local route always wins), and AWS refuses a peering between overlapping primaries: a design that blocks every future connection between those networks."
+remediation: { summary: "Re-address one VPC (new VPC with a free CIDR from your IPAM plan, migrate), or connect through a Transit Gateway with NAT / PrivateLink for the overlapping part.", effort: L }
+verification: "The CIDRs of the two VPCs in aws ec2 describe-vpc-peering-connections (RequesterVpcInfo/AccepterVpcInfo CidrBlockSet) share no address."
+references:
+  - { source: "Unsupported peering configurations", url: "https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-basics.html#vpc-peering-limitations" }

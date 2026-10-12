@@ -1,6 +1,7 @@
+import { peeringLinks, tgwHubs } from "./peering.js";
 import { placeVaults, vaultEdges } from "./vault-layout.js";
 import { vaultBadges } from "./vault-page.js";
-import { buildingFace, cardFace, emptyLabel, natFixtures, peeringEdges, placeArchVpc, placeTagCamps, subnetRoutes } from "./arch-layout.js";
+import { buildingFace, cardFace, emptyLabel, natFixtures, peeringEdges, tgwEdges, placeArchVpc, placeTagCamps, subnetRoutes } from "./arch-layout.js";
 export { tagKeys, tagOf as tagValueOf } from "./arch-layout.js";
 import { READ_ONLY, phrase } from "./radio.js";
 export const FONT_PX = 14;
@@ -539,7 +540,8 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
     groupBy,
   };
   cursorY = region.y + region.h + GAP * 2;
-  const regionEdges = view === "tag" ? [] : peeringEdges(place.peerings, settlements.filter((item) => !item.empty || true));
+  const regionEdges = view === "tag" ? [] : peeringEdges(place.peerings, settlements, peeringLinks(place));
+  const hubs = view === "tag" ? [] : tgwEdges(tgwHubs({ tgws: place.tgws, attachments: place.tgwAttachments, routes: place.routes, vpcs: place.vpcs }), settlements, region);
 
   if (vaultArea) vaultArea.edges = vaultEdges(vaultArea, (id) => findPlaced(settlements, id));
 
@@ -551,6 +553,7 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
     zones: globalZone ? [globalZone] : [],
     region,
     regionEdges,
+    hubs,
     view,
     groupBy,
     orphans: {

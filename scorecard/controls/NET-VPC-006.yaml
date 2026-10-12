@@ -1,0 +1,17 @@
+kind: Control
+id: NET-VPC-006
+revision: 1
+title: "No default route (0.0.0.0/0) points at a VPC peering"
+category: networking
+target: aws
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: peering-no-default-route
+aggregation: proportional
+requires: [aws-peering]
+whyItMatters: "Peering is not transitive: the remote VPC's internet gateway or NAT will not forward your traffic, so a 0.0.0.0/0 via pcx- is a black hole for everything not in the remote CIDR (and hides the real egress path)."
+remediation: { summary: "Route 0.0.0.0/0 to your own NAT gateway or internet gateway (or a Transit Gateway for central egress) and route only the remote VPC CIDR to the pcx-.", effort: S }
+verification: "No route table has DestinationCidrBlock 0.0.0.0/0 (or ::/0) with a VpcPeeringConnectionId target."
+references:
+  - { source: "Edge to edge routing through a peering is not supported", url: "https://docs.aws.amazon.com/vpc/latest/peering/invalid-peering-configurations.html" }

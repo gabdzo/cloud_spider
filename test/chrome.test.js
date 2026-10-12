@@ -55,7 +55,7 @@ test("row times read today, yesterday, then the date", () => {
 
 test("status bar counts the map and the path", () => {
   const map = mapStats(samplePlace());
-  assert.deepEqual(map.cells, ["VPC 2", "SUBNETS 5", "SHACKS 5"]);
+  assert.deepEqual(map.cells, ["VPC 3", "SUBNETS 7", "SHACKS 5"]);
   assert.equal(map.meter.label, "LIT 3/5");
   assert.equal(mapStats(null), null);
   const path = pathStats({ nodes: [{ status: "ok" }, { status: "broken" }, { status: "hang" }, { status: "ok" }] });

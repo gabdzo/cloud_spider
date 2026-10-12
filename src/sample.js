@@ -91,6 +91,8 @@ export function samplePlace() {
   // worker function in the VPC and an S3 gateway endpoint; peered with the
   // first VPC. CloudFront in front of the landing page.
   const eks = { id: "sample-eks-vpc", cidr: "10.43.0.0/16", name: "cloudspider-up" };
+  // A third VPC for data, peered with the cluster's VPC (prod-to-data).
+  const data = { id: "sample-vpc-data", cidr: "10.60.0.0/16", name: "data" };
   const eksSubnet = (id, zone, cidr, isPublic) => ({ id, vpcId: eks.id, cidr, name: id.replace("sample-", ""), zone, public: isPublic });
   const node = (id, subnetId) => ({
     id,
@@ -103,13 +105,15 @@ export function samplePlace() {
   });
   return {
     region: "sample",
-    vpcs: [vpc, eks],
+    vpcs: [vpc, eks, data],
     subnets: [
       subnet,
       eksSubnet("sample-public-a", "sample-a", "10.43.0.0/19", true),
       eksSubnet("sample-public-b", "sample-b", "10.43.32.0/19", true),
       eksSubnet("sample-private-a", "sample-a", "10.43.64.0/19", false),
       eksSubnet("sample-private-b", "sample-b", "10.43.96.0/19", false),
+      { id: "sample-data-a", vpcId: data.id, cidr: "10.60.0.0/20", name: "data-a", zone: "sample-a", public: false },
+      { id: "sample-data-b", vpcId: data.id, cidr: "10.60.16.0/20", name: "data-b", zone: "sample-b", public: false },
     ],
     gateways: [
       { vpcId: vpc.id, kind: "igw", id: "igw-sample" },
@@ -117,11 +121,23 @@ export function samplePlace() {
       { vpcId: eks.id, kind: "nat", id: "nat-sample", subnetId: "sample-public-a", state: "available", name: "sample-nat" },
     ],
     routes: [
-      { id: "rtb-sample", vpcId: vpc.id, main: true, subnetIds: [], target: "igw-sample", peers: ["pcx-sample"] },
-      { id: "rtb-sample-public", vpcId: eks.id, main: false, subnetIds: ["sample-public-a", "sample-public-b"], target: "igw-sample-eks", peers: [] },
-      { id: "rtb-sample-private", vpcId: eks.id, main: true, subnetIds: ["sample-private-a", "sample-private-b"], target: "nat-sample", peers: ["pcx-sample"] },
+      // shared-services forgot its half of the peering (HALF on the map,
+      // NET-VPC-004 in SCORE); everything reaches everything via core-tgw.
+      { id: "rtb-sample", vpcId: vpc.id, main: true, subnetIds: [], target: "igw-sample", peers: [], peerRoutes: [], tgwRoutes: [{ dest: "10.60.0.0/16", tgw: "tgw-sample", state: "active" }] },
+      { id: "rtb-sample-public", vpcId: eks.id, main: false, subnetIds: ["sample-public-a", "sample-public-b"], target: "igw-sample-eks", peers: [], peerRoutes: [], tgwRoutes: [] },
+      { id: "rtb-sample-private", vpcId: eks.id, main: true, subnetIds: ["sample-private-a", "sample-private-b"], target: "nat-sample", peers: ["pcx-sample", "pcx-sample-data"], peerRoutes: [{ dest: "10.0.0.0/16", pcx: "pcx-sample", state: "active" }, { dest: "10.60.0.0/16", pcx: "pcx-sample-data", state: "active" }], tgwRoutes: [{ dest: "10.200.0.0/16", tgw: "tgw-sample", state: "active" }] },
+      { id: "rtb-sample-data", vpcId: data.id, main: true, subnetIds: ["sample-data-a", "sample-data-b"], target: "", peers: ["pcx-sample-data"], peerRoutes: [{ dest: "10.43.0.0/16", pcx: "pcx-sample-data", state: "active" }], tgwRoutes: [{ dest: "10.0.0.0/16", tgw: "tgw-sample", state: "active" }] },
     ],
-    peerings: [{ id: "pcx-sample", a: vpc.id, b: eks.id, status: "active", name: "sample-peering" }],
+    peerings: [
+      { id: "pcx-sample", a: vpc.id, b: eks.id, status: "active", name: "shared-to-prod", aCidrs: [vpc.cidr], bCidrs: [eks.cidr], aOwner: "111122223333", bOwner: "111122223333", aRegion: "eu-north-1", bRegion: "eu-north-1", dnsA: false, dnsB: false },
+      { id: "pcx-sample-data", a: eks.id, b: data.id, status: "active", name: "prod-to-data", aCidrs: [eks.cidr], bCidrs: [data.cidr], aOwner: "111122223333", bOwner: "111122223333", aRegion: "eu-north-1", bRegion: "eu-north-1", dnsA: true, dnsB: true },
+    ],
+    tgws: [{ id: "tgw-sample", name: "core-tgw", state: "available", owner: "111122223333" }],
+    tgwAttachments: [
+      { id: "tgw-attach-shared", tgw: "tgw-sample", vpcId: vpc.id, type: "vpc", state: "available" },
+      { id: "tgw-attach-prod", tgw: "tgw-sample", vpcId: eks.id, type: "vpc", state: "available" },
+      { id: "tgw-attach-data", tgw: "tgw-sample", vpcId: data.id, type: "vpc", state: "available" },
+    ],
     fixtures: [
       {
         id: "eks-sample",
@@ -134,6 +150,7 @@ export function samplePlace() {
         tags: { project: "eks" },
         nodegroups: [{ name: "sample-nodes", status: "ACTIVE", desired: 2, min: 1, max: 3, subnetIds: ["sample-private-a", "sample-private-b"] }],
       },
+      { id: "rds-sample-analytics", vpcId: data.id, subnetId: "sample-data-a", kind: "rds", name: "analytics-db", engine: "postgres 16.4", size: "db.t4g.small", status: "ok", tags: { project: "orders" } },
       { id: "rds-sample", vpcId: eks.id, subnetId: "sample-private-b", kind: "rds", name: "sample-orders-db", engine: "postgres 16.4", size: "db.t4g.micro", status: "ok", tags: { project: "orders" } },
       { id: "fn-sample-worker", vpcId: eks.id, subnetIds: ["sample-private-a", "sample-private-b"], kind: "function", name: "sample-orders-worker", runtime: "nodejs20.x", status: "ok", tags: { project: "orders" } },
       { id: "vpce-sample-s3", vpcId: eks.id, kind: "endpoint", endpointType: "Gateway", service: "s3", name: "s3 endpoint", status: "ok" },

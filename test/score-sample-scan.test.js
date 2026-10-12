@@ -44,3 +44,12 @@ test("under SAMPLE the panel only GETs /api/score/sample; SCAN reloads and FIX i
   const scan = view.slice(view.indexOf("function scanButton("), view.indexOf("function targets("));
   assert.ok(scan.indexOf("if (sample())") < scan.indexOf("post("), "SCAN reloads the sample before any POST");
 });
+
+test("the sample AWS card fails the HALF peering and warns on peering DNS", async () => {
+  const { sampleScoreView } = await import("../src/score/sample-scan.js");
+  const view = await sampleScoreView("aws");
+  const text = JSON.stringify(view);
+  assert.match(text, /NET-VPC-004/);
+  assert.match(text, /HALF: no route back from shared-services/);
+  assert.match(text, /NET-VPC-007/);
+});

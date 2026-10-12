@@ -4,5 +4,6 @@ import { kubeEvaluators, kubeEvaluatorsMore } from "./kube.js";
 import { networkEvaluators } from "./network.js";
 import { protectEvaluators } from "./protect.js";
 import { obsEvaluators } from "./obs.js";
+import { peeringEvaluators } from "./peering.js";
 
-export const EVALUATORS = { ...kubeEvaluators, ...kubeEvaluatorsMore, ...awsEvaluators, ...networkEvaluators, ...protectEvaluators, ...obsEvaluators };
+export const EVALUATORS = { ...kubeEvaluators, ...kubeEvaluatorsMore, ...awsEvaluators, ...networkEvaluators, ...protectEvaluators, ...obsEvaluators, ...peeringEvaluators };

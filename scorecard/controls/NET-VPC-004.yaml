@@ -1,0 +1,17 @@
+kind: Control
+id: NET-VPC-004
+revision: 1
+title: "VPC peerings are routed on both sides"
+category: networking
+target: aws
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: peering-routes-symmetric
+aggregation: proportional
+requires: [aws-peering]
+whyItMatters: "A peering routes nothing by itself: each VPC needs a route to the other's CIDR through the pcx-. With a route on one side only, SYNs leave and the answers have no way back, which looks like a timeout from both ends."
+remediation: { summary: "Add the missing route: in the route tables of the subnets that talk across, destination = the remote VPC CIDR, target = the pcx- (aws ec2 create-route --route-table-id rtb-… --destination-cidr-block <remote CIDR> --vpc-peering-connection-id pcx-…).", effort: S }
+verification: "aws ec2 describe-route-tables --filters Name=route.vpc-peering-connection-id,Values=pcx-… lists a table in each VPC, each with the other VPC's CIDR."
+references:
+  - { source: "VPC peering routing", url: "https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-routing.html" }

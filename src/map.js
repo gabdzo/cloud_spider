@@ -25,6 +25,8 @@ export async function readPlace(ec2, region) {
       fixtures: diagram?.fixtures || [],
       routes: diagram?.routes || [],
       peerings: diagram?.peerings || [],
+      tgws: diagram?.tgws || [],
+      tgwAttachments: diagram?.tgwAttachments || [],
       // A diagram read that failed (no eks:ListClusters, say) used to vanish;
       // now the map says which call was refused.
       diagramNote: diagram?.error || "",

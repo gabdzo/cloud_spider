@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { loadCatalog } from "../src/score/catalog.js";
 import { kubeNetwork } from "../src/score/collectors/kube-network.js";
-import { networkEvaluators as E } from "../src/score/evaluators/network.js";
+import { EVALUATORS as E } from "../src/score/evaluators/index.js";
 import { validateControl } from "../src/score/model.js";
 import { fakeKube } from "./fixtures/fake-kube.js";
 

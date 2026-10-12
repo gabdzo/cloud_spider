@@ -32,6 +32,7 @@ export const FILES = new Set([
   "layout-cache.js",
   "ui.js",
   "layout.js",
+  "peering.js",
   "arch-layout.js",
   "radio.js",
   "verbs.js",

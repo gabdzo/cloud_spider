@@ -1,0 +1,17 @@
+kind: Control
+id: NET-VPC-007
+revision: 1
+title: "Peerings in use resolve private DNS names across"
+category: networking
+target: aws
+evidenceType: config
+severity: { default: low }
+confidence: medium
+evaluator: peering-dns-resolution
+aggregation: proportional
+requires: [aws-peering]
+whyItMatters: "Without DNS resolution over the peering, an RDS or VPC endpoint hostname from the other VPC resolves to its public address: traffic leaves through NAT (and costs), or fails where only the private path is allowed. A WARN: not every peering needs names."
+remediation: { summary: "Turn on DNS resolution from the remote VPC on both sides: aws ec2 modify-vpc-peering-connection-options --vpc-peering-connection-id pcx-… --requester-peering-connection-options AllowDnsResolutionFromRemoteVpc=true --accepter-peering-connection-options AllowDnsResolutionFromRemoteVpc=true (both VPCs need DNS hostnames and DNS support on).", effort: S }
+verification: "aws ec2 describe-vpc-peering-connections shows PeeringOptions.AllowDnsResolutionFromRemoteVpc true for requester and accepter."
+references:
+  - { source: "Enable DNS resolution for a VPC peering connection", url: "https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-dns.html" }
