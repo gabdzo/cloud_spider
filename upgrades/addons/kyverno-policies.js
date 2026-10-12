@@ -87,6 +87,12 @@ export const EXCEPTIONS = [
 // existing namespaces (generateExisting false): shop, demo, cnpg-system keep
 // the policies their stacks wrote. Out: the system namespaces, Kyverno's
 // own, and any namespace labelled cloudspider.io/allow-open=true.
+// Not "operations: [CREATE]": Kyverno re-checks the trigger when it
+// resyncs a deleted policy, that check is no CREATE, and the policy never
+// came back (cloudspider-up 2026-10-12). A precondition on the namespace's
+// creation time keeps every namespace older than the rollout out instead,
+// on create, update and resync alike.
+export const DEFAULT_DENY_SINCE = "2026-10-12T07:00:00Z";
 export const DEFAULT_DENY_SKIP = ["kube-system", "kube-public", "kube-node-lease", "kyverno"];
 export const ALLOW_OPEN_LABEL = "cloudspider.io/allow-open";
 export const DEFAULT_DENY_POLICY = {
@@ -100,7 +106,8 @@ export const DEFAULT_DENY_POLICY = {
     rules: [
       {
         name: "default-deny",
-        match: { any: [{ resources: { kinds: ["Namespace"], operations: ["CREATE"] } }] },
+        match: { any: [{ resources: { kinds: ["Namespace"] } }] },
+        preconditions: { all: [{ key: `{{ time_after('{{request.object.metadata.creationTimestamp}}', '${DEFAULT_DENY_SINCE}') }}`, operator: "Equals", value: true }] },
         exclude: { any: [{ resources: { names: DEFAULT_DENY_SKIP } }, { resources: { selector: { matchLabels: { [ALLOW_OPEN_LABEL]: "true" } } } }] },
         generate: {
           generateExisting: false,

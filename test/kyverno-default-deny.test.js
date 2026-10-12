@@ -2,7 +2,7 @@
 // generate policy and K8S-SEC-010.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ALLOW_OPEN_LABEL, DEFAULT_DENY_POLICY, DEFAULT_DENY_SKIP, GENERATE_RBAC } from "../upgrades/addons/kyverno-policies.js";
+import { ALLOW_OPEN_LABEL, DEFAULT_DENY_POLICY, DEFAULT_DENY_SINCE, DEFAULT_DENY_SKIP, GENERATE_RBAC } from "../upgrades/addons/kyverno-policies.js";
 import { protectEvaluators as E } from "../src/score/evaluators/protect.js";
 import { kubePolicy } from "../src/score/collectors/kube-policy.js";
 import { SCANNER_RULES } from "../upgrades/eks/scanner-rbac.js";
@@ -11,8 +11,11 @@ import { UPGRADES } from "../src/upgrade.js";
 
 const rule = DEFAULT_DENY_POLICY.spec.rules[0];
 
-test("policy: CREATE of a Namespace only, never existing, synchronized, system + allow-open excluded", () => {
-  assert.deepEqual(rule.match.any[0].resources, { kinds: ["Namespace"], operations: ["CREATE"] });
+test("policy: Namespaces created after the rollout only, never existing, synchronized, system + allow-open excluded", () => {
+  // No operations filter: it broke synchronize. Older namespaces stay out by creation time.
+  assert.deepEqual(rule.match.any[0].resources, { kinds: ["Namespace"] });
+  assert.equal(rule.preconditions.all[0].key, `{{ time_after('{{request.object.metadata.creationTimestamp}}', '${DEFAULT_DENY_SINCE}') }}`);
+  assert.deepEqual([rule.preconditions.all[0].operator, rule.preconditions.all[0].value], ["Equals", true]);
   assert.equal(rule.generate.generateExisting, false);
   assert.equal(rule.generate.synchronize, true);
   assert.deepEqual(DEFAULT_DENY_SKIP, ["kube-system", "kube-public", "kube-node-lease", "kyverno"]);
