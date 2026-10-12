@@ -7,7 +7,7 @@ import { obsEvaluators as E, CW_ADDON } from "../src/score/evaluators/obs.js";
 import { agentsOf, alarmScope, appVaults, kubeObs, lbHostsOf } from "../src/score/collectors/kube-obs.js";
 import { runControls } from "../src/score/engine.js";
 import { loadCatalog } from "../src/score/catalog.js";
-import { alarmSet, alarmsMonthly, insightsGroups } from "../upgrades/observability/plan.js";
+import { alarmSet, alarmsMonthly, dashboardBody, dashboardName, insightsGroups } from "../upgrades/observability/plan.js";
 import { UPGRADES } from "../src/upgrade.js";
 
 const NOW = Date.parse("2026-10-12T07:00:00Z");
@@ -93,7 +93,7 @@ test("catalog: eight K8S-OBS controls, observability, a fix and a card each, in 
   const eks = UPGRADES.find((u) => u.id === "eks").parameters.find((p) => p.name === "controlPlaneLogs");
   assert.equal(eks.default, "off");
   const card = UPGRADES.find((u) => u.id === "observability");
-  assert.deepEqual(card.parameters.map((p) => p.name), ["clusterName", "containerInsights", "alarms", "alertEmail", "retentionDays"]);
+  assert.deepEqual(card.parameters.map((p) => p.name), ["clusterName", "containerInsights", "alarms", "alertEmail", "dashboard", "retentionDays"]);
   assert.equal(card.parameters.find((p) => p.name === "alertEmail").default, "", "email is opt-in");
 });
 
@@ -178,10 +178,26 @@ test("EKS card controlPlaneLogs: on logs api/audit/authenticator to a 7-day grou
 });
 
 test("observability stack: Container Insights add-on with Pod Identity and 7-day groups", { skip: existsSync(`${root}upgrades/observability/node_modules/@pulumi/aws`) ? false : "run npm ci in upgrades/observability" }, async () => {
-  const r = await mock("upgrades/observability", "cloudspider-observability", "observability", { "cloudspider-observability:containerInsights": "on", "cloudspider-observability:alarms": "off" });
+  const r = await mock("upgrades/observability", "cloudspider-observability", "observability", { "cloudspider-observability:containerInsights": "on", "cloudspider-observability:alarms": "off", "cloudspider-observability:dashboard": "off" });
   const addon = r.find((x) => x.type === "aws:eks/addon:Addon").inputs;
   assert.equal(addon.addonName, "amazon-cloudwatch-observability");
   assert.equal(addon.podIdentityAssociations[0].serviceAccount, "cloudwatch-agent");
   assert.deepEqual(r.filter((x) => x.type.includes("logGroup")).map((x) => x.inputs.retentionInDays), [7, 7, 7, 7]);
   assert.equal(r.some((x) => x.type.includes("sns")), false, "alarms off: no topic");
+});
+
+test("dashboard: named after the cluster (K8S-OBS-007), alarms, ALB widgets, nodes only with Container Insights", () => {
+  assert.equal(dashboardName("c1"), "c1-overview");
+  const lbs = [{ name: "k8s-shop", suffix: "app/k8s-shop/1", targetGroups: ["targetgroup/k8s-shop-tg/2"] }];
+  const b = dashboardBody("c1", lbs, { region: "eu-north-1", insights: false, alarmArns: ["arn:a"] });
+  assert.equal(b.widgets[0].type, "alarm");
+  const titles = b.widgets.map((w) => w.properties.title);
+  assert.deepEqual(titles.slice(1), ["k8s-shop: requests and 5XX", "k8s-shop: target response time p95", "k8s-shop-tg: healthy / unhealthy targets"]);
+  assert.equal(titles.some((t) => /Nodes/.test(t)), false);
+  const withCi = dashboardBody("c1", lbs, { region: "eu-north-1", insights: true });
+  assert.ok(withCi.widgets.some((w) => w.properties.metrics?.[0]?.[0] === "ContainerInsights"));
+  assert.equal(dashboardBody("c1", [], { region: "eu-north-1", insights: false }).widgets[0].type, "text");
+  const card = UPGRADES.find((u) => u.id === "observability");
+  assert.match(card.parameters.find((p) => p.name === "containerInsights").labels.on, /\$0\.40-1\.00\/day/);
+  assert.equal(card.parameters.find((p) => p.name === "containerInsights").default, "off");
 });

@@ -3,7 +3,7 @@ import * as aws from "@pulumi/aws";
 import { DescribeLoadBalancersCommand, DescribeTagsCommand, DescribeTargetGroupsCommand, ElasticLoadBalancingV2Client } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { inheritTags, stackTags } from "../tags.js";
 import { readAddon } from "../eks-addons.js";
-import { alarmSet, insightsGroups } from "./plan.js";
+import { alarmSet, dashboardBody, dashboardName, insightsGroups } from "./plan.js";
 
 // Observability for the EKS cluster from upgrades/eks. Stack: observability.
 //   - containerInsights=on: the CloudWatch Observability EKS add-on (the
@@ -15,6 +15,9 @@ import { alarmSet, insightsGroups } from "./plan.js";
 //     elbv2.k8s.aws/cluster) 5XX alarms and an unhealthy-target alarm per
 //     target group; with Container Insights a node-not-ready alarm.
 //     alertEmail: an email subscription (opt-in; AWS mails a confirm link).
+//   - dashboard=on: CloudWatch dashboard <cluster>-overview (ALB traffic,
+//     5XX, p95 latency, target health, the alarms; nodes and pods with
+//     Container Insights). Free for the first 3 dashboards, then $3/month.
 // Cost: Container Insights ~$0.30-0.60/day on a 2-node demo (metrics +
 // log ingestion $0.50/GB); alarms $0.10/month each; SNS email free (1000/mo).
 inheritTags(pulumi, stackTags("observability"));
@@ -23,6 +26,7 @@ const clusterName = config.get("clusterName") || "cloudspider-up";
 const containerInsights = (config.get("containerInsights") || "off") === "on";
 const alarms = (config.get("alarms") || "off") === "on";
 const alertEmail = config.get("alertEmail") || "";
+const dashboard = (config.get("dashboard") || "on") === "on";
 const retentionDays = Number(config.get("retentionDays") || 7);
 const region = aws.config.region || process.env.AWS_REGION || "eu-north-1";
 const tags = { cloudspider: "expendable", cluster: clusterName };
@@ -47,12 +51,8 @@ if (containerInsights) {
   }, { dependsOn: groups });
 }
 
-let topicArn = pulumi.output("");
-let alarmNames = [];
-if (alarms) {
-  const topic = new aws.sns.Topic("alerts", { name: `${clusterName}-alerts`, tags });
-  topicArn = topic.arn;
-  if (alertEmail) new aws.sns.TopicSubscription("alerts-email", { topic: topic.arn, protocol: "email", endpoint: alertEmail });
+// The cluster's ALBs (tag elbv2.k8s.aws/cluster) with their target groups.
+async function clusterAlbs() {
   const elb = new ElasticLoadBalancingV2Client({ region });
   const all = (await elb.send(new DescribeLoadBalancersCommand({}))).LoadBalancers || [];
   const lbs = [];
@@ -67,16 +67,38 @@ if (alarms) {
       lbs.push({ name: lb.LoadBalancerName, suffix: lb.LoadBalancerArn.split(":loadbalancer/")[1], targetGroups: tgs.map((t) => t.TargetGroupArn.split(":").pop()) });
     }
   }
+  return lbs;
+}
+const lbs = alarms || dashboard ? await clusterAlbs() : [];
+
+let topicArn = pulumi.output("");
+let alarmNames = [];
+const alarmArns = [];
+if (alarms) {
+  const topic = new aws.sns.Topic("alerts", { name: `${clusterName}-alerts`, tags });
+  topicArn = topic.arn;
+  if (alertEmail) new aws.sns.TopicSubscription("alerts-email", { topic: topic.arn, protocol: "email", endpoint: alertEmail });
   for (const a of alarmSet(clusterName, lbs, { insights: containerInsights })) {
-    new aws.cloudwatch.MetricAlarm(a.key, {
+    const alarm = new aws.cloudwatch.MetricAlarm(a.key, {
       name: a.name, alarmDescription: a.description, namespace: a.namespace, metricName: a.metric, statistic: a.statistic,
       period: a.period, evaluationPeriods: a.evaluationPeriods, threshold: a.threshold, comparisonOperator: "GreaterThanThreshold",
       dimensions: a.dimensions, treatMissingData: "notBreaching", alarmActions: [topic.arn], okActions: [topic.arn], tags,
     });
     alarmNames.push(a.name);
+    alarmArns.push(alarm.arn);
   }
+}
+
+let dashboardUrl = pulumi.output("");
+if (dashboard) {
+  const board = new aws.cloudwatch.Dashboard("overview", {
+    dashboardName: dashboardName(clusterName),
+    dashboardBody: pulumi.all(alarmArns).apply((arns) => JSON.stringify(dashboardBody(clusterName, lbs, { region, insights: containerInsights, alarmArns: arns }))),
+  });
+  dashboardUrl = pulumi.interpolate`https://${region}.console.aws.amazon.com/cloudwatch/home?region=${region}#dashboards/dashboard/${board.dashboardName}`;
 }
 
 export const alertTopic = topicArn;
 export const alarmCount = alarmNames.length;
 export const insights = containerInsights;
+export const dashboardLink = dashboardUrl;
