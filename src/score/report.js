@@ -2,6 +2,7 @@
 // no external requests) or JSON. Verdict before number, disclaimer always,
 // and never evidence fields: only results, statuses and failing resource ids.
 import { DISCLAIMER, VERDICT_LABEL } from "./scorer.js";
+import { scoreText } from "./view.js";
 
 // Add-ons the EKS stack installs (upgrades/addons/catalog.js includedWithEks).
 const EKS_INCLUDED = new Set(["pod-identity", "metrics-server"]);
@@ -14,7 +15,7 @@ export function reportModel(scan, { permissions = null } = {}) {
   return {
     title: `Cloud Spider scorecard: ${scan.clusterName || scan.target}`,
     verdict: VERDICT_LABEL[card.verdict] || card.verdict,
-    score: card.overall == null ? "no score (not enough evidence)" : `${Math.round(card.overall)}/100 (range ${Math.round(card.lower)}–${Math.round(card.upper)})`,
+    score: card.overall == null ? "no score (not enough evidence)" : `${scoreText(card.overall)}/100 (range ${scoreText(card.lower)}–${scoreText(card.upper)})`,
     coverage: `${card.coverage}% coverage, ${card.unknown}% unknown, ${card.notAssessed}% not assessed; confidence ${card.confidence}`,
     meta: `profile ${card.profile}${scan.profileDefaulted ? " (no environment set: production assumed)" : ""} · catalog ${scan.catalogVersion} · scanned ${scan.finishedAt}`,
     reasons: card.reasons,
