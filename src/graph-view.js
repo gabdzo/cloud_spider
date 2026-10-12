@@ -585,7 +585,7 @@ export function createGraphView(root) {
       const rowOf = (id) => els.stage.querySelector(`[data-id="${CSS.escape(id)}"]`)?.closest(".gv-layered");
       const rowA = rowOf(edge.from) || els.stage.querySelector(`[data-id="${CSS.escape(edge.from)}"]`)?.closest(".gv-cardgrid");
       const sameRow = !!rowA && rowA === (rowOf(edge.to) || els.stage.querySelector(`[data-id="${CSS.escape(edge.to)}"]`)?.closest(".gv-cardgrid"));
-      const { d, lx, ly } = sameRow ? sideCurve(a, b, portOf.get(`${edge.from}|${key}`), portOf.get(`${edge.to}|${key}`)) : routeEdge(a, b, obstacles, { gap: 12, lanes, aPort: portOf.get(`${edge.from}|${key}`), bPort: portOf.get(`${edge.to}|${key}`) });
+      const { d, lx, ly } = sameRow ? sideCurve(a, b, portOf.get(`${edge.from}|${key}`), portOf.get(`${edge.to}|${key}`)) : routeEdge(a, b, obstacles, { gap: 24, lanes, aPort: portOf.get(`${edge.from}|${key}`), bPort: portOf.get(`${edge.to}|${key}`) });
       const src = edge.sources.includes("trace") ? "trace" : edge.sources.includes("flow") ? "flow" : edge.sources[0];
       const touch = hot && (edge.from === hot || edge.to === hot);
       const st = edgeStatus(edge);
@@ -602,17 +602,43 @@ export function createGraphView(root) {
     const keep = badges.length <= BADGE_MAX ? badges : badges.filter((b) => b.touch).concat([...badges].sort((p, q) => q.rps - p.rps).slice(0, BADGE_MAX)).filter((b, i, all) => all.indexOf(b) === i);
     const drawn = svg.querySelectorAll("path.gv-edge");
     const out = [];
+    // Badges must not sit on cards, group headers or each other: slide each
+    // one along its line to the first clear spot (else the least covered).
+    const blocks = [...els.stage.querySelectorAll(".gv-card, .gv-ghead, .gv-gsum, .gv-open, .gv-empty, .gv-colhead, .gv-blabel")].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left - box.left + els.stage.scrollLeft, y: r.top - box.top + els.stage.scrollTop, w: r.width, h: r.height };
+    }).filter((r) => r.w && r.h);
+    const stageW = els.stage.clientWidth;
+    const cover = (x, y, w) => {
+      if (x < 2 || x + w > stageW - 2) return Infinity;
+      let n = 0;
+      for (const r of blocks) n += Math.max(0, Math.min(x + w, r.x + r.w) - Math.max(x, r.x)) * Math.max(0, Math.min(y + 15, r.y + r.h) - Math.max(y, r.y));
+      return n;
+    };
+    const STEPS = [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82, 0.1, 0.9];
     for (const b of keep) {
       const path = drawn[b.i];
       if (!path?.getTotalLength) continue;
       let pt;
       const w = Math.round(b.text.length * 6.4 + 12);
-      if (b.at) pt = { x: b.at.x - w / 2 - 6, y: b.at.y + 1 };
-      else try {
-        pt = path.getPointAtLength(path.getTotalLength() / 2);
-      } catch {
-        continue;
+      const cands = [];
+      if (b.at) cands.push({ x: b.at.x - w / 2 - 6, y: b.at.y + 1 });
+      try {
+        const len = path.getTotalLength();
+        for (const f of STEPS) {
+          const q = path.getPointAtLength(len * f);
+          cands.push({ x: q.x, y: q.y }, { x: q.x - w - 12, y: q.y }, { x: q.x - w / 2 - 6, y: q.y + 12 }, { x: q.x - w / 2 - 6, y: q.y - 4 });
+        }
+      } catch {}
+      if (!cands.length) continue;
+      let best = null;
+      for (const c of cands) {
+        const n = cover(c.x + 6, c.y - 8, w);
+        if (!best || n < best.n) best = { ...c, n };
+        if (n === 0) break;
       }
+      pt = best.n === Infinity ? { x: Math.max(-4, Math.min(best.x, stageW - w - 10)), y: best.y } : best;
+      blocks.push({ x: pt.x + 6, y: pt.y - 8, w, h: 15 });
       const safe = b.text.replace(/[<&]/g, "");
       out.push(`<g class="gv-badge${b.err ? " err" : ""}${hot && !b.touch ? " faint" : ""}" transform="translate(${Math.round(pt.x + 6)},${Math.round(pt.y - 8)})"><rect width="${w}" height="15" rx="2"/><text x="5" y="11">${safe}</text></g>`);
     }

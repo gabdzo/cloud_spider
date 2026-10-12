@@ -19,6 +19,8 @@ export const VIEWS = {
   "cl-services": [click("#cluster"), sub("SERVICES")],
   "cl-services-side": [click("#cluster"), sub("SERVICES"), async (p) => { await p.evaluate(() => document.querySelector("#kube-graph .gv-card")?.click()); await wait(1000); }],
   "cl-services-nimbus": [click("#cluster"), sub("SERVICES"), async (p) => { await p.evaluate(() => [...document.querySelectorAll("#kube-graph [data-scenario]")].find((b) => b.dataset.scenario !== "bare")?.click()); await wait(2000); }],
+  // the opened demo group scrolled into view: cards and rate badges inside one group
+  "cl-services-demo": [click("#cluster"), sub("SERVICES"), async (p) => { await p.evaluate(() => { const g = [...document.querySelectorAll("#kube-graph .gv-group")].find((x) => x.querySelector(".gv-glabel")?.textContent === "demo"); const o = g?.querySelector(".gv-open"); if (o && o.getAttribute("aria-expanded") !== "true") o.click(); }); await wait(1200); await p.evaluate(() => [...document.querySelectorAll("#kube-graph .gv-group")].find((x) => x.querySelector(".gv-glabel")?.textContent === "demo")?.scrollIntoView({ block: "start" })); await wait(1000); }],
   "cl-logs": [click("#cluster"), sub("LOG ERRORS")],
   k9s: [click("#cluster"), click("#k9s-btn")],
   vaults: [click("#tab-vaults")],
