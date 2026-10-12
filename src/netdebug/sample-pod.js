@@ -3,7 +3,8 @@
 //   shopapi.shop:3000 from cloudspider-debug → blocked by shop's policies
 //   shopapi.shop:3000 from web (as app=web)  → allowed, HTTP 200, live edges
 //   api.example.com from anywhere            → 9 hops, path MTU 1400 < 1500
-//   tcp://shopdb.shop:5432 (+ TLS)           → connect, STARTTLS postgres
+//   tcp://shopdb.shop:5432 (+ TLS) from shop as app=shopapi → connect,
+//     STARTTLS postgres; from anywhere else → blocked by allow-shopdb
 const ns = (name, labels = {}) => ({ metadata: { name, labels: { "kubernetes.io/metadata.name": name, ...labels } } });
 const pod = (name, ip, node, labels) => ({ metadata: { name, namespace: "shop", labels }, spec: { nodeName: node, containers: [{ name: "app", ports: [{ name: "http", containerPort: 8080 }] }] }, status: { podIP: ip, phase: "Running" } });
 const np = (name, namespace, spec) => ({ metadata: { name, namespace }, spec });
@@ -27,9 +28,10 @@ export function samplePodReads(target = null) {
     policies: [
       np("default-deny", "shop", { podSelector: {}, policyTypes: ["Ingress"] }),
       np("allow-from-web", "shop", { podSelector: { matchLabels: { app: "shopapi" } }, policyTypes: ["Ingress"], ingress: [{ from: [{ namespaceSelector: { matchLabels: { team: "web" } }, podSelector: { matchLabels: { app: "web" } } }], ports: [{ port: "http" }] }] }),
+      np("allow-shopdb", "shop", { podSelector: { matchLabels: { "cnpg.io/cluster": "shopdb" } }, policyTypes: ["Ingress"], ingress: [{ from: [{ podSelector: { matchLabels: { app: "shopapi" } } }], ports: [{ port: 5432 }] }] }),
       np("egress-dns-and-shop", "web", { podSelector: {}, policyTypes: ["Egress"], egress: [{ ports: [{ port: 53, protocol: "UDP" }, { port: 53, protocol: "TCP" }] }, { to: [{ namespaceSelector: { matchLabels: { team: "shop" } } }], ports: [{ port: 8080 }, { port: 3000 }] }] }),
     ],
-    targetPods: [pod("shopapi-7d9f-x2k4p", "10.128.2.14", "worker-b", { app: "shopapi" }), pod("shopapi-7d9f-q8w1z", "10.128.3.9", "worker-c", { app: "shopapi" })],
+    targetPods: db ? [{ ...pod("shopdb-1", "10.128.2.40", "worker-b", { "cnpg.io/cluster": "shopdb" }), spec: { nodeName: "worker-b", containers: [{ name: "postgres", ports: [{ name: "postgresql", containerPort: 5432 }] }] } }] : [pod("shopapi-7d9f-x2k4p", "10.128.2.14", "worker-b", { app: "shopapi" }), pod("shopapi-7d9f-q8w1z", "10.128.3.9", "worker-c", { app: "shopapi" })],
     endpoints: db ? [{ ip: "10.128.2.40", port: 5432, pod: "shopdb-1", node: "worker-b" }] : [{ ip: "10.128.2.14", port: 8080, pod: "shopapi-7d9f-x2k4p", node: "worker-b" }, { ip: "10.128.3.9", port: 8080, pod: "shopapi-7d9f-q8w1z", node: "worker-c" }],
     live: { installed: true, edges: [{ from: "web/web", to: "shop/shopapi", kind: "http", source: "trace", rps: 12.4, errors: 0.004, p95ms: 21 }, { from: "shop/worker", to: "shop/shopapi", kind: "http", source: "trace", rps: 1.1, errors: 0, p95ms: 35 }] },
   };
@@ -56,11 +58,12 @@ export function samplePodLog(plan) {
     if (plan.checks.http) parts.push(block("P-HTTP-01", "target", allowed ? 0 : 28, allowed ? 19 : 5003, allowed ? "200 0.004 0.006 0.018 0.019 172.30.41.7" : "curl: (28) Connection timed out after 5001 milliseconds\n000 0.004 0.000 0.000 5.001 "));
     if (plan.checks.trace) parts.push(block("P-TRACE-01", "target", 0, allowed ? 40 : 16000, allowed ? " 1?: [LOCALHOST]                      pmtu 1450\n 1:  10.128.0.1                                            0.211ms\n 2:  10.128.2.14                                           0.598ms reached\n     Resume: pmtu 1450 hops 2 back 2" : " 1?: [LOCALHOST]                      pmtu 1450\n 1:  10.128.0.1                                            0.230ms\n 2:  no reply\n 3:  no reply\n     Too many hops: pmtu 1450"));
   } else if (t.kind === "service" && t.name === "shopdb") {
+    const allowed = src === "shop" && plan.source.labels?.app === "shopapi";
     parts.push(...head("10.128.0.57"));
     parts.push(block("P-DNS-02", "fqdn", 0, 3, "172.30.88.20"));
-    parts.push(block("P-TCP-01", "target", 0, 2, `Connection to ${t.host} (172.30.88.20) ${t.port} port [tcp/postgresql] succeeded!`));
-    (t.endpoints || []).forEach((e, i) => parts.push(block("P-TCP-02", `ep${i}`, 0, 1, `Connection to ${e.ip} ${e.port} port [tcp/postgresql] succeeded!`)));
-    if (plan.checks.tls) parts.push(block("P-TLS-01", "target", 0, 14, "CONNECTION ESTABLISHED\nProtocol version: TLSv1.3\nCiphersuite: TLS_AES_256_GCM_SHA384\nPeer certificate: CN = shopdb-rw\nVerification error: unable to get local issuer certificate"));
+    parts.push(block("P-TCP-01", "target", allowed ? 0 : 1, allowed ? 2 : 3004, allowed ? `Connection to ${t.host} (172.30.88.20) ${t.port} port [tcp/postgresql] succeeded!` : `nc: connect to ${t.host} (172.30.88.20) port ${t.port} (tcp) timed out: Operation in progress`));
+    (t.endpoints || []).forEach((e, i) => parts.push(block("P-TCP-02", `ep${i}`, allowed ? 0 : 1, allowed ? 1 : 3002, allowed ? `Connection to ${e.ip} ${e.port} port [tcp/postgresql] succeeded!` : `nc: connect to ${e.ip} port ${e.port} (tcp) timed out: Operation in progress`)));
+    if (plan.checks.tls && allowed) parts.push(block("P-TLS-01", "target", 0, 14, "CONNECTION ESTABLISHED\nProtocol version: TLSv1.3\nCiphersuite: TLS_AES_256_GCM_SHA384\nPeer certificate: CN = shopdb-rw\nVerification error: unable to get local issuer certificate"));
     if (plan.checks.trace) parts.push(block("P-TRACE-01", "target", 0, 30, " 1?: [LOCALHOST]                      pmtu 1450\n 1:  10.128.0.1                                            0.201ms\n 2:  10.128.2.40                                           0.512ms reached\n     Resume: pmtu 1450 hops 2 back 2"));
   } else if (t.kind === "host") {
     parts.push(...head("10.128.0.57", 1500));
