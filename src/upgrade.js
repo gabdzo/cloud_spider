@@ -171,6 +171,8 @@ export const UPGRADES = [
     parameters: [
       { name: "clusterName", type: "string", default: "cloudspider-up" },
       { name: "expose", type: "string", default: "none", choices: ["none", "alb"] },
+      // 2: one per zone behind the ALB (NET-K8S-002) and a PDB; 1: cheaper, one zone.
+      { name: "replicas", type: "string", default: "2", choices: ["1", "2", "3"] },
     ],
   },
   {

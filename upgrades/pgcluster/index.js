@@ -131,6 +131,48 @@ const db = new k8s.apiextensions.CustomResource(
   { ...k, dependsOn: [operator, ns, storageClass] },
 );
 
+// Ingress NetworkPolicy (K8S-SEC-005): deny by default in shop and
+// cnpg-system, then one allow per flow. Egress stays open (DNS, S3, the API
+// server). Enforced where the CNI enforces it (the EKS card's
+// networkPolicy=on); elsewhere these are inert.
+//   shop/shopdb (cnpg.io/cluster=shopdb)
+//     ← shopapi, shopapi-migrate, other shopdb instances          5432
+//     ← the CNPG operator (namespace cnpg-system): status + SQL   8000, 5432
+//   shop/shopapi ← the ALB: upgrades/shopapi owns that allow (VPC CIDR, 3000)
+//   cnpg-system/operator ← the VPC: the EKS control plane calls the
+//     admission webhook on the pod IP from ENIs in the cluster subnets, so
+//     the VPC CIDR is the narrowest source that works (no fixed IPs)  9443
+// Kubelet probes come from the node and stay allowed.
+const vpcCidr = aws.ec2.getVpcOutput({ id: aws.eks.getClusterOutput({ name: clusterName }).vpcConfig.vpcId }).cidrBlock;
+const tcp = (...ports) => ports.map((port) => ({ protocol: "TCP", port }));
+const nsSel = (name) => ({ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": name } } });
+export const SHOP_INGRESS = [
+  {
+    name: "allow-shopdb",
+    namespace: NAMESPACE,
+    podSelector: { matchLabels: { "cnpg.io/cluster": CLUSTER } },
+    ingress: [
+      { from: [{ podSelector: { matchLabels: { app: "shopapi" } } }, { podSelector: { matchLabels: { app: "shopapi-migrate" } } }, { podSelector: { matchLabels: { "cnpg.io/cluster": CLUSTER } } }], ports: tcp(5432) },
+      { from: [nsSel("cnpg-system")], ports: tcp(8000, 5432) },
+    ],
+  },
+  { name: "allow-cnpg-webhook", namespace: "cnpg-system", podSelector: { matchLabels: { "app.kubernetes.io/name": "cloudnative-pg" } }, ingress: [{ from: "vpc", ports: tcp(9443) }] },
+];
+const nsOf = { [NAMESPACE]: ns, "cnpg-system": operatorNs };
+for (const name of [NAMESPACE, "cnpg-system"]) {
+  new k8s.networking.v1.NetworkPolicy(`default-deny-ingress-${name}`, {
+    metadata: { name: "default-deny-ingress", namespace: name },
+    spec: { podSelector: {}, policyTypes: ["Ingress"] },
+  }, { ...k, dependsOn: [nsOf[name], operator] });
+}
+for (const rule of SHOP_INGRESS) {
+  const ingress = rule.ingress.map((item) => (item.from === "vpc" ? vpcCidr.apply((cidr) => ({ from: [{ ipBlock: { cidr } }], ports: item.ports })) : item));
+  new k8s.networking.v1.NetworkPolicy(rule.name, {
+    metadata: { name: rule.name, namespace: rule.namespace },
+    spec: { podSelector: rule.podSelector, policyTypes: ["Ingress"], ingress },
+  }, { ...k, dependsOn: [nsOf[rule.namespace]] });
+}
+
 export const namespace = NAMESPACE;
 export const cluster = db.metadata.name;
 export const appSecretName = `${CLUSTER}-app`;
