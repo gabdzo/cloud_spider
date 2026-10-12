@@ -12,6 +12,13 @@ export const STACK_BUNDLES = [
     note: "Postgres (CloudNativePG operator + shopdb) → AWS Load Balancer Controller when expose=alb → Shop API",
   },
   {
+    // For a live demo: the same three stacks with the public ALB fixed on.
+    id: "shop-public",
+    title: "Shop API bundle · with public ALB",
+    steps: [{ module: "pgcluster" }, { module: "lbc" }, { module: "shopapi", params: { expose: "alb" }, pass: ["replicas"] }],
+    note: "Postgres → AWS Load Balancer Controller → Shop API with expose=alb: a public URL (http://<alb>/items) in 2 AZs, ≈ $0.82/day for the ALB",
+  },
+  {
     id: "demo",
     title: "Demo bundle",
     // scaling-demo's HPAs scale demo/web and demo/api, which the first step makes.

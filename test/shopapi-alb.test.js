@@ -24,7 +24,13 @@ async function mock(config) {
 }
 
 test("the card: expose none|alb; NEEDS lbc only with alb; ALB + its 2 IPv4 on the bill only with alb", () => {
-  assert.deepEqual(spec.parameters.find((p) => p.name === "expose"), { name: "expose", type: "string", default: "none", choices: ["none", "alb"] });
+  const expose = spec.parameters.find((p) => p.name === "expose");
+  assert.deepEqual([expose.type, expose.default, expose.choices], ["string", "none", ["none", "alb"]]);
+  // The card says what each means; none warns that nothing is public.
+  assert.equal(expose.warn, "none");
+  assert.match(expose.notes.none, /Nothing is reachable from the internet/);
+  assert.match(expose.labels.alb, /PUBLIC ALB ≈ \$0\.82\/day/);
+  assert.match(expose.notes.alb, /\$0\.82\/day/);
   const listed = createUpgrade({ env: {}, cwd: "/nonexistent" }).list().find((item) => item.id === "shopapi");
   assert.deepEqual(listed.needsWhen, [{ param: "expose", value: "alb", needs: ["lbc"] }]);
   assert.equal(listed.cost.hour, 0, "default none: nothing of its own");
@@ -109,4 +115,12 @@ test("the shopapi vault owns the ALB by its project tag", () => {
   const place = { vpcs: [], subnets: [], instances: [], fixtures: [{ id: ALB, kind: "alb", name: "k8s-shop-shopapi-1a2b3c", tags }] };
   const owned = matchVaults([{ key: "lbc", resources: { tags: { project: "lbc" } } }, { key: "shopapi", resources: { tags: { project: "shopapi" } } }], place);
   assert.deepEqual(owned.get("shopapi"), [ALB]);
+});
+
+test("the card starts from what the stack runs with (Pulumi.<stack>.yaml), so RUN never quietly turns expose=alb back to none", async () => {
+  const { stackConfig } = await import("../src/upgrade.js");
+  const yaml = "encryptionsalt: v1:x\nconfig:\n  cloudspider-shopapi:clusterName: cloudspider-up\n  cloudspider-shopapi:expose: alb\n  cloudspider-shopapi:dbSecret:\n    secure: v1:abc\n  other:expose: none\n";
+  assert.deepEqual(stackConfig(spec, "/x", () => yaml), { clusterName: "cloudspider-up", expose: "alb" });
+  assert.deepEqual(stackConfig(spec, "/x", () => { throw new Error("ENOENT"); }), {});
+  assert.deepEqual(stackConfig({ ...spec, stack: "lbc-{cluster}" }, "/x", () => yaml), {});
 });

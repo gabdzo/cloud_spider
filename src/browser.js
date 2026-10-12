@@ -309,6 +309,30 @@ async function probeReach(urls) {
     for (const lamp of document.querySelectorAll(".reach-lamp")) if (lamp.dataset.url === url) paintLamp(lamp, seen);
   }
 }
+// The public endpoints a stack made: public load balancers on the map tagged
+// with its project (Shop API: project=shopapi).
+function renderCardOpen() {
+  for (const row of document.querySelectorAll(".card-open[data-project]")) {
+    const list = cardEndpoints({ id: row.dataset.project });
+    const key = JSON.stringify(list.map((item) => item.url));
+    if (row.dataset.key === key) continue;
+    row.dataset.key = key;
+    row.hidden = !list.length;
+    row.replaceChildren(...list.flatMap((item) => [el("span", { className: "ps-tag", textContent: "PUBLIC" }), el("span", { className: "ps-url", textContent: item.url }), reachLamp(item.url), openLink(item.url)]));
+    if (list.length && !sample) probeReach(list.map((item) => item.url).filter((url) => !reachSeen.has(url)));
+  }
+}
+function cardEndpoints(spec) {
+  const project = spec.vault || spec.id;
+  // Tags come as [{Key, Value}] (ELB) or { key: value } (EKS, SQS).
+  const tagOf = (tags, key) => {
+    if (!Array.isArray(tags)) return tags?.[key];
+    const found = tags.find((tag) => (tag?.Key ?? tag?.key) === key);
+    return found ? found.Value ?? found.value : undefined;
+  };
+  const mine = (place?.fixtures || []).filter((item) => tagOf(item.tags, "project") === project);
+  return publicEndpoints(mine);
+}
 function hostOfUrl(url) {
   try {
     return new URL(url).hostname.toLowerCase();
@@ -346,6 +370,7 @@ function renderPublicStrip() {
 function renderChrome() {
   renderChromeParts();
   renderPublicStrip();
+  renderCardOpen();
   syncUrl();
 }
 
@@ -3491,6 +3516,12 @@ function cardBody(spec, preset = {}) {
   const watch = el("div", { id: "pip-watch" });
   watch.hidden = true;
   body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), needsRow(spec, preset), bundleRows(spec, preset));
+  // PUBLIC · URL · lamp · OPEN, filled when the map knows the stack's public
+  // load balancers (renderCardOpen, on every chrome render).
+  const openRow = el("div", { className: "card-open" });
+  openRow.dataset.project = spec.vault || spec.id;
+  openRow.hidden = true;
+  body.append(openRow);
   if (spec.nodeCost) body.append(nodeCostBlock(spec.nodeCost));
   body.append(watch);
   if (spec.id === "eks") body.append(connectRow("pip-connect"), el("div", { id: "pip-live", className: "live-line", hidden: true }, el("span", { className: "live-what" }), el("em", { className: "field-note live-warn" })));
@@ -3513,11 +3544,12 @@ function cardBody(spec, preset = {}) {
     const fixed = preset[parameter.name];
     // What was typed stays when the panel redraws (and CONNECT can open the
     // card on a cluster).
-    const kept = pipKept[spec.id]?.[parameter.name];
+    // Else what the stack runs with now (Pulumi.<stack>.yaml), else the default.
+    const kept = pipKept[spec.id]?.[parameter.name] ?? spec.current?.[parameter.name];
     if (parameter.choices) {
       field = el("select");
       for (const choice of parameter.choices) {
-        field.append(el("option", { value: choice, textContent: choice, selected: choice === (kept ?? parameter.default) }));
+        field.append(el("option", { value: choice, textContent: parameter.labels?.[choice] || choice, selected: choice === (kept ?? parameter.default) }));
       }
     } else {
       field = el("input", { value: fixed ?? kept ?? parameter.default ?? "" });
@@ -3546,6 +3578,18 @@ function cardBody(spec, preset = {}) {
       field.addEventListener("input", () => repriceCard(spec));
     }
     body.append(el("label", {}, `${parameter.name} `, field));
+    // A choice's meaning under the field (Shop API expose: none warns that
+    // nothing is reachable from the internet).
+    if (parameter.notes) {
+      const note = el("em", { className: "field-note choice-note", role: "status" });
+      const say = () => {
+        note.textContent = parameter.notes[field.value] || "";
+        note.classList.toggle("warn", parameter.warn === field.value);
+      };
+      field.addEventListener("change", say);
+      say();
+      body.append(note);
+    }
     if (parameter.type === "number") {
       // The allowed range, said while typing (RUN would be refused anyway).
       if (fixed === undefined) Object.assign(field, { type: "number", min: parameter.min, max: parameter.max, step: 1 });

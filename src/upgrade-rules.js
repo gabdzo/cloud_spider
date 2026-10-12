@@ -54,13 +54,16 @@ export function watchLine({ cluster, history }) {
   if (cluster) {
     if (cluster.error) return { status: "fail", text: cluster.error }
     if (!cluster.found) return { status: "ok", text: `the cluster is gone. ${count}` }
+    // Up and last run was not a take-down: that is the normal state, not a
+    // failure (a red "Pulumi has no destroy" on a healthy card read as broken
+    // in the 2026-10-12 demo pass).
     if (kind !== "destroy") {
-      return { status: "fail", text: `the cluster is still ${cluster.status}. Pulumi has no destroy. ${count}` }
+      return { status: "ok", text: `UP · the cluster is ${cluster.status} · ${count}${kind ? ` · last run: ${kind}` : ""}` }
     }
     return { status: "fail", text: `Pulumi finished and the cluster is still ${cluster.status}. ${count}` }
   }
   if (kind === "destroy" && resources === 0) return { status: "ok", text: "the stack is gone" }
-  if (kind !== "destroy") return { status: "fail", text: `the stack still has ${count}. Pulumi has no destroy.` }
+  if (kind !== "destroy") return { status: "ok", text: `UP · ${count}${kind ? ` · last run: ${kind}` : ""}` }
   return { status: "fail", text: `Pulumi finished and the stack still has ${count}` }
 }
 
