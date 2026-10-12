@@ -108,7 +108,13 @@ export function scoreText(value) {
   return String(Math.round(Number(value) * 10) / 10);
 }
 
-export function createScoreView({ root, toggleButton, context = () => "", onChange = () => {}, openCard = null }) {
+// SAMPLE is "not the account": SCORE then neither reads nor scans the real
+// cluster or account, and offers no FIX (which installs add-ons on it).
+export function sampleModel() {
+  return { state: "sample", text: "SAMPLE has no scorecard: SCORE reads your real cluster or AWS account, and FIX changes it.", hint: "Turn SAMPLE off to SCAN." };
+}
+
+export function createScoreView({ root, toggleButton, context = () => "", onChange = () => {}, openCard = null, sample = () => false }) {
   let open = false;
   let target = "kubernetes";
   let model = null;
@@ -131,6 +137,14 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
   const q = () => `?target=${target}${target === "kubernetes" && context() ? `&context=${encodeURIComponent(context())}` : ""}`;
 
   async function load() {
+    if (sample()) {
+      clearTimeout(timer);
+      model = sampleModel();
+      fixState = null;
+      plan = null;
+      draw();
+      return;
+    }
     model = scoreModel(await getJson(`/api/score${q()}`));
     fixState = await getJson("/api/score/fix");
     draw();
@@ -391,6 +405,10 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
       const empty = el("div", "sc-empty");
       empty.append(el("div", "sc-label", "Production readiness"), el("p", "", model.text));
       if (model.hint) empty.append(el("p", "sc-muted", model.hint));
+      if (model.state === "sample") {
+        root.append(empty);
+        return;
+      }
       empty.append(scanButton());
       root.append(targets(), empty);
       return;
@@ -420,6 +438,10 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
     },
     toggle() {
       return this.setOpen(!open);
+    },
+    // SAMPLE switched on or off while the panel is open.
+    refresh() {
+      return open ? load() : undefined;
     },
   };
 }
