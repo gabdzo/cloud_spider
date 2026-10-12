@@ -136,3 +136,23 @@ test("settings: visible modules and the YAML to paste", async () => {
   assert.equal(modulesYaml("full", ["aws"], []), "modules:\n  profile: full\n");
   assert.deepEqual(readHidden({ getItem: () => "{bad" }), []);
 });
+
+test("observe pulls stacks in (its bundle is a Pulumi stack); k8s-only + observe lists and runs only the kube card", async () => {
+  const { resolveModules, kubeCard } = await import("../src/modules.js");
+  const mods = resolveModules({ modules: { profile: "k8s-only", enable: ["observe"] } });
+  assert.ok(mods.has("observe") && mods.has("stacks") && !mods.has("aws"));
+  const { UPGRADES } = await import("../src/upgrade.js");
+  assert.deepEqual(UPGRADES.filter(kubeCard).map((c) => c.id), ["observe"]);
+  const { createApp } = await import("../src/app.js");
+  const { modulesView } = await import("../src/modules.js");
+  const ran = [];
+  const app = createApp({
+    pageOrigin: "http://127.0.0.1:9241",
+    settings: { modules: modulesView(mods) },
+    upgrade: { list: () => UPGRADES, run: async (b) => { ran.push(b.module); return { ok: true }; }, refuse: ({ error }) => ({ error }) },
+  });
+  assert.deepEqual(app.upgrades().map((c) => c.id), ["observe"]);
+  const no = await app.upgradeRun("http://127.0.0.1:9241", { module: "eks", action: "preview", params: {} });
+  assert.match(no.error, /builds AWS resources and the aws module is off/);
+  assert.deepEqual(ran, []);
+});

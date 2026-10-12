@@ -138,3 +138,30 @@ test("end to end through the kube client: GETs only, OpenShift fixture, no Secre
   assert.ok(calls.length >= 12);
   assert.ok(calls.every((c) => c.method === "GET" && !/secret/i.test(c.path)), JSON.stringify(calls));
 });
+
+test("OLM: operands written by the operator (managedFields, no ownerReferences) fold into its card", async () => {
+  const { svc } = await import("./fixtures/graph-cluster.js");
+  const written = (ns, name, labels, manager) => ({ ...deploy(ns, name, labels), metadata: { ...m(ns, name), managedFields: [{ manager, operation: "Update" }, { manager: "kube-controller-manager", operation: "Update" }] } });
+  const csv = (ns, name, deployments) => ({ metadata: m(ns, name), spec: { displayName: name, customresourcedefinitions: { owned: [{ kind: "CertManager" }] }, install: { spec: { deployments } } } });
+  const reads = {
+    namespaces: ["cert-manager-operator", "cert-manager", "other"].map((name) => ({ metadata: { name } })),
+    deployments: [
+      deploy("cert-manager-operator", "cert-manager-operator-controller-manager", { app: "op" }),
+      written("cert-manager", "cert-manager", { app: "cm" }, "cert-manager-operator"),
+      written("cert-manager", "cert-manager-webhook", { app: "wh" }, "cert-manager-operator"),
+      written("other", "web", { app: "web" }, "manager"),
+    ],
+    services: [svc("cert-manager", "cert-manager", { app: "cm" }, 9402), svc("cert-manager", "cert-manager-webhook", { app: "wh" }, 443)],
+    csvs: [
+      csv("cert-manager-operator", "cert-manager-operator.v1.20.1", [{ name: "cert-manager-operator-controller-manager", spec: { template: { spec: { containers: [{ name: "cert-manager-operator" }] } } } }]),
+      csv("other-op", "generic.v1", [{ name: "generic-controller", spec: { template: { spec: { containers: [{ name: "manager" }] } } } }]),
+    ],
+  };
+  const scene = buildGraph(reads, { now: NOW });
+  const op = scene.groups.find((g) => g.id === "cert-manager-operator");
+  assert.equal(op.kind, "operator");
+  assert.deepEqual(op.folded, ["cert-manager"]);
+  assert.equal(scene.groups.some((g) => g.id === "cert-manager"), false);
+  assert.ok(scene.groups.some((g) => g.id === "other"), "a generic writer name (manager) does not fold");
+  assert.ok(scene.edges.some((e) => e.from === "cert-manager-operator/csv:cert-manager-operator.v1.20.1" && e.kind === "owns"));
+});
