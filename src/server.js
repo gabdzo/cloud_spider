@@ -2318,6 +2318,26 @@ const page = `<!doctype html>
   :root[data-theme="pro"] .alb-exposed { border-top: 0; border-radius: 0 0 6px 6px; }
   :root[data-theme="pro"] .alb-exposed:hover { background: var(--hover); color: var(--text); }
   :root[data-theme="pro"] .alr-panel { border-radius: 8px; }
+  /* ---- pro polish (2026-10-12): buttons, narrow windows ---- */
+  /* Commands are quiet outlined buttons: no [ ] stencil, no caps lock. */
+  :root[data-theme="pro"] :is(button.cmd, a.cmd)::before, :root[data-theme="pro"] :is(button.cmd, a.cmd)::after { content: none; }
+  :root[data-theme="pro"] :is(button.cmd, a.cmd) { padding: 5px 10px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface); color: var(--text); font: 500 12px/1.2 var(--font-ui); letter-spacing: 0; text-transform: none; box-shadow: none; }
+  :root[data-theme="pro"] :is(button.cmd, a.cmd):hover { background: var(--hover); color: var(--text); border-color: var(--text-3); }
+  :root[data-theme="pro"] button.cmd:hover img { filter: grayscale(1) brightness(1.7); }
+  :root[data-theme="pro"] :is(button.cmd, a.cmd)[aria-pressed="true"] { background: var(--surface-2); border-color: var(--accent); color: var(--text); }
+  :root[data-theme="pro"] button.cmd.danger { border-color: rgba(242, 85, 90, 0.5); color: var(--err); }
+  :root[data-theme="pro"] button.cmd.danger:hover { background: rgba(242, 85, 90, 0.12); }
+  /* Narrow windows: the action keys go icon-only and MODE/TIME step aside,
+     so the header is two rows, not four. */
+  @media (max-width: 1000px) {
+    :root[data-theme="pro"] .key .tag { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    :root[data-theme="pro"] .key { padding: 6px 8px; }
+    :root[data-theme="pro"] .readout > span { display: none; }
+    :root[data-theme="pro"] header { gap: 6px 8px; padding: 6px 10px; }
+  }
+  @media (max-width: 640px) {
+    :root[data-theme="pro"] .tab { padding: 6px 8px; font-size: 12px; }
+  }
   :root[data-theme="pro"] .alr-head { border-color: var(--border); }
   :root[data-theme="pro"] .alr-head b { color: var(--text); letter-spacing: 0.02em; font-weight: 600; }
   :root[data-theme="pro"] :is(.alr-src, .alr-host, .alr-methods, .alr-note) { color: var(--text-3); letter-spacing: 0; text-transform: none; }

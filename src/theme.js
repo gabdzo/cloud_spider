@@ -221,6 +221,23 @@ export const ROLES = {
   },
   pro: PRO,
 };
+// Canvas ink for the SNIFF and CLUSTER diagrams (path-draw.js, kube-draw.js):
+// the Pip ramp, or the pro roles under data-theme="pro". syncCanvasTheme()
+// refreshes INK in place at the start of each paint, so a theme switch
+// shows on the next frame. The map's pixel world keeps PIP.
+export const PRO_INK = { hot: PRO.text, bright: PRO.text, mid: PRO.text2, dim: PRO.text3, dark: PRO.border, ink: PRO.bg, screen: PRO.raised, glass: PRO.surface, card: PRO.surface, line: PRO.borderStrong, accent: PRO.accent };
+const PIP_INK = { ...PIP, card: PIP.ink, line: PIP.dim, accent: PIP.hot };
+export const INK = { ...PIP_INK };
+export function canvasPro() {
+  return typeof document !== "undefined" && document.documentElement?.dataset?.theme === "pro";
+}
+export function syncCanvasTheme(pro = canvasPro()) {
+  Object.assign(INK, pro ? PRO_INK : PIP_INK);
+  return pro;
+}
+export function inkFont(px, pro = canvasPro()) {
+  return pro ? `600 ${px}px ${FONT_UI}` : font(px);
+}
 export const FONT_UI = '"Inter", system-ui, -apple-system, "Segoe UI", sans-serif';
 export const FONT_MONO = '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace';
 
