@@ -41,7 +41,7 @@ export function createLogErrorsView(root, { onGraph = () => {}, onTimeline = () 
       for (const [id, text] of [["bare", "SANDBOX-BARE"], ["bundle", "SANDBOX-NIMBUS"]]) seg.append(h("button", { type: "button", "aria-pressed": String(data.scenario === id), text, onclick: () => onScenario(id) }));
       head.append(seg);
     }
-    head.append(h("button", { type: "button", className: "le-close", text: "CLOSE", "aria-label": "close log errors", onclick: onClose }));
+    if (!api.embedded) head.append(h("button", { type: "button", className: "le-close", text: "CLOSE", "aria-label": "close log errors", onclick: onClose }));
     root.append(head);
     for (const note of [...(data.notes || []), data.error ? `not read: ${data.error}` : ""].filter(Boolean)) root.append(h("p", { className: "le-note", text: note }));
     const list = data.services || [];
@@ -77,7 +77,8 @@ export function createLogErrorsView(root, { onGraph = () => {}, onTimeline = () 
     return card;
   }
 
-  return {
+  const api = {
+    embedded: false,
     set(next) {
       data = next;
       if (!root.hidden) render();
@@ -97,4 +98,5 @@ export function createLogErrorsView(root, { onGraph = () => {}, onTimeline = () 
       return !root.hidden;
     },
   };
+  return api;
 }
