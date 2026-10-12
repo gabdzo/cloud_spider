@@ -1377,7 +1377,9 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       // An unknown name (a context since removed from the config) is the
       // primary one.
       const ctx = contextFor(context) || primary;
-      const view = ctx && !ctx.primary ? await contextView(ctx) : await this.primaryClusterView();
+      // aws module off (modules.js): the primary context is read like any
+      // other, straight from Kubernetes, with no EKS lookup first.
+      const view = ctx && (!ctx.primary || path?.off) ? await contextView(ctx) : await this.primaryClusterView();
       return contexts.length > 1 ? { ...view, context: ctx?.name || "", contexts: contextList() } : view;
     },
     // The health watch (kube-health.js): each context read at its own
@@ -1389,6 +1391,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       return this.kubeHealth();
     },
     contextNeedsAws(name = "") {
+      if (path?.off) return false;
       const ctx = contextFor(name) || primary;
       return !ctx || ctx.primary;
     },

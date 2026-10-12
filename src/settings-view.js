@@ -42,7 +42,29 @@ export function configRows(config, sources = {}, prefix = "") {
   return rows;
 }
 
-export function createSettings({ root, button, storage, onTheme = () => {}, fetchConfig = () => fetch("/api/config").then((r) => r.json()) }) {
+export const MODULES_KEY = "cloudspider.modules.hidden";
+
+// Modules this page shows: on at the server and not hidden in this browser.
+export function visibleModules(enabled = [], hidden = []) {
+  return enabled.filter((id) => !hidden.includes(id));
+}
+
+// The cloudspider.yaml lines that make this browser's choice the server's.
+export function modulesYaml(profile = "full", enabled = [], hidden = []) {
+  const off = enabled.filter((id) => hidden.includes(id));
+  return `modules:\n  profile: ${profile}${off.length ? `\n  disable: [${off.join(", ")}]` : ""}\n`;
+}
+
+export function readHidden(storage) {
+  try {
+    const got = JSON.parse(storage?.getItem(MODULES_KEY) || "[]");
+    return Array.isArray(got) ? got.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function createSettings({ root, button, storage, onTheme = () => {}, onModules = () => {}, fetchConfig = () => fetch("/api/config").then((r) => r.json()) }) {
   let body = null;
   let configured = document.documentElement.dataset.configTheme || "pip";
 
@@ -126,6 +148,8 @@ export function createSettings({ root, button, storage, onTheme = () => {}, fetc
     themeBox.append(note);
     root.append(themeBox);
 
+    if (body?.modules) root.append(modulesSection(body.modules));
+
     const cfg = el("section", "st-sec");
     cfg.append(el("h3", "", "Effective config"));
     if (!body) cfg.append(el("p", "st-note", "reading /api/config…"));
@@ -147,6 +171,44 @@ export function createSettings({ root, button, storage, onTheme = () => {}, fetc
       cfg.append(el("p", "st-note", "Edit cloudspider.yaml (or env vars / flags) and restart to change these."));
     }
     root.append(cfg);
+  }
+
+  // MODULES: what the server runs (cloudspider.yaml, restart to change) and,
+  // within that, what this browser shows. A module off at the server cannot be
+  // turned on here; the YAML below is what to paste to make the choice stick.
+  function modulesSection(m) {
+    const sec = el("section", "st-sec st-modules");
+    sec.append(el("h3", "", "Modules"));
+    sec.append(el("p", "st-note", `profile: ${m.profile}. Unticking hides a module in this browser; the server keeps it until cloudspider.yaml says otherwise.`));
+    const hidden = readHidden(storage);
+    const list = el("ul", "st-mods");
+    for (const mod of m.modules || []) {
+      const li = el("li", mod.on ? "" : "st-off");
+      const label = el("label");
+      const box = el("input");
+      box.type = "checkbox";
+      box.dataset.module = mod.id;
+      box.checked = mod.on && !hidden.includes(mod.id);
+      box.disabled = !mod.on;
+      box.addEventListener("change", () => {
+        const now = readHidden(storage).filter((id) => id !== mod.id);
+        if (!box.checked) now.push(mod.id);
+        try {
+          storage?.setItem(MODULES_KEY, JSON.stringify(now));
+        } catch {
+          // no storage: the choice lasts for this page only
+        }
+        onModules(visibleModules(m.enabled, now));
+        render();
+      });
+      label.append(box, el("b", "", mod.label), el("small", "", mod.on ? mod.doc : `off: ${m.off?.[mod.id] || "off"}`));
+      li.append(label);
+      list.append(li);
+    }
+    sec.append(list);
+    sec.append(el("pre", "st-yaml", modulesYaml(m.profile, m.enabled, hidden)));
+    if (m.awsClients) sec.append(el("p", "st-note", m.awsClients.length ? `AWS clients built: ${m.awsClients.join(", ")}` : "No AWS client was built (aws module off)."));
+    return sec;
   }
 
   function setOpen(open) {

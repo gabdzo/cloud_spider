@@ -1,3 +1,4 @@
+import { moduleOff } from "./modules.js";
 import { originAllowed } from "./origin.js";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
@@ -2305,6 +2306,14 @@ const page = `<!doctype html>
   /* Config keys never break mid-word (ui.refresh.radioSeconds); values may. */
   #settings .st-table td:first-child { white-space: nowrap; word-break: normal; }
   #settings .st-table td.st-set { color: var(--accent); }
+  #settings .st-mods { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+  #settings .st-mods label { display: grid; grid-template-columns: 18px 110px 1fr; gap: 8px; align-items: baseline; font-size: 12px; color: var(--text); cursor: pointer; }
+  #settings .st-mods input { margin: 0; align-self: center; }
+  #settings .st-mods label > * { align-self: center; }
+  #settings .st-mods b { font-weight: 600; }
+  #settings .st-mods small { color: var(--text-3); }
+  #settings .st-mods .st-off label { color: var(--text-3); cursor: default; }
+  #settings .st-yaml { margin: 8px 0 0; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font: 12px/1.4 var(--font-mono); white-space: pre-wrap; }
 
   /* ---- pro theme (phase 1): the same page, flat and quiet. Colours come
      from the role tokens and the remapped ramp (theme.js); this block only
@@ -2726,6 +2735,18 @@ async function route(app, req, res) {
     return;
   }
 
+  // Modules (modules.js): a route of a module that is off is not there.
+  // The map's /api/view still answers, empty, so the page's first pull is calm.
+  const enabled = app.settings?.()?.modules?.enabled;
+  const offModule = enabled ? moduleOff({ has: (id) => enabled.includes(id) }, url.pathname) : "";
+  if (offModule === "map" && req.method === "GET" && url.pathname === "/api/view") {
+    send(res, 200, { off: "map", regions: [], radio: "", trail: [] });
+    return;
+  }
+  if (offModule) {
+    send(res, 404, { error: `module off: ${offModule} (modules in cloudspider.yaml)`, module: offModule });
+    return;
+  }
   const off = featureOff(app.settings?.()?.config?.features, req.method, url.pathname);
   if (off) {
     send(res, 403, { error: `turned off in cloudspider.yaml (features.${off})` });

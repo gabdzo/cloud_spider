@@ -59,7 +59,7 @@ import { sunrise } from "./sprites/landmarks.js";
 import { drawSprite } from "./draw-kit.js";
 import { sloBlock, sloFacts } from "./slo-view.js";
 import { renderSpend } from "./spend-view.js";
-import { createSettings } from "./settings-view.js";
+import { createSettings, readHidden, visibleModules } from "./settings-view.js";
 import { KUBE_MAP_KEY, compoundHit, compoundHover, kubeModel, readKubeChoices } from "./map-kube.js";
 
 const ui = createUi();
@@ -2338,6 +2338,11 @@ async function pull() {
     const query = new URLSearchParams({ grain: campGrain });
     if (sample) query.set("sample", "1");
     const view = await fetch(`/api/view?${query}`).then((response) => response.json());
+    // The map module is off: nothing to read, and no error to show.
+    if (view.off === "map") {
+      renderChrome();
+      return;
+    }
     setRadio(ui, view.radio || "");
     setTrail(ui, sample ? sampleTrail : view.trail || []);
     if (!sample) liveMorning = view.morning || null;
@@ -5185,13 +5190,45 @@ settingsApi = createSettings({
     }
   })(),
   onTheme: () => requestAnimationFrame(() => draw()),
+  onModules: (visible) => applyModules(visible),
 });
+// Modules (modules.js): the tab or key of a module that is off at the server
+// or hidden in this browser is not offered. Cost is the CAPS gauge.
+const MODULE_UI = { map: "#tab-map", network: "#path", kubernetes: "#cluster", vaults: "#tab-vaults", radio: "#tab-radio", stacks: "#upgrade", learn: "#learn-key", score: "#score-key", ask: "#ask" };
+let modulesVisible = null;
+function settingsStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+function applyModules(visible) {
+  modulesVisible = visible;
+  for (const [id, sel] of Object.entries(MODULE_UI)) {
+    const node = document.querySelector(sel);
+    if (node) node.hidden = !visible.includes(id);
+  }
+  if (!visible.includes("cost")) document.querySelector("#spend").hidden = true;
+  const regionLabel = document.querySelector("#region")?.closest("label");
+  if (regionLabel) regionLabel.hidden = !visible.includes("aws");
+  document.documentElement.dataset.modules = visible.join(" ");
+}
 let pageConfig = null;
 fetch("/api/config")
   .then((response) => response.json())
   .catch(() => null)
   .then((body) => {
     pageConfig = body?.config || null;
+    if (body?.modules?.enabled) {
+      const visible = visibleModules(body.modules.enabled, readHidden(settingsStorage()));
+      applyModules(visible);
+      // No map: a bare URL opens on the first view that is on.
+      if (!visible.includes("map") && !location.hash) {
+        const first = ["cluster", "path", "vaults"].find((v) => visible.includes({ cluster: "kubernetes", path: "network", vaults: "vaults" }[v]));
+        if (first) history.replaceState(null, "", `${location.pathname}${location.search}#${first}`);
+      }
+    }
     const features = pageConfig?.features || {};
     if (features.ask === false) askTab.hidden = true;
     if (features.learn === false) document.querySelector("#learn-key").hidden = true;
