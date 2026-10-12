@@ -68,6 +68,7 @@ export const FILES = new Set([
   "graph-model.js",
   "graph-view.js",
   "log-errors-view.js",
+  "kube-empty.js",
   "slo.js",
   "slo-view.js",
   "map-kube.js",
@@ -1344,6 +1345,20 @@ const page = `<!doctype html>
   /* ---- SERVICES (graph-view.js): service graph + incident review, SAMPLE prototype ---- */
   #kube-graph { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 50px 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; display: flex; flex-direction: column; gap: 8px; outline: none; }
   #kube-graph[hidden] { display: none; }
+  #kube-empty { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 56px 24px 24px; background: var(--pip-screen); color: var(--pip-mid); font-size: 12px; }
+  #kube-empty[hidden] { display: none; }
+  #kube-empty .ke-card { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+  #kube-empty .ke-title { margin: 0; font-size: 18px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pip-bright); }
+  #kube-empty .ke-reason { margin: 0; color: var(--world-amber); }
+  #kube-empty .ke-step { border: 1px dashed var(--pip-dark); padding: 10px 12px; }
+  #kube-empty .ke-step h3 { margin: 0 0 4px; font-size: 13px; color: var(--pip-bright); }
+  #kube-empty .ke-step p { margin: 0; }
+  #kube-empty .ke-code { margin: 8px 0 6px; padding: 8px 10px; background: var(--pip-ink); border: 1px solid var(--pip-dark); color: var(--pip-bright); white-space: pre-wrap; word-break: break-all; font-size: 11px; }
+  #kube-empty .ke-alt { color: var(--pip-dim); font-size: 11px; }
+  #kube-empty .ke-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  #kube-empty .ke-btn { font: inherit; padding: 6px 12px; color: var(--pip-ink); background: var(--pip-bright); border: 1px solid var(--pip-bright); cursor: pointer; letter-spacing: 0.06em; }
+  #kube-empty .ke-btn.ke-ghost { color: var(--pip-bright); background: transparent; }
+  #kube-empty .ke-note { color: var(--pip-dim); }
   #kube-graph > * { flex-shrink: 0; }
   #kube-graph .gv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   #kube-graph .gv-title { display: flex; align-items: baseline; gap: 8px; margin-right: 4px; }
@@ -2471,6 +2486,15 @@ const page = `<!doctype html>
   :root[data-theme="pro"] .sp-head { background-color: var(--raised); }
   /* SERVICES prototype in pro: flat cards, accent focus, no brackets or glow. */
   :root[data-theme="pro"] #kube-graph { background: var(--bg); color: var(--text-2); font-family: var(--font-ui); font-size: 12px; }
+  :root[data-theme="pro"] #kube-empty { background: var(--bg); color: var(--text-2); font-family: var(--font-ui); font-size: 13px; }
+  :root[data-theme="pro"] #kube-empty .ke-title { color: var(--text); letter-spacing: 0; text-transform: none; font-weight: 600; }
+  :root[data-theme="pro"] #kube-empty .ke-reason { color: var(--warn); }
+  :root[data-theme="pro"] #kube-empty .ke-step { border: 1px solid var(--border); border-radius: 6px; background: var(--raised); }
+  :root[data-theme="pro"] #kube-empty .ke-step h3 { color: var(--text); font-weight: 600; }
+  :root[data-theme="pro"] #kube-empty .ke-code { background: var(--surface); border-color: var(--border); border-radius: 4px; color: var(--text); font-family: var(--font-mono); }
+  :root[data-theme="pro"] #kube-empty .ke-alt, :root[data-theme="pro"] #kube-empty .ke-note { color: var(--text-3); }
+  :root[data-theme="pro"] #kube-empty .ke-btn { color: #fff; background: var(--accent); border-color: var(--accent); border-radius: 4px; letter-spacing: 0; }
+  :root[data-theme="pro"] #kube-empty .ke-btn.ke-ghost { color: var(--text); background: transparent; border-color: var(--border-strong); }
   :root[data-theme="pro"] #kube-graph .gv-title b { color: var(--text); text-shadow: none; letter-spacing: 0.02em; font-weight: 600; }
   :root[data-theme="pro"] #kube-graph .gv-proto { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 999px; letter-spacing: 0.04em; font-weight: 600; }
   :root[data-theme="pro"] #kube-graph :is(.gv-btn, .gv-search, .gv-open, .gv-node) { border-radius: 6px; border-color: var(--border); background: var(--surface); color: var(--text-2); letter-spacing: 0.02em; }
@@ -2628,6 +2652,7 @@ const page = `<!doctype html>
       <section id="kube-connect" aria-label="EKS clusters: kube connection" hidden></section>
       <section id="kube-tele" aria-label="cluster telemetry" hidden></section>
       <section id="kube-ops" aria-label="cluster add-ons" hidden></section>
+      <section id="kube-empty" aria-label="no cluster connected" hidden></section>
       <section id="kube-graph" aria-label="services graph (sample prototype)" tabindex="-1" hidden></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
       <button id="k9s-btn" type="button" aria-pressed="false" title="K9S window: a read-only resource table (:)" hidden><i></i><b>K9S</b><small>:</small></button>
