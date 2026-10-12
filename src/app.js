@@ -1627,7 +1627,17 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   }
 
   async function loadBoot() {
-    const listed = await ec2.describeRegions();
+    let listed = await ec2.describeRegions();
+    // An SCP can deny ec2:DescribeRegions (seen on cloudspider-up's account)
+    // while everything else works: use the configured regions, else the
+    // default region, and say so, instead of blanking every view.
+    if (listed?.error && /not authorized to perform|UnauthorizedOperation|AccessDenied/i.test(String(listed.error)) && !/ExpiredToken|InvalidClientTokenId|security token|credentials/i.test(String(listed.error))) {
+      const fallback = regionsAllow.length ? [...regionsAllow] : [await ec2.defaultRegion()].filter(Boolean);
+      if (fallback.length) {
+        report(sink, { call: "DescribeRegions", sentence: `${accountRead(listed.error)} Using ${fallback.join(", ")} from ${regionsAllow.length ? "aws.regions" : "the default region"}.` });
+        listed = { regions: fallback };
+      }
+    }
     if (listed?.error) {
       loading = false;
       place = null;
