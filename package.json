@@ -5,11 +5,15 @@
   "engines": {
     "node": ">=20"
   },
+  "bin": {
+    "cloudspider": "scripts/cloudspider.mjs"
+  },
   "scripts": {
     "start": "node src/main.js",
     "test": "node --test test/*.test.js",
     "vaults:check": "node scripts/vaults-check.mjs",
-    "vaults:new": "node scripts/vaults-new.mjs"
+    "vaults:new": "node scripts/vaults-new.mjs",
+    "validate-vaults": "node scripts/cloudspider.mjs validate-vaults"
   },
   "dependencies": {
     "@aws-sdk/client-acm": "^3.1149.0",

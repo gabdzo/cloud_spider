@@ -22,7 +22,7 @@ export function lintEntries(entries) {
     if (project !== undefined && project !== entry.name) {
       problems.push({ file: entry.file, level: "error", text: `${where}: spec.resources.tags.project is ${project}; the convention is project: ${entry.name}` });
     }
-    if (!entry.resources?.ids?.length && !Object.keys(entry.resources?.tags || {}).length) {
+    if (!entry.resources?.ids?.length && !Object.keys(entry.resources?.tags || {}).length && !entry.workloads?.length) {
       problems.push({ file: entry.file, level: "warning", text: `${where}: spec.resources selects nothing, so the vault will be empty` });
     }
     const first = numbers.get(entry.number);
