@@ -1,3 +1,5 @@
+import { configModule } from "./module-keys.js";
+
 // The settings panel (gear in the header): the theme toggle and the
 // effective config from cloudspider.yaml (/api/config, redacted).
 //
@@ -161,7 +163,10 @@ export function createSettings({ root, button, storage, onTheme = () => {}, onMo
       const hr = el("tr");
       hr.append(el("th", "", "key"), el("th", "", "value"), el("th", "", "from"));
       table.append(hr);
+      const on = body.modules?.enabled;
       for (const row of configRows(body.config, body.sources)) {
+        // A module that is off has no rows here; only MODULES names it.
+        if (on && configModule(row.key) && !on.includes(configModule(row.key))) continue;
         const tr = el("tr");
         const from = el("td", row.source === "default" ? "st-default" : "st-set", row.source);
         tr.append(el("td", "", row.key), el("td", "", row.value), from);

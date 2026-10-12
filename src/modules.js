@@ -139,3 +139,13 @@ export function awsOff(name) {
   });
   return stub;
 }
+
+export { configModule, stackModule } from "./module-keys.js";
+
+// The page as the server sends it: <html data-modules="…"> and one CSS rule
+// per module that is off, so an element tagged data-module="x" (any token)
+// is not drawn at all, before any script runs.
+export function gateStyle(enabled = MODULE_IDS) {
+  const off = MODULE_IDS.filter((id) => !enabled.includes(id));
+  return off.length ? `<style id="module-gate">${off.map((id) => `[data-module~="${id}"]`).join(",")}{display:none!important}</style>` : `<style id="module-gate"></style>`;
+}
