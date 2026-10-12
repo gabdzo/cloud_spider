@@ -110,6 +110,9 @@ const rate = (cur, prev, secs) => {
     rps: base && secs > 0 ? +(dTotal / secs).toFixed(2) : 0,
     errors: dTotal > 0 ? +((100 * dFailed) / dTotal).toFixed(1) : 0,
     p95ms: Math.round(quantile(buckets) * 1000),
+    // No baseline yet (first read after start): the counters say whether the
+    // pair has talked at all; the view shows it as live and "measuring".
+    ...(base ? {} : { seen: cur.total > 0 }),
   };
 };
 
@@ -120,7 +123,7 @@ export function liveFromScrapes(cur, prev = null) {
   const p = prev ? countersOf(parseProm(prev.text)) : { edges: {}, red: {} };
   const edges = Object.entries(c.edges).map(([key, e]) => {
     const [from, to] = key.split(">");
-    return { from, to, kind: e.kind, source: "trace", ...rate(e, prev ? p.edges[key] || { total: 0, failed: 0, buckets: {} } : null, secs), window: Math.round(secs), at: cur.at };
+    return { from, to, kind: e.kind, source: "trace", ...rate(e, prev ? p.edges[key] || { total: 0, failed: 0, buckets: {} } : null, secs), window: Math.round(secs), at: cur.at, ...(prev ? {} : { warming: true }) };
   });
   const red = Object.fromEntries(Object.entries(c.red).map(([id, s]) => [id, rate(s, prev ? p.red[id] || { total: 0, failed: 0, buckets: {} } : null, secs)]));
   return { edges, red, warming: !prev };

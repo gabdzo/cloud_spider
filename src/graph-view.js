@@ -11,6 +11,9 @@ import { BADGES, KIND_BADGE, KIND_NAME, STATUS_TEXT, callsOf, dotOf, drawnEdges,
 import { EVENT_KINDS, LAYERS, initialExpanded, initialLayers, sceneStats, stepEvent, timeline, visibleGraph } from "./graph-model.js";
 
 const SVG = "http://www.w3.org/2000/svg";
+// INCIDENT REVIEW starts as a one-line summary bar so the graph keeps the
+// height; opening it is remembered.
+const TL_OPEN_KEY = "cloudspider.timeline.open";
 const LAYER_LABEL = { static: "STATIC", flow: "FLOWS", trace: "TRACES", owner: "OWNERS" };
 const LAYER_HINT = {
   static: "Services, Endpoints, Ingress, NetworkPolicies: what may talk",
@@ -31,8 +34,8 @@ const EDGE_LEGEND = [
 const BADGE_MAX = 12;
 export function edgeBadge(edge) {
   const src = edge.sources.includes("trace") ? "trace" : edge.sources.includes("flow") ? "flow" : "";
-  if (!src || !(edge.rps > 0)) return "";
-  const rate = edge.rps ? ` ${edge.rps}/s` : "";
+  if (!src || !(edge.rps > 0 || (edge.warming && edge.seen))) return "";
+  const rate = edge.rps ? ` ${edge.rps}/s` : " measuring";
   const err = edge.errors ? ` · ${edge.errors}% err` : "";
   return `${src === "trace" ? "LIVE · Beyla/OTel" : "LIVE · FLOW"}${rate}${err}`;
 }
@@ -100,7 +103,7 @@ export function createGraphView(root) {
   let shown = false;
   // Incident review filters: event kinds, the window (live only), and
   // whether the list follows the focused group (tlAll: every group).
-  Object.assign(state, { kinds: new Set(EVENT_KINDS), windowMin: null, tlAll: false, tlOpen: true });
+  Object.assign(state, { kinds: new Set(EVENT_KINDS), windowMin: null, tlAll: false, tlOpen: (() => { try { return localStorage.getItem(TL_OPEN_KEY) === "1"; } catch { return false; } })() });
   // Live: the events come from /api/cluster/timeline for the picked window
   // (the observe bundle's Loki, else the API server); the server trims.
   let tlData = null;
@@ -229,7 +232,7 @@ export function createGraphView(root) {
       h("small", { className: "gv-tag", text: tag, title: tag === "OP" ? BADGES.OP : tag === "NS" ? BADGES.NS : tag === "LBL" ? BADGES.LBL : "resources without the Group by label" }));
     const meta = h("span", { className: "gv-meta", text: [group.namespaces ? `${group.namespaces} ns` : "", group.crds ? `${group.crds} CRDs` : "", group.pods ? `${group.pods} pods` : ""].filter(Boolean).join(" · ") });
     const noEp = (scene.findings || []).filter((f) => scene.nodes.find((n) => n.id === f.node && (n.group === group.id || (group.nodes || []).some((m) => m.id === n.id))));
-    const talkEl0 = h("span", { className: `gv-talk ${talk.errors ? "t-err" : talk.live ? "t-live" : "t-none"}`, title: "live links: measured traffic touching this group; config links are only declared", text: talk.text });
+    const talkEl0 = h("span", { className: `gv-talk ${talk.errors ? "t-err" : talk.live ? "t-live" : "t-none"}`, title: talk.live ? `${talk.live} live link${talk.live === 1 ? "" : "s"} touching this group${talk.errors ? `, ${talk.errors} with errors` : ""}` : `idle: no traffic seen touching this group${talk.config ? ` (${talk.config} possible links from config)` : ""}` }, h("i", { className: `gv-dot ${talk.errors ? "d-err" : talk.live ? "d-live" : "d-idle"}`, "aria-hidden": "true" }), talk.text);
     const talkEl = noEp.length ? h("span", { className: "gv-talkwrap" }, talkEl0, h("span", { className: "gv-noep", title: noEp.map((f) => `${f.id}: ${f.why}`).join("\n"), text: `${noEp.length} NO ENDPOINTS` })) : talkEl0;
     const toggle = h("button", { type: "button", className: "gv-open", "aria-expanded": String(group.open), title: group.open ? "fold" : "open: its services, how they call each other, live or not", text: group.open ? "−" : "+", onclick: (ev) => toggleOpen(group.id, ev) });
     card.append(h("div", { className: "gv-gtop" }, head, h("span", { className: "gv-gsum" }, meta, talkEl), toggle));
@@ -276,7 +279,7 @@ export function createGraphView(root) {
       h("span", { className: "gv-cmeta", text: [KIND_NAME[node.kind] || node.kind, node.ns, pods ? `${pods.ready}/${pods.total} ready` : ""].filter(Boolean).join(" · ") }),
       ep ? h("span", { className: `gv-cep${ep.ready === 0 ? " bad" : ep.notReady ? " warn" : ""}`, title: "EndpointSlices: ready / all endpoints of this Service", text: `endpoints ${ep.ready}/${ep.ready + ep.notReady} ready` }) : null,
       ...flags.map((f) => h("span", { className: `gv-flag f-${f.id}`, title: f.why, text: f.text })),
-      t.talking ? h("span", { className: "gv-crate", text: `${t.rps}/s${t.errors ? ` · ${t.errors}% err` : ""}` }) : null);
+      t.talking ? h("span", { className: "gv-crate", text: `${t.rps ? `${t.rps}/s` : "measuring"}${t.errors ? ` · ${t.errors}% err` : ""}` }) : null);
   }
 
   function endpointsSection(node) {
@@ -349,6 +352,11 @@ export function createGraphView(root) {
     render();
     return Boolean(hit);
   }
+  function toggleTl() {
+    state.tlOpen = !state.tlOpen;
+    try { localStorage.setItem(TL_OPEN_KEY, state.tlOpen ? "1" : "0"); } catch {}
+    render();
+  }
   async function loadLive(fresh = false) {
     if (!live.on || live.loading) return;
     live.loading = true;
@@ -365,6 +373,10 @@ export function createGraphView(root) {
         const first = !scene || scene.id !== "live" || !scene.groups.length;
         setScene(body);
         loadTimeline();
+        // First read after the server started has no rate baseline: pairs that
+        // talked show as "measuring"; read again once a 30 s baseline exists.
+        clearTimeout(live.warmTimer);
+        if (body.live?.warming) live.warmTimer = setTimeout(() => loadLive(true), 32_000);
         if (first) Object.assign(state, { expanded: initialExpanded(scene), layers: initialLayers(scene) });
       }
       live.at = Date.now();
@@ -471,8 +483,8 @@ export function createGraphView(root) {
         render();
       } }));
     }
-    const fold = h("button", { type: "button", className: "gv-btn gv-tlfold", "aria-expanded": String(state.tlOpen), title: state.tlOpen ? "fold the timeline" : "open the timeline", text: state.tlOpen ? "▾" : "▸", onclick: () => ((state.tlOpen = !state.tlOpen), render()) });
-    const head = h("div", { className: "gv-tlhead" }, fold, h("b", { text: "INCIDENT REVIEW" }), h("span", { text: `${tl.start} – ${tl.end}` }), kinds);
+    const fold = h("button", { type: "button", className: "gv-btn gv-tlfold", "aria-expanded": String(state.tlOpen), title: state.tlOpen ? "fold the timeline" : "open the timeline", text: state.tlOpen ? "▾" : "▸", onclick: () => toggleTl() });
+    const head = h("div", { className: "gv-tlhead" }, fold, h("button", { type: "button", className: "gv-tltitle", title: state.tlOpen ? "fold to a one-line summary" : "open the incident review", onclick: () => toggleTl() }, "INCIDENT REVIEW"), h("span", { text: `${tl.start} – ${tl.end}` }), kinds);
     if (live.on) {
       const win = h("div", { className: "gv-seg gv-window", role: "group", "aria-label": "window" });
       const cur = tlData?.windowMin || state.windowMin || 360;
@@ -582,7 +594,7 @@ export function createGraphView(root) {
       const name = (id) => scene.nodes.find((n) => n.id === id)?.label || scene.groups.find((g) => `g:${g.id}` === id)?.label || id.replace(/^g:/, "");
       const title = `${name(edge.from)} → ${name(edge.to)} · ${STATUS_TEXT[st]}${edge.rps && st !== "config" ? ` · ${edge.rps}/s` : ""}${edge.errors ? ` · ${edge.errors}% errors` : ""} · ${edge.kinds.join("/")} · from ${edge.sources.map((x) => ({ trace: "Beyla/OTel", flow: "flow logs", static: "config", owner: "ownerReferences" })[x] || x).join(" + ")}${edge.count > 1 ? ` · ${edge.count} links` : ""}`;
       paths.push(`<path class="${cls}" d="${d}" stroke-width="${width}" marker-end="url(#gv-arrow)" data-src="${src}"><title>${title.replace(/[<&]/g, "")}</title></path>`);
-      if ((st === "live" || st === "error") && edgeBadge(edge)) badges.push({ i: paths.length - 1, text: sameRow ? `${edge.rps}/s${edge.errors ? ` · ${edge.errors}%` : ""}` : edgeBadge(edge), rps: edge.rps, touch, err: edge.errors >= 1, at: sameRow && lx != null ? { x: lx, y: ly } : null });
+      if ((st === "live" || st === "error") && edgeBadge(edge)) badges.push({ i: paths.length - 1, text: sameRow ? `${edge.rps ? `${edge.rps}/s` : "measuring"}${edge.errors ? ` · ${edge.errors}%` : ""}` : edgeBadge(edge), rps: edge.rps, touch, err: edge.errors >= 1, at: sameRow && lx != null ? { x: lx, y: ly } : null });
     }
     svg.innerHTML = marker + paths.join("");
     // Badges at each live edge's midpoint (needs SVG geometry; skipped without it).

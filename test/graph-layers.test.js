@@ -43,7 +43,7 @@ test("traffic, group talk line and the side panel's calls", () => {
   assert.equal(api.rps, 38);
   const tls = nodeTraffic("demo/demo-tls", s.edges);
   assert.equal(tls.talking, false);
-  assert.match(groupTalk("demo", s).text, /^talking: \d+ live links · 1 with errors$/);
+  assert.match(groupTalk("demo", s).text, /^\d+ live · 1 with errors$/);
   const c = callsOf("demo/api", s);
   assert.equal(c.inbound[0].label, "web");
   assert.equal(c.inbound[0].status, "error");
@@ -112,4 +112,18 @@ test("v3: only observed traffic draws by default; possible links bundle and show
   assert.equal(possibleSummary(nodes, [live]).count, 0);
   assert.equal(dotOf({ talking: true, errors: 2 }), "err");
   assert.equal(dotOf({ talking: false, errors: 0 }), "idle");
+});
+
+test("first read without a rate baseline still shows pairs that talked (measuring), not an empty graph", async () => {
+  const { liveFromScrapes } = await import("../src/observe/live.js");
+  const text = 'traces_service_graph_request_total{client="brother-sandbox/frontend",server="brother-sandbox/api",connection_type=""} 120\n';
+  const got = liveFromScrapes({ at: 1000, text }, null);
+  assert.equal(got.warming, true);
+  const e = got.edges[0];
+  assert.ok(e, "edge parsed");
+  assert.equal(e.warming, true);
+  assert.equal(e.seen, true);
+  assert.equal(edgeStatus(e), "live");
+  assert.equal(rateText({ status: "live", rps: 0, errors: 0, warming: true }), "measuring");
+  assert.equal(groupTalk("x", { nodes: [], edges: [] }).text, "idle");
 });

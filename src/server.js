@@ -1545,9 +1545,12 @@ const page = `<!doctype html>
   #kube-graph { overflow: hidden; }
   #kube-graph > .gv-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
   #kube-graph > .gv-head { flex: none; }
-  #kube-graph .gv-timeline { position: relative; z-index: 5; flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 28vh; box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.55); }
+  #kube-graph .gv-timeline { position: relative; z-index: 5; flex: none; display: flex; flex-direction: column; gap: 6px; max-height: 25vh; box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.55); }
   #kube-graph .gv-timeline .gv-events { overflow: auto; min-height: 0; }
-  #kube-graph .gv-timeline.folded { gap: 0; }
+  #kube-graph .gv-timeline.folded { gap: 0; padding-top: 4px; padding-bottom: 4px; }
+  #kube-graph .gv-timeline.folded :is(.gv-window, .gv-tlkeys, .gv-tlsrc) { display: none; }
+  #kube-graph .gv-tltitle { all: unset; cursor: pointer; font-weight: 700; letter-spacing: 0.08em; }
+  #kube-graph .gv-tltitle:hover, #kube-graph .gv-tltitle:focus-visible { text-decoration: underline; }
   #kube-graph .gv-tlfold { padding: 0 6px; min-width: 22px; }
   #kube-graph .gv-tlsrc { color: var(--pip-dim-text); font-size: 10px; }
   #kube-graph .gv-tlsrc.s-observe { color: var(--pip-bright); }

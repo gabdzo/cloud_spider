@@ -25,7 +25,7 @@ const LIVE = new Set(["trace", "flow"]);
 export function edgeStatus(edge) {
   const sources = edge.sources || [edge.source];
   if (edge.kinds?.includes?.("owns") || edge.kind === "owns" || (sources.length === 1 && sources[0] === "owner")) return "owner";
-  const live = sources.some((s) => LIVE.has(s)) && (edge.rps || 0) > 0;
+  const live = sources.some((s) => LIVE.has(s)) && ((edge.rps || 0) > 0 || (edge.warming && edge.seen));
   if (live && (edge.errors || 0) >= 1) return "error";
   if (live) return "live";
   return "config";
@@ -123,13 +123,13 @@ export function groupTalk(groupId, scene) {
     else if (s === "error") (live += 1), (errors += 1);
     else if (s === "config") config += 1;
   }
-  return { live, errors, config, text: live ? `talking: ${live} live link${live === 1 ? "" : "s"}${errors ? ` · ${errors} with errors` : ""}` : "no traffic seen" };
+  return { live, errors, config, text: live ? `${live} live${errors ? ` · ${errors} with errors` : ""}` : "idle" };
 }
 
 // The side panel: who calls this node and whom it calls, with status.
 export function callsOf(id, scene, layers = null) {
   const byId = new Map(scene.nodes.map((n) => [n.id, n]));
-  const row = (e, peer) => ({ peer, label: byId.get(peer)?.label || peer, ns: byId.get(peer)?.ns || "", kind: e.kind, source: e.source, rps: e.rps || 0, errors: e.errors || 0, status: edgeStatus(e) });
+  const row = (e, peer) => ({ peer, label: byId.get(peer)?.label || peer, ns: byId.get(peer)?.ns || "", kind: e.kind, source: e.source, rps: e.rps || 0, errors: e.errors || 0, warming: !!(e.warming && e.seen), status: edgeStatus(e) });
   const keep = (e) => !layers || layers.has(e.source);
   const order = { error: 0, live: 1, config: 2, owner: 3 };
   const sort = (list) => list.sort((a, b) => order[a.status] - order[b.status] || b.rps - a.rps || a.label.localeCompare(b.label));
@@ -142,6 +142,7 @@ export function callsOf(id, scene, layers = null) {
 export function rateText(r) {
   if (r.status === "config") return "not seen talking";
   if (r.status === "owner") return "owns";
+  if (!r.rps && (r.warming || r.seen)) return `measuring${r.errors ? ` · ${r.errors}% err` : ""}`;
   return `${r.rps}/s${r.errors ? ` · ${r.errors}% err` : ""}`;
 }
 
