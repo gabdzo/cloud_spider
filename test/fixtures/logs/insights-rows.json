@@ -1,0 +1,38 @@
+[
+ [
+  {
+   "field": "@timestamp",
+   "value": "2026-10-12 01:00:00.000"
+  },
+  {
+   "field": "@message",
+   "value": "{\"log\": \"ERROR failed to sync token=abcdEFGH1234 for user 77\\n\", \"kubernetes\": {\"namespace_name\": \"shop\", \"pod_name\": \"cart-1\", \"container_name\": \"cart\", \"labels\": {\"app\": \"cart\"}}}"
+  },
+  {
+   "field": "@logStream",
+   "value": "cart-1_shop_cart"
+  }
+ ],
+ [
+  {
+   "field": "@timestamp",
+   "value": "2026-10-12 01:05:00.000"
+  },
+  {
+   "field": "@message",
+   "value": "plain ERROR line 42"
+  },
+  {
+   "field": "kubernetes.namespace_name",
+   "value": "ops"
+  },
+  {
+   "field": "kubernetes.pod_name",
+   "value": "cron-x"
+  },
+  {
+   "field": "kubernetes.container_name",
+   "value": "cron"
+  }
+ ]
+]

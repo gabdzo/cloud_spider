@@ -34,6 +34,7 @@ import { loadProfiles } from "./score/profiles.js";
 import { createScanHistory } from "./score/history.js";
 import { createScanClients } from "./score/aws-clients.js";
 import { createNetdebug } from "./netdebug/api.js";
+import { createLogErrors } from "./logerrors/api.js";
 import { createAwsCollector } from "./netdebug/aws.js";
 import { createKubeCollector } from "./netdebug/kube-collect.js";
 import { createCloudFrontReader, createRoute53Reader, createVpcReader } from "./netdebug/aws-readers.js";
@@ -150,6 +151,14 @@ app.score = createScoreApi({
   kubeFor: (name) => app.kubeOf(name),
   // App vaults and their evaluated SLOs (K8S-OBS-006).
   vaults: () => app.vaultsView(),
+});
+
+// LOG ERRORS (morning report): last night's errors from Loki and/or
+// CloudWatch Logs Insights (only with the aws module), restarts from the
+// primary kube context. Read-only.
+app.logErrors = createLogErrors({
+  settings: { window: config.logs.window, loki: config.logs.loki, cloudwatch: { logGroup: mods.has("aws") ? config.logs.cloudwatch.logGroup : "", region: config.aws.region } },
+  kube: () => (mods.has("kubernetes") ? app.kubeOf("") : null),
 });
 
 // Network debugging (PATH › DEBUG): local probes of a URL the user typed,

@@ -309,6 +309,25 @@ export function createGraphView(root) {
       shown = false;
       root.hidden = true;
     },
+    // LOG ERRORS (logerrors/view.js): focus a service and, when given, the
+    // timeline minute. Unknown node: falls back to a search for its name.
+    focusOn({ scenario = "", node = "", t = "", query = "" } = {}) {
+      if (!els.stage) build();
+      if (scenario && !live.on) pick(scenario);
+      const hit = scene.nodes.find((x) => x.id === node);
+      Object.assign(state, { focus: null, selected: null, event: null, query: "" });
+      if (hit) {
+        state.expanded.add(hit.group);
+        state.focus = hit.group;
+        state.selected = hit.id;
+        const tl = timeline(scene).events;
+        const at = t ? tl.filter((ev) => ev.node === hit.id || ev.group === hit.group).find((ev) => ev.t >= t) || tl.find((ev) => ev.node === hit.id) : null;
+        if (at) state.event = at.index;
+      } else if (query) state.query = query;
+      els.search.value = state.query;
+      render();
+      return Boolean(hit);
+    },
     // for tests and screenshots
     state,
     setLive,

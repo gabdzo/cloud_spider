@@ -32,6 +32,7 @@ import { renderTelemetry } from "./tele-view.js";
 import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
 import { createGraphView } from "./graph-view.js";
+import { createLogErrorsView } from "./logerrors/view.js";
 import { addonCommands, confirmPrompt, upgradeSpiderLine } from "./upgrade-rules.js";
 import { liveLine, noteLines, numberProblem, radioLine, runModel } from "./run-pane.js";
 import { sourceText } from "./node-labels.js";
@@ -72,6 +73,7 @@ const morningLines = {
   hurting: document.querySelector("#m-hurting"),
   changed: document.querySelector("#m-changed"),
   idle: document.querySelector("#m-idle"),
+  logs: document.querySelector("#m-logs"),
 };
 let liveMorning = null;
 let sampleMorningData = null;
@@ -167,6 +169,23 @@ const kubeOps = document.querySelector("#kube-ops");
 // SERVICES: the service graph + incident review prototype, SAMPLE only
 // (docs/plan-modules-and-service-graph.md).
 const graphView = createGraphView(document.querySelector("#kube-graph"));
+let logErrorsFor = null; // the sample flag LOG ERRORS last loaded for
+// LOG ERRORS: the morning's fourth card and its panel (logerrors/view.js).
+// Its links leave for Cluster › SERVICES, focused on the service.
+const logErrorsView = createLogErrorsView(document.querySelector("#log-errors"), {
+  changed: () => {
+    morningLines.logs.setAttribute("aria-expanded", String(logErrorsView.isOpen()));
+    morningShown = "";
+    renderMorning();
+  },
+  focus: (link) => {
+    logErrorsView.toggle(false);
+    markHistory();
+    if (mode !== "cluster") enterCluster();
+    setClusterScreen("graph");
+    graphView.focusOn(link);
+  },
+});
 // Modules this page shows (null until /api/config answers): see applyModules.
 let modulesVisible = null;
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
@@ -514,12 +533,21 @@ function renderMorning() {
   const report = mode === "map" ? currentMorning() : null;
   ui.marks = currentMorning()?.marks || null;
   morningEl.hidden = !report;
-  if (!report) return;
+  if (!report) {
+    if (logErrorsView.isOpen()) logErrorsView.toggle(false);
+    return;
+  }
+  if (logErrorsFor !== sample) {
+    logErrorsFor = sample;
+    logErrorsView.load({ sample });
+  }
   const pods = sample ? [] : report.pods || [];
-  const key = JSON.stringify([report.hurting, report.changed, report.idle, pods, morningFolded]);
+  report.logs = logErrorsView.line();
+  morningLines.logs.hidden = !report.logs;
+  const key = JSON.stringify([report.hurting, report.changed, report.idle, report.logs, pods, morningFolded]);
   if (key === morningShown) return;
   morningShown = key;
-  const order = ["hurting", "changed", "idle"];
+  const order = ["hurting", "changed", "idle", ...(report.logs ? ["logs"] : [])];
   // One PODS line per kube context (kube-health.js), after the three.
   const podLines = pods.map((line, index) => {
     const id = `m-pods-${index}`;
@@ -5055,6 +5083,10 @@ radioEl.addEventListener("keydown", (event) => {
 function pressMorning(li) {
   const open = li.getAttribute("aria-expanded") !== "true";
   li.setAttribute("aria-expanded", String(open));
+  if (li.id === "m-logs") {
+    logErrorsView.toggle(open);
+    return;
+  }
   if (!open) return;
   if (li.id.startsWith("m-pods-")) {
     markHistory();

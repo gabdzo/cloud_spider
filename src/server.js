@@ -17,6 +17,8 @@ import { SCORE_CSS } from "./score/style.js";
 import { ND_CSS } from "./netdebug/style.js";
 import { scoreRoute } from "./score/routes.js";
 import { netdebugRoute } from "./netdebug/routes.js";
+import { logErrorsRoute } from "./logerrors/routes.js";
+import { LOG_CSS } from "./logerrors/style.js";
 import { defaults, effectiveConfig } from "./config.js";
 import { sampleCost } from "./cost.js";
 import { sampleClusterSnapshot, sampleKubeSnapshot, sampleMapSnapshot, samplePodDetail, samplePodInspect } from "./kube-sample.js";
@@ -29,6 +31,7 @@ export const FILES = new Set([
   "browser.js",
   "score/view.js",
   "netdebug/view.js",
+  "logerrors/view.js",
   "netdebug/walkthrough.js",
   "spend-view.js",
   "draw.js",
@@ -146,6 +149,7 @@ const page = `<!doctype html>
   ${cssVars()}
   ${SCORE_CSS}
   ${ND_CSS}
+  ${LOG_CSS}
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; }
@@ -2588,9 +2592,11 @@ const page = `<!doctype html>
       <li id="m-hurting" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="fire" alt=""><b>HURTING</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
       <li id="m-changed" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="clock" alt=""><b>CHANGED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
       <li id="m-idle" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="caps" alt=""><b>IDLE·BILLED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-logs" class="m-line" role="button" tabindex="0" aria-expanded="false" aria-controls="log-errors" hidden><img class="px" data-icon="fire" alt=""><b>LOG ERRORS</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
     </ul>
     <button id="morning-fold" class="m-fold" type="button" aria-expanded="true" aria-controls="morning" title="fold the morning report">&#9650;</button>
   </section>
+  <section id="log-errors" aria-label="log errors" hidden></section>
   <div class="body">
     <div class="mapwrap">
       <div id="map">
@@ -2782,6 +2788,7 @@ async function route(app, req, res) {
   }
   if (await scoreRoute(req, res, url, app.score, { send, readJson })) return;
   if (await netdebugRoute(req, res, url, app.netdebug, { send, readJson })) return;
+  if (await logErrorsRoute(req, res, url, app.logErrors, { send })) return;
 
   if (req.method === "GET" && url.pathname === "/api/sample") {
     send(res, 200, { place: samplePlace(), trail: sampleTrail(), morning: sampleMorning() });

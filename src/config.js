@@ -101,6 +101,16 @@ export const SCHEMA = {
       maxNodes: { type: "integer", min: 1, max: 10, default: 3, doc: "most nodes the EKS card's nodeCount takes (each node is billed)" },
     },
   },
+  logs: {
+    window: { type: "string", pattern: /^\d{1,2}:\d{2}-\d{1,2}:\d{2}$/, default: "22:00-07:00", env: "CLOUDSPIDER_LOGS_WINDOW", doc: "the night the morning's LOG ERRORS reads (local time), compared with the same window a day earlier" },
+    loki: {
+      url: { type: "string", pattern: /^(https?:\/\/[^\s]+)?$/, default: "", env: "CLOUDSPIDER_LOKI_URL", doc: "Loki base URL for LOG ERRORS (LogQL over HTTP, read-only); empty: the observe bundle's Loki once it is found" },
+      tenant: { type: "string", default: "", doc: "X-Scope-OrgID for a multi-tenant Loki (empty: none)" },
+    },
+    cloudwatch: {
+      logGroup: { type: "string", default: "", env: "CLOUDSPIDER_LOGS_GROUP", doc: "CloudWatch log group LOG ERRORS queries with Logs Insights, e.g. /aws/containerinsights/<cluster>/application (needs the aws module)" },
+    },
+  },
   modules: {
     profile: { type: "enum", values: ["full", "k8s-only", "aws-only"], default: "full", env: "CLOUDSPIDER_PROFILE", flag: "modules", doc: "which modules are on: full, k8s-only (no AWS client is ever created) or aws-only" },
     enable: { type: "list", items: /^[a-z0-9-]{1,32}$/, default: [], doc: "modules to add to the profile (their needs come with them), e.g. [observe]" },

@@ -53,6 +53,15 @@ cost:
   enabled: true            # env CLOUDSPIDER_COST=0 turns CAPS' Cost Explorer reads off
   cacheTtlMinutes: 360     # env CLOUDSPIDER_COST_TTL_MINUTES. At least 60: each read is ~5 billed calls ($0.05).
 
+logs:
+  # LOG ERRORS in the morning report: last night's errors grouped by service.
+  window: "22:00-07:00"    # env CLOUDSPIDER_LOGS_WINDOW. Local time; compared with the same window yesterday.
+  loki:
+    url: ""                # env CLOUDSPIDER_LOKI_URL, e.g. http://127.0.0.1:3100 (a port-forward). Empty: the observe bundle's Loki when found.
+    tenant: ""             # X-Scope-OrgID for a multi-tenant Loki
+  cloudwatch:
+    logGroup: ""           # env CLOUDSPIDER_LOGS_GROUP, e.g. /aws/containerinsights/<cluster>/application (Container Insights)
+
 storage:
   backend: file            # file. dynamodb is designed, not built (docs/storage.md).
   path: .cloudspider       # env CLOUDSPIDER_STATE_DIR. Bill cache, SLO history, run logs.

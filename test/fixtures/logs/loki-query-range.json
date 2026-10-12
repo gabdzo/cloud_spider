@@ -1,0 +1,193 @@
+{
+ "status": "success",
+ "data": {
+  "resultType": "streams",
+  "result": [
+   {
+    "stream": {
+     "namespace": "shop",
+     "pod": "pay-6d9f8c7b4-x2b4k",
+     "container": "pay",
+     "app": "pay"
+    },
+    "values": [
+     [
+      "1760300000000000000",
+      "2026-10-12 02:11:04.512 ERROR 1 --- [exec-3] c.a.OrderService : charge failed for order 99812"
+     ],
+     [
+      "1760300000001000000",
+      "java.lang.IllegalStateException: card gateway timeout after 3000 ms"
+     ],
+     [
+      "1760300000002000000",
+      "\tat com.acme.pay.Gateway.charge(Gateway.java:88)"
+     ],
+     [
+      "1760300000003000000",
+      "\tat com.acme.pay.OrderService.place(OrderService.java:41)"
+     ],
+     [
+      "1760300000004000000",
+      "\tat java.base/java.lang.Thread.run(Thread.java:1583)"
+     ],
+     [
+      "1760300000005000000",
+      "Caused by: java.net.SocketTimeoutException: Read timed out"
+     ],
+     [
+      "1760300000006000000",
+      "\tat java.base/sun.nio.ch.NioSocketImpl.timedRead(NioSocketImpl.java:288)"
+     ],
+     [
+      "1760300000007000000",
+      "\t... 12 more"
+     ]
+    ]
+   },
+   {
+    "stream": {
+     "namespace": "shop",
+     "pod": "pay-6d9f8c7b4-m7khp",
+     "container": "pay",
+     "app": "pay"
+    },
+    "values": [
+     [
+      "1760301800000000000",
+      "2026-10-12 02:40:10.001 ERROR 1 --- [exec-3] c.a.OrderService : charge failed for order 10077"
+     ],
+     [
+      "1760301800001000000",
+      "java.lang.IllegalStateException: card gateway timeout after 3000 ms"
+     ],
+     [
+      "1760301800002000000",
+      "\tat com.acme.pay.Gateway.charge(Gateway.java:88)"
+     ],
+     [
+      "1760301800003000000",
+      "\tat com.acme.pay.OrderService.place(OrderService.java:41)"
+     ],
+     [
+      "1760301800004000000",
+      "\tat java.base/java.lang.Thread.run(Thread.java:1583)"
+     ],
+     [
+      "1760301800005000000",
+      "Caused by: java.net.SocketTimeoutException: Read timed out"
+     ],
+     [
+      "1760301800006000000",
+      "\tat java.base/sun.nio.ch.NioSocketImpl.timedRead(NioSocketImpl.java:288)"
+     ],
+     [
+      "1760301800007000000",
+      "\t... 12 more"
+     ]
+    ]
+   },
+   {
+    "stream": {
+     "k8s_namespace_name": "jobs",
+     "k8s_pod_name": "worker-0",
+     "service_name": "worker"
+    },
+    "values": [
+     [
+      "1760300060000000000",
+      "ERROR:worker:job 4411 failed"
+     ],
+     [
+      "1760300060001000000",
+      "Traceback (most recent call last):"
+     ],
+     [
+      "1760300060002000000",
+      "  File \"/app/worker.py\", line 20, in run"
+     ],
+     [
+      "1760300060003000000",
+      "    do(job)"
+     ],
+     [
+      "1760300060004000000",
+      "  File \"/app/jobs.py\", line 7, in do"
+     ],
+     [
+      "1760300060005000000",
+      "    raise KeyError(job.id)"
+     ],
+     [
+      "1760300060006000000",
+      "KeyError: 'a1b2c3d4e5f6'"
+     ]
+    ]
+   },
+   {
+    "stream": {
+     "namespace": "edge",
+     "pod": "api-5c8d7f9b6-k2j8p",
+     "container": "api",
+     "app_kubernetes_io_name": "edge-api"
+    },
+    "values": [
+     [
+      "1760300120000000000",
+      "panic: assignment to entry in nil map"
+     ],
+     [
+      "1760300120001000000",
+      ""
+     ],
+     [
+      "1760300120002000000",
+      "goroutine 7 [running]:"
+     ],
+     [
+      "1760300120003000000",
+      "main.handle(0xc000123000)"
+     ],
+     [
+      "1760300120004000000",
+      "\t/src/main.go:51 +0x3c"
+     ],
+     [
+      "1760300120005000000",
+      "main.main()"
+     ],
+     [
+      "1760300120006000000",
+      "\t/src/main.go:20 +0x85"
+     ]
+    ]
+   },
+   {
+    "stream": {
+     "namespace": "web",
+     "pod": "ui-7f9c6d5b8-h3l6z",
+     "container": "ui",
+     "app": "ui"
+    },
+    "values": [
+     [
+      "1760300180000000000",
+      "TypeError: Cannot read properties of null (reading 'id')"
+     ],
+     [
+      "1760300180001000000",
+      "    at render (/app/src/view.js:12:9)"
+     ],
+     [
+      "1760300180002000000",
+      "    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)"
+     ],
+     [
+      "1760300180003000000",
+      "level=error msg=\"db ping failed\" err=\"dial tcp 10.0.3.4:5432: connect: connection refused\" password=hunter2"
+     ]
+    ]
+   }
+  ]
+ }
+}
