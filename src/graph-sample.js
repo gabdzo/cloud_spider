@@ -13,6 +13,8 @@
 // edge.source: static (Services, Ingress, NetworkPolicy) | flow (VPC CNI flow
 //   logs / Hubble) | trace (OTel) | owner (ownerReferences, operator → CR)
 
+import { noEndpointFindings } from "./svc-endpoints.js";
+
 const at = (h, m) => `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 
 export function bareScenario() {
@@ -28,9 +30,19 @@ export function bareScenario() {
   const L = (app, partOf, instance) => ({ app, ...(partOf ? { "app.kubernetes.io/part-of": partOf } : {}), ...(instance ? { "app.kubernetes.io/instance": instance, "app.kubernetes.io/managed-by": "Helm" } : {}), ...(partOf === "shop" ? { team: "payments" } : {}) });
   const nodes = [
     n("ingress-nginx", "controller", "ingress", "ingress-nginx-controller", L("ingress-nginx", "ingress-nginx", "ingress-nginx")),
-    n("demo", "web", "service", "web", L("web", "shop", "shop")),
-    n("demo", "api", "service", "api", L("api", "shop", "shop")),
-    n("demo", "redis", "db", "redis", L("redis", "shop", "shop-redis")),
+    { ...n("demo", "web", "service", "web", L("web", "shop", "shop")), pods: { ready: 2, total: 2 }, svcPorts: [{ name: "http", port: 80, targetPort: "http", protocol: "TCP" }], endpoints: { ready: 2, notReady: 0, list: [
+      { pod: "web-6c9f7d-2xkqp", ip: "10.0.1.23", node: "ip-10-0-1-40", zone: "eu-central-1a", ready: true, serving: true, terminating: false },
+      { pod: "web-6c9f7d-8hv4n", ip: "10.0.2.51", node: "ip-10-0-2-17", zone: "eu-central-1b", ready: true, serving: true, terminating: false }] }, flags: [] },
+    // A Service whose selector says app=checkout-v2 while the pods carry
+    // app=checkout: no endpoints, the classic 503.
+    { ...n("demo", "checkout", "service", "checkout", L("checkout", "shop", "shop")), pods: { ready: 0, total: 0 }, svcPorts: [{ name: "http", port: 80, targetPort: 8080, protocol: "TCP" }], endpoints: { ready: 0, notReady: 0, list: [] }, flags: [
+      { id: "selector", text: "SELECTOR MATCHES NO PODS", why: "selector app=checkout-v2 picks no pod in demo (the pods say app=checkout)" },
+      { id: "no-endpoints", text: "NO ENDPOINTS", why: "no ready endpoint: requests to it fail" }] },
+    { ...n("demo", "api", "service", "api", L("api", "shop", "shop")), pods: { ready: 1, total: 2 }, svcPorts: [{ name: "http", port: 8080, targetPort: 8080, protocol: "TCP" }, { name: "metrics", port: 9090, targetPort: 9091, protocol: "TCP" }], endpoints: { ready: 1, notReady: 1, list: [
+      { pod: "api-7d9f-5tq2m", ip: "10.0.1.88", node: "ip-10-0-1-40", zone: "eu-central-1a", ready: true, serving: true, terminating: false },
+      { pod: "api-7d9f-l9c7w", ip: "10.0.2.12", node: "ip-10-0-2-17", zone: "eu-central-1b", ready: false, serving: false, terminating: false }] }, flags: [
+      { id: "port", text: "PORT MISMATCH", why: "port 9090 → targetPort 9091: no selected pod declares containerPort 9091" }] },
+    { ...n("demo", "redis", "db", "redis", L("redis", "shop", "shop-redis")), pods: { ready: 1, total: 1 } },
     n("demo", "demo-tls", "cr", "Certificate demo-tls"),
     n("cert-manager", "controller", "operator", "cert-manager"),
     n("cert-manager", "webhook", "webhook", "cert-manager-webhook"),
@@ -44,6 +56,7 @@ export function bareScenario() {
     e("ingress-nginx/controller", "demo/web", "http", "trace", 42, 0),
     e("demo/web", "demo/api", "http", "trace", 38, 3.1),
     e("demo/api", "demo/redis", "tcp", "flow", 120, 0),
+    e("demo/web", "demo/checkout", "http", "static"),
     e("demo/web", "kube-system/coredns", "tcp", "flow", 6, 0),
     e("demo/api", "kube-system/coredns", "tcp", "flow", 4, 0),
     e("kube-system/apiserver", "cert-manager/webhook", "admission", "static", 0.4, 0.2),
@@ -72,6 +85,7 @@ export function bareScenario() {
     edges,
     events,
     window: { start: at(9, 35), end: at(10, 0), incident: [at(9, 43), at(9, 55)] },
+    findings: noEndpointFindings(nodes),
   };
 }
 

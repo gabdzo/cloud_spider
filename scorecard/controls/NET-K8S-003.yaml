@@ -1,0 +1,17 @@
+kind: Control
+id: NET-K8S-003
+revision: 1
+title: "Every Service in your namespaces has a ready endpoint"
+category: networking
+target: kubernetes
+evidenceType: runtime
+severity: { default: high }
+confidence: high
+evaluator: service-has-ready-endpoints
+aggregation: proportional
+requires: [kube-services, kube-endpointslices]
+whyItMatters: "A Service with a selector and 0 ready endpoints answers every request with a connection refused or a 503: the selector matches no pod, the pods are not ready, or the targetPort is wrong."
+remediation: { summary: "Compare the Service selector with the pod labels and its targetPort with the pods' containerPorts (SERVICES graph: the card says SELECTOR MATCHES NO PODS or PORT MISMATCH; WHY? in SNIFF walks it), then fix the readiness probe if the pods match but are not ready.", effort: S }
+verification: "kubectl get endpointslices -n <ns> -l kubernetes.io/service-name=<svc> shows at least one endpoint with ready=true."
+references:
+  - { source: "docs/design/network-debugging.md §8 (K-SVC-01)", url: "https://kubernetes.io/docs/concepts/services-networking/endpoint-slices/" }

@@ -8,6 +8,7 @@
 //   ingress / route → service      http, static
 //   NetworkPolicy allow from → to  tcp|http, static
 //   CSV → CR, CR → workload, CSV → its deployments   owns, owner
+import { noEndpointFindings, serviceEndpoints } from "./svc-endpoints.js";
 
 // A NetworkPolicy namespaceSelector wider than this is drawn as one source.
 export const WIDE_NS = 8;
@@ -75,6 +76,11 @@ function hhmm(ms) {
 // reads: { namespaces, pods, services, deployments, statefulsets, daemonsets,
 //   ingresses, routes, networkPolicies, csvs, crds, events, notes, absent }
 // opts: { title, namespaces: "*" | [..], now }
+function endpointFields(svc, slices, chosen) {
+  const e = serviceEndpoints(svc, slices, chosen);
+  return { endpoints: e.list ? { ready: e.ready, notReady: e.notReady, list: e.list } : null, svcPorts: e.ports, flags: e.flags };
+}
+
 export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", now = Date.now(), windowMin = 30, withPodNodes = false } = {}) {
   const allow = (ns) => namespaces === "*" || namespaces.includes(ns);
   const list = (key) => (reads[key] || []).filter((o) => !nsOf(o) || allow(nsOf(o)));
@@ -87,6 +93,7 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
   }
   const podsIn = (ns) => podsByNs.get(ns) || [];
   const services = list("services");
+  const slices = reads.endpointSlicesAll && !(reads.forbidden || []).includes("endpointSlicesAll") && !(reads.absent || []).includes("endpointSlicesAll") ? reads.endpointSlicesAll : null;
   const workloads = [
     ...list("deployments").map((o) => ["Deployment", o]),
     ...list("statefulsets").map((o) => ["StatefulSet", o]),
@@ -131,8 +138,9 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
     }
     const kind = svc.spec?.type === "LoadBalancer" || EDGE_NS.test(name) ? "ingress" : /webhook/.test(name) ? "webhook" : ports.some((p) => DB_PORTS.has(p)) ? "db" : OPERATOR_NAME.test(name) ? "operator" : "service";
     const sel = svc.spec?.selector;
-    const firstPod = sel && Object.keys(sel).length ? podsIn(ns).find((pod) => selects(sel, meta(pod).labels)) : null;
-    const id = node(`${ns}/${name}`, { group: ns, kind, label: name, ns, ports, labels: nodeLabels(firstPod && meta(firstPod).labels, meta(svc).labels) });
+    const chosen = sel && Object.keys(sel).length ? podsIn(ns).filter((pod) => selects(sel, meta(pod).labels)) : [];
+    const firstPod = chosen[0] || null;
+    const id = node(`${ns}/${name}`, { group: ns, kind, label: name, ns, ports, labels: nodeLabels(firstPod && meta(firstPod).labels, meta(svc).labels), ...(chosen.length ? { pods: { ready: chosen.filter((p) => podState(p) === "ok").length, total: chosen.length } } : {}), ...endpointFields(svc, slices, chosen) });
     if (!sel || !Object.keys(sel).length) continue;
     for (const pod of podsIn(ns)) {
       if (!selects(sel, meta(pod).labels)) continue;
@@ -152,7 +160,7 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
       continue;
     }
     const k = OPERATOR_NAME.test(name) ? "operator" : /webhook/.test(name) ? "webhook" : "workload";
-    workloadNode.set(key, node(`${ns}/${kind.toLowerCase()}:${name}`, { group: ns, kind: k, label: name, ns, labels: nodeLabels(w.spec?.template?.metadata?.labels, meta(w).labels) }));
+    workloadNode.set(key, node(`${ns}/${kind.toLowerCase()}:${name}`, { group: ns, kind: k, label: name, ns, labels: nodeLabels(w.spec?.template?.metadata?.labels, meta(w).labels), ...((podsOf.get(key) || []).length ? { pods: { ready: podsOf.get(key).filter((p) => podState(p) === "ok").length, total: podsOf.get(key).length } } : {}) }));
   }
   const nodeOfPod = (pod) => serviceOfPod.get(`${nsOf(pod)}/${meta(pod).name}`) || workloadNode.get(`${nsOf(pod)}/${workloadOf(pod)}`) || "";
 
@@ -357,5 +365,6 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
     events: recent,
     window: { start: hhmm(start), end: hhmm(now), startAt: start, endAt: now, incident: bad.length ? [bad[0].t, bad[bad.length - 1].t] : [hhmm(now), hhmm(now)] },
     crds: crds.length,
+    findings: noEndpointFindings([...nodes.values()]),
   };
 }
