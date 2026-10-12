@@ -6,7 +6,7 @@
 export const MODULES = [
   { id: "aws", label: "AWS", needs: [], doc: "AWS credentials and clients (the base every AWS surface needs)" },
   { id: "map", label: "Map", needs: ["aws"], doc: "the account map: VPCs, fixtures, stop/start" },
-  { id: "network", label: "Network", needs: ["aws"], doc: "SNIFF/Network: a request's path and DEBUG" },
+  { id: "network", label: "Network", needs: [], doc: "SNIFF/Network: a request's path and DEBUG; FROM INSIDE (the debug pod) needs only a kube write context, the AWS readers only the aws module" },
   { id: "cost", label: "Cost", needs: ["aws"], doc: "CAPS: Cost Explorer, month to date" },
   { id: "radio", label: "Activity", needs: ["aws"], doc: "RADIO: recent CloudTrail calls" },
   { id: "stacks", label: "Stacks", needs: [], doc: "Pulumi stacks and upgrades" },
@@ -25,7 +25,7 @@ export const MODULE_IDS = ALL;
 
 export const PROFILES = {
   full: ALL.filter((id) => id !== "observe"),
-  "k8s-only": ["kubernetes", "graph", "timeline", "score", "learn", "ask"],
+  "k8s-only": ["network", "kubernetes", "graph", "timeline", "score", "learn", "ask"],
   "aws-only": ["aws", "map", "network", "cost", "radio", "stacks", "vaults", "score", "learn", "ask"],
 };
 

@@ -380,10 +380,12 @@ test("a missing debug namespace is named before any write, and marked missing in
   const kube = { read: async (kind) => ({ json: { items: kind === "namespaces" ? [{ metadata: { name: "web" } }, { metadata: { name: "kube-system" } }] : [] } }) };
   const writer = mockWriter();
   const nd = createNetdebug({ pageOrigin: "http://cs", pod: { cfg: ON, writeContexts: ["crc-admin"], kubeFor: () => kube, writerFor: () => writer } });
-  const plan = await nd.podPlan({ target: "x.web:1" });
+  // Nothing picked: falls back to the first existing sourceNamespace.
+  assert.equal((await nd.podPlan({ target: "x.web:1" })).plan.source.namespace, "web");
+  const plan = await nd.podPlan({ target: "x.web:1", namespace: "cloudspider-debug" });
   assert.match(plan.error, /namespace cloudspider-debug does not exist on crc-admin/);
   assert.match(plan.hint, /create namespace cloudspider-debug/);
-  const r = await nd.startPod("http://cs", { target: "x.web:1", confirm: { namespace: "cloudspider-debug" } });
+  const r = await nd.startPod("http://cs", { target: "x.web:1", namespace: "cloudspider-debug", confirm: { namespace: "cloudspider-debug" } });
   assert.match(r.error, /does not exist/);
   assert.equal(writer.calls.length, 0);
   assert.ok(!(await nd.podPlan({ target: "x.web:1", namespace: "web" })).error);
