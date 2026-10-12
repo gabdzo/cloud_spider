@@ -4,6 +4,7 @@
 export const LE_CSS = `
   #log-errors { position: absolute; z-index: 30; top: 6px; left: 12px; right: 12px; max-height: min(70vh, 640px); overflow: auto; padding: 10px 12px 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55); font: 12px/1.4 var(--font-mono); }
   #log-errors[hidden] { display: none; }
+  #log-errors.le-screen { z-index: 3; inset: 0; top: 0; left: 0; right: 0; max-height: none; padding-top: 50px; border: 0; box-shadow: none; background: var(--bg); }
   #log-errors .le-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 8px; }
   #log-errors .le-head h2 { margin: 0; font-size: 13px; letter-spacing: 0.14em; color: var(--warn); }
   #log-errors .le-meta { color: var(--text3); }

@@ -33,8 +33,6 @@ import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
 import { createGraphView } from "./graph-view.js";
 import { createLogErrorsView } from "./log-errors-view.js";
-import { graphScenario } from "./graph-sample.js";
-import { timeline as graphTimeline } from "./graph-model.js";
 import { addonCommands, confirmPrompt, upgradeSpiderLine } from "./upgrade-rules.js";
 import { liveLine, noteLines, numberProblem, radioLine, runModel } from "./run-pane.js";
 import { sourceText } from "./node-labels.js";
@@ -605,6 +603,15 @@ const logErrorsView = createLogErrorsView(logErrorsEl, {
   },
 });
 
+function showLogScreen(on) {
+  logErrorsView.embedded = on;
+  logErrorsEl.classList.toggle("le-screen", on);
+  if (on) {
+    ensureLogErrors();
+    logErrorsView.open();
+  } else logErrorsView.close();
+}
+
 function logErrorsLine() {
   const data = logErrorsView.data;
   if (!data) return { status: "unknown", text: "reading last night's logs…" };
@@ -627,31 +634,12 @@ async function ensureLogErrors(force = false) {
 // A link from LOG ERRORS: the Cluster view's SERVICES, the service's group
 // focused and the node selected; with a time, the timeline event closest to it.
 function openServices(link, at) {
-  logErrorsView.close();
+  if (!logErrorsView.embedded) logErrorsView.close();
   morningLines.logs.setAttribute("aria-expanded", "false");
   markHistory();
   if (mode !== "cluster") enterCluster();
   setClusterScreen("graph");
-  const st = graphView.state;
-  if (sample && link.scenario) {
-    graphView.render(); // builds the view before pick() touches it
-    graphView.pick(link.scenario);
-  }
-  const node = link.node || "";
-  if (node) {
-    st.focus = node.split("/")[0];
-    st.selected = node;
-    st.expanded.add(st.focus);
-  }
-  if (at && sample) {
-    const events = graphTimeline(graphScenario(link.scenario || st.scenario)).events;
-    const when = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
-    const target = new Date(at.time).getHours() * 60 + new Date(at.time).getMinutes();
-    const mine = events.filter((ev) => !node || ev.node === node);
-    const best = (mine.length ? mine : events).slice().sort((a, b) => Math.abs(when(a.t) - target) - Math.abs(when(b.t) - target))[0];
-    if (best) st.event = best.index;
-  }
-  graphView.render();
+  graphView.focusOn({ scenario: sample ? link.scenario : "", node: link.node || "", t: at ? hhmm24(at.time) : "", query: link.node ? link.node.split("/").pop() : "" });
 }
 
 morningFold.addEventListener("click", () => {
@@ -1801,6 +1789,8 @@ const CLUSTER_SCREENS = [
   // SERVICES: live from the selected context, or the SAMPLE scenarios; off
   // with the graph module (modules.js).
   { id: "graph", label: "SERVICES", needs: "graph", show: () => graphView.show(), hide: () => graphView.hide() },
+  // LOG ERRORS as a screen: its home when the map module is off (k8s-only).
+  { id: "logs", label: "LOG ERRORS", needs: "kubernetes", show: () => showLogScreen(true), hide: () => showLogScreen(false) },
 ];
 const CLUSTER_SCREEN_KEY = "cloudspider.cluster.screen";
 let clusterScreen = "topology";
