@@ -129,7 +129,7 @@ test("the vault view binds stacks: owned, STACK info, VIEW from the output", asy
   const camp = body.vaults[0];
   assert.deepEqual(camp.owned, ["urn:fn"]);
   assert.equal(camp.links.view, "https://abc.on.aws/");
-  assert.deepEqual(camp.stackInfo, { stacks: ["camp"], resources: 6, error: "", waiting: [] });
+  assert.deepEqual(camp.stackInfo, { stacks: ["camp"], resources: 6, updated: 0, error: "", waiting: [] });
   assert.equal(camp.checks[0].url, "https://abc.on.aws/");
   assert.ok(!("handles" in camp.selector), "the Set stays on the server");
   JSON.stringify(body);

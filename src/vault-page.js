@@ -67,7 +67,7 @@ export function vaultSummary(vault) {
     : [
         [vault?.type, vault?.owner].filter(Boolean).join(" · ").toUpperCase(),
         stack.text,
-        [checks.total ? `CHECKS ${checks.ok}/${checks.total}` : "", `OWNS ${owns}`, trouble ? `TROUBLE ×${trouble}` : ""].filter(Boolean).join(" · "),
+        [checks.total ? `CHECKS ${checks.ok}/${checks.total}` : "", owns || !vault?.stackInfo?.resources ? `OWNS ${owns}` : "", trouble ? `TROUBLE ×${trouble}` : ""].filter(Boolean).join(" · "),
       ].filter(Boolean);
   return {
     key: vault?.key,

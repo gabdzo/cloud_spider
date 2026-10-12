@@ -94,12 +94,17 @@ export function validateVault(doc) {
       const stack = spec.stack;
       if (!isObject(stack)) errors.push("spec.stack: must be a mapping with dir and name");
       else {
-        unknownKeys(stack, ["dir", "name"], "spec.stack.", warnings);
+        unknownKeys(stack, ["dir", "name", "resource"], "spec.stack.", warnings);
+        // resource: one resource of a shared stack (the Pod Identity agent
+        // is the EKS stack's add-on eks-pod-identity-agent): the vault is up
+        // when the stack has it, and counts only it.
+        const resource = stack.resource === undefined ? "" : text(stack.resource);
+        if (stack.resource !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$/.test(resource)) errors.push("spec.stack.resource: must be a resource name in that stack, like eks-pod-identity-agent");
         const dir = text(stack.dir);
         const stackName = text(stack.name);
         if (!dir || !STACK_DIR.test(dir) || dir.split("/").includes("..")) errors.push("spec.stack.dir: must be a folder in this repo, like upgrades/camp");
         if (!stackName || !STACK_NAME.test(stackName)) errors.push("spec.stack.name: must be a stack name, like camp (a trailing * matches several)");
-        if (!errors.some((error) => error.startsWith("spec.stack."))) out.stack = { dir, name: stackName };
+        if (!errors.some((error) => error.startsWith("spec.stack."))) out.stack = { dir, name: stackName, ...(resource ? { resource } : {}) };
       }
     }
     if (!text(spec.type)) errors.push(`spec.type: is required (${VAULT_TYPES.join(", ")})`);

@@ -75,7 +75,8 @@ export function createStackReader({ run = spawn, cwd = root, env = process.env, 
     const out = await capture(run, directory, childEnv, ["stack", "export", "--stack", name]);
     if (out.error) return MISSING.test(out.error) ? { name, resources: [], missing: true } : { name, resources: [], error: `pulumi stack export ${name} did not run` };
     try {
-      return { name, resources: JSON.parse(out.text)?.deployment?.resources || [] };
+      const deployment = JSON.parse(out.text)?.deployment;
+      return { name, resources: deployment?.resources || [], updated: deployment?.manifest?.time || "" };
     } catch {
       return { name, resources: [], error: `pulumi stack export ${name} was not JSON` };
     }
@@ -106,7 +107,7 @@ export function createStackReader({ run = spawn, cwd = root, env = process.env, 
     // { stacks: [{name, resources, missing?, error?}], handles: Set, outputs, count, error }
     async read(spec) {
       if (!spec?.dir || !spec?.name) return { stacks: [], handles: new Set(), outputs: {}, count: 0, error: "" };
-      const key = `${spec.dir}\u0000${spec.name}`;
+      const key = `${spec.dir}\u0000${spec.name}\u0000${spec.resource || ""}`;
       const now = clock();
       const hit = cache.get(key);
       if (hit && now - hit.at < ttl) return hit.value;
@@ -116,10 +117,12 @@ export function createStackReader({ run = spawn, cwd = root, env = process.env, 
           load(spec)
             .catch(() => ({ stacks: [], error: `the ${spec.dir} stack did not load` }))
             .then((loaded) => {
-              const resources = loaded.stacks.flatMap((item) => item.resources);
+              const every = loaded.stacks.flatMap((item) => item.resources);
+              const resources = spec.resource ? every.filter((item) => String(item?.urn || "").endsWith(`::${spec.resource}`)) : every;
               const outputs = {};
-              for (const item of loaded.stacks) Object.assign(outputs, stackOutputs(item.resources));
-              const value = { ...loaded, handles: stackHandles(resources), outputs, count: countResources(resources), logGroups: stackLogGroups(resources) };
+              if (!spec.resource) for (const item of loaded.stacks) Object.assign(outputs, stackOutputs(item.resources));
+              const times = loaded.stacks.map((item) => Date.parse(item.updated || "")).filter(Number.isFinite);
+              const value = { ...loaded, handles: stackHandles(resources), outputs, count: countResources(resources), logGroups: stackLogGroups(resources), updated: times.length ? Math.max(...times) : 0 };
               cache.set(key, { at: clock(), value });
               inflight.delete(key);
               return value;

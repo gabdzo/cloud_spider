@@ -208,6 +208,14 @@ function placeYard(subnet, size, x, y, w, buildings, cards) {
   };
 }
 
+// Room between a public load balancer and the EKS cluster it fronts, so the
+// ALB → cluster wire reads as a wire, not two cards touching.
+export const WIRE_GAP = 112;
+// Room above the edge row for the PUBLIC tab (drawn 9 px over a card's top)
+// so it clears the gate label in the top wall.
+export const BADGE_ROOM = 16;
+const fronts = (lb, item) => lb?.kind === "alb" && item?.kind === "eks" && lb.cluster && lb.cluster === item.name;
+
 function rowOfCards(items, x, y, room) {
   const placed = [];
   let cx = x;
@@ -215,6 +223,8 @@ function rowOfCards(items, x, y, room) {
   let bottom = y;
   for (const item of items) {
     const w = cardWidth(item, room);
+    const previous = placed[placed.length - 1];
+    if (previous && previous.y === cy && fronts(previous, item)) cx += WIRE_GAP - A.GAP;
     if (cx > x && cx + w > x + room) {
       cx = x;
       cy = bottom + A.GAP;
@@ -286,6 +296,7 @@ export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fi
   let cursorY = y + A.LINE + A.INSET + 8;
   let right = x + A.INSET + textWidth(label) + 40;
 
+  if (edge.some((item) => item.public || item.exposedBy?.length)) cursorY += BADGE_ROOM;
   const edgeRow = rowOfCards(edge.sort((a, b) => KIND_ORDER(a) - KIND_ORDER(b) || byId(a, b)), left, cursorY, Math.max(inner, A.CARD_MAX));
   if (edgeRow.items.length) {
     cursorY = edgeRow.bottom + A.GAP;
