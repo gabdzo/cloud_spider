@@ -96,6 +96,8 @@ const api = new k8s.apps.v1.Deployment(
       template: {
         metadata: { labels },
         spec: {
+          // PostgREST never calls the Kubernetes API: no token (K8S-SEC-007).
+          automountServiceAccountToken: false,
           // One per zone first; ScheduleAnyway so a single-zone cluster
           // still runs every replica.
           topologySpreadConstraints: [

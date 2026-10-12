@@ -1,0 +1,17 @@
+kind: Control
+id: K8S-CNPG-004
+revision: 1
+title: "CloudNativePG WAL archiving works"
+category: reliability
+target: kubernetes
+evidenceType: runtime
+severity: { default: high }
+confidence: high
+evaluator: cnpg-wal-archiving
+aggregation: proportional
+requires: [kube-cnpg]
+whyItMatters: "Without archived WAL a backup restores only to the moment it was taken; failing archiving also fills the volume until Postgres stops."
+remediation: { summary: "Configure a WAL archiver (Barman Cloud plugin with isWALArchiver: true) and keep it healthy: when ContinuousArchiving is False, read the plugin sidecar's log (credentials, bucket, region). Postgres on EKS card: backups on.", effort: M, cardFor: { "shop/": pgcluster } }
+verification: "kubectl get cluster <name> -o jsonpath='{.status.conditions[?(@.type==\"ContinuousArchiving\")].status}' is True."
+references:
+  - { source: "CloudNativePG: WAL archiving", url: "https://cloudnative-pg.io/documentation/current/wal_archiving/" }

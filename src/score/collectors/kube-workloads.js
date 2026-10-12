@@ -41,8 +41,14 @@ function workload(item) {
 }
 
 function podFacts(item) {
+  const spec = item?.spec || {};
   return {
     ...workload(item),
+    node: spec.nodeName || "",
+    serviceAccount: spec.serviceAccountName || "default",
+    // null: the pod does not say (the service account's setting decides).
+    automount: typeof spec.automountServiceAccountToken === "boolean" ? spec.automountServiceAccountToken : null,
+    claims: (spec.volumes || []).map((v) => v?.persistentVolumeClaim?.claimName).filter(Boolean),
     phase: item?.status?.phase || "",
     waiting: (item?.status?.containerStatuses || []).map((s) => s?.state?.waiting?.reason).filter(Boolean),
     restarts: (item?.status?.containerStatuses || []).reduce((n, s) => n + (s?.restartCount || 0), 0),

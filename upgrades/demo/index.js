@@ -284,6 +284,8 @@ new k8s.apps.v1.Deployment("otel-gateway", {
     template: {
       metadata: { labels: podLabels(gatewayLabels, "otel-gateway") },
       spec: {
+        // No Kubernetes API calls: no token (K8S-SEC-007).
+        automountServiceAccountToken: false,
         containers: [{
           name: "gateway",
           image: COLLECTOR_IMAGE,
@@ -314,6 +316,8 @@ function podinfo(name, extraArgs = []) {
       template: {
         metadata: { labels: podLabels(labels, name) },
         spec: {
+          // No Kubernetes API calls: no token (K8S-SEC-007).
+          automountServiceAccountToken: false,
           containers: [{
             name,
             image: "ghcr.io/stefanprodan/podinfo:6.7.1",
@@ -344,6 +348,8 @@ new k8s.apps.v1.Deployment("loadgen", {
     template: {
       metadata: { labels: podLabels({ app: "loadgen" }, "loadgen") },
       spec: {
+        // No Kubernetes API calls: no token (K8S-SEC-007).
+        automountServiceAccountToken: false,
         containers: [{
           name: "loadgen",
           image: "busybox:1.36",
