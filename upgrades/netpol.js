@@ -16,7 +16,9 @@ export const ALLOW_OPEN_LABEL = "cloudspider.io/allow-open";
 const tcp = (...ports) => ports.map((port) => ({ protocol: "TCP", port }));
 const nsSel = (name) => ({ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": name } } });
 
-export const DNS_EGRESS = { to: [{ ...nsSel("kube-system"), podSelector: { matchLabels: { "k8s-app": "kube-dns" } } }], ports: [{ protocol: "UDP", port: 53 }, { protocol: "TCP", port: 53 }] };
+// OpenShift serves cluster DNS from openshift-dns (dns-default pods listening
+// on 5353 behind the 53 Service); NetworkPolicy sees the pod port, so both.
+export const DNS_EGRESS = { to: [{ ...nsSel("kube-system"), podSelector: { matchLabels: { "k8s-app": "kube-dns" } } }, { ...nsSel("openshift-dns"), podSelector: { matchLabels: { "dns.operator.openshift.io/daemonset-dns": "default" } } }], ports: [{ protocol: "UDP", port: 53 }, { protocol: "TCP", port: 53 }, { protocol: "UDP", port: 5353 }, { protocol: "TCP", port: 5353 }] };
 
 // One namespace's rules. https: true (every pod) or a podSelector;
 // podIdentity: the same pods also reach the Pod Identity agent.
