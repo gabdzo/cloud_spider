@@ -285,8 +285,9 @@ test("the card line names a cluster that is still there", async () => {
     },
   });
   const live = await app.upgradeStatus("eks", true);
-  assert.match(live.watch.text, /the cluster is still ACTIVE/);
-  assert.match(live.watch.text, /Pulumi has no destroy/);
+  // Up after an update is the normal state: said plainly, not as a failure.
+  assert.match(live.watch.text, /^UP · the cluster is ACTIVE/);
+  assert.equal(live.watch.status, "ok");
   assert.match(live.watch.text, /15 resources/);
   now = 1000;
   await app.upgradeStatus("eks", false);
@@ -299,8 +300,8 @@ test("the card line names a cluster that is still there", async () => {
   assert.equal(signal.watch.text, "the stack is gone");
   assert.equal(described, 1);
   const left = watchLine({ cluster: null, history: { kind: "update", resources: 2 } });
-  assert.match(left.text, /2 resources/);
-  assert.equal(left.status, "fail");
+  assert.equal(left.text, "UP · 2 resources · last run: update");
+  assert.equal(left.status, "ok");
 });
 
 test("the event line waits until the server accepts the job", () => {
