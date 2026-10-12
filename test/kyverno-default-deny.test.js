@@ -52,15 +52,11 @@ test("celLiteral wraps every value in dyn() and escapes strings", () => {
 });
 
 test("the Kyverno stack ships it as a CEL GeneratingPolicy (gpol-), the viewer and scanner may read it", async () => {
-  const made = [];
-  const fake = { apiextensions: { CustomResource: class { constructor(n, a) { made.push([n, a.apiVersion, a.kind]); } } } };
   const src = await import("node:fs").then((fs) => fs.readFileSync(new URL("../upgrades/addons/kyverno.js", import.meta.url), "utf8"));
   assert.match(src, /gpol/);
   assert.doesNotMatch(src, /kind: cel \? "ValidatingPolicy" : "ClusterPolicy"/);
   assert.match(src, /"generatingpolicies"/);
   assert.ok(SCANNER_RULES.some((r) => r.apiGroups.includes("policies.kyverno.io") && r.resources.includes("generatingpolicies")));
-  assert.ok(fake);
-  assert.deepEqual(made, []);
 });
 
 test("Kyverno card offers defaultDeny, on by default; K8S-SEC-010 opens it", async () => {

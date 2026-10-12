@@ -289,15 +289,17 @@ test("every add-on under mocks: tagged project=<id> and cluster=<name>, viewer R
   }
   const by = Object.fromEntries(all);
   // Kyverno: four baseline policies plus two demo ones, all Audit, as
-  // ValidatingPolicies (CEL); generate-default-deny stays a ClusterPolicy.
+  // ValidatingPolicies (CEL); generate-default-deny a GeneratingPolicy (CEL).
   const vpols = kind(by.kyverno, "ValidatingPolicy");
   assert.deepEqual(vpols.map((p) => p.metadata.name).sort(), ["disallow-host-path", "disallow-latest-tag", "disallow-privileged-containers", "require-app-name-label", "require-readiness-probe", "require-requests"]);
   assert.ok(vpols.every((p) => p.apiVersion === "policies.kyverno.io/v1"));
   assert.equal(vpols.filter((p) => /demo/.test(p.metadata.annotations["policies.kyverno.io/category"])).length, 2);
   for (const policy of vpols) assert.deepEqual(policy.spec.validationActions, ["Audit"]);
-  const policies = kind(by.kyverno, "ClusterPolicy");
-  assert.deepEqual(policies.map((p) => p.metadata.name), ["generate-default-deny"]);
-  assert.ok(policies[0].spec.rules.every((r) => r.generate && !r.validate));
+  assert.deepEqual(kind(by.kyverno, "ClusterPolicy"), [], "no ClusterPolicy is left");
+  const gpols = kind(by.kyverno, "GeneratingPolicy");
+  assert.deepEqual(gpols.map((p) => [p.apiVersion, p.metadata.name]), [["policies.kyverno.io/v1", "generate-default-deny"]]);
+  assert.equal(gpols[0].spec.evaluation.synchronize.enabled, true);
+  assert.match(gpols[0].spec.generate[0].expression, /^generator\.Apply\(/);
   const exceptions = kind(by.kyverno, "PolicyException");
   assert.deepEqual(exceptions.map((e) => [e.apiVersion, e.metadata.name, e.spec.policyRefs[0].kind, e.spec.policyRefs[0].name]), [["policies.kyverno.io/v1", "demo-otel-collector-host-path", "ValidatingPolicy", "disallow-host-path"]]);
   // Karpenter: a capped arm64 pool, tagged encrypted IMDSv2 nodes.
