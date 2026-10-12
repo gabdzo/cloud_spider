@@ -96,7 +96,10 @@ export const DEFAULT_DENY_SINCE = "2026-10-12T07:00:00Z";
 export const DEFAULT_DENY_SKIP = ["kube-system", "kube-public", "kube-node-lease", "kyverno"];
 export const ALLOW_OPEN_LABEL = "cloudspider.io/allow-open";
 export const DEFAULT_DENY_POLICY = {
-  name: "default-deny-new-namespaces",
+  // Renamed from default-deny-new-namespaces: Kyverno refuses any edit to a
+  // generate rule (match, preconditions, even its name), so a changed rule
+  // ships as a new policy.
+  name: "generate-default-deny",
   title: "Default-deny NetworkPolicy in new namespaces",
   severity: "high",
   category: "Multi-tenancy, Cloud Spider",
@@ -105,9 +108,7 @@ export const DEFAULT_DENY_POLICY = {
     background: true,
     rules: [
       {
-        // v2: Kyverno refuses edits to a generate rule's match or
-        // preconditions, so a changed rule gets a new name (in place).
-        name: "default-deny-v2",
+        name: "default-deny",
         match: { any: [{ resources: { kinds: ["Namespace"] } }] },
         preconditions: { all: [{ key: `{{ time_after('{{request.object.metadata.creationTimestamp}}', '${DEFAULT_DENY_SINCE}') }}`, operator: "Equals", value: true }] },
         exclude: { any: [{ resources: { names: DEFAULT_DENY_SKIP } }, { resources: { selector: { matchLabels: { [ALLOW_OPEN_LABEL]: "true" } } } }] },
@@ -119,7 +120,7 @@ export const DEFAULT_DENY_POLICY = {
           name: "default-deny",
           namespace: "{{request.object.metadata.name}}",
           data: {
-            metadata: { labels: { "app.kubernetes.io/managed-by": "kyverno", "cloudspider.io/policy": "default-deny-new-namespaces" } },
+            metadata: { labels: { "app.kubernetes.io/managed-by": "kyverno", "cloudspider.io/policy": "generate-default-deny" } },
             spec: {
               podSelector: {},
               policyTypes: ["Ingress", "Egress"],
