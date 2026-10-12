@@ -60,3 +60,12 @@ metadata: {name: sneaky, namespace: demo, labels: {app: otel-collector, app.kube
 spec:
   volumes: [{name: h, hostPath: {path: /}}]
   containers: [{name: c, image: "otel:1", resources: {requests: {cpu: 1m, memory: 1Mi}}, readinessProbe: {httpGet: {path: /, port: 1}}}]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: sysds, namespace: kube-system}
+spec:
+  selector: {matchLabels: {a: b}}
+  template:
+    metadata: {labels: {a: b}}
+    spec: {containers: [{name: c, image: nginx}]}
