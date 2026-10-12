@@ -48,8 +48,24 @@ const WATCH_MS = 15_000;
 // cluster or a node made after the page opened shows up without a restart.
 export const PLACE_TTL = 60_000;
 
+// The red AWS banner: say exactly what to set, from what the environment
+// has (names only, never values). Exported for the tests.
+export function accountHint(error, env = process.env) {
+  const text = String(error || "");
+  const creds = /credential|security token|not able to validate|InvalidClientTokenId|ExpiredToken|SSO|could not load|profile/i.test(text);
+  const region = env.AWS_REGION || env.AWS_DEFAULT_REGION;
+  const parts = [];
+  if (creds) {
+    if (env.AWS_ACCESS_KEY_ID) parts.push(`AWS_ACCESS_KEY_ID is set in the environment and wins over any profile${env.AWS_PROFILE ? ` (AWS_PROFILE=${env.AWS_PROFILE} is ignored)` : ""}: unset AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN, or refresh them.`);
+    else if (env.AWS_PROFILE) parts.push(`AWS_PROFILE=${env.AWS_PROFILE} did not give working credentials: set AWS_PROFILE to a profile that works (check: aws sts get-caller-identity --profile <name>), e.g. AWS_PROFILE=default, or log in again (aws sso login --profile ${env.AWS_PROFILE}).`);
+    else parts.push("No AWS_PROFILE is set and the default credential chain found nothing that works: set AWS_PROFILE=<profile>, e.g. AWS_PROFILE=default.");
+  }
+  if (!region && (creds || /region/i.test(text))) parts.push("AWS_REGION is not set: set AWS_REGION=eu-north-1.");
+  return parts.length ? parts.join(" ") : ACCOUNT_HINT;
+}
+
 function accountRead(error) {
-  return `${ACCOUNT_HINT} ${error}`;
+  return `${accountHint(error)} ${error}`;
 }
 
 export const KUBE_VIEW_TTL = 5_000;

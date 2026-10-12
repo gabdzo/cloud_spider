@@ -5,6 +5,7 @@ import { buildingAt, fixtureAt, focusLists, paint } from "./draw.js";
 import { FILTER_AT, filterRoutes, groupRoutes, ruleCount } from "./alb-routes.js";
 import { hasDock } from "./arch-layout.js";
 import { mapTargets, stepTarget, targetLine } from "./map-focus.js";
+import { createQuickFind, mapItem } from "./quick-find.js";
 import { isInstanceId } from "./ids.js";
 import {
   clickBuilding,
@@ -3171,13 +3172,67 @@ kubeSearchEl.addEventListener("keydown", (event) => {
   }
 });
 // "/" focuses the search in the Cluster view, unless something is typed.
+// Everywhere else it opens quick-find (quick-find.js): on MAP the map's
+// own resources, elsewhere GO TO over the tabs and the map's resources.
+// The top tabs and console keys, read from the page (both themes' labels).
+function quickTabs() {
+  const name = (b) => (b.querySelector("[data-pro-label]")?.textContent || b.querySelector(".tag")?.textContent || b.textContent || "").trim();
+  return [...document.querySelectorAll(".tabs .tab, .keys .key")].filter((b) => b.id && !b.hidden && b.getClientRects().length).map((b) => {
+    const pro = b.querySelector("[data-pro-label]")?.textContent?.trim() || "";
+    return { key: `#${b.id}`, kind: "tab", label: name(b), hint: [pro && pro !== name(b) ? pro : "", b.title || ""].filter(Boolean).join(" · ").slice(0, 60) || "tab", id: b.id };
+  });
+}
+// The map is what is on screen: no console key (SCORE, STACKS…) covers it.
+const mapOnScreen = () => mode === "map" && !vaultPageOpen() && ![...document.querySelectorAll(".keys .key:not(#tab-radio)")].some((b) => b.getAttribute("aria-pressed") === "true" && !b.hidden);
+function quickMapTargets() {
+  if (!place && !vaultsData.vaults.length) return [];
+  const placed = placedMap();
+  return mapTargets(placed, focusLists(placed));
+}
+function quickPickMap(key) {
+  const go = () => {
+    const targets = mapFocusTargets();
+    const index = targets.findIndex((t) => t.key === key);
+    if (index < 0) return;
+    mapKeyboard = true;
+    canvas.focus({ preventScroll: true });
+    focusMapTarget(targets, index);
+  };
+  if (mapOnScreen()) go();
+  else {
+    const key = [...document.querySelectorAll(".keys .key:not(#tab-radio)")].find((b) => b.getAttribute("aria-pressed") === "true" && !b.hidden);
+    if (key) key.click();
+    if (mode !== "map" || vaultPageOpen()) tabMap?.click();
+    requestAnimationFrame(() => requestAnimationFrame(go));
+  }
+}
+const quickFind = createQuickFind({
+  onPick(it) {
+    if (it.kind === "tab") {
+      const b = document.querySelector(it.key);
+      // A top tab under a lit console key (SCORE, STACKS…) stays covered:
+      // close the key first, as clicking it again would.
+      const lit = [...document.querySelectorAll(".keys .key:not(#tab-radio)")].find((k) => k.getAttribute("aria-pressed") === "true" && !k.hidden);
+      if (b?.matches(".tabs .tab") && lit) lit.click();
+      if (b && b.getAttribute("aria-pressed") !== "true") b.click();
+    }
+    else quickPickMap(it.key);
+  },
+});
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || !searchable() || kubeSearchEl.hidden) return;
+  if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
   const t = event.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+  if (k9s.isOpen() || quickFind.isOpen()) return;
   event.preventDefault();
-  kubeSearchEl.focus();
-  kubeSearchEl.select();
+  if (searchable() && !kubeSearchEl.hidden) {
+    kubeSearchEl.focus();
+    kubeSearchEl.select();
+    return;
+  }
+  const mapEntries = quickMapTargets().map(mapItem);
+  if (mapOnScreen()) return quickFind.open({ title: "MAP", entries: mapEntries });
+  quickFind.open({ title: "GO TO", entries: [...quickTabs(), ...mapEntries.map((e) => ({ ...e, hint: `map · ${e.hint}` }))] });
 });
 
 // Pinned lane heads sit under the floating context switcher, not behind it.
