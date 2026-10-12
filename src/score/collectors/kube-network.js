@@ -17,7 +17,7 @@ const backendsOf = (ing) => {
 
 // read name → evidence key and how its answer becomes fields.
 const READS = [
-  ["corednsPods", "kube-coredns", (res) => ({ pods: (res.json.items || []).map((p) => ({ name: name(p), node: p?.spec?.nodeName || "", ready: isReady(p) })) })],
+  ["corednsPods", "kube-coredns", (res) => ({ pods: (res.json.items || []).map((p) => ({ name: name(p), node: p?.spec?.nodeName || "", ready: isReady(p), labels: p?.metadata?.labels || {} })) })],
   ["corednsMetrics", "kube-coredns-metrics", (res) => {
     const m = parseCorednsMetrics(res.text);
     return { total: m.total, servfail: m.servfail, nxdomain: m.nxdomain, panics: m.panics };

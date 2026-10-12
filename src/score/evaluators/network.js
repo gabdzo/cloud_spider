@@ -5,6 +5,7 @@
 import { cidrContains } from "../../cidr.js";
 import { danglingRecords } from "../../netdebug/aws-dns.js";
 import { naclVerdict } from "../../netdebug/aws-vpc.js";
+import { corednsPdb } from "../../netdebug/kube-checks.js";
 
 const trim = (name) => String(name || "").toLowerCase().replace(/\.$/, "");
 const pointsAt = (r) => trim(r.alias?.dnsName || (r.type === "CNAME" ? r.values?.[0] : ""));
@@ -17,7 +18,6 @@ const minTlsMinor = (policy) => Number((/(?:TLS13|TLS|FS)-1-(\d)/.exec(policy ||
 const MODERN_CF = /^TLSv1\.2_20(2[1-9]|[3-9]\d)$|^TLSv1\.3/;
 const range = (a, b) => (a === b ? `${a}` : `${a}-${b}`);
 const pct = (x) => `${(x * 100).toFixed(1)}%`;
-const matches = (selector, labels) => Object.keys(selector || {}).length > 0 && Object.entries(selector).every(([k, v]) => labels[k] === v);
 
 export const networkEvaluators = {
   // NET-DNS-003: ≥2 ready CoreDNS replicas on ≥2 nodes, and a PDB.
@@ -26,7 +26,10 @@ export const networkEvaluators = {
     if (!pods.length) return { notApplicable: "no CoreDNS (k8s-app=kube-dns) pods" };
     const ready = pods.filter((p) => p.ready);
     const nodes = [...new Set(ready.map((p) => p.node).filter(Boolean))];
-    const pdb = (data["kube-pdbs"].items || []).find((p) => p.namespace === "kube-system" && matches(p.selector, { "k8s-app": "kube-dns" }));
+    // The PDB selects the CoreDNS pods by their own labels: the EKS add-on's
+    // is { eks.amazonaws.com/component: coredns, k8s-app: kube-dns }, which
+    // the bare { k8s-app: kube-dns } never matched.
+    const pdb = corednsPdb((data["kube-pdbs"].items || []).filter((p) => p.namespace === "kube-system").map((p) => ({ name: p.name, selector: { matchLabels: p.selector, matchExpressions: p.expressions || [] } })), pods.map((p) => p.labels));
     const issues = [];
     if (ready.length < 2) issues.push(`${ready.length} ready replica${ready.length === 1 ? "" : "s"}`);
     else if (nodes.length < 2) issues.push(`${ready.length === 2 ? "both" : `all ${ready.length}`} on ${nodes[0] || "one node"}`);

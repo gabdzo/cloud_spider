@@ -132,3 +132,26 @@ test("kube PATHS for netdebug are fixed GETs with checked names", () => {
   assert.equal(PATHS.corednsMetrics(), "/api/v1/namespaces/kube-system/services/kube-dns:metrics/proxy/metrics");
   assert.throws(() => PATHS.service("shop", "web/../x"), /not a Kubernetes name/);
 });
+
+// Live 2026-10-12: the EKS CoreDNS add-on's PDB selects
+// { eks.amazonaws.com/component: coredns, k8s-app: kube-dns }. K-DNS-01 matched
+// it against { k8s-app: kube-dns } only and said "no PodDisruptionBudget".
+test("K-DNS-01: the EKS add-on's CoreDNS PDB counts (matched on the pods' own labels)", () => {
+  const EKS_DNS = { "eks.amazonaws.com/component": "coredns", "k8s-app": "kube-dns" };
+  const dnsPod = (name, node) => ({ metadata: { name, labels: EKS_DNS }, spec: { nodeName: node }, status: { conditions: [{ type: "Ready", status: "True" }] } });
+  const ev = (pdbs) => ({
+    context: "c",
+    service: { ns: "shop", name: "web" },
+    coredns: {
+      deployment: { json: { metadata: { name: "coredns" }, spec: { replicas: 2, template: { metadata: { labels: EKS_DNS } } }, status: { readyReplicas: 2 } } },
+      pods: { json: { items: [dnsPod("coredns-a", "n1"), dnsPod("coredns-b", "n2")] } },
+      pdbs: { json: { items: pdbs } },
+    },
+  });
+  const pdb = { metadata: { name: "coredns", namespace: "kube-system" }, spec: { maxUnavailable: 1, selector: { matchLabels: EKS_DNS } } };
+  const ok = by(kubeChecks(ev([pdb])), "K-DNS-01");
+  assert.equal(ok.status, "PASS", ok.text);
+  assert.match(ok.text, /PDB coredns/);
+  const none = by(kubeChecks(ev([])), "K-DNS-01");
+  assert.match(none.text, /no PodDisruptionBudget/);
+});
