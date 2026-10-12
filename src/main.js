@@ -1,4 +1,6 @@
 import { EC2Client } from "@aws-sdk/client-ec2";
+import { createLogReport } from "./log-report.js";
+import { awsInsights } from "./log-sources.js";
 import { RDSClient } from "@aws-sdk/client-rds";
 import { readPeerWorld } from "./peer-path-read.js";
 import { createShutdown } from "./shutdown.js";
@@ -132,6 +134,13 @@ const app = createApp({
   write(line) {
     process.stdout.write(line);
   },
+});
+// LOG ERRORS (log-report.js): Loki when logs.loki.url is set, else Logs
+// Insights over logs.cloudwatch.logGroups (aws module only), plus restarts.
+app.logErrors = createLogReport({
+  logs: config.logs,
+  kube,
+  insights: mods.has("aws") ? () => awsInsights(config.aws.region || process.env.AWS_REGION || "eu-north-1") : null,
 });
 
 // SCORE: scans of the connected cluster, history on the shared storage

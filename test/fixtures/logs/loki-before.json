@@ -1,0 +1,42 @@
+{
+ "status": "success",
+ "data": {
+  "resultType": "streams",
+  "result": [
+   {
+    "stream": {
+     "namespace": "shop",
+     "pod": "worker-0",
+     "container": "worker",
+     "service_name": "worker"
+    },
+    "values": [
+     [
+      "1791671460000000000",
+      "Traceback (most recent call last):"
+     ],
+     [
+      "1791671460001000000",
+      "  File \"/app/worker.py\", line 31, in handle"
+     ],
+     [
+      "1791671460002000000",
+      "    db.save(row)"
+     ],
+     [
+      "1791671460003000000",
+      "  File \"/app/db.py\", line 12, in save"
+     ],
+     [
+      "1791671460004000000",
+      "    raise ConnectionError(\"db 10.0.3.14:5432 unreachable\")"
+     ],
+     [
+      "1791671460005000000",
+      "ConnectionError: db 10.0.3.14:5432 unreachable"
+     ]
+    ]
+   }
+  ]
+ }
+}

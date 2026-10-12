@@ -106,6 +106,20 @@ export const SCHEMA = {
     enable: { type: "list", items: /^[a-z0-9-]{1,32}$/, default: [], doc: "modules to add to the profile (their needs come with them), e.g. [observe]" },
     disable: { type: "list", items: /^[a-z0-9-]{1,32}$/, default: [], doc: "modules to take out (whatever needs them goes too), e.g. [cost, radio]" },
   },
+  logs: {
+    loki: {
+      url: { type: "string", pattern: /^(https?:\/\/[^\s]+)?$/, default: "", env: "CLOUDSPIDER_LOKI_URL", doc: "Loki's HTTP API (LOG ERRORS in the morning report), e.g. http://127.0.0.1:3100 through a port-forward; the observe bundle will fill this in" },
+      tenant: { type: "string", default: "", env: "CLOUDSPIDER_LOKI_TENANT", doc: "X-Scope-OrgID for a multi-tenant Loki (empty: none)" },
+      selector: { type: "string", default: "", doc: "LogQL stream selector (empty: {namespace=~\".+\"})" },
+    },
+    window: {
+      start: { type: "string", pattern: /^([01]\d|2[0-3]):[0-5]\d$/, default: "22:00", doc: "the night window LOG ERRORS reports on, local time" },
+      end: { type: "string", pattern: /^([01]\d|2[0-3]):[0-5]\d$/, default: "07:00", doc: "end of the night window" },
+    },
+    cloudwatch: {
+      logGroups: { type: "list", items: /^[\w#/.-]{1,512}$/, default: [], doc: "EKS container log groups for Logs Insights when there is no Loki (aws module; billed per GB scanned, read at most every 5 min)" },
+    },
+  },
   features: {
     ask: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_ASK", doc: "ASK: the local agent terminal" },
     stacksRun: { type: "boolean", default: true, env: "CLOUDSPIDER_FEATURE_STACKS_RUN", doc: "running Pulumi from STACKS (reading stacks stays on)" },
