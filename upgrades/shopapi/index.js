@@ -28,6 +28,11 @@ const secretName = config.get("dbSecret") || "shopdb-app";
 // checks for first).
 const expose = config.get("expose") || "none";
 if (!["none", "alb"].includes(expose)) throw new Error("expose must be none or alb");
+// replicas: 2 by default, spread over zones (NET-K8S-002: an ALB's targets
+// in 2+ zones) with a PodDisruptionBudget of 1; 1 is the cheap, single-zone
+// choice.
+const replicas = Number(config.get("replicas") || "2");
+if (!Number.isInteger(replicas) || replicas < 1 || replicas > 6) throw new Error("replicas must be 1-6");
 if (!/^[a-z][a-z0-9-]{1,62}$/.test(secretName)) throw new Error("dbSecret must be a Kubernetes name");
 
 inheritTags(pulumi, stackTags("shopapi", { cluster: clusterName }));
@@ -86,11 +91,17 @@ const api = new k8s.apps.v1.Deployment(
   {
     metadata: { name: "shopapi", namespace: ns, labels },
     spec: {
-      replicas: 1,
+      replicas,
       selector: { matchLabels: { app: "shopapi" } },
       template: {
         metadata: { labels },
         spec: {
+          // One per zone first; ScheduleAnyway so a single-zone cluster
+          // still runs every replica.
+          topologySpreadConstraints: [
+            { maxSkew: 1, topologyKey: "topology.kubernetes.io/zone", whenUnsatisfiable: "ScheduleAnyway", labelSelector: { matchLabels: { app: "shopapi" } } },
+            { maxSkew: 1, topologyKey: "kubernetes.io/hostname", whenUnsatisfiable: "ScheduleAnyway", labelSelector: { matchLabels: { app: "shopapi" } } },
+          ],
           containers: [
             {
               name: "postgrest",
@@ -118,6 +129,26 @@ const api = new k8s.apps.v1.Deployment(
 const service = new k8s.core.v1.Service("shopapi", {
   metadata: { name: "shopapi", namespace: ns, labels },
   spec: { selector: { app: "shopapi" }, ports: [{ name: "http", port: 80, targetPort: "http" }] },
+}, k);
+
+// A drain keeps one replica serving (only with 2+: with 1 it would block
+// every node drain).
+if (replicas > 1) {
+  new k8s.policy.v1.PodDisruptionBudget("shopapi", {
+    metadata: { name: "shopapi", namespace: ns, labels },
+    spec: { minAvailable: 1, selector: { matchLabels: { app: "shopapi" } } },
+  }, k);
+}
+
+// Ingress NetworkPolicy: upgrades/pgcluster denies ingress by default in
+// shop; this allows the API's own port from the VPC: the ALB (target type
+// ip) reaches the pod from its ENIs in the cluster subnets, and so does the
+// API server's service proxy (kubectl port-forward goes through the kubelet,
+// which is allowed anyway). The migrate Job takes no ingress.
+const vpcCidr = aws.ec2.getVpcOutput({ id: aws.eks.getClusterOutput({ name: clusterName }).vpcConfig.vpcId }).cidrBlock;
+new k8s.networking.v1.NetworkPolicy("allow-shopapi", {
+  metadata: { name: "allow-shopapi", namespace: ns, labels },
+  spec: { podSelector: { matchLabels: { app: "shopapi" } }, policyTypes: ["Ingress"], ingress: [{ from: [{ ipBlock: { cidr: vpcCidr } }], ports: [{ protocol: "TCP", port: 3000 }] }] },
 }, k);
 
 // expose=alb: the drill's Ingress shape (docs/disaster-drill-2026-10-11.md).
@@ -151,4 +182,5 @@ export const deployment = api.metadata.name;
 export const migrationJob = migrate.metadata.name;
 export const portForward = `kubectl -n ${ns} port-forward svc/shopapi 3000:80`;
 export const exposed = expose;
+export const replicaCount = replicas;
 export const url = ingress ? ingress.status.loadBalancer.ingress[0].hostname.apply((host) => `http://${host}/items`) : "";
