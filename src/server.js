@@ -2065,6 +2065,7 @@ const page = `<!doctype html>
   #settings .st-table { width: 100%; margin-top: 8px; border-collapse: collapse; font: 12px/1.4 var(--font-mono); }
   #settings .st-table th { text-align: left; font-weight: 500; color: var(--text-3); padding: 5px 6px; border-bottom: 1px solid var(--border); }
   #settings .st-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); color: var(--text); word-break: break-all; }
+  #settings .st-table td.st-default, #settings .st-table td.st-set { white-space: nowrap; word-break: normal; }
   #settings .st-table td.st-default { color: var(--text-3); }
   #settings .st-table td.st-set { color: var(--accent); }
 
