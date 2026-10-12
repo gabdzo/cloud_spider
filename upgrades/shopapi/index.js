@@ -92,18 +92,30 @@ const api = new k8s.apps.v1.Deployment(
     metadata: { name: "shopapi", namespace: ns, labels },
     spec: {
       replicas,
+      // Surge one at a time, never drop below desired: no outage while
+      // the spread converges on tight nodes.
+      strategy: { type: "RollingUpdate", rollingUpdate: { maxSurge: 1, maxUnavailable: 0 } },
       selector: { matchLabels: { app: "shopapi" } },
       template: {
         metadata: { labels },
         spec: {
           // PostgREST never calls the Kubernetes API: no token (K8S-SEC-007).
           automountServiceAccountToken: false,
-          // One per zone first; ScheduleAnyway so a single-zone cluster
-          // still runs every replica.
+          // Hard zone spread (NET-K8S-002): DoNotSchedule guarantees one
+          // replica per zone. matchLabelKeys scopes the skew to this
+          // ReplicaSet so a rollout cannot end with both pods in one zone.
+          // No nodeAffinity: the scheduler (or Karpenter, whose NodePool
+          // allows both zones) picks the zone that keeps skew <= 1.
           topologySpreadConstraints: [
-            { maxSkew: 1, topologyKey: "topology.kubernetes.io/zone", whenUnsatisfiable: "ScheduleAnyway", labelSelector: { matchLabels: { app: "shopapi" } } },
-            { maxSkew: 1, topologyKey: "kubernetes.io/hostname", whenUnsatisfiable: "ScheduleAnyway", labelSelector: { matchLabels: { app: "shopapi" } } },
+            { maxSkew: 1, topologyKey: "topology.kubernetes.io/zone", whenUnsatisfiable: "DoNotSchedule", labelSelector: { matchLabels: { app: "shopapi" } }, matchLabelKeys: ["pod-template-hash"] },
           ],
+          affinity: {
+            podAntiAffinity: {
+              preferredDuringSchedulingIgnoredDuringExecution: [
+                { weight: 100, podAffinityTerm: { topologyKey: "kubernetes.io/hostname", labelSelector: { matchLabels: { app: "shopapi" } } } },
+              ],
+            },
+          },
           containers: [
             {
               name: "postgrest",
@@ -116,7 +128,7 @@ const api = new k8s.apps.v1.Deployment(
                 { name: "PGRST_OPENAPI_SERVER_PROXY_URI", value: "http://127.0.0.1:3000" },
               ],
               readinessProbe: { httpGet: { path: "/items?limit=1", port: "http" }, periodSeconds: 10 },
-              resources: { requests: { cpu: "50m", memory: "64Mi" }, limits: { memory: "128Mi" } },
+              resources: { requests: { cpu: "25m", memory: "64Mi" }, limits: { memory: "128Mi" } },
               securityContext: { allowPrivilegeEscalation: false, runAsNonRoot: true, readOnlyRootFilesystem: true },
             },
           ],

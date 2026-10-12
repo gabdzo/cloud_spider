@@ -88,7 +88,12 @@ test("Shop API: 2 replicas by default spread over zones, a PDB of 1, a readiness
   const dep = r.find((x) => x.type === "kubernetes:apps/v1:Deployment" && x.name === "shopapi").inputs;
   assert.equal(dep.spec.replicas, 2);
   const zone = dep.spec.template.spec.topologySpreadConstraints.find((t) => t.topologyKey === "topology.kubernetes.io/zone");
-  assert.deepEqual([zone.maxSkew, zone.whenUnsatisfiable, zone.labelSelector.matchLabels.app], [1, "ScheduleAnyway", "shopapi"]);
+  assert.deepEqual([zone.maxSkew, zone.whenUnsatisfiable, zone.labelSelector.matchLabels.app], [1, "DoNotSchedule", "shopapi"]);
+  assert.deepEqual(zone.matchLabelKeys, ["pod-template-hash"]);
+  assert.deepEqual(dep.spec.strategy.rollingUpdate, { maxSurge: 1, maxUnavailable: 0 });
+  assert.equal(dep.spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey, "kubernetes.io/hostname");
+  assert.equal(dep.spec.template.spec.affinity.nodeAffinity, undefined);
+  assert.equal(dep.spec.template.spec.containers[0].resources.requests.cpu, "25m");
   assert.ok(dep.spec.template.spec.containers[0].readinessProbe?.httpGet);
   const pdb = r.find((x) => x.type === "kubernetes:policy/v1:PodDisruptionBudget").inputs;
   assert.deepEqual([pdb.spec.minAvailable, pdb.spec.selector.matchLabels.app], [1, "shopapi"]);
