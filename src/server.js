@@ -1,4 +1,5 @@
 import { moduleOff } from "./modules.js";
+import { sampleLogErrors } from "./log-errors-sample.js";
 import { graphScenario } from "./graph-sample.js";
 import { buildGraph } from "./graph-build.js";
 import { readGraph } from "./graph-read.js";
@@ -15,6 +16,7 @@ import { pathResult, withPeers } from "./path-view.js";
 import { THEME_NAMES, cssVars } from "./theme.js";
 import { SCORE_CSS } from "./score/style.js";
 import { ND_CSS } from "./netdebug/style.js";
+import { LE_CSS } from "./log-errors-style.js";
 import { scoreRoute } from "./score/routes.js";
 import { netdebugRoute } from "./netdebug/routes.js";
 import { defaults, effectiveConfig } from "./config.js";
@@ -62,6 +64,7 @@ export const FILES = new Set([
   "graph-route.js",
   "graph-model.js",
   "graph-view.js",
+  "log-errors-view.js",
   "slo.js",
   "slo-view.js",
   "map-kube.js",
@@ -146,6 +149,7 @@ const page = `<!doctype html>
   ${cssVars()}
   ${SCORE_CSS}
   ${ND_CSS}
+  ${LE_CSS}
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   html, body { height: 100%; overflow: hidden; }
@@ -2588,11 +2592,13 @@ const page = `<!doctype html>
       <li id="m-hurting" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="fire" alt=""><b>HURTING</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
       <li id="m-changed" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="clock" alt=""><b>CHANGED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
       <li id="m-idle" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="caps" alt=""><b>IDLE·BILLED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-logs" class="m-line" role="button" tabindex="0" aria-expanded="false" aria-controls="log-errors"><img class="px" data-icon="terminal" alt=""><b>LOG ERRORS</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
     </ul>
     <button id="morning-fold" class="m-fold" type="button" aria-expanded="true" aria-controls="morning" title="fold the morning report">&#9650;</button>
   </section>
   <div class="body">
     <div class="mapwrap">
+      <section id="log-errors" aria-label="log errors, last night" hidden></section>
       <div id="map">
         <canvas id="place" tabindex="0" role="application" aria-roledescription="survey map" aria-label="survey map. Tab or the arrow keys move between resources, Enter opens one, Escape closes it."></canvas>
         <p id="map-say" class="sr-only" aria-live="polite"></p>
@@ -3051,6 +3057,14 @@ async function route(app, req, res) {
       return;
     }
     send(res, 200, await liveGraph(kube, context));
+    return;
+  }
+  // LOG ERRORS for the morning report (log-report.js). Read-only.
+  if (req.method === "GET" && url.pathname === "/api/morning/logs") {
+    const sample = url.searchParams.get("sample") === "1";
+    const scenario = url.searchParams.get("scenario") === "bundle" ? "bundle" : "bare";
+    if (!app.logErrors) send(res, 200, sample ? sampleLogErrors(scenario) : { services: [], line: { status: "unknown", text: "LOG ERRORS is not set up." } });
+    else send(res, 200, await app.logErrors.report({ sample, scenario, fresh: url.searchParams.get("fresh") === "1" }));
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/cluster/telemetry") {

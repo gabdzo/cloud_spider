@@ -1,0 +1,232 @@
+{
+ "status": "success",
+ "data": {
+  "resultType": "streams",
+  "result": [
+   {
+    "stream": {
+     "namespace": "shop",
+     "pod": "orders-6d8f7c9b5a-r2t4y",
+     "container": "orders",
+     "app": "orders"
+    },
+    "values": [
+     [
+      "1791757800000000000",
+      "2026-10-11T22:30:00.123Z ERROR [exec-0] c.a.orders.Checkout - order 1000 failed"
+     ],
+     [
+      "1791757800001000000",
+      "java.lang.IllegalStateException: cart 7f3e2a1c-9b0d-4c55-9e2a-1f0b3c4d5e0f is locked by session 0"
+     ],
+     [
+      "1791757800002000000",
+      "\tat com.acme.orders.Cart.lock(Cart.java:88)"
+     ],
+     [
+      "1791757800003000000",
+      "\tat com.acme.orders.Checkout.run(Checkout.java:41)"
+     ],
+     [
+      "1791757800004000000",
+      "Caused by: java.util.concurrent.TimeoutException: lock wait 200 ms"
+     ],
+     [
+      "1791757800005000000",
+      "\t... 2 more"
+     ],
+     [
+      "1791757860000000000",
+      "2026-10-11T22:31:00.123Z ERROR [exec-1] c.a.orders.Checkout - order 1001 failed"
+     ],
+     [
+      "1791757860001000000",
+      "java.lang.IllegalStateException: cart 7f3e2a1c-9b0d-4c55-9e2a-1f0b3c4d5e1f is locked by session 1"
+     ],
+     [
+      "1791757860002000000",
+      "\tat com.acme.orders.Cart.lock(Cart.java:88)"
+     ],
+     [
+      "1791757860003000000",
+      "\tat com.acme.orders.Checkout.run(Checkout.java:41)"
+     ],
+     [
+      "1791757860004000000",
+      "Caused by: java.util.concurrent.TimeoutException: lock wait 201 ms"
+     ],
+     [
+      "1791757860005000000",
+      "\t... 2 more"
+     ],
+     [
+      "1791757920000000000",
+      "2026-10-11T22:32:00.123Z ERROR [exec-2] c.a.orders.Checkout - order 1002 failed"
+     ],
+     [
+      "1791757920001000000",
+      "java.lang.IllegalStateException: cart 7f3e2a1c-9b0d-4c55-9e2a-1f0b3c4d5e2f is locked by session 2"
+     ],
+     [
+      "1791757920002000000",
+      "\tat com.acme.orders.Cart.lock(Cart.java:88)"
+     ],
+     [
+      "1791757920003000000",
+      "\tat com.acme.orders.Checkout.run(Checkout.java:41)"
+     ],
+     [
+      "1791757920004000000",
+      "Caused by: java.util.concurrent.TimeoutException: lock wait 202 ms"
+     ],
+     [
+      "1791757920005000000",
+      "\t... 2 more"
+     ]
+    ]
+   },
+   {
+    "stream": {
+     "namespace": "shop",
+     "pod": "worker-0",
+     "container": "worker",
+     "service_name": "worker"
+    },
+    "values": [
+     [
+      "1791761400000000000",
+      "Traceback (most recent call last):"
+     ],
+     [
+      "1791761400001000000",
+      "  File \"/app/worker.py\", line 31, in handle"
+     ],
+     [
+      "1791761400002000000",
+      "    db.save(row)"
+     ],
+     [
+      "1791761400003000000",
+      "  File \"/app/db.py\", line 12, in save"
+     ],
+     [
+      "1791761400004000000",
+      "    raise ConnectionError(\"db 10.0.3.14:5432 unreachable\")"
+     ],
+     [
+      "1791761400005000000",
+      "ConnectionError: db 10.0.3.14:5432 unreachable"
+     ],
+     [
+      "1791765000000000000",
+      "Traceback (most recent call last):"
+     ],
+     [
+      "1791765000001000000",
+      "  File \"/app/worker.py\", line 31, in handle"
+     ],
+     [
+      "1791765000002000000",
+      "    db.save(row)"
+     ],
+     [
+      "1791765000003000000",
+      "  File \"/app/db.py\", line 12, in save"
+     ],
+     [
+      "1791765000004000000",
+      "    raise ConnectionError(\"db 10.0.3.14:5432 unreachable\")"
+     ],
+     [
+      "1791765000005000000",
+      "ConnectionError: db 10.0.3.14:5432 unreachable"
+     ]
+    ]
+   },
+   {
+    "stream": {
+     "namespace": "shop",
+     "pod": "cache-5b6c7d8e9f-a1s2d",
+     "container": "cache",
+     "app": "cache"
+    },
+    "values": [
+     [
+      "1791766800000000000",
+      "panic: assignment to entry in nil map"
+     ],
+     [
+      "1791766800001000000",
+      ""
+     ],
+     [
+      "1791766800002000000",
+      "goroutine 7 [running]:"
+     ],
+     [
+      "1791766800003000000",
+      "main.(*Cache).Put(...)"
+     ],
+     [
+      "1791766800004000000",
+      "\t/src/cache.go:22"
+     ],
+     [
+      "1791766800005000000",
+      "main.main()"
+     ],
+     [
+      "1791766800006000000",
+      "\t/src/main.go:14 +0x1d"
+     ],
+     [
+      "1791766800007000000",
+      "exit status 2"
+     ]
+    ]
+   },
+   {
+    "stream": {
+     "namespace": "shop",
+     "pod": "users-84d5f6c7b8-t6y8u",
+     "container": "users",
+     "app_kubernetes_io_name": "users"
+    },
+    "values": [
+     [
+      "1791757801000000000",
+      "TypeError: Cannot read properties of undefined (reading 'id')"
+     ],
+     [
+      "1791757801001000000",
+      "    at handler (/srv/api/routes/users.js:20:15)"
+     ],
+     [
+      "1791757801002000000",
+      "    at Layer.handle [as handle_request] (/srv/node_modules/express/lib/router/layer.js:95:5)"
+     ],
+     [
+      "1791757802000000000",
+      "TypeError: Cannot read properties of undefined (reading 'id')"
+     ],
+     [
+      "1791757802001000000",
+      "    at handler (/srv/api/routes/users.js:21:15)"
+     ],
+     [
+      "1791757802002000000",
+      "    at Layer.handle [as handle_request] (/srv/node_modules/express/lib/router/layer.js:95:5)"
+     ],
+     [
+      "1791757803000000000",
+      "{\"level\":\"info\",\"msg\":\"user error page rendered\"}"
+     ],
+     [
+      "1791757804000000000",
+      "{\"level\":\"error\",\"msg\":\"token Bearer abcdefghijklmnop123 rejected for user 42\",\"password\":\"hunter2\"}"
+     ]
+    ]
+   }
+  ]
+ }
+}

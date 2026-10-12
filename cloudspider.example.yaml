@@ -108,6 +108,18 @@ modules:
   enable: []               # add modules (their needs come too), e.g. [observe].
   disable: []              # take modules out (dependents go too), e.g. [cost, radio].
 
+logs:
+  # LOG ERRORS in the morning report: last night's errors grouped by service.
+  loki:
+    url: ""                # env CLOUDSPIDER_LOKI_URL, e.g. http://127.0.0.1:3100 (a port-forward to the observe bundle's Loki)
+    tenant: ""             # env CLOUDSPIDER_LOKI_TENANT. X-Scope-OrgID for a multi-tenant Loki.
+    selector: ""           # LogQL stream selector. Empty: {namespace=~".+"}
+  window:
+    start: "22:00"         # the night window, local time
+    end: "07:00"
+  cloudwatch:
+    logGroups: []          # no Loki: Logs Insights over these EKS container log groups (aws module; billed per GB scanned)
+
 features:
   ask: true                # env CLOUDSPIDER_FEATURE_ASK. ASK, the local agent terminal.
   stacksRun: true          # env CLOUDSPIDER_FEATURE_STACKS_RUN. Running Pulumi from STACKS.
