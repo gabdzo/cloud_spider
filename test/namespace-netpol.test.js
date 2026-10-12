@@ -90,3 +90,10 @@ test("rendered: pgcluster ships shop + cnpg-system, demo ships demo, observabili
   const obs = rendered(await mock("upgrades/observability", "cloudspider-observability", "observability", { "cloudspider-observability:containerInsights": "on", "cloudspider-observability:alarms": "off", "cloudspider-observability:dashboard": "off" }));
   assert.deepEqual(obs["amazon-cloudwatch"].sort(), specsFor("amazon-cloudwatch").map((s) => s.name).sort());
 });
+
+test("DNS egress also reaches OpenShift's dns-default on 5353", async () => {
+  const { DNS_EGRESS } = await import("../upgrades/netpol.js");
+  const peer = DNS_EGRESS.to.find((t) => t.namespaceSelector?.matchLabels?.["kubernetes.io/metadata.name"] === "openshift-dns");
+  assert.ok(peer && peer.podSelector.matchLabels["dns.operator.openshift.io/daemonset-dns"] === "default");
+  for (const protocol of ["UDP", "TCP"]) assert.ok(DNS_EGRESS.ports.some((p) => p.port === 5353 && p.protocol === protocol));
+});
