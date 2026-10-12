@@ -344,3 +344,34 @@ test("SAMPLE shopdb: allowed from shop as app=shopapi, blocked from web, policy 
   assert.equal(no.find((c) => c.id === "P-TLS-01").status, "NOT_ASSESSED");
   assert.ok(no.some((c) => c.id === "K-NP-03" && c.status === "FAIL"));
 });
+
+test("multi-port Services: endpoints use the slice port named like the target's Service port; the picker lists every port", async () => {
+  const { readForPod } = await import("../src/netdebug/pod-run.js");
+  const svc = { spec: { ports: [{ name: "http", port: 80, targetPort: 8080 }, { name: "metrics", port: 9090, targetPort: 9100 }, { name: "grpc", port: 50051, targetPort: 50051 }] } };
+  const slices = { items: [{ ports: [{ name: "metrics", port: 9100 }, { name: "http", port: 8080 }, { name: "grpc", port: 50051 }], endpoints: [{ addresses: ["10.0.0.5"], conditions: { ready: true }, targetRef: { name: "web-1" }, nodeName: "n1" }] }] };
+  const kube = { async read(name) {
+    if (name === "service") return { json: svc };
+    if (name === "endpointSlices") return { json: slices };
+    if (name === "namespaces") return { json: { items: [] } };
+    return { json: { items: [] } };
+  } };
+  const at = async (port) => (await readForPod(kube, { kind: "service", namespace: "shop", name: "web", port }, { sourceNs: "shop" })).endpoints.map((e) => e.port);
+  assert.deepEqual(await at(80), [8080]);
+  assert.deepEqual(await at(9090), [9100]);
+  assert.deepEqual(await at(50051), [50051]);
+  assert.deepEqual(await at(1234), [], "a port the Service lacks gets no direct endpoint checks");
+  const s = { name: "web", namespace: "shop", ports: svc.spec.ports.map((p) => ({ port: p.port, name: p.name })) };
+  assert.deepEqual(s.ports.map((p) => serviceTarget(s, p)), ["http://web.shop:80", "http://web.shop:9090", "http://web.shop:50051"]);
+});
+
+test("a failed or slow first connect is retried once after 2 s and both are reported", () => {
+  const plan = buildPlan({ target: "tcp://shopdb.shop:5432" }, { namespaces: ["shop"], runId: "r9" });
+  assert.match(probeScript(plan), /tcpms=.*-ge 900 \]; then sleep 2; run P-TCP-01 retry nc -z -v -w 3 'shopdb\.shop\.svc\.cluster\.local' 5432; tcprc=\$rc; fi/);
+  const log = "@@BEGIN P-TCP-01 target\nnc: connect to x port 5432 (tcp) timed out: Operation in progress\n@@END P-TCP-01 target rc=1 ms=3010\n@@BEGIN P-TCP-01 retry\nConnection succeeded\n@@END P-TCP-01 retry rc=0 ms=10\n@@DONE";
+  const c = podChecks(plan, parseProbeLog(log)).find((x) => x.id === "P-TCP-01");
+  assert.equal(c.status, "PASS");
+  assert.match(c.text, /in 10 ms \(the first try, right after the pod started, timed out/);
+  assert.deepEqual(c.observed.firstTry, { ok: false, ms: 3010 });
+  const one = podChecks(plan, parseProbeLog("@@BEGIN P-TCP-01 target\nok\n@@END P-TCP-01 target rc=0 ms=2\n@@DONE")).find((x) => x.id === "P-TCP-01");
+  assert.equal(one.text, "connected to shopdb.shop.svc.cluster.local:5432 in 2 ms");
+});

@@ -128,7 +128,12 @@ export function probeScript(plan) {
     if (t.short) lines.push(`run P-DNS-02 short dig +search +short +time=2 +tries=1 ${q(t.short)}`);
     lines.push(`run P-DNS-02 fqdn dig +short +time=2 +tries=1 ${q(t.host)}`);
   }
-  if (plan.checks.tcp) lines.push(`run P-TCP-01 target nc -z -v -w 3 ${q(t.host)} ${t.port}; tcprc=$rc`);
+  // Measured live on EKS (VPC CNI network policy): a pod's first
+  // connects in its first ~1-3 s are dropped (DNS already answers), so the
+  // first connect showed ~1050 ms (a SYN retransmit) or a 3 s timeout while
+  // the same connect 2 s later took 0-10 ms. A failed or slow (>= 900 ms)
+  // first connect is tried once more after 2 s; both are reported.
+  if (plan.checks.tcp) lines.push(`run P-TCP-01 target nc -z -v -w 3 ${q(t.host)} ${t.port}; tcprc=$rc; tcpms=$(( $(t) - s )); if [ "$tcprc" != 0 ] || [ "$tcpms" -ge 900 ]; then sleep 2; run P-TCP-01 retry nc -z -v -w 3 ${q(t.host)} ${t.port}; tcprc=$rc; fi`);
   (t.endpoints || []).forEach((e, i) => plan.checks.tcp && lines.push(`run P-TCP-02 ep${i} nc -z -v -w 3 ${e.ip} ${e.port}`));
   if (plan.checks.tls) lines.push(`[ "$tcprc" = 0 ] && run P-TLS-01 target timeout 6 openssl s_client -brief -verify_quiet${plan.checks.starttls ? ` -starttls ${plan.checks.starttls}` : ""} -connect ${q(`${t.host}:${t.port}`)} -servername ${q(t.host)} </dev/null`);
   const traceTo = t.endpoints?.[0]?.ip || t.host;
