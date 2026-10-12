@@ -129,6 +129,28 @@ export function destroyRefusal(module, clusterName, answers = {}) {
 // node keeps the IP use of a small cluster low.
 export const PREFIX_DELEGATION = { env: { ENABLE_PREFIX_DELEGATION: "true", WARM_PREFIX_TARGET: "1" } };
 
+// The vpc-cni add-on's configurationValues: prefix delegation (env) and
+// NetworkPolicy enforcement (enableNetworkPolicy: the node agent that ships in
+// aws-node since vpc-cni v1.14 turns NetworkPolicy objects into eBPF rules).
+// Without enforcement every NetworkPolicy, default deny included, is ignored.
+// null: nothing to set (the add-on's defaults).
+export function vpcCniConfig({ prefixDelegation = true, networkPolicy = false } = {}) {
+  const values = {
+    ...(prefixDelegation ? PREFIX_DELEGATION : {}),
+    ...(networkPolicy ? { enableNetworkPolicy: "true" } : {}),
+  };
+  return Object.keys(values).length ? values : null;
+}
+
+// Is NetworkPolicy enforcement on in an add-on's configurationValues (JSON)?
+export function networkPolicyOn(configurationValues) {
+  try {
+    return String(JSON.parse(configurationValues || "{}")?.enableNetworkPolicy).toLowerCase() === "true";
+  } catch {
+    return false;
+  }
+}
+
 // Is prefix delegation on in an add-on's configurationValues (JSON)?
 export function prefixDelegationOn(configurationValues) {
   try {

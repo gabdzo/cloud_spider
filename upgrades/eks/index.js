@@ -3,7 +3,7 @@ import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
-import { EKS_OWNED, PREFIX_DELEGATION, adoptList, capacityProblem, eksOwnPlan, maxPodsProblem, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon } from "../eks-addons.js";
+import { EKS_OWNED, adoptList, capacityProblem, eksOwnPlan, maxPodsProblem, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon, vpcCniConfig } from "../eks-addons.js";
 
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
@@ -143,6 +143,11 @@ const addons = {};
 // drained and deleted, so there is always a managed node for the Karpenter
 // controller and CoreDNS.
 const prefixDelegation = isOn("vpcCni") && isOn("prefixDelegation");
+// NetworkPolicy enforcement by the VPC CNI's node agent (on by default: a
+// cluster without NetworkPolicy objects behaves exactly as before). Turning
+// it on is an in-place vpc-cni update (aws-node restarts, pods keep their
+// IPs); from then on every NetworkPolicy in the cluster is enforced.
+const networkPolicy = isOn("vpcCni") && isOn("networkPolicy");
 const maxPods = String(config.get("maxPods") || "auto");
 const maxPodsError = maxPodsProblem(instanceType, maxPods, prefixDelegation);
 if (maxPodsError) throw new Error(maxPodsError);
@@ -167,7 +172,8 @@ async function ownAddon(item, dependsOn) {
     // The self-managed aws-node DaemonSet EKS made with the cluster becomes
     // this add-on (OVERWRITE on create); a config change restarts aws-node,
     // running pods keep their IPs.
-    if (prefixDelegation) extra.configurationValues = JSON.stringify(PREFIX_DELEGATION);
+    const cniValues = vpcCniConfig({ prefixDelegation, networkPolicy });
+    if (cniValues) extra.configurationValues = JSON.stringify(cniValues);
     extra.resolveConflictsOnUpdate = "OVERWRITE";
   }
   if (item.addonName === "aws-ebs-csi-driver") {
@@ -324,4 +330,5 @@ export const eksAddons = Object.keys(addons);
 // limit even with prefix delegation on.
 export const podsPerNode = podsPerNodeText(instanceType, maxPods);
 export const vpcCniPrefixDelegation = prefixDelegation;
+export const vpcCniNetworkPolicy = networkPolicy;
 export const nodeCapacity = { capacityType, instanceTypes: nodeInstanceTypes(instanceType, capacityType) };

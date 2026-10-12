@@ -8,4 +8,5 @@ config:
   cloudspider-upgrade:clusterName: cloudspider-up
   cloudspider-upgrade:instanceType: t4g.medium
   cloudspider-upgrade:maxPods: "110"
+  cloudspider-upgrade:networkPolicy: "on"
   cloudspider-upgrade:nodeCount: "2"
