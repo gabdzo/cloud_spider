@@ -16,7 +16,7 @@ export function overlapProbe(opts = {}) {
   const describe = (el) => {
     const id = el.id ? `#${el.id}` : "";
     const cls = typeof el.className === "string" && el.className.trim() ? `.${el.className.trim().split(/\s+/).slice(0, 2).join(".")}` : "";
-    const text = (el.innerText || el.value || el.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ").slice(0, 24);
+    const text = (el.innerText || el.value || el.textContent || el.getAttribute("aria-label") || "").trim().replace(/\s+/g, " ").slice(0, 24);
     return `${el.tagName.toLowerCase()}${id}${cls}${text ? ` "${text}"` : ""}`;
   };
   const shown = (el) => {
@@ -124,6 +124,29 @@ export function overlapProbe(opts = {}) {
       const top = mine(a) ? a : b, under = top === a ? b : a;
       if (coveredByLayer(hit, top.el, under.el)) continue;
       add("overlap", a.el, b.el, `${Math.round(x2 - x1)}×${Math.round(y2 - y1)} at ${Math.round(x1)},${Math.round(y1)}`);
+    }
+  }
+  // The edge layer is aria-hidden (decoration for screen readers) but it is
+  // painted, so badges are checked by paint, not by aria.
+  const painted = (el) => { for (let e = el; e && e !== document.documentElement; e = e.parentElement) { if (e.hidden) return false; const st = getComputedStyle(e); if (st.display === "none" || st.visibility === "hidden" || Number(st.opacity) === 0) return false; } return true; };
+  // Graph badges: SVG rate labels drawn over the HTML cards. The text walk
+  // above skips SVG and elementFromPoint sees through it (pointer-events:
+  // none), so a badge sitting on a card was never compared. A badge is
+  // painted on top by design, so any badge over a control, text or another
+  // badge counts. Lines (paths) are not units: they may pass under badges.
+  const badges = [...document.querySelectorAll("svg .gv-badge")].filter((g) => painted(g)).map((g) => ({ el: g, r: clip(g, g.getBoundingClientRect()) })).filter((u) => !u.r.empty && u.r.right - u.r.left >= 2);
+  const hit2 = (ra, rb) => Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left) >= MIN && Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top) >= MIN;
+  for (let i = 0; i < badges.length; i++) {
+    const a = badges[i];
+    for (let j = i + 1; j < badges.length; j++) if (hit2(a.r, badges[j].r)) add("overlap", a.el, badges[j].el, "graph badge on graph badge");
+    for (const u of units) {
+      if (!u.el.closest("#kube-graph, .gv-stage")) continue;
+      if (u.kind === "control" && !u.el.matches(".gv-card, .gv-ghead, .gv-open")) {
+        // other controls inside a card are covered by the card unit
+        if (u.el.closest(".gv-card")) continue;
+      }
+      if (u.kind === "text" && u.el.closest(".gv-card")) continue; // the card unit already counts
+      if (hit2(a.r, u.r)) add("overlap", a.el, u.el, "graph badge over content");
     }
   }
   return findings;
