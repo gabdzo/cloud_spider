@@ -12,7 +12,8 @@ import { FONT_PX, SMOKE_PX } from "./layout.js";
 import { drawVaultBadges, drawVaultLabels, drawVaultsLive, drawVaultsStatic, settledVaults, vaultCards } from "./vault-draw.js";
 import { isExpendable } from "./verbs.js";
 import { drawCompoundGround, drawCompoundTop } from "./map-kube-draw.js";
-import { PALETTE, PIP, STATE_COLOR, STATUS, WORLD, font, rgba } from "./theme.js";
+import { PALETTE, PIP, STATE_COLOR, STATUS, WORLD, canvasPro, font, rgba } from "./theme.js";
+import { paintPro } from "./map-pro.js";
 import {
   BAR_H, HORIZON, SKYLINE_DARK, SKYLINE_LIT, brackets, crtBackdrop, drawSprite, glow, ridge, road,
   labelBacking, newLayer, pipPanel, plaque,
@@ -215,6 +216,8 @@ function staticLayer(ctx, width, height, placed, settled) {
 }
 
 export function paint(ctx, scene) {
+  // The pro theme draws the same layout as a console diagram (map-pro.js).
+  if (canvasPro()) return paintPro(ctx, scene, { viewSwitchW: VIEW_SWITCH_W, asPlate });
   const { placed, ui, region, animTime, width, height, reducedMotion, vaultDoor } = scene;
   ctx.imageSmoothingEnabled = false;
   ctx.textBaseline = "alphabetic";

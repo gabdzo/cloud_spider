@@ -65,6 +65,8 @@ export const FILES = new Set([
   "slo-view.js",
   "map-kube.js",
   "map-kube-draw.js",
+  "map-pro.js",
+  "map-pro-icons.js",
   "sprites/kube.js",
   "metrics.js",
   "upgrade-rules.js",
