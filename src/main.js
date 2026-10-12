@@ -96,14 +96,14 @@ const vaults = {
 };
 // Kube contexts (kube-contexts.js): env, cloudspider.contexts.yaml, or the
 // one CLOUDSPIDER_KUBE_CONTEXT. The first is the primary one.
-const kubeConfig = await loadContexts({ env: process.env, read: readFile, cwd: root, configured: config.kube.contexts });
+const kubeConfig = await loadContexts({ env: process.env, read: readFile, cwd: root, configured: config.kube.contexts, singleFrom: loaded.sources?.["kube.context"] || "" });
 for (const line of kubeConfig.errors) process.stdout.write(`kube contexts: ${line}\n`);
 const kubeContexts = kubeConfig.contexts.map((ctx) => ({ ...ctx, kube: createKube({ context: ctx.name, namespaces: ctx.namespaces }) }));
 // Hot reload: the same reading, new clients only for new contexts (the app
 // keeps the ones it has).
 const contextsFile = process.env.CLOUDSPIDER_KUBE_CONTEXTS_FILE || join(root, "cloudspider.contexts.yaml");
 async function loadKubeContexts() {
-  const got = await loadContexts({ env: process.env, read: readFile, cwd: root, configured: config.kube.contexts });
+  const got = await loadContexts({ env: process.env, read: readFile, cwd: root, configured: config.kube.contexts, singleFrom: loaded.sources?.["kube.context"] || "" });
   for (const line of got.errors) process.stdout.write(`kube contexts: ${line}\n`);
   return { ...got, contexts: got.contexts.map((ctx) => ({ ...ctx, kube: createKube({ context: ctx.name, namespaces: ctx.namespaces }) })) };
 }
