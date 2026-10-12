@@ -37,7 +37,7 @@ export function scoreModel(view) {
       name: c.name,
       weight: c.weight,
       score: c.insufficient || c.score == null ? null : Math.round(c.score),
-      text: c.insufficient || c.score == null ? "not enough evidence" : String(Math.round(c.score)),
+      text: c.insufficient || c.score == null ? "not enough evidence" : scoreText(c.score),
       tone: c.insufficient || c.score == null ? "muted" : toneOf(c.score),
       coverage: Math.round(c.coverage),
     }));
