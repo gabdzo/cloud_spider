@@ -27,15 +27,30 @@ export function windowText(window) {
   return `${hhmm(window.start)}–${hhmm(window.end)}${window.running ? " (so far)" : ""}`;
 }
 
-export function createLogErrorsView(root, { onGraph = () => {}, onTimeline = () => {}, onScenario = null, onClose = () => {} } = {}) {
+export const WINDOW_BUTTONS = [["1h", "LAST 1H"], ["24h", "LAST 24H"], ["night", "NIGHT"]];
+// "window: LAST 1H 12:46–13:46 · auto (night had no errors)"
+export function activeWindowText(data) {
+  const kind = data?.windowKind || data?.window?.kind || "night";
+  const label = (WINDOW_BUTTONS.find(([id]) => id === kind) || [, "NIGHT"])[1];
+  const auto = data?.windowAsked === "auto" ? ` · auto${data.windowWhy ? ` (${data.windowWhy})` : ""}` : "";
+  return `window: ${label} ${windowText(data?.window)}${auto}`;
+}
+
+export function createLogErrorsView(root, { onGraph = () => {}, onTimeline = () => {}, onScenario = null, onClose = () => {}, onWindow = null } = {}) {
   let data = null;
   function render() {
     root.replaceChildren();
     if (!data) return;
     const head = h("div", { className: "le-head" },
       h("h2", { text: "LOG ERRORS" }),
-      h("span", { className: "le-meta", text: [data.title, windowText(data.window), data.source ? `from ${data.source === "loki" ? "Loki" : "CloudWatch Logs Insights"}` : "", data.compared ? "vs. the night before" : ""].filter(Boolean).join(" · ") }),
+      h("span", { className: "le-meta", text: [data.title, data.source ? `from ${data.source === "loki" ? "Loki" : "CloudWatch Logs Insights"}` : "", data.compared ? ((data.windowKind || "night") === "night" ? "vs. the night before" : "vs. the same window yesterday") : ""].filter(Boolean).join(" · ") }),
     );
+    if (onWindow) {
+      const kind = data.windowKind || data.window?.kind || "night";
+      const seg = h("span", { className: "le-seg le-window", role: "group", "aria-label": "log window" });
+      for (const [id, text] of WINDOW_BUTTONS) seg.append(h("button", { type: "button", "aria-pressed": String(kind === id), dataset: { window: id }, text, onclick: () => onWindow(id) }));
+      head.append(seg, h("span", { className: "le-active", text: activeWindowText(data) }));
+    }
     if (data.sample && onScenario) {
       const seg = h("span", { className: "le-seg", role: "group", "aria-label": "sample scenario" });
       for (const [id, text] of [["bare", "SANDBOX-BARE"], ["bundle", "SANDBOX-NIMBUS"]]) seg.append(h("button", { type: "button", "aria-pressed": String(data.scenario === id), text, onclick: () => onScenario(id) }));

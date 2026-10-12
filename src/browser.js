@@ -649,7 +649,16 @@ const LOGS_TTL = 5 * 60_000;
 let logErrorsKey = "";
 let logErrorsAt = 0;
 let logScenario = "bare";
+// The panel's window (auto: night when it has errors, else the last hour);
+// the morning line always reads the night (logNight).
+let logWindowPick = "auto";
+let logNight = null;
 const logErrorsView = createLogErrorsView(logErrorsEl, {
+  onWindow: (id) => {
+    logWindowPick = id;
+    logErrorsAt = 0;
+    ensureLogErrors(true);
+  },
   onGraph: (link) => openServices(link, null),
   onTimeline: (link) => openServices(link, link),
   onScenario: (id) => {
@@ -674,19 +683,24 @@ function showLogScreen(on) {
 }
 
 function logErrorsLine() {
-  const data = logErrorsView.data;
+  const data = logNight;
   if (!data) return { status: "unknown", text: "reading last night's logs…" };
   return data.line || { status: "unknown", text: "not read." };
 }
 
 async function ensureLogErrors(force = false) {
-  const key = `${sample}|${sample ? logScenario : ""}`;
+  const keyNow = () => `${sample}|${sample ? logScenario : ""}|${logWindowPick}`;
+  const key = keyNow();
   if (!force && key === logErrorsKey && Date.now() - logErrorsAt < LOGS_TTL) return;
   logErrorsKey = key;
   logErrorsAt = Date.now();
-  const q = sample ? `?sample=1&scenario=${logScenario}` : "";
-  const body = await fetch(`/api/morning/logs${q}`).then((r) => r.json()).catch(() => ({ line: { status: "unknown", text: "LOG ERRORS did not answer." }, services: [] }));
-  if (key !== `${sample}|${sample ? logScenario : ""}`) return;
+  const q = (win) => `?${new URLSearchParams({ ...(sample ? { sample: "1", scenario: logScenario } : {}), window: win })}`;
+  const read = (win) => fetch(`/api/morning/logs${q(win)}`).then((r) => r.json()).catch(() => ({ line: { status: "unknown", text: "LOG ERRORS did not answer." }, services: [] }));
+  const body = await read(logWindowPick);
+  // The morning report stays on the night window.
+  const night = (body.windowKind || body.window?.kind || "night") === "night" ? body : await read("night");
+  if (key !== keyNow()) return;
+  logNight = night;
   logErrorsView.set(body);
   morningShown = "";
   renderMorning();

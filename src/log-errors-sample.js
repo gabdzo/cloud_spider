@@ -4,7 +4,7 @@
 // webhook loses its CA and the demo api's rollout fails on it. sandbox-nimbus:
 // a ledgerdb operator upgrade sets off a chain (ledgerdb → events-bus →
 // billing → workflow → router).
-import { logErrors } from "./log-errors.js";
+import { logErrors, logWindow } from "./log-errors.js";
 import { graphScenario } from "./graph-sample.js";
 
 const day = (now) => {
@@ -119,13 +119,26 @@ export function graphNodeOf(scene) {
   return (service, namespace) => scene.nodes.find((n) => n.ns === namespace && n.id.split("/")[1] === service)?.id || "";
 }
 
-export function sampleLogErrors(scenario = "bare", now = Date.now()) {
+// kind "1h" / "24h": the sample night moved up to now, then cut to the window.
+export function sampleLogErrors(scenario = "bare", now = Date.now(), kind = "night") {
+  const night = sampleNight(scenario, now);
+  if (kind !== "1h" && kind !== "24h") return night.report;
+  const shift = now - night.window.end;
+  const move = (list) => (list || []).map((x) => (Number.isFinite(x.time) ? { ...x, time: x.time + shift } : x));
+  const window = logWindow(kind, now);
+  const inside = (list) => move(list).filter((x) => !Number.isFinite(x.time) || (x.time >= window.start && x.time <= window.end));
+  const report = logErrors({ ...night.data, entries: inside(night.data.entries), before: night.data.before ? move(night.data.before) : night.data.before, restarts: inside(night.data.restarts), window, source: "loki", nodeOf: night.nodeOf, scenario: night.id });
+  return { ...report, scenario: night.id, title: night.report.title, sample: true };
+}
+
+function sampleNight(scenario, now) {
   const id = scenario === "bundle" ? "bundle" : "bare";
   const scene = graphScenario(id);
   const base = day(now);
   const data = id === "bundle" ? bundle(base, base - 86_400_000) : bare(base, base - 86_400_000);
   const end = hm(base, scene.window.end);
-  const window = { start: hm(base, "22:00") - 86_400_000, end, running: false };
-  const report = logErrors({ ...data, window, source: "loki", nodeOf: graphNodeOf(scene), scenario: id });
-  return { ...report, scenario: id, title: scene.title, sample: true };
+  const window = { start: hm(base, "22:00") - 86_400_000, end, running: false, kind: "night" };
+  const nodeOf = graphNodeOf(scene);
+  const report = logErrors({ ...data, window, source: "loki", nodeOf, scenario: id });
+  return { id, data, window, nodeOf, report: { ...report, scenario: id, title: scene.title, sample: true } };
 }

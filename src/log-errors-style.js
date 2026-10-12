@@ -9,6 +9,7 @@ export const LE_CSS = `
   #log-errors .le-head h2 { margin: 0; font-size: 13px; letter-spacing: 0.14em; color: var(--warn); }
   #log-errors .le-meta { color: var(--text3); }
   #log-errors .le-seg { display: inline-flex; gap: 4px; }
+  #log-errors .le-active { color: var(--accent); font-size: 12px; letter-spacing: 0.04em; }
   #log-errors button { font: inherit; color: var(--text2); background: var(--raised); border: 1px solid var(--border); padding: 2px 8px; cursor: pointer; }
   #log-errors button:hover { color: var(--text); border-color: var(--accent); }
   #log-errors button[aria-pressed="true"] { color: var(--bg); background: var(--accent); border-color: var(--accent); }
