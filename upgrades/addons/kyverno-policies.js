@@ -2,8 +2,8 @@
 // Kyverno ValidatingPolicy (policies.kyverno.io/v1, CEL): kyverno.io/v1
 // ClusterPolicy validate rules are deprecated since Kyverno 1.19 and go in
 // 1.20. autogen copies each Pod check to Deployments, DaemonSets, Jobs…
-// kube-system and the add-ons' own namespaces are left out (matchConditions,
-// so admission and background scans skip them alike).
+// kube-system and the add-ons' own namespaces are left out (namespaceSelector
+// plus a matchCondition).
 export const SKIP_NAMESPACES = ["kube-system", "kyverno", "karpenter", "keda", "cert-manager"];
 export const POD_CONTROLLERS = ["daemonsets", "deployments", "jobs", "statefulsets", "replicasets", "cronjobs"];
 export const CEL_API = "policies.kyverno.io/v1";
@@ -21,7 +21,13 @@ function policy(name, title, severity, description, message, expression, categor
     spec: {
       validationActions: ["Audit"],
       evaluation: { admission: { enabled: true }, background: { enabled: true } },
-      matchConstraints: { resourceRules: [{ apiGroups: [""], apiVersions: ["v1"], operations: ["CREATE", "UPDATE"], resources: ["pods"] }] },
+      // Both: Kyverno 1.19.1's background scan ignored the matchCondition
+      // (cloudspider-up 2026-10-12: kube-system and cert-manager got
+      // results); the namespaceSelector is what admission and background honour.
+      matchConstraints: {
+        namespaceSelector: { matchExpressions: [{ key: "kubernetes.io/metadata.name", operator: "NotIn", values: SKIP_NAMESPACES }] },
+        resourceRules: [{ apiGroups: [""], apiVersions: ["v1"], operations: ["CREATE", "UPDATE"], resources: ["pods"] }],
+      },
       matchConditions: [{ name: "skip-system-namespaces", expression: `!(object.metadata.?namespace.orValue('') in ${JSON.stringify(SKIP_NAMESPACES).replaceAll('"', "'")})` }],
       autogen: { podControllers: { controllers: POD_CONTROLLERS } },
       validations: [{ expression, message }],

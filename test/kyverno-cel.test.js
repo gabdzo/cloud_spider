@@ -18,6 +18,8 @@ test("every validate policy is a CEL ValidatingPolicy in Audit with pod-controll
     assert.deepEqual(p.spec.validationActions, ["Audit"], p.name);
     assert.ok(p.spec.autogen.podControllers.controllers.includes("deployments"), p.name);
     for (const ns of SKIP_NAMESPACES) assert.ok(p.spec.matchConditions[0].expression.includes(`'${ns}'`), `${p.name} skips ${ns}`);
+    // The background scan honours only the namespaceSelector (cloudspider-up 2026-10-12).
+    assert.deepEqual(p.spec.matchConstraints.namespaceSelector, { matchExpressions: [{ key: "kubernetes.io/metadata.name", operator: "NotIn", values: SKIP_NAMESPACES }] }, p.name);
     assert.ok(!("rules" in p.spec), `${p.name} has no ClusterPolicy rules`);
   }
 });
@@ -29,5 +31,6 @@ test("Kyverno CLI: the CEL policies and exception behave", { skip: !has && "kyve
   const out = spawnSync(cli, ["apply", join(dir, "pol.yaml"), "--resource", new URL("./fixtures/kyverno/resources.yaml", import.meta.url).pathname, "--exceptions", join(dir, "exc.yaml"), "--audit-warn=false"], { encoding: "utf8" }).stdout;
   const fails = [...out.matchAll(/policy (\S+) -> resource (\S+) failed/g)].map((m) => `${m[1]} ${m[2]}`).sort();
   assert.deepEqual(fails, [...ALL_POLICIES.map((p) => `${p.name} shop/Deployment/bad`), "disallow-host-path demo/Pod/sneaky"].sort());
-  assert.match(out, /pass: 21, fail: 7, warn: 0, error: 0, skip: 8/);
+  // kube-system is not matched at all (namespaceSelector); skip: the 2 collector exceptions.
+  assert.match(out, /pass: 21, fail: 7, warn: 0, error: 0, skip: 2 /);
 });
