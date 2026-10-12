@@ -2009,10 +2009,10 @@ async function pull() {
       return;
     }
     if (sample) {
-      if (view.error) {
-        errorEl.hidden = false;
-        errorEl.textContent = view.error;
-      }
+      // SAMPLE reads nothing from AWS: the live read's error (no profile,
+      // no region) is not this screen's; it shows again when SAMPLE goes off.
+      errorEl.hidden = true;
+      errorEl.textContent = "";
       renderChrome();
       draw();
       return;
@@ -2058,6 +2058,8 @@ function showSample(next) {
   metricsData = null;
   pullMetrics(true);
   regionSelect.disabled = true;
+  errorEl.hidden = true;
+  errorEl.textContent = "";
   clickGround(ui);
   setStatus(ui, "sample, not the account");
   renderChrome();
