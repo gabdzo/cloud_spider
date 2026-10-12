@@ -1,0 +1,62 @@
+import * as pulumi from "@pulumi/pulumi";
+import * as k8s from "@pulumi/kubernetes";
+import { ship } from "../netpol.js";
+import { stackTags } from "../tags.js";
+import { extraPolicies, footprint, renderBundle } from "./render.js";
+
+// The observe bundle (opt-in) on any Kubernetes or OpenShift cluster: every
+// object comes from render.js (the app's PREVIEW shows the same list). The
+// target is a kubeconfig context named in config (`context`), a write
+// context kept apart from the app's read-only viewer context. Stack:
+// observe-<context>. Nothing here touches AWS.
+// Config (cloudspider-observe:*): context, platform (kubernetes|openshift),
+// allowPrivileged (off|on: Beyla is privileged; refuses without it),
+// profile (crc|standard), kubeStateMetrics (install|skip), logs (on|off:
+// Loki + the file_log agent), lokiStorage (5Gi), lokiRetention (72h),
+// storageClass (cluster default), nodeCidr (the node network for the
+// API server / kubelet / service-proxy rules; 0.0.0.0/0 if unset).
+// Take it down: pulumi destroy deletes the namespace (pods, ConfigMaps,
+// Loki's claim, NetworkPolicies) and the cluster-scoped ClusterRoles,
+// bindings and SCCs, all labelled app.kubernetes.io/managed-by=cloudspider-observe.
+const config = new pulumi.Config();
+const context = config.get("context") || "";
+if (!context || !/^[A-Za-z0-9._:/@-]{1,253}$/.test(context)) throw new Error("context: the kubeconfig context to install into (a write context, not cloudspider-viewer)");
+if (context === "cloudspider-viewer") throw new Error("context cloudspider-viewer is read-only by design: name a write context for the install");
+const opts = Object.fromEntries(["platform", "allowPrivileged", "profile", "kubeStateMetrics", "logs", "lokiStorage", "lokiRetention", "storageClass", "nodeCidr"].map((k) => [k, config.get(k) || undefined]));
+const bundle = renderBundle(opts);
+
+const provider = new k8s.Provider("observe", { context, enableServerSideApply: true });
+const KINDS = {
+  "v1/Namespace": k8s.core.v1.Namespace,
+  "v1/ServiceAccount": k8s.core.v1.ServiceAccount,
+  "v1/ConfigMap": k8s.core.v1.ConfigMap,
+  "v1/Service": k8s.core.v1.Service,
+  "apps/v1/DaemonSet": k8s.apps.v1.DaemonSet,
+  "apps/v1/Deployment": k8s.apps.v1.Deployment,
+  "apps/v1/StatefulSet": k8s.apps.v1.StatefulSet,
+  "rbac.authorization.k8s.io/v1/ClusterRole": k8s.rbac.v1.ClusterRole,
+  "rbac.authorization.k8s.io/v1/ClusterRoleBinding": k8s.rbac.v1.ClusterRoleBinding,
+};
+const [nsItem, ...rest] = bundle.items;
+const ns = new k8s.core.v1.Namespace("observe-ns", { metadata: nsItem.obj.metadata }, { provider });
+const inNs = { provider, dependsOn: [ns] };
+// Cluster-scoped security first (SCC, roles), then the namespace's objects.
+const made = [];
+for (const { obj } of rest) {
+  const name = `${obj.kind.toLowerCase()}-${obj.metadata.name}`;
+  const Kind = KINDS[`${obj.apiVersion}/${obj.kind}`];
+  const { apiVersion, kind, ...args } = obj;
+  if (Kind) made.push(new Kind(name, args, inNs));
+  else made.push(new k8s.apiextensions.CustomResource(name, obj, inNs)); // SecurityContextConstraints (OpenShift only)
+}
+ship({ k8s, pulumi, opts: inNs, namespace: bundle.namespace, vpcCidr: bundle.options.nodeCidr, labels: { "app.kubernetes.io/managed-by": "cloudspider-observe" } });
+for (const { name, spec } of extraPolicies()) {
+  new k8s.networking.v1.NetworkPolicy(`netpol-observe-${name}`, { metadata: { name, namespace: bundle.namespace, labels: { "app.kubernetes.io/part-of": "cloudspider", "app.kubernetes.io/managed-by": "cloudspider-observe" } }, spec }, inNs);
+}
+
+export const namespace = bundle.namespace;
+export const privileged = bundle.privileged;
+export const notes = bundle.notes;
+export const resources = footprint({ profile: bundle.options.profile, logs: bundle.options.logs, kubeStateMetrics: bundle.options.kubeStateMetrics });
+// No AWS resources: the tags only name the vault this stack belongs to.
+export const tags = stackTags("observe");

@@ -1,0 +1,28 @@
+# Template (the observe bundle is not installed). When it is, make it living with:
+#   npm run vaults:new -- observe observe
+# upgrades/observe (Pulumi project cloudspider-observe, stack observe): the
+# opt-in observe bundle on any Kubernetes or OpenShift cluster, namespace
+# cloudspider-observe: Grafana Beyla (eBPF), an OpenTelemetry node agent and
+# gateway, kube-state-metrics, Loki. No AWS resources, no cloud cost.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: observe
+  number: 186
+  title: Observe bundle
+  description: Live service-to-service calls, RED metrics, Events and container logs for one cluster, installed opt-in by Cloud Spider.
+  owner: gabriel
+  tags: [upgrade, observability, kubernetes]
+spec:
+  type: service
+  resources:
+    tags:
+      project: observe
+    ids:
+      - cloudspider-observe
+  stack:
+    dir: upgrades/observe
+    name: observe
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/observe
+    docs: https://github.com/gabdzo/cloud_spider/blob/main/docs/plan-modules-and-service-graph.md

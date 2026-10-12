@@ -20,7 +20,7 @@ export const DNS_EGRESS = { to: [{ ...nsSel("kube-system"), podSelector: { match
 
 // One namespace's rules. https: true (every pod) or a podSelector;
 // podIdentity: the same pods also reach the Pod Identity agent.
-export function namespaceSpecs({ intra = true, https = false, podIdentity = false, kubelet = false, egressTo = [], ingressFromVpc = [], ingressFromAnyNamespace = [], intraIngress = false }) {
+export function namespaceSpecs({ intra = true, https = false, podIdentity = false, kubelet = false, apiServer = false, egressTo = [], ingressFromVpc = [], ingressFromAnyNamespace = [], intraIngress = false }) {
   const out = [{ name: "allow-dns-egress", spec: { podSelector: {}, policyTypes: ["Egress"], egress: [DNS_EGRESS] } }];
   if (intra) out.push({ name: "allow-intra-namespace-egress", spec: { podSelector: {}, policyTypes: ["Egress"], egress: [{ to: [{ podSelector: {} }] }] } });
   if (intraIngress) out.push({ name: "allow-intra-namespace-ingress", spec: { podSelector: {}, policyTypes: ["Ingress"], ingress: [{ from: [{ podSelector: {} }] }] } });
@@ -30,6 +30,9 @@ export function namespaceSpecs({ intra = true, https = false, podIdentity = fals
     out.push({ name: "allow-https-egress", spec: { podSelector: https === true ? {} : https, policyTypes: ["Egress"], egress } });
   }
   if (kubelet) out.push({ name: "allow-kubelet-egress", spec: { podSelector: kubelet === true ? {} : kubelet, policyTypes: ["Egress"], egress: [{ to: [{ ipBlock: { cidr: "vpc" } }], ports: tcp(10250) }] } });
+  // apiServer: the Kubernetes API by its endpoint (NetworkPolicy sees the
+  // port after the Service DNAT: 443 on EKS, 6443 on kubeadm/CRC/OpenShift).
+  if (apiServer) out.push({ name: "allow-apiserver-egress", spec: { podSelector: apiServer === true ? {} : apiServer, policyTypes: ["Egress"], egress: [{ to: [{ ipBlock: { cidr: "vpc" } }], ports: tcp(443, 6443) }] } });
   for (const flow of egressTo) {
     out.push({ name: flow.name, spec: { podSelector: flow.podSelector || {}, policyTypes: ["Egress"], egress: [{ to: [{ ...(flow.namespace === "*" ? { namespaceSelector: {} } : nsSel(flow.namespace)), podSelector: flow.to || {} }], ports: flow.ports.map((p) => (typeof p === "object" ? p : { protocol: "TCP", port: p })) }] } });
   }
@@ -70,6 +73,18 @@ export const NAMESPACE_NETPOL = {
     https: true, podIdentity: true, kubelet: true, intraIngress: true,
     ingressFromVpc: [{ name: "allow-cloudwatch-webhook", ports: [9443] }],
     ingressFromAnyNamespace: [{ name: "allow-cloudwatch-agent-telemetry", ports: [4311, 4315, 4316, 2000, { protocol: "UDP", port: 2000 }, 25888, { protocol: "UDP", port: 25888 }] }],
+  },
+  // observe bundle (upgrades/observe, any Kubernetes or OpenShift): "vpc"
+  // is the node network (config nodeCidr). Beyla, the node agent, the
+  // gateway and kube-state-metrics read the API server; the agent reads
+  // the kubelet; Cloud Spider reads the gateway's metrics (8889) and Loki
+  // (3100) through the API server's service proxy, which comes from the
+  // node network. Beyla → gateway, agent → gateway, gateway → Loki are
+  // intra. No 443 to the internet: nothing in it calls out.
+  "cloudspider-observe": {
+    intraIngress: true, kubelet: { matchLabels: { "app.kubernetes.io/component": "agent" } },
+    apiServer: { matchExpressions: [{ key: "app.kubernetes.io/component", operator: "In", values: ["beyla", "agent", "collector", "ksm"] }] },
+    ingressFromVpc: [{ name: "allow-service-proxy-read", podSelector: { matchExpressions: [{ key: "app.kubernetes.io/component", operator: "In", values: ["collector", "loki"] }] }, ports: [8889, 3100] }],
   },
   kyverno: { exempt: "on generate-default-deny's skip list (DEFAULT_DENY_SKIP)" },
 };

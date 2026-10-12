@@ -14,7 +14,7 @@ export const MODULES = [
   { id: "kubernetes", label: "Cluster", needs: [], doc: "the Cluster screen (read-only Kubernetes)" },
   { id: "graph", label: "Services", needs: ["kubernetes"], doc: "service + ownership graph" },
   { id: "timeline", label: "Incident review", needs: ["kubernetes"], doc: "local event recorder and timeline" },
-  { id: "observe", label: "Observe", needs: ["kubernetes"], doc: "opt-in Beyla + OTel collector install (phase 5, not built)" },
+  { id: "observe", label: "Observe", needs: ["kubernetes"], doc: "opt-in observe bundle (upgrades/observe): Beyla + OTel collector + kube-state-metrics + Loki; live edges, RED, Events" },
   { id: "score", label: "Score", needs: [], doc: "production-readiness scorecard (packs follow aws/kubernetes)" },
   { id: "learn", label: "Learn", needs: [], doc: "holotape labs" },
   { id: "ask", label: "Ask", needs: [], doc: "the local agent terminal" },
@@ -95,7 +95,7 @@ const ROUTES = [
   ["/api/cost", "cost"],
   ["/api/upgrade", "stacks"], ["/api/stacks", "stacks"], ["/api/terraform", "stacks"],
   ["/api/vaults", "vaults"],
-  ["/api/cluster/graph", "graph"], ["/api/cluster/timeline", "timeline"],
+  ["/api/cluster/graph", "graph"], ["/api/observe", "observe"], ["/api/cluster/timeline", "timeline"],
   ["/api/cluster", "kubernetes"], ["/api/kube", "kubernetes"], ["/api/addons", "kubernetes"],
   ["/api/learn", "learn"], ["/api/agent", "ask"], ["/api/score", "score"],
 ];

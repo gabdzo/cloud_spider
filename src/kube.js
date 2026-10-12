@@ -78,6 +78,10 @@ export const PATHS = {
   nodeMetrics: () => "/apis/metrics.k8s.io/v1beta1/nodes",
   // The OTel gateway's Prometheus text, through the API server's service
   // proxy. The viewer role may get services/proxy on this one Service only.
+  // The observe bundle (upgrades/observe): its gateway's metrics and Loki's
+  // Events, through the service proxy. Fixed names; the query is ours.
+  observeMetrics: () => "/api/v1/namespaces/cloudspider-observe/services/otel-collector:metrics/proxy/metrics",
+  observeEvents: (startNs, endNs) => `/api/v1/namespaces/cloudspider-observe/services/loki:http/proxy/loki/api/v1/query_range?query=${encodeURIComponent('{service_name="k8s-events"}')}&start=${Math.floor(Number(startNs))}&end=${Math.floor(Number(endNs))}&limit=500&direction=forward`,
   otelMetrics: (ns, name) => `/api/v1/namespaces/${checkName(ns)}/services/${checkName(name)}/proxy/metrics`,
   podLog: (ns, name, container, tail = 80, previous = false) =>
     `/api/v1/namespaces/${checkName(ns)}/pods/${checkName(name)}/log?tailLines=${Math.min(500, Math.max(1, Number(tail) || 80))}${container ? `&container=${checkName(container)}` : ""}${previous ? "&previous=true" : ""}`,
