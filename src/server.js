@@ -1674,6 +1674,7 @@ const page = `<!doctype html>
   }
   /* ---- end learn ---- */
   /* Public ALBs: a dock hung under the card (lamp, OPEN ↗, ROUTES), never over the subnets. */
+  #alb-docks[hidden], #vpc-folds[hidden] { display: none; }
   #alb-docks { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 3; }
   .alb-dock { position: absolute; min-width: 0; font-size: 11px; letter-spacing: 0.04em; }
   .alr-bar {
