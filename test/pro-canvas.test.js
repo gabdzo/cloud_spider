@@ -31,3 +31,18 @@ test("pro CSS: no [ ] on commands, icon-only keys under 1000px", () => {
   assert.match(css, /:root\[data-theme="pro"\] :is\(button\.cmd, a\.cmd\)::before, :root\[data-theme="pro"\] :is\(button\.cmd, a\.cmd\)::after \{ content: none; \}/);
   assert.match(css, /@media \(max-width: 1000px\) \{\s*:root\[data-theme="pro"\] \.key \.tag/);
 });
+
+test("pro pass 2: narrow header, k9s, settings keys, templates header, DEBUG dock", () => {
+  const css = readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
+  assert.match(css, /:root\[data-theme="pro"\] #corner \{ order: 10; flex: 0 1 180px;/);
+  assert.match(css, /:root\[data-theme="pro"\] \.k9-table td:nth-child\(2\) \{ max-width: 210px; \}/);
+  assert.match(css, /#settings \.st-table td:first-child \{ white-space: nowrap;/);
+  assert.match(css, /:root\[data-theme="pro"\] \.vpg-templates h4 \{ color: var\(--text-2\)/);
+  const nd = readFileSync(new URL("../src/netdebug/style.js", import.meta.url), "utf8");
+  assert.match(nd, /@media \(max-width: 900px\) \{\s*#netdebug \{ left: 6px; right: 6px; bottom: 6px; max-height: 42%; \}/);
+});
+
+test("pro: the vault panel title is a surface, not the pip gradient", () => {
+  const css = readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
+  assert.match(css, /:root\[data-theme="pro"\] \.vp-title \{ margin: 0; padding: 8px 12px; color: var\(--text\); background: var\(--surface-2\)/);
+});

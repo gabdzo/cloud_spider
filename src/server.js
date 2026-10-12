@@ -2222,6 +2222,8 @@ const page = `<!doctype html>
   #settings .st-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); color: var(--text); word-break: break-all; }
   #settings .st-table td.st-default, #settings .st-table td.st-set { white-space: nowrap; word-break: normal; }
   #settings .st-table td.st-default { color: var(--text-3); }
+  /* Config keys never break mid-word (ui.refresh.radioSeconds); values may. */
+  #settings .st-table td:first-child { white-space: nowrap; word-break: normal; }
   #settings .st-table td.st-set { color: var(--accent); }
 
   /* ---- pro theme (phase 1): the same page, flat and quiet. Colours come
@@ -2335,6 +2337,25 @@ const page = `<!doctype html>
     :root[data-theme="pro"] .readout > span { display: none; }
     :root[data-theme="pro"] header { gap: 6px 8px; padding: 6px 10px; }
   }
+  /* <=900 the base narrow rule (review R3) gives the tally 240px and the
+     bill 230px after the readout, so in pro (slim keys) the bill wrapped to
+     a third row. Put the tally and the bill on row two, sharing it. */
+  @media (max-width: 900px) {
+    :root[data-theme="pro"] .readout { order: 3; }
+    :root[data-theme="pro"] #tally { order: 9; flex: 1 1 0; min-width: 0; height: 34px; font-size: 12px; }
+    :root[data-theme="pro"] #corner { order: 10; flex: 0 1 180px; min-width: 120px; margin-left: 0; }
+    :root[data-theme="pro"] #spend { height: 34px; font-size: 12px; }
+    :root[data-theme="pro"] .readout label { font-size: 0; gap: 0; }
+    :root[data-theme="pro"] .readout select { font-size: 12px; }
+    /* k9s: the NODE column fits; long pod names give way first. */
+    :root[data-theme="pro"] .k9-table :is(th, td) { padding-left: 6px; padding-right: 6px; }
+    :root[data-theme="pro"] .k9-table td:nth-child(2) { max-width: 210px; }
+  }
+  /* Vault panel title: the pip phosphor gradient was a light grey slab in pro. */
+  :root[data-theme="pro"] .vp-title { margin: 0; padding: 8px 12px; color: var(--text); background: var(--surface-2); border-bottom: 1px solid var(--border); letter-spacing: 0.02em; font-weight: 600; }
+  :root[data-theme="pro"] .vp-title img { filter: none; opacity: 0.85; }
+  :root[data-theme="pro"] .vault-panel.damaged .vp-title { color: var(--err); background: var(--surface-2); box-shadow: inset 3px 0 0 var(--err); }
+  :root[data-theme="pro"] .vpg-templates h4 { color: var(--text-2); background: var(--surface-2); border-bottom: 1px solid var(--border); letter-spacing: 0.04em; font-weight: 600; font-size: 12px; padding: 7px 12px; }
   @media (max-width: 640px) {
     :root[data-theme="pro"] .tab { padding: 6px 8px; font-size: 12px; }
   }

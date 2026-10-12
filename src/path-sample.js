@@ -12,8 +12,8 @@ export function samplePathGraph() {
     loadBalancers: [
       {
         arn: LB,
-        name: "api-alb",
-        dns: "api-alb-sample.eu-north-1.elb.amazonaws.com",
+        name: "k8s-demo-api",
+        dns: "k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com",
         scheme: "internet-facing",
         type: "application",
         state: "active",

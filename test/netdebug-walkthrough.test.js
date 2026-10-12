@@ -34,8 +34,8 @@ test("A-ELB-04: the load balancer's own 5xx vs the targets', load-balancer wide 
 test("web.sample.test: 1 → 2 (none registered) → 3 (selector) and a FIX that patches the selector", async () => {
   const w = albWalkthrough(await sample("web.sample.test"));
   assert.deepEqual(path(w), [1, 2, 3]);
-  assert.equal(w.lb, "api-alb");
-  assert.match(w.steps[0].answer, /^api-alb itself \(server: awselb, no app headers\)/);
+  assert.equal(w.lb, "k8s-demo-api");
+  assert.match(w.steps[0].answer, /^k8s-demo-api itself \(server: awselb, no app headers\)/);
   assert.match(w.steps[1].answer, /^none registered/);
   assert.equal(w.verdict.text, "The Service selects app=web, but its pods are labelled app=shop-web: nothing matches, no endpoints, an empty target group, and the load balancer answers 503.");
   assert.match(w.verdict.fix[1], /^kubectl -n shop patch service web -p '\{"spec":\{"selector":\{"app":"shop-web"\}\}\}'/);

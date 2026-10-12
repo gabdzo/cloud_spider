@@ -29,10 +29,10 @@ test("zones: the longest suffix owns the name, public and private apart", () => 
 
 test("classify: CloudFront, the account's ALB (alias, dualstack), an ENI address, or external", () => {
   const graph = samplePathGraph();
-  const alb = classify({ host: "web.sample.test", records: [rec("web.sample.test.", "A", { alias: { dnsName: "dualstack.api-alb-sample.eu-north-1.elb.amazonaws.com." } })], graph });
+  const alb = classify({ host: "web.sample.test", records: [rec("web.sample.test.", "A", { alias: { dnsName: "dualstack.k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com." } })], graph });
   assert.equal(alb.kind, "alb");
-  assert.equal(alb.name, "api-alb");
-  const viaCname = classify({ host: "x", cnames: ["api-alb-sample.eu-north-1.elb.amazonaws.com"], graph });
+  assert.equal(alb.name, "k8s-demo-api");
+  const viaCname = classify({ host: "x", cnames: ["k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com"], graph });
   assert.equal(viaCname.kind, "alb");
   const cf = classify({ host: "cdn.example.com", cnames: ["d111.cloudfront.net"], graph, distributions: [{ id: "E1", domain: "d111.cloudfront.net", aliases: [] }] });
   assert.equal(cf.kind, "cloudfront");
@@ -46,7 +46,7 @@ test("classify: CloudFront, the account's ALB (alias, dualstack), an ENI address
 
 test("dangling records: an ELB or CloudFront name that is not in the inventory", () => {
   const records = [
-    rec("ok.example.com.", "A", { alias: { dnsName: "dualstack.api-alb-sample.eu-north-1.elb.amazonaws.com." } }),
+    rec("ok.example.com.", "A", { alias: { dnsName: "dualstack.k8s-demo-api-7b31d2.eu-north-1.elb.amazonaws.com." } }),
     rec("old.example.com.", "CNAME", { values: ["k8s-gone-1.eu-north-1.elb.amazonaws.com"] }),
     rec("cdn.example.com.", "CNAME", { values: ["d404.cloudfront.net"] }),
     rec("site.example.com.", "CNAME", { values: ["example.github.io"] }),
@@ -108,15 +108,15 @@ test("a sample run of web.sample.test: the ALB is named, Route 53 is read, the d
   assert.deepEqual(report.from, ["local", "aws"]);
   const get = (id) => report.checks.find((c) => c.id === id);
   assert.equal(get("A-TGT-01").observed.kind, "alb");
-  assert.match(get("A-TGT-01").text, /load balancer api-alb in this account/);
+  assert.match(get("A-TGT-01").text, /load balancer k8s-demo-api in this account/);
   assert.equal(get("A-R53-01").status, "PASS");
-  assert.match(get("A-R53-01").text, /A alias → dualstack\.api-alb-sample/);
+  assert.match(get("A-R53-01").text, /A alias → dualstack\.k8s-demo-api/);
   assert.equal(get("A-R53-02").status, "PASS");
   assert.equal(get("A-R53-03").status, "FAIL");
   assert.match(get("A-R53-03").text, /old\.sample\.test → k8s-shop-old/);
   const alb = report.findings.find((f) => f.walkthrough === "alb-503");
   assert.equal(alb.confidence, "high", "facts from two layers");
-  assert.match(alb.statement, /load balancer api-alb answered 503/);
+  assert.match(alb.statement, /load balancer k8s-demo-api answered 503/);
   assert.ok(report.findings.some((f) => /subdomain takeover/.test(f.statement)));
   assert.equal(report.context.target.kind, "alb");
 });
