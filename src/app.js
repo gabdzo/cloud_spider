@@ -9,7 +9,7 @@ import { createWaits } from "./waits.js";
 import { createRadio } from "./radio.js";
 import { readLogs } from "./logs.js";
 import { readPath } from "./path-read.js";
-import { pathResult } from "./path-view.js";
+import { pathResult, withPeers } from "./path-view.js";
 import { costFailure } from "./cost.js";
 import { diagramFromClusters } from "./cluster.js";
 import { diagramFromKube } from "./kube-diagram.js";
@@ -61,7 +61,7 @@ const NEEDS_MS = 40_000;
 // How often a running stack's pods are checked for what they wait on.
 const WAIT_MS = Number(process.env.CLOUDSPIDER_WAIT_MS) || 20_000;
 
-export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL }) {
+export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL }) {
   const stdout = [];
   const sink = {
     push(line) {
@@ -1583,7 +1583,13 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
         report(sink, { call: result.call, sentence });
         return failed(sentence);
       }
-      return pathResult(result.graph, { lb: query.lb || "", host: query.host || "", region: at });
+      const shown = pathResult(result.graph, { lb: query.lb || "", host: query.host || "", region: at });
+      // Peering paths start at the region's first EKS cluster's nodes.
+      const cluster = (place?.fixtures || []).find((item) => item.kind === "eks")?.name || "";
+      if (!peers || !cluster) return shown;
+      const world = await peers.read(at, cluster).catch((failure) => ({ error: failure?.message || String(failure) }));
+      if (at !== region) return { region, stale: true };
+      return withPeers(shown, world, query.lb || "");
     },
   };
   return api;

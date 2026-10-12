@@ -1,3 +1,6 @@
+import { EC2Client } from "@aws-sdk/client-ec2";
+import { RDSClient } from "@aws-sdk/client-rds";
+import { readPeerWorld } from "./peer-path-read.js";
 import { createShutdown } from "./shutdown.js";
 import { spawnSync } from "node:child_process";
 import { createAws } from "./aws.js";
@@ -94,6 +97,7 @@ const app = createApp({
   logs: aws.logs,
   metrics: aws.metrics,
   path: createPathAws(),
+  peers: { read: (region, cluster) => readPeerWorld({ ec2: new EC2Client({ region }), rds: new RDSClient({ region }) }, { cluster }) },
   cost: config.cost.enabled ? createCost({ storage, ttl: config.cost.cacheTtlMinutes * 60_000 }) : costOff(),
   costTtl: config.cost.cacheTtlMinutes * 60_000,
   upgrade: stacks,

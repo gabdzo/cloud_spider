@@ -53,6 +53,8 @@ test("score, caps, stacks, sniff and the morning report all have sample answers"
   assert.ok(hints.some((h) => h.label === "SPOT") && hints.some((h) => h.label === "IDLE·BILLED"));
   assert.ok(samplePreview("eks").blocked);
   assert.ok(samplePathGraph().loadBalancers.length);
+  const { peerPath, peerSampleWorld } = await import("../src/peer-path.js");
+  assert.match(peerPath(peerSampleWorld(samplePlace()), "rds-sample-analytics").headline, /analytics-db:5432 is blocked/);
   const morning = sampleMorning();
   assert.ok(morning.hurting && morning.changed && morning.idle);
 });

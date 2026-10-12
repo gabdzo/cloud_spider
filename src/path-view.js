@@ -1,4 +1,16 @@
+import { peerPath, peerTargets } from "./peer-path.js";
 import { diagnose, headline, hostOf, matchHost, requestOf, routeOn } from "./path-diagnose.js";
+
+// SNIFF across a peering: the picker lists "peer:<target>" entries after
+// the load balancers; picking one draws peer-path.js's hops instead.
+export function withPeers(result, world, lb = "") {
+  if (!world || world.error || !world.source) return world?.error ? { ...result, notes: [...(result.notes || []), `peering paths: ${world.error}`] } : result;
+  const peers = peerTargets(world).map((t) => ({ arn: `peer:${t.id}`, name: `⇄ ${world.source.label} → ${t.name}:${t.port} (${t.vpcName})`, peer: true, public: false, url: "" }));
+  const out = { ...result, loadBalancers: [...(result.loadBalancers || []), ...peers] };
+  if (!String(lb).startsWith("peer:") || !peers.some((p) => p.arn === lb)) return out;
+  const path = peerPath(world, lb.slice(5));
+  return { ...out, selected: lb, host: "", hostNote: "", diagram: { nodes: path.nodes, edges: path.edges }, findings: path.findings, headline: path.headline, peer: { checks: path.checks } };
+}
 
 export function pathResult(graph, { lb = "", host = "", region = "" } = {}) {
   const loadBalancers = graph.loadBalancers
