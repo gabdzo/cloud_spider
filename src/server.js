@@ -2674,13 +2674,13 @@ const page = `<!doctype html>
     <button id="ask-this" class="cmd" type="button" data-icon="terminal" hidden>ASK ABOUT THIS</button>
   </div>
   <p id="error" hidden></p>
-  <section id="morning" aria-label="morning report" hidden data-module="map">
+  <section id="morning" aria-label="morning report" hidden>
     <canvas id="sunrise" width="64" height="36" aria-hidden="true"></canvas>
     <div class="m-head"><b>MORNING</b><small>REPORT</small><output id="morning-when"></output></div>
     <ul class="m-lines">
-      <li id="m-hurting" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="fire" alt=""><b>HURTING</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
-      <li id="m-changed" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="clock" alt=""><b>CHANGED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
-      <li id="m-idle" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="caps" alt=""><b>IDLE·BILLED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-hurting" data-module="map" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="fire" alt=""><b>HURTING</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-changed" data-module="map" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="clock" alt=""><b>CHANGED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
+      <li id="m-idle" data-module="map" class="m-line" role="button" tabindex="0" aria-expanded="false"><img class="px" data-icon="caps" alt=""><b>IDLE·BILLED</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
       <li id="m-logs" class="m-line" role="button" tabindex="0" aria-expanded="false" aria-controls="log-errors" data-module="kubernetes"><img class="px" data-icon="terminal" alt=""><b>LOG ERRORS</b><span class="m-text"></span><i class="m-led" aria-hidden="true"></i></li>
     </ul>
     <button id="morning-fold" class="m-fold" type="button" aria-expanded="true" aria-controls="morning" title="fold the morning report">&#9650;</button>
@@ -2862,7 +2862,9 @@ async function route(app, req, res) {
   const enabled = app.settings?.()?.modules?.enabled;
   const offModule = enabled ? moduleOff({ has: (id) => enabled.includes(id) }, url.pathname) : "";
   if (offModule === "map" && req.method === "GET" && url.pathname === "/api/view") {
-    send(res, 200, { off: "map", regions: [], radio: "", trail: [] });
+    // The morning report without the map: PODS + LOG ERRORS (kubernetes module).
+    const kubeMorning = enabled.includes("kubernetes") && app.morningKube ? app.morningKube() : null;
+    send(res, 200, { off: "map", regions: [], radio: "", trail: [], morning: kubeMorning });
     return;
   }
   if (offModule) {
