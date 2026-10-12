@@ -56,12 +56,19 @@ function round(ctx, x, y, w, h, r) {
   ctx.roundRect(x, y, w, h, r);
 }
 
-function clip(ctx, text, max) {
+// Long names lose their middle, not their end: "cloudspider-…-table" keeps
+// both the project and the kind readable. The full name is the tooltip.
+export function clip(ctx, text, max) {
   text = String(text ?? "");
   if (ctx.measureText(text).width <= max) return text;
-  let cut = text.length;
-  while (cut > 1 && ctx.measureText(`${text.slice(0, cut)}…`).width > max) cut -= 1;
-  return `${text.slice(0, cut)}…`;
+  let keep = text.length - 1;
+  while (keep > 1) {
+    const head = Math.ceil(keep * 0.6);
+    const out = `${text.slice(0, head)}…${text.slice(text.length - (keep - head))}`;
+    if (ctx.measureText(out).width <= max) return out;
+    keep -= 1;
+  }
+  return `${text.slice(0, 1)}…`;
 }
 
 // A status lamp: a filled dot with a soft ring.
@@ -650,9 +657,10 @@ function vpcLabel(ctx, s) {
   const y = s.y + 24;
   drawProIcon(ctx, "vpc", x, y - 16, 22);
   ctx.font = ui(13, 600);
-  // Room up to the gateway in the middle of the top edge (and the FOLD
-  // button the page puts at the right).
-  const gateLeft = s.gate ? s.x + s.w / 2 - 70 : s.x + s.w - 90;
+  // The name has priority; the gateway pill takes what is left of the header
+  // (gatePlace), and the FOLD button the page puts at the right is kept clear.
+  const gate = gatePlace(ctx, s);
+  const gateLeft = gate ? gate.x - 10 : s.x + s.w - 90;
   const room = Math.max(60, gateLeft - (x + 30));
   const n = clip(ctx, name, room);
   ctx.fillStyle = C.text;
@@ -665,13 +673,36 @@ function vpcLabel(ctx, s) {
   }
 }
 
-function gateLabel(ctx, s) {
-  // The internet / NAT gateway: a pill centred in the VPC's header band.
-  const label = String(s.gate || "");
+// Where the internet / NAT gateway pill goes in the VPC's header band:
+// centred when the name clears it, else right after the name, else an
+// icon-only chip at the right end (before FOLD), else nowhere.
+const FOLD_ROOM = 86;
+export function gatePlace(ctx, s) {
+  if (!s.gate) return null;
+  const label = String(s.gate);
+  const keep = ctx.font;
+  ctx.font = ui(13, 600);
+  const name = String(s.label || "").split("  ")[0];
+  const nameRight = s.x + 14 + 30 + ctx.measureText(name).width;
   ctx.font = ui(11, 600);
-  const tw = ctx.measureText(label).width;
-  const w = tw + 38;
-  const x = Math.round(s.x + (s.w - w) / 2);
+  const full = Math.ceil(ctx.measureText(label).width) + 38;
+  ctx.font = keep;
+  const right = s.x + s.w - FOLD_ROOM;
+  const centred = Math.round(s.x + (s.w - full) / 2);
+  if (centred >= nameRight + 12 && centred + full <= right) return { x: centred, w: full, label };
+  if (nameRight + 12 + full <= right) return { x: Math.round(nameRight + 12), w: full, label };
+  if (s.x + 14 + 30 + 60 + 12 + 28 <= right) return { x: right - 28, w: 28, label: "" };
+  return null;
+}
+
+function gateLabel(ctx, s) {
+  const place = gatePlace(ctx, s);
+  if (!place) return;
+  const label = place.label;
+  const kind = /nat/i.test(String(s.gate)) ? "nat" : "igw";
+  ctx.font = ui(11, 600);
+  const w = place.w;
+  const x = place.x;
   const y = s.y + 6;
   round(ctx, x, y, w, 24, 12);
   ctx.fillStyle = "#151a20";
@@ -679,7 +710,8 @@ function gateLabel(ctx, s) {
   ctx.strokeStyle = rgba(C.vpc, 0.8);
   ctx.lineWidth = 1;
   ctx.stroke();
-  drawProIcon(ctx, /nat/i.test(label) ? "nat" : "igw", x + 4, y + 3, 18);
+  drawProIcon(ctx, kind, x + (label ? 4 : 5), y + 3, 18);
+  if (!label) return;
   ctx.fillStyle = C.text;
   ctx.fillText(label, x + 28, y + 16);
 }
@@ -899,6 +931,22 @@ function vaultCells(ctx, area, animTime, reducedMotion) {
     ctx.font = ui(10.5, 400);
     ctx.fillStyle = C.text2;
     ctx.fillText(clip(ctx, v.number != null ? `Vault ${v.number}` : "", cell.w - 70), cell.x + 46, cell.y + 39);
+    // The room the Pip hill takes: what the vault is, and its facts.
+    ctx.fillStyle = C.line;
+    ctx.fillRect(cell.x + 12, cell.y + 54, cell.w - 24, 1);
+    ctx.font = ui(11, 400);
+    ctx.fillStyle = C.text2;
+    const lines = wrapWords(String(v.description || (v.damaged ? "The vault file did not parse." : "")), (line) => ctx.measureText(line).width <= cell.w - 24);
+    const most = Math.max(0, Math.floor((cell.h - 54 - 44) / 15));
+    lines.slice(0, most).forEach((line, i) => ctx.fillText(i === most - 1 && lines.length > most ? clip(ctx, `${line}…`, cell.w - 24) : line, cell.x + 12, cell.y + 74 + i * 15));
+    let px = cell.x + 12;
+    ctx.font = ui(10, 500);
+    for (const tag of [v.type, v.owner && `@${v.owner}`, ...(Array.isArray(v.tags) ? v.tags : [])].filter((t) => typeof t === "string" && t)) {
+      // Whole tags only: one that does not fit ends the row.
+      if (px + ctx.measureText(tag).width + 14 > cell.x + cell.w - 12) break;
+      px += pill(ctx, tag, px, cell.y + cell.h - 14, { px: 10, weight: 500 }) + 6;
+      ctx.font = ui(10, 500);
+    }
   }
 }
 

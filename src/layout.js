@@ -13,6 +13,8 @@ const CELL_H = 92;
 const GAP = 16;
 const PAD = 24;
 const INSET = 12;
+// Room above the first row of side-by-side VPCs for a peering chip.
+const CHIP_ROOM = 18;
 export const ROW_LIMIT = 1100;
 // Strip along the bottom of each camp, between the plots and the wall, where
 // the wanderers walk (32px figures + 18px wall + a little air).
@@ -482,8 +484,11 @@ export function layout(place, { rowLimit = ROW_LIMIT, vaults = [], isOpen = () =
       // Wide window (the page passes flowLimit at >=1600px): VPCs flow side
       // by side in rows up to the map's width, in the same order.
       let x = left;
-      let rowTop = cursorY;
-      let rowBottom = cursorY;
+      // A peering's chip sits 15px above its lower VPC. Side by side, that VPC
+      // can be in the first row, and the chip would land on the legend row
+      // under the page's ARCH / BY TAG switch: keep a chip row free there.
+      let rowTop = cursorY + ((place.peerings || []).length ? CHIP_ROOM : 0);
+      let rowBottom = rowTop;
       for (const vpc of order) {
         const probe = placeVpcAt(vpc, 0, 0);
         if (x > left && x + probe.w > left + flowRow) {

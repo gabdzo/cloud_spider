@@ -17,7 +17,9 @@ const { PRO_GLYPHS, glyphKey } = await import("../src/map-pro-icons.js");
 const PIP_GOLDEN = {
   w1440: ["926804b2fa76a60e", { width: 1440 }],
   w760: ["5b314d43ea0564a1", { width: 760, animTime: 1234 }],
-  w1920flow: ["5812d8c4ab58e938", { width: 1920, flow: true, animTime: 5000 }],
+  // Changed on purpose (#pro-map-2): side-by-side VPCs leave a chip row
+  // above the first row so peering chips clear the ARCH / BY TAG switch.
+  w1920flow: ["df21db83d0007176", { width: 1920, flow: true, animTime: 5000 }],
   tag: ["050f2c5ce9d5efd2", { width: 1440, view: "tag" }],
   selBuilding: ["62f8a10c31f10b55", { width: 1440, select: "building" }],
   selFixture: ["4f4a7de6c8b45908", { width: 1440, select: "fixture" }],
@@ -90,4 +92,44 @@ test("pro icons: every map kind resolves to a glyph of our own; instance types r
   assert.equal(glyphKey("t3.medium"), "ec2");
   assert.equal(glyphKey("m7g.2xlarge"), "ec2");
   assert.ok(PRO_GLYPHS.includes("tgw") && PRO_GLYPHS.includes("pcx") && PRO_GLYPHS.includes("cluster"));
+});
+
+const VAULT = { key: "shop", number: 101, title: "a-very-long-sample-vault-name-shop", stack: "shop", damaged: false, checks: [] };
+
+test("pro map: a vault cell is drawn in the pro style, not as a door in a hill", () => {
+  const r = render({ width: 1440, vaults: [VAULT] }, "pro");
+  const text = r.log.join("\n");
+  assert.ok(text.includes("Vault 101"));
+  assert.ok(/a-very.*….*shop/.test(text), "middle ellipsis keeps the end of the name");
+  assert.equal((text.match(/drawImage\(/g) || []).length, 1);
+});
+
+test("pro map: long names lose their middle, and the VPC name wins over the gateway pill", async () => {
+  const { clip, gatePlace } = await import("../src/map-pro.js");
+  const ctx = recorder(100, 100).ctx;
+  ctx.font = "600 12px Inter";
+  const out = clip(ctx, "cloudspider-camp-secret", 100);
+  assert.match(out, /^cloud.*….*cret$/);
+  assert.ok(ctx.measureText(out).width <= 100);
+  const vpc = (w) => ({ x: 0, y: 0, w, label: "shared-services  10.0.0.0/16", gate: "igw" });
+  const wide = gatePlace(ctx, vpc(700));
+  assert.equal(wide.x, Math.round((700 - wide.w) / 2), "wide: centred");
+  const mid = gatePlace(ctx, vpc(360));
+  assert.ok(mid.label === "igw" && mid.x > 44 + 15 * 7.8, "mid: after the whole name");
+  const narrow = gatePlace(ctx, vpc(260));
+  assert.ok(!narrow || narrow.label === "", "narrow: icon only or nothing");
+});
+
+test("wide layout keeps the legend row clear of peering chips (both themes)", () => {
+  const { placed } = sampleScene({ width: 1920, flow: true });
+  const legendBottom = placed.region.y + 20 * 2 + 12 + 16 - 18; // header rows, before the reserved chip row
+  for (const e of placed.regionEdges) assert.ok(e.chipY - 9 >= legendBottom, `${e.id} chip at ${e.chipY}`);
+});
+
+test("vault cells only reach the map in SAMPLE with doors=1; the real map keeps VAULTS as its own page", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  assert.match(browser, /vaultMode: "page", \.\.\.\(sampleDoors\(\) \? \{ vaultMode: "doors" \} : \{\}\)/);
+  assert.match(browser, /return sample && doorsAsked;/);
+  assert.match(browser, /const doorsAsked = new URLSearchParams\(location\.hash[^\n]*get\("doors"\) === "1";/);
 });

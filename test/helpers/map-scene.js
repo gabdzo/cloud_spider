@@ -6,12 +6,13 @@ import { sampleMapSnapshot } from "../../src/kube-sample.js";
 import { diagramFromKube } from "../../src/kube-diagram.js";
 import { kubeModel } from "../../src/map-kube.js";
 
-export function sampleScene({ width = 1440, height = 1100, animTime = 0, view = "arch", selection = null, kube = true, flow = false } = {}) {
+export function sampleScene({ width = 1440, height = 1100, animTime = 0, view = "arch", selection = null, kube = true, flow = false, vaults = [] } = {}) {
   const models = new Map([["cloudspider-up", kubeModel(diagramFromKube(sampleMapSnapshot(), {}), "cloudspider-up")]]);
   const placed = layout(samplePlace(), {
     rowLimit: Math.min(1100, width),
     flowLimit: flow ? width : 0,
-    vaults: [],
+    vaults,
+    vaultMode: "doors",
     view,
     kube: kube ? { models, choice: () => "auto" } : null,
   });
