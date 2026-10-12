@@ -30,7 +30,7 @@ const view = {
 
 test("the first screen: verdict before number, coverage, delta, failures first with their FIX", () => {
   const m = scoreModel(view);
-  assert.deepEqual([m.verdictLabel, m.number, m.coverage], ["AT RISK", "31/100", "coverage 100% · confidence high"]);
+  assert.deepEqual([m.verdictLabel, m.number, m.coverage], ["AT RISK", "30.6/100", "coverage 100% · confidence high"]);
   assert.match(m.profile, /production assumed/);
   assert.deepEqual(m.delta, { text: "+30.6 since the last scan", up: true });
   assert.deepEqual(m.rows.map((r) => [r.id, r.fix]), [["K8S-PLT-001", "kyverno"], ["K8S-PLT-002", ""], ["K8S-SEC-001", ""]]);
@@ -137,4 +137,12 @@ test("the panel scans the cluster picked in the Cluster view, not always the def
   const src = readFileSync(new URL("../src/browser.js", import.meta.url), "utf8");
   const call = src.split("\n").find((l) => l.includes("= createScoreView({")) || "";
   assert.match(call, /context: \(\) => clusterData\?\.context \|\| clusterContext/);
+});
+
+test("the headline and the reason under it show the same number (76 vs 75.5, live acceptance 2026-10-11)", async () => {
+  const { scoreText } = await import("../src/score/view.js");
+  assert.equal(scoreText(75.5), "75.5");
+  assert.equal(scoreText(76), "76");
+  assert.equal(scoreText(61.24), "61.2");
+  assert.equal(scoreText(0), "0");
 });

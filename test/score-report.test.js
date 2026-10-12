@@ -14,7 +14,7 @@ const scan = {
 
 test("markdown: verdict before number, failures first, fix named, disclaimer", () => {
   const md = renderReport(scan, "md").body;
-  assert.match(md, /\*\*AT RISK\*\* · 31\/100 \(range 28–40\)/);
+  assert.match(md, /\*\*AT RISK\*\* · 30.6\/100 \(range 28–40\)/);
   assert.ok(md.indexOf("K8S-PLT-001") < md.indexOf("K8S-PLT-002"));
   assert.match(md, /add-on stack kyverno-fresh/);
   assert.match(md, /not proof of production readiness/);

@@ -55,8 +55,8 @@ export function scoreModel(view) {
     verdict: card.verdict,
     verdictLabel: LABEL[card.verdict] || card.verdict,
     tone: TONE[card.verdict] || "warn",
-    number: card.overall == null ? "" : `${Math.round(card.overall)}/100`,
-    range: card.lower == null ? "" : `range ${Math.round(card.lower)}–${Math.round(card.upper)}`,
+    number: card.overall == null ? "" : `${scoreText(card.overall)}/100`,
+    range: card.lower == null ? "" : `range ${scoreText(card.lower)}–${scoreText(card.upper)}`,
     coverage: `coverage ${Math.round(card.coverage)}% · confidence ${card.confidence}`,
     meter: { assessed: card.coverage ?? 0, unknown: card.unknown ?? 0, notAssessed: card.notAssessed ?? 0 },
     reasons: card.reasons || [],
@@ -99,6 +99,13 @@ export function fixModel(state, plan = null) {
   if (state.phase === "rescanning") return { step: "rescanning", stage: 4, title, text: "Installed. Rescanning…", log, buttons: [] };
   if (state.phase === "done") return { step: "done", stage: 5, title, text: state.diff?.delta == null ? `${title} installed and rescanned. No score to compare: ${state.diff?.verdictTo === "INSUFFICIENT_EVIDENCE" ? "not enough evidence yet" : "the last scan had none"}.` : `${title} installed. Score ${state.diff.delta > 0 ? "+" : ""}${state.diff.delta}.`, log, buttons: [] };
   return { step: "failed", stage: -1, title, text: state.error || "the fix failed", log, buttons: [] };
+}
+
+// The headline, its range and the reasons under it ("overall 75.5 is below
+// 80") show the same number: one decimal, ".0" dropped (live acceptance
+// 2026-10-11: the headline said 76 and the line under it 75.5).
+export function scoreText(value) {
+  return String(Math.round(Number(value) * 10) / 10);
 }
 
 export function createScoreView({ root, toggleButton, context = () => "", onChange = () => {}, openCard = null }) {
