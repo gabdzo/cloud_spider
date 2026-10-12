@@ -46,7 +46,9 @@ import { plateText } from "./vault-schema.js";
 import { snapshot } from "./agent-text.js";
 import { createTerminal } from "./terminal.js";
 import { createLearnView } from "./learn-view.js";
-import { createScoreView } from "./score/view.js";
+import { createScoreView, scoreModel } from "./score/view.js";
+import { groupVaults } from "./vault-perks.js";
+import { clusterVaultNode } from "./perk-view.js";
 import { createNetdebugView, debugBarShown } from "./netdebug/view.js";
 import { metricAlerts, paintPlace } from "./metrics.js";
 import { sunrise } from "./sprites/landmarks.js";
@@ -248,6 +250,10 @@ let vaultsFor = null; // sample flag the vaults were read for
 let vaultsAt = 0;
 let vaultsLoading = false;
 let vaultsTicket = 0;
+// Perks: the add-on tree and the stored score feed the cluster vaults.
+let vaultAddons = { tree: [], primary: "" };
+let vaultScore = null;
+let perkOpen = { cluster: "", id: "" };
 let vaultsShown = "";
 let doorFrame = 0;
 const vaultLights = new Map();
@@ -843,8 +849,20 @@ async function loadVaults() {
   const wasSample = sample;
   vaultsLoading = true;
   try {
-    const body = await fetch(`/api/vaults${wasSample ? "?sample=1" : ""}`).then((response) => response.json());
+    const q = wasSample ? "?sample=1" : "";
+    const [body, addons, score] = await Promise.all([
+      fetch(`/api/vaults${q}`).then((response) => response.json()),
+      fetch(`/api/addons${q}`).then((response) => (response.ok ? response.json() : null)).catch(() => null),
+      wasSample ? null : fetch("/api/score?target=kubernetes").then((response) => (response.ok ? response.json() : null)).catch(() => null),
+    ]);
     if (ticket !== vaultsTicket || wasSample !== sample) return;
+    vaultAddons = { tree: Array.isArray(addons?.tree) ? addons.tree : [], primary: addons?.detectedCluster || "" };
+    try {
+      const model = score ? scoreModel(score, "kubernetes") : null;
+      vaultScore = model?.state === "scored" ? { cluster: model.cluster, number: model.number, tone: model.tone } : null;
+    } catch {
+      vaultScore = null;
+    }
     vaultsData = {
       vaults: Array.isArray(body?.vaults) ? body.vaults : [],
       note: body?.note || "",
@@ -1436,6 +1454,9 @@ function vaultPageSignature() {
   return JSON.stringify([
     vaultRoute,
     vaultsFor,
+    perkOpen,
+    vaultAddons.tree.map((c) => [c.cluster, c.live, (c.addons || []).map((a) => `${a.id}:${a.state}:${a.ready}`)]),
+    vaultScore,
     vaultsData.vaults.map((vault) => [vault.key, vault.status, vault.damaged, (vault.slos || []).map((slo) => [slo.flag, slo.sliPct, slo.budgetPct, slo.burn]), (vault.checks || []).map((check) => [check.status, check.code, check.ms]), vault.stackInfo, (vault.trouble || []).length, (vault.owned || []).length]),
     (vaultsData.templates || []).length,
     route ? [route.description, route.links, route.trouble, vaultLogState.get(route.key), vaultMetrics(route).map((hit) => `${hit.id}:${metricsData?.at}`), (route.owned || []).map((id) => place?.instances?.find((item) => item.id === id)?.state)] : null,
@@ -1475,6 +1496,39 @@ function pageHead(title, sub, back) {
   return head;
 }
 
+// Opens the add-on's card in Stacks: the same PREVIEW → APPROVE path as
+// any stack. Nothing is installed from the vault page.
+async function openPerkCard(id, cluster) {
+  closeVaultPage();
+  if (!pipOpen) await toggleUpgrade();
+  openCard = `${id}@${cluster}`;
+  drawPipForm();
+  drawAddonTree();
+  refreshUpgrade(true);
+  renderChrome();
+  requestAnimationFrame(() => document.querySelector(`[data-id="${CSS.escape(openCard)}"]`)?.scrollIntoView({ block: "center" }));
+}
+
+function vaultCard(vault, home = "") {
+  const summary = vaultSummary(vault);
+  const li = vel("li", `vpg-card ${summary.light}${summary.trouble ? " trouble" : ""}${vault.damaged ? " damaged" : ""}`);
+  const button = vel("button", "vpg-open");
+  button.type = "button";
+  button.dataset.focus = `card:${vault.key}`;
+  button.setAttribute("aria-label", `${summary.plate} ${summary.title}: ${summary.lightText}.${home ? ` In vault ${home}.` : ""} Open its page.`);
+  button.addEventListener("click", () => openVaultPage(vault.key));
+  const status = vel("p", "vpg-status");
+  status.append(vel("i", "vpg-lamp"), vel("span", "", summary.lightText));
+  const facts = vel("div", "vpg-lines");
+  for (const line of summary.lines) facts.append(vel("span", "", line));
+  const stack = vel("span", `vpg-stack ${summary.stack.state}`, summary.stack.state === "live" ? (vault.auto ? "LIVE · AUTO" : "LIVE") : summary.stack.state === "down" ? "NOT UP" : summary.stack.state === "error" ? "STACK?" : "TAGS");
+  if (vault.auto) stack.title = `listed automatically: its stack is up (${vault.file}). Copy it into vaults/ to customise: npm run vaults:new -- ${vault.name} ${vault.name}`;
+  button.append(doorCanvas(vault), stack, vel("h3", "", summary.title), status, facts);
+  if (home) button.append(vel("span", "vpg-home", `IN VAULT ${home}`));
+  li.append(button);
+  return li;
+}
+
 function vaultList() {
   const vaults = vaultsData.vaults;
   const tally = vaultTally(vaults);
@@ -1483,27 +1537,47 @@ function vaultList() {
     : [`${tally.total} VAULT${tally.total === 1 ? "" : "S"}`, `${tally.live} LIVE`, tally.ok ? `${tally.ok} OK` : "", tally.fail ? `${tally.fail} FAILING` : "", tally.trouble ? `${tally.trouble} IN TROUBLE` : "", tally.damaged ? `${tally.damaged} DAMAGED` : ""].filter(Boolean).join(" · ");
   const out = [pageHead("VAULTS", sub, { label: "◂ MAP", go: closeVaultPage })];
   if (vaultsData.note) out.push(vel("p", "vpg-note", vaultsData.note));
-  const grid = vel("ul", "vpg-grid");
-  if (!vaults.length && vaultsFor !== null) grid.append(vel("li", "vpg-empty", "No vaults yet. A vault is a YAML file in vaults/; start from a template below."));
-  for (const vault of vaults) {
-    const summary = vaultSummary(vault);
-    const li = vel("li", `vpg-card ${summary.light}${summary.trouble ? " trouble" : ""}${vault.damaged ? " damaged" : ""}`);
-    const button = vel("button", "vpg-open");
-    button.type = "button";
-    button.dataset.focus = `card:${vault.key}`;
-    button.setAttribute("aria-label", `${summary.plate} ${summary.title}: ${summary.lightText}. Open its page.`);
-    button.addEventListener("click", () => openVaultPage(vault.key));
-    const status = vel("p", "vpg-status");
-    status.append(vel("i", "vpg-lamp"), vel("span", "", summary.lightText));
-    const facts = vel("div", "vpg-lines");
-    for (const line of summary.lines) facts.append(vel("span", "", line));
-    const stack = vel("span", `vpg-stack ${summary.stack.state}`, summary.stack.state === "live" ? (vault.auto ? "LIVE · AUTO" : "LIVE") : summary.stack.state === "down" ? "NOT UP" : summary.stack.state === "error" ? "STACK?" : "TAGS");
-    if (vault.auto) stack.title = `listed automatically: its stack is up (${vault.file}). Copy it into vaults/ to customise: npm run vaults:new -- ${vault.name} ${vault.name}`;
-    button.append(doorCanvas(vault), stack, vel("h3", "", summary.title), status, facts);
-    li.append(button);
-    grid.append(li);
+  const groups = groupVaults(vaults, vaultAddons.tree, { primary: vaultAddons.primary });
+  const titleOf = (key) => vaultSummary(vaults.find((vault) => vault.key === key) || { key, name: key }).title;
+  if (groups.clusters.length) {
+    out.push(vel("h4", "vpg-section", `CLUSTER VAULTS · ${groups.clusters.length}`));
+    for (const cluster of groups.clusters) {
+      out.push(clusterVaultNode(cluster, {
+        door: cluster.vault ? doorCanvas({ ...cluster.vault, title: cluster.name }) : null,
+        score: vaultScore && vaultScore.cluster === cluster.name ? vaultScore : null,
+        selected: perkOpen.cluster === cluster.name ? perkOpen.id : "",
+        appTitle: titleOf,
+        vaultOf: (key) => vaults.find((vault) => vault.key === key) || null,
+        cost: (id) => {
+          const spec = pipModules.find((item) => item.id === id && item.addon);
+          return spec?.cost ? costLine(spec.cost) : "";
+        },
+        onSelect: (name, id) => {
+          perkOpen = { cluster: name, id };
+          renderVaultPage();
+        },
+        onOpenVault: (key) => openVaultPage(key),
+        onOpenApp: (key) => openVaultPage(key),
+        onOpenCard: (id, name) => openPerkCard(id, name),
+      }));
+    }
   }
-  out.push(grid);
+  const sections = [
+    ["APP VAULTS", groups.apps.map((item) => [item.vault, item.cluster])],
+    [groups.clusters.length ? "OTHER VAULTS" : "", groups.vaults.map((vault) => [vault, ""])],
+  ];
+  if (!vaults.length && vaultsFor !== null) {
+    const grid = vel("ul", "vpg-grid");
+    grid.append(vel("li", "vpg-empty", "No vaults yet. A vault is a YAML file in vaults/; start from a template below."));
+    out.push(grid);
+  }
+  for (const [label, list] of sections) {
+    if (!list.length) continue;
+    if (label) out.push(vel("h4", "vpg-section", `${label} · ${list.length}`));
+    const grid = vel("ul", "vpg-grid");
+    for (const [vault, home] of list) grid.append(vaultCard(vault, home));
+    out.push(grid);
+  }
   const templates = vaultsData.templates || [];
   const shelf = vel("section", "vpg-templates");
   const autoCount = templates.filter((item) => item.live).length;
