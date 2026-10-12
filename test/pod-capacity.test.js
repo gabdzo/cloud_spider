@@ -57,14 +57,16 @@ test("RUN with another maxPods than the live node group's is a replace and is re
 test("eks: the VPC CNI add-on with prefix delegation comes before the node group; auto adds no launch template", { skip: ready("upgrades/eks") }, async () => {
   const { resources } = await mock(...EKS, {});
   const cni = resources.find((r) => r.type === "aws:eks/addon:Addon" && r.inputs.addonName === "vpc-cni");
-  assert.deepEqual(JSON.parse(cni.inputs.configurationValues), { env: { ENABLE_PREFIX_DELEGATION: "true", WARM_PREFIX_TARGET: "1" } });
+  assert.deepEqual(JSON.parse(cni.inputs.configurationValues), { env: { ENABLE_PREFIX_DELEGATION: "true", WARM_PREFIX_TARGET: "1" }, enableNetworkPolicy: "true" });
   assert.equal(cni.inputs.resolveConflictsOnCreate, "OVERWRITE", "takes over the self-managed aws-node");
   assert.ok(!resources.some((r) => r.type === "aws:ec2/launchTemplate:LaunchTemplate"));
   const nodes = resources.find((r) => r.type === "aws:eks/nodeGroup:NodeGroup");
   assert.equal(nodes.inputs.nodeGroupName, "c1-nodes");
   assert.equal(nodes.inputs.launchTemplate, undefined);
   const off = await mock(EKS[0], EKS[1], EKS[2], { ...EKS[3], "cloudspider-upgrade:prefixDelegation": "off" }, {});
-  assert.equal(off.resources.find((r) => r.inputs?.addonName === "vpc-cni").inputs.configurationValues, undefined);
+  assert.deepEqual(JSON.parse(off.resources.find((r) => r.inputs?.addonName === "vpc-cni").inputs.configurationValues), { enableNetworkPolicy: "true" });
+  const bare = await mock(EKS[0], EKS[1], EKS[2], { ...EKS[3], "cloudspider-upgrade:prefixDelegation": "off", "cloudspider-upgrade:networkPolicy": "off" }, {});
+  assert.equal(bare.resources.find((r) => r.inputs?.addonName === "vpc-cni").inputs.configurationValues, undefined);
 });
 
 test("eks maxPods=58 on a t4g.medium: a launch template with the nodeadm NodeConfig, and a node group of its own name", { skip: ready("upgrades/eks") }, async () => {
@@ -178,4 +180,24 @@ test("Karpenter's NodePool may use every zone of the cluster's subnets; zones na
   const one = await mock(KARP[0], KARP[1], KARP[2], { ...KARP[3], "cloudspider-addons:zones": "eu-north-1a" }, AGENT);
   assert.deepEqual(zoneReq(one.resources).values, ["eu-north-1a"]);
   await assert.rejects(mock(KARP[0], KARP[1], KARP[2], { ...KARP[3], "cloudspider-addons:zones": "eu-north-1c" }, AGENT), (error) => /zones eu-north-1c: cloudspider-up has subnets only in eu-north-1a, eu-north-1b/.test(failure(error)));
+});
+
+import { networkPolicyOn, vpcCniConfig } from "../upgrades/eks-addons.js";
+
+test("vpc-cni configurationValues: prefix delegation and NetworkPolicy enforcement, each on its own", () => {
+  assert.deepEqual(vpcCniConfig({ prefixDelegation: true, networkPolicy: true }), { env: { ENABLE_PREFIX_DELEGATION: "true", WARM_PREFIX_TARGET: "1" }, enableNetworkPolicy: "true" });
+  assert.deepEqual(vpcCniConfig({ prefixDelegation: false, networkPolicy: true }), { enableNetworkPolicy: "true" });
+  assert.deepEqual(vpcCniConfig({ prefixDelegation: true, networkPolicy: false }), { env: { ENABLE_PREFIX_DELEGATION: "true", WARM_PREFIX_TARGET: "1" } });
+  assert.equal(vpcCniConfig({ prefixDelegation: false, networkPolicy: false }), null);
+  assert.equal(networkPolicyOn('{"enableNetworkPolicy":"true"}'), true);
+  assert.equal(networkPolicyOn(""), false);
+  const eks = UPGRADES.find((s) => s.id === "eks");
+  assert.deepEqual(eks.parameters.find((p) => p.name === "networkPolicy"), { name: "networkPolicy", type: "string", default: "on", choices: ["on", "off"] });
+  assert.match(readFileSync(join(root, "upgrades/eks/Pulumi.upgrade.yaml"), "utf8"), /cloudspider-upgrade:networkPolicy: "on"/);
+});
+
+test("eks networkPolicy=off: the vpc-cni add-on keeps prefix delegation only", { skip: ready("upgrades/eks") }, async () => {
+  const { resources } = await mock(EKS[0], EKS[1], EKS[2], { ...EKS[3], "cloudspider-upgrade:networkPolicy": "off" }, {});
+  const cni = resources.find((r) => r.type === "aws:eks/addon:Addon" && r.inputs.addonName === "vpc-cni");
+  assert.deepEqual(JSON.parse(cni.inputs.configurationValues), { env: { ENABLE_PREFIX_DELEGATION: "true", WARM_PREFIX_TARGET: "1" } });
 });
