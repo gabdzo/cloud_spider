@@ -166,6 +166,9 @@ const scc = (name, ns, sa, component, extra) => ({
   readOnlyRootFilesystem: false, requiredDropCapabilities: [], allowedCapabilities: [],
   runAsUser: { type: "RunAsAny" }, seLinuxContext: { type: "RunAsAny" }, fsGroup: { type: "RunAsAny" }, supplementalGroups: { type: "RunAsAny" },
   volumes: ["configMap", "emptyDir", "projected", "hostPath"], users: [`system:serviceaccount:${ns}:${sa}`], priority: null,
+  // The pods ask for seccompProfile RuntimeDefault (hardened); an SCC with no
+  // seccompProfiles refuses that ("seccomp may not be set", seen on CRC).
+  seccompProfiles: ["runtime/default"],
   ...extra,
 });
 

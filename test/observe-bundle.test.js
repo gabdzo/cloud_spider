@@ -198,3 +198,15 @@ test("the card validates context / nodeCidr with its own patterns and keeps stat
   assert.equal(card.localState, true);
   assert.match(readFileSync(join(root, "upgrades/observe/Pulumi.yaml"), "utf8"), /file:\/\/~\/\.cloudspider\/pulumi-observe/);
 });
+
+test("OpenShift SCCs admit the hardened pods (RuntimeDefault seccomp) and the workloads wait for security", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const b = renderBundle({ context: "crc-admin", platform: "openshift", profile: "crc", allowPrivileged: "on", nodeCidr: "192.168.126.0/24" });
+  const sccs = b.items.map((i) => i.obj).filter((o) => o.kind === "SecurityContextConstraints");
+  assert.deepEqual(sccs.map((s) => s.metadata.name).sort(), ["cloudspider-observe-agent", "cloudspider-observe-beyla"]);
+  for (const s of sccs) assert.deepEqual(s.seccompProfiles, ["runtime/default"], s.metadata.name);
+  const agent = b.items.map((i) => i.obj).find((o) => o.kind === "DaemonSet" && o.metadata.name === "otel-agent");
+  assert.equal(agent.spec.template.spec.containers[0].securityContext.seccompProfile.type, "RuntimeDefault");
+  const index = await readFile(new URL("../upgrades/observe/index.js", import.meta.url), "utf8");
+  assert.match(index, /dependsOn: \[ns, \.\.\.security\]/);
+});

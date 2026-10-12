@@ -43,15 +43,25 @@ const KINDS = {
 const [nsItem, ...rest] = bundle.items;
 const ns = new k8s.core.v1.Namespace("observe-ns", { metadata: nsItem.obj.metadata }, { provider });
 const inNs = { provider, dependsOn: [ns] };
-// Cluster-scoped security first (SCC, roles), then the namespace's objects.
+// Security first (SCCs, roles, bindings, service accounts), then the
+// workloads, which wait for it: a pod created before its SCC is refused
+// ("unable to validate against any security context constraint", seen on
+// CRC) and the DaemonSet backs off for minutes.
+const WORKLOADS = new Set(["DaemonSet", "Deployment", "StatefulSet"]);
 const made = [];
-for (const { obj } of rest) {
+const security = [];
+const create = (obj, opts) => {
   const name = `${obj.kind.toLowerCase()}-${obj.metadata.name}`;
   const Kind = KINDS[`${obj.apiVersion}/${obj.kind}`];
   const { apiVersion, kind, ...args } = obj;
-  if (Kind) made.push(new Kind(name, args, inNs));
-  else made.push(new k8s.apiextensions.CustomResource(name, obj, inNs)); // SecurityContextConstraints (OpenShift only)
+  return Kind ? new Kind(name, args, opts) : new k8s.apiextensions.CustomResource(name, obj, opts); // SecurityContextConstraints (OpenShift only)
+};
+for (const { obj } of rest.filter(({ obj }) => !WORKLOADS.has(obj.kind))) {
+  const res = create(obj, inNs);
+  made.push(res);
+  if (/SecurityContextConstraints|Role|ServiceAccount/.test(obj.kind)) security.push(res);
 }
+for (const { obj } of rest.filter(({ obj }) => WORKLOADS.has(obj.kind))) made.push(create(obj, { provider, dependsOn: [ns, ...security] }));
 ship({ k8s, pulumi, opts: inNs, namespace: bundle.namespace, vpcCidr: bundle.options.nodeCidr, labels: { "app.kubernetes.io/managed-by": "cloudspider-observe" } });
 for (const { name, spec } of extraPolicies()) {
   new k8s.networking.v1.NetworkPolicy(`netpol-observe-${name}`, { metadata: { name, namespace: bundle.namespace, labels: { "app.kubernetes.io/part-of": "cloudspider", "app.kubernetes.io/managed-by": "cloudspider-observe" } }, spec }, inNs);
