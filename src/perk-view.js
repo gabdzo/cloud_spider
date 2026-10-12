@@ -59,9 +59,13 @@ function perkCardNode(perk, { selected, onSelect }) {
   open.setAttribute("aria-pressed", String(selected));
   open.setAttribute("aria-label", `${perk.title}: ${perk.stateText}. ${perk.effect}`);
   const lamp = el("span", "pk-state");
-  lamp.append(el("i"), el("b", "", perk.stateText));
+  const state = el("b", "pk-state-text", perk.stateText);
+  state.title = perk.stateText;
+  lamp.append(el("i"), state);
+  // INSTALL sits in the state row's flow, so a long state ("NEEDS POD-IDENTITY")
+  // ellipsizes beside it instead of running under it.
+  if (perk.state === "available") lamp.append(el("span", "pk-install", "INSTALL ▸"));
   open.append(medal(perk), pips(perk.rank), el("b", "pk-name", perk.title), el("small", "pk-effect", perk.effect), lamp);
-  if (perk.state === "available") open.append(el("span", "pk-install", "INSTALL ▸"));
   open.addEventListener("click", () => onSelect(perk.id));
   li.append(open);
   return li;

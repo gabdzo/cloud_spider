@@ -1128,7 +1128,9 @@ const page = `<!doctype html>
   .pk-grid.avail .pk-medal { filter: grayscale(0.85) brightness(0.8); }
   .pk-grid.avail .pk-name { color: var(--pip-mid); text-shadow: none; }
   .pk-card.locked .pk-open { opacity: 0.6; }
-  .pk-install { position: absolute; right: 8px; bottom: 7px; font-size: 10px; letter-spacing: 0.14em; color: var(--world-amber); }
+  .pk-state-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: inherit; }
+  .pk-state i { flex: none; }
+  .pk-install { flex: none; margin-left: auto; font-size: 10px; letter-spacing: 0.14em; color: var(--world-amber); }
   .pk-drawer {
     margin: 12px 0 0; padding: 12px 14px; border: 2px solid var(--pip-mid);
     background: linear-gradient(180deg, rgba(20, 255, 106, 0.08), rgba(2, 10, 5, 0.96) 50%); box-shadow: 0 0 18px var(--glow-soft), inset 0 0 0 1px var(--pip-ink);
