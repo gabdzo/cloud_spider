@@ -44,7 +44,7 @@ export function createLogErrorsView(root, { onGraph = () => {}, onTimeline = () 
     if (!data) return;
     const head = h("div", { className: "le-head" },
       h("h2", { text: "LOG ERRORS" }),
-      h("span", { className: "le-meta", text: [data.title, data.source ? `from ${data.source === "loki" ? "Loki" : "CloudWatch Logs Insights"}` : "", data.compared ? ((data.windowKind || "night") === "night" ? "vs. the night before" : "vs. the same window yesterday") : ""].filter(Boolean).join(" · ") }),
+      h("span", { className: "le-meta", text: [data.title, data.source ? `from ${data.source === "cloudwatch" ? "CloudWatch Logs Insights" : data.source === "bundle" ? "Loki (observe bundle)" : "Loki"}` : "", data.compared ? ((data.windowKind || "night") === "night" ? "vs. the night before" : "vs. the same window yesterday") : ""].filter(Boolean).join(" · ") }),
     );
     if (onWindow) {
       const kind = data.windowKind || data.window?.kind || "night";
