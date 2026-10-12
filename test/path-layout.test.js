@@ -45,7 +45,7 @@ test("a supplied width squeezes columns and a tiny width stops at the floor", ()
     assert.ok(node.x + node.w <= fitted.contentWidth, `${node.id} is outside the width`);
   }
   const floor = layoutPath(diagram(), 200);
-  assert.equal(floor.nodes[0].w, 140);
+  assert.equal(floor.nodes[0].w, 88);
   assert.ok(floor.contentWidth > 200);
   for (const a of floor.nodes) {
     for (const b of floor.nodes) {
@@ -91,4 +91,23 @@ test("the diagnosis panel stays on the canvas, even beside the last column", () 
     assert.ok(rect.x >= 8 && rect.x + rect.w <= width - 8, `inside at ${width}`);
     assert.ok(rect.y >= 8 && rect.y + rect.h <= 600 - 8);
   }
+});
+
+test("narrow: the path fits down to 88px cards and 12px gaps (no overflow at 760)", () => {
+  const cols = new Set(layoutPath(diagram(), 0).nodes.map((n) => n.x)).size;
+  const width = 48 + cols * 88 + (cols - 1) * 12;
+  const placed = layoutPath(diagram(), width);
+  assert.ok(placed.contentWidth <= width, `content ${placed.contentWidth} > ${width}`);
+  assert.ok(placed.nodes.every((n) => n.w >= 88));
+});
+
+test("pan hint: drawn only at the edge that has more", async () => {
+  const { drawPanHint } = await import("../src/path-draw.js");
+  const calls = [];
+  const ctx = new Proxy({}, { get: (t, k) => k in t ? t[k] : k === "measureText" ? () => ({ width: 40 }) : k === "createLinearGradient" ? () => ({ addColorStop() {} }) : (...a) => calls.push([k, ...a]), set: (t, k, v) => ((t[k] = v), true) });
+  assert.deepEqual(drawPanHint(ctx, { left: 0, width: 700, height: 500, contentWidth: 700 }), { left: false, right: false });
+  assert.equal(calls.length, 0);
+  assert.deepEqual(drawPanHint(ctx, { left: 0, width: 700, height: 500, contentWidth: 820 }), { left: false, right: true });
+  assert.ok(calls.some(([k, label]) => k === "fillText" && /→/.test(label)));
+  assert.deepEqual(drawPanHint(ctx, { left: 120, width: 700, height: 500, contentWidth: 820 }), { left: true, right: false });
 });

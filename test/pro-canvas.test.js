@@ -46,3 +46,16 @@ test("pro: the vault panel title is a surface, not the pip gradient", () => {
   const css = readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
   assert.match(css, /:root\[data-theme="pro"\] \.vp-title \{ margin: 0; padding: 8px 12px; color: var\(--text\); background: var\(--surface-2\)/);
 });
+
+test("pro pass 3: vault pages lose the corner brackets, LIVE is a badge; DEBUG fold stays on row 1", () => {
+  const css = readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
+  assert.match(css, /:root\[data-theme="pro"\] :is\(\.vpg-open, \.vault-panel\)::before, :root\[data-theme="pro"\] :is\(\.vpg-open, \.vault-panel\)::after \{ content: none; \}/);
+  assert.match(css, /:root\[data-theme="pro"\] \.vpg-stack\.live \{ color: var\(--ok\)/);
+  const nd = readFileSync(new URL("../src/netdebug/style.js", import.meta.url), "utf8");
+  assert.match(nd, /#netdebug \.nd-bar > \.nd-fold \{ margin-left: auto; \}/);
+});
+
+test("pro: the sticky CAPS head is opaque", () => {
+  const css = readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
+  assert.match(css, /:root\[data-theme="pro"\] \.sp-head \{ background-color: var\(--raised\); \}/);
+});

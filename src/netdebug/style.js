@@ -195,7 +195,11 @@ export const ND_CSS = `
   @media (max-width: 900px) {
     #netdebug { left: 6px; right: 6px; bottom: 6px; max-height: 42%; }
     #netdebug .nd-bar { flex-wrap: wrap; gap: 6px 8px; }
-    #netdebug .nd-url { flex: 1 1 220px; min-width: 0; }
+    /* Row 1: DEBUG, modes, RUN, meta (squeezes), fold pinned right.
+       Row 2: the URL, full width. */
+    #netdebug .nd-url { order: 9; flex: 1 1 100%; min-width: 0; }
+    #netdebug .nd-meta { flex: 1 1 0; min-width: 0; }
+    #netdebug .nd-bar > .nd-fold { margin-left: auto; }
     #netdebug .nd-empty > p { display: none; }
   }
 `;
