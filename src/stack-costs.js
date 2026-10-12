@@ -89,7 +89,9 @@ export function costFor(lines = [], params = {}) {
     if (line.usage) return { usage: line.usage };
     let price = line.price;
     if (line.param && params[line.param] && PRICES[`${line.prefix || ""}${params[line.param]}`]) price = `${line.prefix || ""}${params[line.param]}`;
-    const qty = (line.qty ?? 1) * (line.perNode ? nodes : 1);
+    // `times`: counted once per the parameter's value (pgcluster's instances).
+    const times = line.times ? Math.max(1, Number(params[line.times]) || 1) : 1;
+    const qty = (line.qty ?? 1) * (line.perNode ? nodes : 1) * times;
     return line.spot && String(params[line.spot] || "").toUpperCase() === "SPOT" ? { price, qty, spot: true } : { price, qty };
   });
 }

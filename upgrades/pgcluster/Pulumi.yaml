@@ -1,5 +1,5 @@
 name: cloudspider-pgcluster
 runtime: nodejs
-description: "PostgreSQL on the EKS cluster: the CloudNativePG operator, the EBS CSI driver, a gp3 StorageClass and one 1-instance Cluster (shop/shopdb)."
+description: "PostgreSQL on the EKS cluster: the CloudNativePG operator, a gp3 StorageClass, a 2-instance Cluster (shop/shopdb, one per zone) with continuous backup to S3 via the Barman Cloud plugin."
 backend:
   url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"
