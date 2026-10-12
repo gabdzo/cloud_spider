@@ -278,8 +278,64 @@ const EMPTY_PLACE = { region: "", vpcs: [], subnets: [], instances: [], fixtures
 // Cache for layout to avoid recomputing every frame
 const layoutCache = createLayoutCache(layout);
 
+// PUBLIC strip on the map: every internet-facing load balancer, its URL,
+// OPEN (a new tab) and a reachability lamp (the server GETs it, 30 s).
+const publicStrip = document.querySelector("#public-strip");
+const reachSeen = new Map();
+let reachTimer = 0;
+function publicEndpoints(fixtures = []) {
+  return fixtures.filter((item) => item.kind === "alb" && item.public && item.url).map((item) => ({ id: item.id, name: item.ingress || item.name, url: item.url, zones: item.zones || [], healthy: item.healthyCount || 0, targets: item.targetCount || 0 }));
+}
+function reachLamp(url) {
+  const lamp = vel("span", "reach-lamp", "…");
+  lamp.dataset.url = url;
+  paintLamp(lamp, reachSeen.get(url));
+  return lamp;
+}
+function paintLamp(lamp, seen) {
+  if (!seen) return;
+  lamp.dataset.state = seen.ok ? "ok" : "fail";
+  lamp.textContent = seen.status ? `${seen.status} · ${seen.ms} ms` : seen.error || "no answer";
+  lamp.title = `GET ${seen.url} from this machine: ${lamp.textContent}`;
+}
+async function probeReach(urls) {
+  for (const url of urls) {
+    const seen = await fetch(`/api/reach?url=${encodeURIComponent(url)}`).then((r) => r.json()).catch(() => null);
+    if (!seen) continue;
+    reachSeen.set(url, seen);
+    for (const lamp of document.querySelectorAll(".reach-lamp")) if (lamp.dataset.url === url) paintLamp(lamp, seen);
+  }
+}
+function openLink(url, label = "OPEN ↗") {
+  const a = vel("a", "cmd", label);
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.title = `open ${url} in a new tab`;
+  return a;
+}
+function renderPublicStrip() {
+  if (!publicStrip) return;
+  const list = mode === "map" ? publicEndpoints(place?.fixtures || []) : [];
+  const key = JSON.stringify(list);
+  publicStrip.hidden = !list.length;
+  if (publicStrip.dataset.key === key) return;
+  publicStrip.dataset.key = key;
+  publicStrip.replaceChildren(...list.map((item) => {
+    const row = vel("div", "ps-row");
+    row.append(vel("span", "ps-tag", "PUBLIC"), vel("span", "ps-name", item.name), vel("span", "ps-url", item.url), vel("span", "ps-zones", `${item.zones.length} AZ · ${item.healthy}/${item.targets} healthy`), reachLamp(item.url), openLink(item.url));
+    return row;
+  }));
+  clearInterval(reachTimer);
+  if (!list.length || sample) return;
+  const urls = list.map((item) => item.url);
+  probeReach(urls);
+  reachTimer = setInterval(() => probeReach(urls), 30_000);
+}
+
 function renderChrome() {
   renderChromeParts();
+  renderPublicStrip();
   syncUrl();
 }
 
@@ -2133,6 +2189,10 @@ async function pullPath() {
     }
     pathData = body;
     pathFailure = "";
+    // SNIFF's DEBUG starts on the picked load balancer's public URL (Shop
+    // API: http://<alb>/items), so RUN probes the internet → ALB → pod path.
+    const picked = (body.loadBalancers || []).find((item) => item.arn === body.selected);
+    if (picked?.public && picked.url && !netdebugView.target()) netdebugView.setTarget(picked.url);
     syncLoadBalancers(body.loadBalancers || [], body.selected || "");
     if (pathSelected && !body.diagram?.nodes?.some((node) => node.id === pathSelected)) pathSelected = null;
     setStatus(ui, body.error ? "" : pathStatus(body));

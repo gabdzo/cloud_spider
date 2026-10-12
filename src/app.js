@@ -1,4 +1,5 @@
 import { originAllowed } from "./origin.js";
+import { createReach, reachAllowed } from "./reach.js";
 import { isInstanceId } from "./ids.js";
 import { report } from "./report.js";
 import { pickRegion, readPlace } from "./map.js";
@@ -70,6 +71,7 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   let region = "";
   let regions = [];
   let place = null;
+  const reachProbe = createReach();
   let placeAt = 0;
   let placeFlight = null;
   let error = "";
@@ -796,6 +798,14 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
       radioAt = clock();
       await radio.refresh(next);
       return view();
+    },
+    // REACH: GET a public load balancer's URL from this machine (the map's
+    // OPEN strip, the vault and the card show the lamp). Only hosts that
+    // are public load balancers on the map.
+    async reach(url) {
+      const allowed = reachAllowed(url, place?.fixtures || []);
+      if (!allowed) return { ok: false, status: 0, error: "only a public load balancer on the map can be probed" };
+      return reachProbe(allowed.url);
     },
     async logsFor(id) {
       const result = await readLogs({ logs, logGroup, region, id });

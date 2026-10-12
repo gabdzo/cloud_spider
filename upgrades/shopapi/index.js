@@ -168,7 +168,9 @@ const ingress = expose === "alb" ? new k8s.networking.v1.Ingress("shopapi", {
       "alb.ingress.kubernetes.io/healthcheck-interval-seconds": "10",
       "alb.ingress.kubernetes.io/healthy-threshold-count": "2",
       "alb.ingress.kubernetes.io/unhealthy-threshold-count": "2",
-      "alb.ingress.kubernetes.io/tags": `project=shopapi,cluster=${clusterName},cloudspider=expendable`,
+      // cloudspider:open-path: the map's OPEN, the reach lamp and SNIFF use
+      // http://<alb>/items, the API's main path.
+      "alb.ingress.kubernetes.io/tags": `project=shopapi,cluster=${clusterName},cloudspider=expendable,cloudspider:open-path=/items`,
     },
   },
   spec: {

@@ -5,7 +5,7 @@ const MIN_COL_GAP = 16;
 const ROW_H = 64;
 const ROW_GAP = 14;
 const PAD = 24;
-const COLUMN = { lb: 0, listener: 1, rule: 2, tg: 3, target: 4, node: 5, cluster: 6 };
+const COLUMN = { internet: 0, lb: 1, listener: 2, rule: 3, tg: 4, target: 5, node: 6, cluster: 7 };
 
 export function layoutDiagram(diagram, columns, maxWidth = 0) {
   const columnOf = (kind) => columns[kind] ?? 0;
@@ -48,8 +48,12 @@ export function layoutDiagram(diagram, columns, maxWidth = 0) {
   };
 }
 
+// Without an INTERNET head (an internal load balancer) every column moves
+// one left, so the diagram starts at the balancer.
+const SHIFTED = Object.fromEntries(Object.entries(COLUMN).map(([kind, col]) => [kind, Math.max(0, col - 1)]));
 export function layoutPath(diagram, maxWidth = 0) {
-  return layoutDiagram(diagram, COLUMN, maxWidth);
+  const head = (diagram?.nodes || []).some((node) => node.kind === "internet");
+  return layoutDiagram(diagram, head ? COLUMN : SHIFTED, maxWidth);
 }
 
 function fitColumns(cols, maxWidth) {
