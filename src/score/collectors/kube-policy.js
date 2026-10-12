@@ -21,6 +21,20 @@ const SHAPE = {
   policyReports: (i) => ({ namespace: ns(i), name: name(i), fails: (i?.results || []).filter((r) => r.result === "fail").map((r) => ({ policy: r.policy || "", rule: r.rule || "", severity: r.severity || "", resource: subject(r, i) })) }),
 };
 SHAPE.clusterPolicyReports = SHAPE.policyReports;
+// Kyverno ClusterPolicies: their generate rules (K8S-SEC-010) and readiness.
+SHAPE.clusterPolicies = (i) => ({
+  name: name(i),
+  ready: (i?.status?.conditions || []).some((c) => c.type === "Ready" && c.status === "True") || i?.status?.ready === true,
+  generates: (i?.spec?.rules || []).filter((r) => r?.generate).map((r) => ({
+    rule: r.name || "",
+    kind: r.generate.kind || "",
+    synchronize: r.generate.synchronize === true,
+    triggers: [...new Set((r.match?.any || r.match?.all || [r.match]).flatMap((m) => m?.resources?.kinds || []))],
+    egress: (r.generate.data?.spec?.policyTypes || []).includes("Egress"),
+    ingress: (r.generate.data?.spec?.policyTypes || []).includes("Ingress"),
+    allowsIngress: (r.generate.data?.spec?.ingress || []).length > 0,
+  })),
+});
 const LISTS = Object.keys(SHAPE);
 
 export const kubePolicy = {
@@ -31,7 +45,7 @@ export const kubePolicy = {
     const answers = await Promise.all(LISTS.map((n) => kube.read(n)));
     return LISTS.map((n, i) => {
       const { status, error } = kubeStatus(answers[i]);
-      const crd = n.endsWith("olicyReports");
+      const crd = n.endsWith("olicyReports") || n === "clusterPolicies";
       // A core list that 404s is an error; a CRD list that 404s is absent.
       const final = status === "absent" && !crd ? "error" : status;
       return evidence({ key: `kube-${n}`, collector: "kube-policy", read: `GET ${n}`, target: "kubernetes", status: final, fields: { items: (answers[i]?.json?.items || []).map(SHAPE[n]) }, error: final === "error" && !error ? { code: "404", message: `${n} is not served` } : error });
