@@ -54,6 +54,9 @@ export const FILES = new Set([
   "tele-view.js",
   "pod-inspect-view.js",
   "ops-view.js",
+  "graph-sample.js",
+  "graph-model.js",
+  "graph-view.js",
   "slo.js",
   "slo-view.js",
   "map-kube.js",
@@ -1324,6 +1327,83 @@ const page = `<!doctype html>
   .kt-flags { display: flex; gap: 4px; }
   .kt-flags em { font-style: normal; font-size: 9px; padding: 0 4px; border: 1px solid var(--pip-dim); color: var(--pip-mid); }
   .kt-flags em.bad { color: var(--status-broken); border-color: var(--status-broken); }
+  /* ---- SERVICES (graph-view.js): service graph + incident review, SAMPLE prototype ---- */
+  #kube-graph { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 50px 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; display: flex; flex-direction: column; gap: 8px; outline: none; }
+  #kube-graph[hidden] { display: none; }
+  #kube-graph > * { flex-shrink: 0; }
+  #kube-graph .gv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  #kube-graph .gv-title { display: flex; align-items: baseline; gap: 8px; margin-right: 4px; }
+  #kube-graph .gv-title b { font-size: 15px; letter-spacing: 0.2em; color: var(--pip-bright); text-shadow: 0 0 8px var(--glow-bright); }
+  #kube-graph .gv-proto { font-size: 10px; letter-spacing: 0.16em; color: var(--world-amber); border: 1px solid rgba(255, 204, 51, 0.5); padding: 1px 6px; }
+  #kube-graph .gv-seg { display: inline-flex; gap: 4px; }
+  #kube-graph .gv-btn { font: inherit; font-size: 10.5px; letter-spacing: 0.12em; padding: 4px 9px; cursor: pointer; color: var(--pip-dim); background: var(--pip-ink); border: 1px solid var(--pip-dark); }
+  #kube-graph .gv-btn:hover { color: var(--pip-mid); border-color: var(--pip-dim); }
+  #kube-graph .gv-btn[aria-pressed="true"] { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); box-shadow: 0 0 10px var(--glow-soft); }
+  #kube-graph .gv-layer[aria-pressed="false"] { text-decoration: line-through; opacity: 0.7; }
+  #kube-graph .gv-search { flex: 1 1 200px; min-width: 150px; max-width: 320px; font: inherit; font-size: 12px; padding: 5px 9px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
+  #kube-graph .gv-search:focus { border-color: var(--pip-bright); box-shadow: 0 0 8px var(--glow-soft); }
+  #kube-graph .gv-stats { margin: 0; color: var(--pip-dim); letter-spacing: 0.06em; }
+  #kube-graph .gv-detail { margin: 0; padding: 6px 10px; color: var(--pip-bright); background: rgba(2, 10, 5, 0.6); border-left: 3px solid var(--pip-bright); min-height: 16px; }
+  #kube-graph .gv-stage { position: relative; flex: 1 0 auto; }
+  #kube-graph .gv-edges { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 3; }
+  #kube-graph .gv-bands { position: relative; display: flex; flex-direction: column; gap: 20px; padding-top: 10px; }
+  #kube-graph .gv-band { position: relative; padding: 18px 10px 10px; border: 1px dashed var(--pip-dark); }
+  #kube-graph .gv-blabel { position: absolute; top: -8px; left: 10px; margin: 0; padding: 0 6px; font-size: 10px; letter-spacing: 0.2em; color: var(--pip-dim); background: var(--pip-screen); font-weight: normal; }
+  #kube-graph .gv-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  #kube-graph .gv-group { position: relative; z-index: 2; display: flex; flex-direction: column; gap: 4px; min-width: 150px; max-width: 100%; padding: 6px 8px 7px; background: rgba(2, 10, 5, 0.92); border: 1px solid var(--pip-dim); box-shadow: 0 0 0 1px #000, 0 4px 10px rgba(0, 0, 0, 0.5); transition: opacity 0.15s; }
+  #kube-graph .gv-group::before, #kube-graph .gv-group::after { content: ""; position: absolute; width: 7px; height: 7px; border: 2px solid var(--pip-bright); pointer-events: none; }
+  #kube-graph .gv-group::before { left: -3px; top: -3px; border-right: 0; border-bottom: 0; }
+  #kube-graph .gv-group::after { right: -3px; bottom: -3px; border-left: 0; border-top: 0; }
+  #kube-graph .gv-group.open { flex: 0 1 auto; width: max-content; max-width: 100%; }
+  #kube-graph .gv-group.dim { opacity: 0.28; }
+  #kube-graph .gv-group.match { border-color: var(--world-amber); box-shadow: 0 0 0 1px #000, 0 0 12px rgba(255, 204, 51, 0.35); }
+  #kube-graph .gv-group.focus { border-color: var(--pip-hot); box-shadow: 0 0 0 1px #000, 0 0 16px var(--glow-bright); }
+  #kube-graph .gv-group[data-health="broken"] { border-color: var(--status-broken); }
+  #kube-graph .gv-gtop { display: flex; align-items: center; gap: 6px; }
+  #kube-graph .gv-ghead { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font: inherit; color: var(--pip-bright); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+  #kube-graph .gv-glabel { font-size: 12px; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #kube-graph .gv-lamp { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--status-ok); box-shadow: 0 0 6px var(--status-ok); }
+  #kube-graph [data-health="hang"] .gv-lamp { background: var(--status-hang); box-shadow: 0 0 6px var(--status-hang); }
+  #kube-graph [data-health="broken"] .gv-lamp { background: var(--status-broken); box-shadow: 0 0 8px var(--status-broken); }
+  #kube-graph .gv-tag, #kube-graph .gv-ntag, #kube-graph .gv-etag { flex: none; font-size: 9px; letter-spacing: 0.1em; padding: 0 4px; color: var(--pip-ink); background: var(--pip-dim); }
+  #kube-graph .gv-open { flex: none; width: 20px; height: 20px; font: inherit; font-size: 13px; line-height: 1; color: var(--pip-mid); background: var(--pip-ink); border: 1px solid var(--pip-dark); cursor: pointer; padding: 0; }
+  #kube-graph .gv-meta { color: var(--pip-dim); font-size: 10px; letter-spacing: 0.04em; }
+  #kube-graph .gv-nodes { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; border-top: 1px dashed var(--pip-dark); }
+  #kube-graph .gv-node { display: inline-flex; align-items: center; gap: 5px; max-width: 220px; font: inherit; font-size: 11px; padding: 3px 7px 3px 4px; color: var(--pip-mid); background: var(--pip-ink); border: 1px solid var(--pip-dark); cursor: pointer; }
+  #kube-graph .gv-node span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #kube-graph .gv-node:hover { border-color: var(--pip-dim); color: var(--pip-bright); }
+  #kube-graph .gv-node.sel { border-color: var(--pip-hot); color: var(--pip-hot); box-shadow: 0 0 10px var(--glow-soft); }
+  #kube-graph .gv-node.match { border-color: var(--world-amber); }
+  #kube-graph .gv-node.k-operator .gv-ntag { background: var(--pip-bright); }
+  #kube-graph .gv-node.k-cr .gv-ntag { background: var(--world-amber); }
+  #kube-graph .gv-node.k-db .gv-ntag { background: #5ab0ff; }
+  #kube-graph .gv-edge { fill: none; stroke: var(--pip-dim); opacity: 0.75; }
+  #kube-graph .gv-edge.s-trace { stroke: var(--pip-bright); }
+  #kube-graph .gv-edge.s-flow { stroke: var(--pip-mid); }
+  #kube-graph .gv-edge.s-static { stroke-dasharray: 5 4; }
+  #kube-graph .gv-edge.owns { stroke: var(--world-amber); stroke-dasharray: 1 4; stroke-linecap: round; }
+  #kube-graph .gv-edge.err { stroke: var(--status-broken); opacity: 0.95; }
+  #kube-graph .gv-edge.hot { opacity: 1; filter: drop-shadow(0 0 3px var(--glow-bright)); }
+  #kube-graph .gv-edge.faint { opacity: 0.3; }
+  #kube-graph .gv-arrowhead { fill: var(--pip-mid); }
+  #kube-graph .gv-timeline { padding: 8px 10px 10px; border: 1px solid var(--pip-dark); background: rgba(2, 10, 5, 0.75); }
+  #kube-graph .gv-tlhead { display: flex; gap: 12px; align-items: baseline; color: var(--pip-dim); }
+  #kube-graph .gv-tlhead b { color: var(--pip-bright); letter-spacing: 0.18em; font-size: 11px; }
+  #kube-graph .gv-axis { display: flex; align-items: center; gap: 8px; margin: 10px 0 6px; color: var(--pip-dim); font-size: 10px; }
+  #kube-graph .gv-track { position: relative; flex: 1; height: 22px; border-bottom: 1px solid var(--pip-dim); background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--pip-dark) calc(10% - 1px) 10%); }
+  #kube-graph .gv-incident { position: absolute; top: 0; bottom: 0; background: rgba(255, 90, 60, 0.14); border-left: 1px solid var(--status-broken); border-right: 1px solid var(--status-broken); }
+  #kube-graph .gv-tick { position: absolute; bottom: -5px; width: 10px; height: 10px; margin-left: -5px; padding: 0; border: 1px solid #000; transform: rotate(45deg); cursor: pointer; background: var(--pip-mid); }
+  #kube-graph .gv-tick.e-alarm, #kube-graph .gv-tick.e-restart { background: var(--status-broken); }
+  #kube-graph .gv-tick.e-warning, #kube-graph .gv-tick.e-rollout { background: var(--status-hang); }
+  #kube-graph .gv-tick.e-ok { background: var(--status-ok); }
+  #kube-graph .gv-tick.sel { box-shadow: 0 0 0 2px var(--pip-hot), 0 0 10px var(--glow-bright); }
+  #kube-graph .gv-events { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 2px 14px; }
+  #kube-graph .gv-ev { display: flex; gap: 8px; align-items: baseline; width: 100%; font: inherit; font-size: 11px; text-align: left; padding: 2px 4px; color: var(--pip-mid); background: none; border: 0; cursor: pointer; }
+  #kube-graph .gv-ev:hover, #kube-graph .gv-ev.sel { background: rgba(20, 255, 106, 0.08); color: var(--pip-bright); }
+  #kube-graph .gv-ev time { color: var(--pip-dim); }
+  #kube-graph .gv-ev.e-alarm .gv-etag, #kube-graph .gv-ev.e-restart .gv-etag { background: var(--status-broken); }
+  #kube-graph .gv-ev.e-warning .gv-etag, #kube-graph .gv-ev.e-rollout .gv-etag { background: var(--status-hang); }
+  #kube-graph .gv-ev.e-ok .gv-etag { background: var(--status-ok); }
   #kube-ops { position: absolute; z-index: 2; inset: 0; overflow: auto; padding: 50px 16px 16px; background: var(--pip-screen); color: var(--pip-mid); font-size: 11px; }
   .ko-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-top: 12px; align-items: start; }
   .ko-panel { padding: 0 0 10px; border: 2px solid var(--pip-dim); background: var(--pip-ink); box-shadow: inset 0 0 24px var(--glow-soft), 0 0 0 1px var(--pip-dark); min-width: 0; }
@@ -2366,6 +2446,55 @@ const page = `<!doctype html>
   :root[data-theme="pro"] .vpg-stack.error { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, transparent); }
   /* The CAPS head is sticky: in pro it lost its gradient and went see-through, so the pace line showed under the total. */
   :root[data-theme="pro"] .sp-head { background-color: var(--raised); }
+  /* SERVICES prototype in pro: flat cards, accent focus, no brackets or glow. */
+  :root[data-theme="pro"] #kube-graph { background: var(--bg); color: var(--text-2); font-family: var(--font-ui); font-size: 12px; }
+  :root[data-theme="pro"] #kube-graph .gv-title b { color: var(--text); text-shadow: none; letter-spacing: 0.02em; font-weight: 600; }
+  :root[data-theme="pro"] #kube-graph .gv-proto { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 999px; letter-spacing: 0.04em; font-weight: 600; }
+  :root[data-theme="pro"] #kube-graph :is(.gv-btn, .gv-search, .gv-open, .gv-node) { border-radius: 6px; border-color: var(--border); background: var(--surface); color: var(--text-2); letter-spacing: 0.02em; }
+  :root[data-theme="pro"] #kube-graph .gv-btn[aria-pressed="true"] { background: var(--surface-2); color: var(--text); border-color: var(--accent); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph .gv-search { color: var(--text); }
+  :root[data-theme="pro"] #kube-graph .gv-search:focus { border-color: var(--accent); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph .gv-stats { color: var(--text-3); letter-spacing: 0; }
+  :root[data-theme="pro"] #kube-graph .gv-detail { color: var(--text); background: var(--surface); border-left-color: var(--accent); border-radius: 0 6px 6px 0; }
+  :root[data-theme="pro"] #kube-graph .gv-band { border: 1px solid var(--border); border-radius: 10px; background: var(--raised); }
+  :root[data-theme="pro"] #kube-graph .gv-blabel { color: var(--text-3); background: var(--bg); letter-spacing: 0.08em; font-weight: 600; border-radius: 4px; }
+  :root[data-theme="pro"] #kube-graph .gv-group { background: var(--surface); border-color: var(--border); border-radius: 8px; box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph .gv-group::before, :root[data-theme="pro"] #kube-graph .gv-group::after { content: none; }
+  :root[data-theme="pro"] #kube-graph .gv-group[data-health="broken"] { box-shadow: inset 3px 0 0 var(--err); border-color: var(--border); }
+  :root[data-theme="pro"] #kube-graph .gv-group.focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  :root[data-theme="pro"] #kube-graph .gv-group.match { border-color: var(--warn); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph .gv-ghead, :root[data-theme="pro"] #kube-graph .gv-node.sel { color: var(--text); }
+  :root[data-theme="pro"] #kube-graph .gv-glabel { font-weight: 600; letter-spacing: 0; }
+  :root[data-theme="pro"] #kube-graph .gv-lamp { background: var(--ok); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph [data-health="hang"] .gv-lamp { background: var(--warn); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph [data-health="broken"] .gv-lamp { background: var(--err); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph :is(.gv-tag, .gv-ntag, .gv-etag) { border-radius: 4px; color: var(--text-2); background: var(--surface-2); font-weight: 600; }
+  :root[data-theme="pro"] #kube-graph .gv-node.k-operator .gv-ntag { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+  :root[data-theme="pro"] #kube-graph .gv-node.k-cr .gv-ntag { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  :root[data-theme="pro"] #kube-graph .gv-node.k-db .gv-ntag { color: var(--info); background: color-mix(in srgb, var(--info) 14%, transparent); }
+  :root[data-theme="pro"] #kube-graph .gv-node.sel { border-color: var(--accent); box-shadow: none; }
+  :root[data-theme="pro"] #kube-graph :is(.gv-meta, .gv-ev time, .gv-tlhead, .gv-axis) { color: var(--text-3); }
+  :root[data-theme="pro"] #kube-graph .gv-nodes { border-top-color: var(--border); }
+  :root[data-theme="pro"] #kube-graph .gv-edge { stroke: var(--text-3); }
+  :root[data-theme="pro"] #kube-graph .gv-edge.s-trace { stroke: var(--accent); }
+  :root[data-theme="pro"] #kube-graph .gv-edge.s-flow { stroke: var(--info); }
+  :root[data-theme="pro"] #kube-graph .gv-edge.owns { stroke: var(--warn); }
+  :root[data-theme="pro"] #kube-graph .gv-edge.err { stroke: var(--err); }
+  :root[data-theme="pro"] #kube-graph .gv-edge.hot { filter: none; }
+  :root[data-theme="pro"] #kube-graph .gv-arrowhead { fill: var(--text-3); }
+  :root[data-theme="pro"] #kube-graph .gv-timeline { background: var(--raised); border-color: var(--border); border-radius: 10px; }
+  :root[data-theme="pro"] #kube-graph .gv-tlhead b { color: var(--text); letter-spacing: 0.04em; font-weight: 600; }
+  :root[data-theme="pro"] #kube-graph .gv-track { border-bottom-color: var(--border-strong); background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), var(--border) calc(10% - 1px) 10%); }
+  :root[data-theme="pro"] #kube-graph .gv-tick { border-radius: 50%; transform: none; border-color: var(--bg); background: var(--text-3); }
+  :root[data-theme="pro"] #kube-graph .gv-tick.e-alarm, :root[data-theme="pro"] #kube-graph .gv-tick.e-restart { background: var(--err); }
+  :root[data-theme="pro"] #kube-graph .gv-tick.e-warning, :root[data-theme="pro"] #kube-graph .gv-tick.e-rollout { background: var(--warn); }
+  :root[data-theme="pro"] #kube-graph .gv-tick.e-ok { background: var(--ok); }
+  :root[data-theme="pro"] #kube-graph .gv-tick.sel { box-shadow: 0 0 0 2px var(--accent); }
+  :root[data-theme="pro"] #kube-graph .gv-ev { color: var(--text-2); border-radius: 4px; }
+  :root[data-theme="pro"] #kube-graph .gv-ev:hover, :root[data-theme="pro"] #kube-graph .gv-ev.sel { background: var(--hover); color: var(--text); }
+  :root[data-theme="pro"] #kube-graph .gv-ev.e-alarm .gv-etag, :root[data-theme="pro"] #kube-graph .gv-ev.e-restart .gv-etag { color: var(--err); background: color-mix(in srgb, var(--err) 14%, transparent); }
+  :root[data-theme="pro"] #kube-graph .gv-ev.e-warning .gv-etag, :root[data-theme="pro"] #kube-graph .gv-ev.e-rollout .gv-etag { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  :root[data-theme="pro"] #kube-graph .gv-ev.e-ok .gv-etag { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
   :root[data-theme="pro"] .vpg-templates h4 { color: var(--text-2); background: var(--surface-2); border-bottom: 1px solid var(--border); letter-spacing: 0.04em; font-weight: 600; font-size: 12px; padding: 7px 12px; }
   @media (max-width: 640px) {
     :root[data-theme="pro"] .tab { padding: 6px 8px; font-size: 12px; }
@@ -2474,6 +2603,7 @@ const page = `<!doctype html>
       <section id="kube-connect" aria-label="EKS clusters: kube connection" hidden></section>
       <section id="kube-tele" aria-label="cluster telemetry" hidden></section>
       <section id="kube-ops" aria-label="cluster add-ons" hidden></section>
+      <section id="kube-graph" aria-label="services graph (sample prototype)" tabindex="-1" hidden></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
       <button id="k9s-btn" type="button" aria-pressed="false" title="K9S window: a read-only resource table (:)" hidden><i></i><b>K9S</b><small>:</small></button>
       <section id="k9s" aria-label="K9S window, read-only resource table" hidden></section>

@@ -31,6 +31,7 @@ import { paintKube } from "./kube-draw.js";
 import { renderTelemetry } from "./tele-view.js";
 import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
+import { createGraphView } from "./graph-view.js";
 import { addonCommands, confirmPrompt, upgradeSpiderLine } from "./upgrade-rules.js";
 import { liveLine, noteLines, numberProblem, radioLine, runModel } from "./run-pane.js";
 import { sourceText } from "./node-labels.js";
@@ -163,6 +164,9 @@ const k9sEl = document.querySelector("#k9s");
 const k9sBtn = document.querySelector("#k9s-btn");
 const kubeTele = document.querySelector("#kube-tele");
 const kubeOps = document.querySelector("#kube-ops");
+// SERVICES: the service graph + incident review prototype, SAMPLE only
+// (docs/plan-modules-and-service-graph.md).
+const graphView = createGraphView(document.querySelector("#kube-graph"));
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
 const tabVaults = document.querySelector("#tab-vaults");
@@ -1700,6 +1704,7 @@ const CLUSTER_SCREENS = [
   { id: "topology", label: "TOPOLOGY" },
   { id: "telemetry", label: "TELEMETRY", show: showTelemetry, hide: hideTelemetry },
   { id: "ops", label: "OPS", show: showOps, hide: hideOps },
+  { id: "graph", label: "SERVICES", sampleOnly: true, show: () => graphView.show(), hide: () => graphView.hide() },
 ];
 const CLUSTER_SCREEN_KEY = "cloudspider.cluster.screen";
 let clusterScreen = "topology";
@@ -1852,6 +1857,12 @@ function syncClusterScreens() {
       button.addEventListener("click", () => setClusterScreen(item.id));
       kubeTabs.append(button);
     }
+  }
+  // SAMPLE-only screens (the SERVICES prototype) leave with sample mode.
+  for (const button of kubeTabs.children) button.hidden = Boolean(CLUSTER_SCREENS.find((item) => item.id === button.dataset.screen)?.sampleOnly) && !sample;
+  if (!sample && CLUSTER_SCREENS.find((item) => item.id === clusterScreen)?.sampleOnly) {
+    CLUSTER_SCREENS.find((item) => item.id === clusterScreen)?.hide?.();
+    clusterScreen = "topology";
   }
   for (const button of kubeTabs.children) button.setAttribute("aria-pressed", String(button.dataset.screen === clusterScreen));
   // Another context picked while a screen is open: read it for that one.
