@@ -344,3 +344,33 @@ test("SAMPLE shopdb: allowed from shop as app=shopapi, blocked from web, policy 
   assert.equal(no.find((c) => c.id === "P-TLS-01").status, "NOT_ASSESSED");
   assert.ok(no.some((c) => c.id === "K-NP-03" && c.status === "FAIL"));
 });
+
+test("multi-port Services: endpoints use the slice port named like the target's Service port; the picker lists every port", async () => {
+  const { readForPod } = await import("../src/netdebug/pod-run.js");
+  const svc = { spec: { ports: [{ name: "http", port: 80, targetPort: 8080 }, { name: "metrics", port: 9090, targetPort: 9100 }, { name: "grpc", port: 50051, targetPort: 50051 }] } };
+  const slices = { items: [{ ports: [{ name: "metrics", port: 9100 }, { name: "http", port: 8080 }, { name: "grpc", port: 50051 }], endpoints: [{ addresses: ["10.0.0.5"], conditions: { ready: true }, targetRef: { name: "web-1" }, nodeName: "n1" }] }] };
+  const kube = { async read(name) {
+    if (name === "service") return { json: svc };
+    if (name === "endpointSlices") return { json: slices };
+    if (name === "namespaces") return { json: { items: [] } };
+    return { json: { items: [] } };
+  } };
+  const at = async (port) => (await readForPod(kube, { kind: "service", namespace: "shop", name: "web", port }, { sourceNs: "shop" })).endpoints.map((e) => e.port);
+  assert.deepEqual(await at(80), [8080]);
+  assert.deepEqual(await at(9090), [9100]);
+  assert.deepEqual(await at(50051), [50051]);
+  assert.deepEqual(await at(1234), [], "a port the Service lacks gets no direct endpoint checks");
+  const s = { name: "web", namespace: "shop", ports: svc.spec.ports.map((p) => ({ port: p.port, name: p.name })) };
+  assert.deepEqual(s.ports.map((p) => serviceTarget(s, p)), ["http://web.shop:80", "http://web.shop:9090", "http://web.shop:50051"]);
+});
+
+test("the probe waits for the pod network before timing anything (P-NET-02)", () => {
+  const plan = buildPlan({ target: "tcp://shopdb.shop:5432" }, { namespaces: ["shop"], runId: "r9" });
+  const script = probeScript(plan);
+  assert.ok(script.indexOf("run P-NET-02 ready ready") < script.indexOf("run P-DNS-01"));
+  const ok = podChecks(plan, parseProbeLog("@@BEGIN P-NET-02 ready\nready after 3 tries\n@@END P-NET-02 ready rc=0 ms=2410\n@@DONE")).find((c) => c.id === "P-NET-02");
+  assert.equal(ok.status, "PASS");
+  assert.match(ok.text, /ready in 2410 ms/);
+  const no = podChecks(plan, parseProbeLog("@@BEGIN P-NET-02 ready\nnot ready\n@@END P-NET-02 ready rc=1 ms=9600\n@@DONE")).find((c) => c.id === "P-NET-02");
+  assert.equal(no.status, "UNKNOWN");
+});

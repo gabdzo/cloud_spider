@@ -30,9 +30,17 @@ export async function readForPod(kube, target, { sourceNs, live = null } = {}) {
   let endpoints = [];
   let targetPods = [];
   if (target?.kind === "service") {
-    const [slices, pods] = await Promise.all([kube.read("endpointSlices", target.namespace, target.name), kube.read("nsPods", target.namespace)]);
+    const [slices, pods, svc] = await Promise.all([kube.read("endpointSlices", target.namespace, target.name), kube.read("nsPods", target.namespace), kube.read("service", target.namespace, target.name).catch(() => ({}))]);
+    // Multi-port Services: the slice port whose name matches the Service
+    // port the target uses (EndpointSlice ports carry the Service port's
+    // name and the resolved targetPort number).
+    const svcPort = (svc?.json?.spec?.ports || []).find((x) => x.port === target.port);
     for (const s of slices.json?.items || []) {
-      const p = (s.ports || []).find((x) => x.port) || {};
+      const ports = (s.ports || []).filter((x) => x.port);
+      // No Service read: the first port, as before. A port the Service does
+      // not have: no direct endpoint checks (the Service connect shows it).
+      const p = svc?.json ? (svcPort ? ports.find((x) => (x.name || "") === (svcPort.name || "")) : null) : ports[0];
+      if (!p) continue;
       for (const e of s.endpoints || []) if (e.conditions?.ready !== false) endpoints.push({ ip: e.addresses?.[0], port: p.port, pod: e.targetRef?.name || "", node: e.nodeName || "" });
     }
     const names = new Set(endpoints.map((e) => e.pod));

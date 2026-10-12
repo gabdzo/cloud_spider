@@ -117,6 +117,8 @@ export function podChecks(plan, parsed) {
   }
   const self = pick(blocks, "P-NET-01", "self")?.out?.split(/\s+/)[0] || "";
   const route = pick(blocks, "P-NET-01", "route")?.out || "";
+  const rdy = pick(blocks, "P-NET-02", "ready");
+  if (rdy) out.push(check("P-NET-02", "route", rdy.rc === 0 ? "PASS" : "UNKNOWN", rdy.rc === 0 ? `pod network ready in ${rdy.ms} ms (cluster DNS answered on TCP 53); timings below start after that` : `the cluster DNS did not answer on TCP 53 within ${Math.round(rdy.ms / 1000)} s (blocked egress to 53, or the pod network was slow to start); later timings may include start-up delay`, { observed: { ready: rdy.rc === 0, ms: rdy.ms }, command: "nc -z -w 1 <nameserver> 53 (until it answers)", ms: rdy.ms, tool: "nc" }));
   out.push(check("P-NET-01", "route", route ? "PASS" : "NOT_ASSESSED", route ? `pod ${self || "?"} · ${route.split("\n")[0]}` : "ip route was not read", { observed: { podIp: self, route }, command: "ip route" }));
   return out;
 }

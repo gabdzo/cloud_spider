@@ -119,6 +119,13 @@ export function probeScript(plan) {
   const lines = [
     "t(){ awk '{printf \"%d\", $1*1000}' /proc/uptime; }",
     "run(){ id=$1; k=$2; shift 2; printf '\\n@@BEGIN %s %s\\n' \"$id\" \"$k\"; s=$(t); \"$@\" 2>&1; rc=$?; printf '\\n@@END %s %s rc=%s ms=%s\\n' \"$id\" \"$k\" \"$rc\" \"$(( $(t) - s ))\"; }",
+    // A new pod's network is not ready at once (EKS VPC CNI attaches its
+    // policy programs after the pod starts: the first SYNs are dropped and
+    // retried, measured live as ~1050 ms or a 3 s timeout on the first
+    // connect). Wait until the cluster DNS answers on TCP 53 (up to ~10 s)
+    // before any timed check, and report how long it took.
+    "ready(){ ns=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf); for i in 1 2 3 4 5 6 7 8; do nc -z -w 1 \"$ns\" 53 >/dev/null 2>&1 && { echo \"ready after $i tries\"; return 0; }; sleep 0.2; done; echo 'not ready'; return 1; }",
+    "run P-NET-02 ready ready",
     "run P-DNS-01 resolv cat /etc/resolv.conf",
     "run P-NET-01 route ip route",
     "run P-NET-01 self hostname -i",
