@@ -39,14 +39,15 @@ export const PORTS = { otlpGrpc: 4317, otlpHttp: 4318, prom: 8889, loki: 3100, k
 // requests / limits per piece. crc: OpenShift Local / kind / a laptop.
 export const PROFILES = {
   crc: {
-    beyla: { requests: { cpu: "25m", memory: "96Mi" }, limits: { cpu: "300m", memory: "320Mi" } },
+    // Beyla grows with the processes it instruments: 320Mi was OOMKilled on an EKS node with ~40 pods.
+    beyla: { requests: { cpu: "25m", memory: "96Mi" }, limits: { cpu: "300m", memory: "640Mi" } },
     agent: { requests: { cpu: "20m", memory: "64Mi" }, limits: { cpu: "200m", memory: "160Mi" } },
     collector: { requests: { cpu: "30m", memory: "96Mi" }, limits: { cpu: "300m", memory: "256Mi" } },
     ksm: { requests: { cpu: "10m", memory: "32Mi" }, limits: { cpu: "100m", memory: "96Mi" } },
     loki: { requests: { cpu: "30m", memory: "96Mi" }, limits: { cpu: "500m", memory: "320Mi" } },
   },
   standard: {
-    beyla: { requests: { cpu: "50m", memory: "192Mi" }, limits: { cpu: "500m", memory: "512Mi" } },
+    beyla: { requests: { cpu: "50m", memory: "192Mi" }, limits: { cpu: "500m", memory: "768Mi" } },
     agent: { requests: { cpu: "50m", memory: "128Mi" }, limits: { cpu: "500m", memory: "384Mi" } },
     collector: { requests: { cpu: "100m", memory: "256Mi" }, limits: { cpu: "1", memory: "768Mi" } },
     ksm: { requests: { cpu: "20m", memory: "64Mi" }, limits: { cpu: "200m", memory: "256Mi" } },
