@@ -50,6 +50,10 @@ export function validateControl(doc) {
   // A control fixed on a Stacks card, not by an add-on (REL-004: the EKS
   // card's node count): OPEN <CARD> instead of FIX.
   need(doc.remediation?.card === undefined || (/^[a-z][a-z0-9-]*$/.test(String(doc.remediation.card?.id)) && (doc.remediation.card.params === undefined || typeof doc.remediation.card.params === "object")), `${where}remediation.card must be { id, params }`);
+  // Which Stacks card fixes a failing resource, by its id or an id prefix
+  // ending in "/" (K8S-SEC-005: namespace shop → pgcluster; NET-K8S-002:
+  // shop/ → shopapi). The card's id, the same names as remediation.card.
+  need(doc.remediation?.cardFor === undefined || (doc.remediation.cardFor && typeof doc.remediation.cardFor === "object" && !Array.isArray(doc.remediation.cardFor) && Object.values(doc.remediation.cardFor).every((v) => /^[a-z][a-z0-9-]*$/.test(String(v)))), `${where}remediation.cardFor must map resource ids (or prefixes ending in /) to card ids`);
   need(doc.params === undefined || (doc.params && typeof doc.params === "object" && !Array.isArray(doc.params)), `${where}params must be a mapping`);
   need(typeof doc.verification === "string" && doc.verification.length > 0, `${where}verification is required`);
   for (const ref of doc.references || []) {

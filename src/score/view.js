@@ -25,7 +25,7 @@ export function scoreModel(view) {
   const fixable = new Map((view.suggestions || []).map((s) => [s.control, s]));
   const rows = [...scan.results]
     .sort((a, b) => ORDER[a.status] - ORDER[b.status] || (b.gate === true) - (a.gate === true) || a.id.localeCompare(b.id))
-    .map((r) => ({ id: r.id, title: r.title, status: r.status, statusText: STATUS_TEXT[r.status] || r.status, severity: r.severity, gate: r.gate === true, reason: r.reason || failingLine(r), fix: fixable.get(r.id)?.already ? "" : fixable.get(r.id)?.addon || "", card: fixable.get(r.id)?.card || null, already: fixable.get(r.id)?.already || "" }));
+    .map((r) => ({ id: r.id, title: r.title, status: r.status, statusText: STATUS_TEXT[r.status] || r.status, severity: r.severity, gate: r.gate === true, reason: r.reason || failingLine(r), fix: fixable.get(r.id)?.already ? "" : fixable.get(r.id)?.addon || "", card: fixable.get(r.id)?.card || null, already: fixable.get(r.id)?.already || "", remedy: ["FAIL", "UNKNOWN"].includes(r.status) || r.warn ? r.remedy || "" : "" }));
   const counts = Object.fromEntries(Object.keys(ORDER).map((s) => [s, scan.results.filter((r) => r.status === s).length]));
   const rank = new Map((card.priorities || []).map((p, i) => [p.id, i]));
   // Actionable first (FIX or OPEN a card); an add-on that is already there
@@ -387,11 +387,17 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
       if (r.gate) line.append(el("span", "sc-gate", "GATE"));
       what.append(line);
       if (r.reason) what.append(el("div", "sc-muted sc-small", r.reason));
+      // Every FAIL (and UNKNOWN) says what to do, not only the ones with a button.
+      if (r.remedy) what.append(el("div", "sc-small sc-remedy", `HOW TO FIX · ${r.remedy}`));
       row.append(status, el("span", "sc-sev", r.severity), what);
       if (r.fix) {
         const b = button(`FIX: ${r.fix}`);
         b.disabled = busy;
         b.addEventListener("click", () => act({ control: r.id, phase: "plan" }));
+        row.append(b);
+      } else if (r.card) {
+        const b = button(`OPEN ${String(r.card.id).toUpperCase()} CARD`);
+        b.addEventListener("click", () => openCard?.(r.card, model.cluster));
         row.append(b);
       } else row.append(el("span"));
       wrap.append(row);
