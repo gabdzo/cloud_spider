@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 // The observe bundle (docs/plan-modules-and-service-graph.md §7.2, §7.3):
 // every object the opt-in install creates, rendered here and only here.
 // upgrades/observe/index.js applies exactly this list (Pulumi), the app's
@@ -312,6 +313,20 @@ export function renderBundle(raw = {}) {
   if (openshift) notes.push("OpenShift ships its own metrics API and monitoring: metrics-server is not installed");
   else notes.push("pod/node CPU and memory in the CLUSTER tab still need metrics.k8s.io (metrics-server), which is not bundled: it registers a cluster-wide APIService");
   if (o.nodeCidr === "0.0.0.0/0") notes.push("nodeCidr not set: the API server / kubelet / service-proxy rules allow those ports from any address; set it to the node network (CRC: 192.168.126.0/24) to tighten them");
+
+  // A ConfigMap change must restart the pods that mount it (they read config
+  // once at start), and index.js replaces ConfigMaps delete-first so the
+  // fixed name never collides ("already exists"). The checksum of every
+  // mounted ConfigMap goes on the pod template: config change => rollout.
+  const cmData = new Map(items.filter((i) => i.obj.kind === "ConfigMap").map((i) => [i.obj.metadata.name, JSON.stringify(i.obj.data)]));
+  for (const { obj } of items) {
+    const tpl = obj.spec?.template;
+    if (!tpl || !["DaemonSet", "Deployment", "StatefulSet"].includes(obj.kind)) continue;
+    const used = (tpl.spec.volumes || []).map((v) => v.configMap?.name).filter((n) => cmData.has(n)).sort();
+    if (!used.length) continue;
+    const sum = createHash("sha256").update(used.map((n) => `${n}\n${cmData.get(n)}`).join("\n")).digest("hex").slice(0, 16);
+    tpl.metadata.annotations = { ...(tpl.metadata.annotations || {}), "cloudspider.io/config-checksum": sum };
+  }
 
   const privileged = items.filter((i) => i.privileged).map((i) => `${i.obj.kind}/${i.obj.metadata.name}`);
   // Said loudly by the stack (pulumi.log.warn in preview and up): the two
