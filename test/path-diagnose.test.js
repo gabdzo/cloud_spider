@@ -5,8 +5,8 @@ import { samplePathGraph } from "../src/path-sample.js";
 import { isInstanceId } from "../src/ids.js";
 
 const LB = "sample-lb-api";
-const SLOW = "sample-tg-api|10.0.12.31:8080";
-const FAST = "sample-tg-api|10.0.11.20:8080";
+const SLOW = "sample-tg-api|10.43.12.31:8080";
+const FAST = "sample-tg-api|10.43.11.20:8080";
 const BLOCKED = "sample-sg-node-b does not allow tcp 8080 from sample-sg-alb. The load balancer cannot reach this target.";
 
 test("the sample host path names the security group that blocks the slow pod first", () => {
@@ -22,7 +22,7 @@ test("the sample host path names the security group that blocks the slow pod fir
   assert.equal(result.nodes.find((node) => node.id === SLOW).status, "hang");
   assert.equal(result.nodes.find((node) => node.id === FAST).status, "ok");
   assert.equal(result.edges.find((edge) => edge.to === FAST).status, "ok");
-  assert.equal(result.nodes.some((node) => node.id === "cluster:shop"), true);
+  assert.equal(result.nodes.some((node) => node.id === "cluster:cloudspider-up"), true);
 });
 
 test("the whole load balancer puts the empty target group before the deeper break", () => {
@@ -59,7 +59,7 @@ test("a failed load balancer is the first finding", () => {
 
 test("an internet-facing load balancer in subnets with no internet gateway route is broken", () => {
   const graph = samplePathGraph();
-  graph.routeTables[0].routes = [{ dest: "10.0.0.0/16", target: "local", state: "active" }];
+  graph.routeTables[0].routes = [{ dest: "10.43.0.0/16", target: "local", state: "active" }];
   assert.equal(
     headline(diagnose(graph, LB)),
     "sample-public-a, sample-public-b have no route to an internet gateway. The internet cannot reach api-alb there.",
@@ -128,15 +128,15 @@ test("a stopped node and a node group issue are broken", () => {
   const result = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" });
   const node = result.nodes.find((item) => item.id === "sample-node-b");
   assert.equal(node.status, "broken");
-  assert.equal(node.sentence, "shop-node-b is stopped");
-  const cluster = result.nodes.find((item) => item.id === "cluster:shop");
+  assert.equal(node.sentence, "cloudspider-up-node-b is stopped");
+  const cluster = result.nodes.find((item) => item.id === "cluster:cloudspider-up");
   assert.equal(cluster.status, "broken");
   assert.equal(cluster.sentence, "general: Ec2SubnetInvalidConfiguration subnet has no free addresses");
 });
 
 test("health reasons read as plain sentences", () => {
   const tg = samplePathGraph().targetGroups[0];
-  const base = { id: "10.0.1.5", port: 8080, zone: "eu-north-1a", state: "unhealthy" };
+  const base = { id: "10.43.1.5", port: 8080, zone: "eu-north-1a", state: "unhealthy" };
   assert.deepEqual(
     healthVerdict(
       { ...base, reason: "Target.ResponseCodeMismatch", description: "Health checks failed with these codes: [404]" },
@@ -144,7 +144,7 @@ test("health reasons read as plain sentences", () => {
     ),
     {
       status: "broken",
-      sentence: "10.0.1.5:8080 answers HTTP /healthz with a code outside 200. Health checks failed with these codes: [404]",
+      sentence: "10.43.1.5:8080 answers HTTP /healthz with a code outside 200. Health checks failed with these codes: [404]",
     },
   );
   assert.equal(healthVerdict({ ...base, state: "initial", reason: "Elb.InitialHealthChecking", description: "" }, tg).status, "unknown");
@@ -225,7 +225,7 @@ test("a forward whose target groups all weigh 0 is broken", () => {
 
 test("a pod IP inside a delegated prefix still finds its node and cluster", () => {
   const graph = samplePathGraph();
-  graph.interfaces[1] = { ...graph.interfaces[1], ip: "", prefix: "10.0.12.16/28" };
+  graph.interfaces[1] = { ...graph.interfaces[1], ip: "", prefix: "10.43.12.16/28" };
   const result = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" });
   assert.equal(result.findings[0].sentence, BLOCKED);
   assert.equal(result.edges.some((edge) => edge.from === SLOW && edge.to === "sample-node-b"), true);
@@ -236,7 +236,7 @@ test("a lone timing-out target is the headline, not the fail-open target group",
   graph.health["sample-tg-api"] = [graph.health["sample-tg-api"][1]];
   graph.interfaces[1] = { ...graph.interfaces[1], groupIds: ["sample-sg-node-a"] };
   const result = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" });
-  assert.match(headline(result), /^10\.0\.12\.31:8080 does not answer HTTP \/healthz in time/);
+  assert.match(headline(result), /^10\.43\.12\.31:8080 does not answer HTTP \/healthz in time/);
   const group = result.nodes.find((node) => node.id === "sample-tg-api");
   assert.equal(group.status, "broken");
   assert.equal(group.symptom, true);
@@ -258,8 +258,8 @@ test("security group CIDRs are combined across rules, and prefix lists are unkno
   const graph = samplePathGraph();
   const nodesB = graph.securityGroups.find((group) => group.id === "sample-sg-node-b");
   nodesB.ingress = [
-    { protocol: "tcp", from: 8080, to: 8080, cidrs: ["10.0.1.0/24"], groupIds: [], prefixListIds: [], ipv6: [] },
-    { protocol: "tcp", from: 8080, to: 8080, cidrs: ["10.0.2.0/24"], groupIds: [], prefixListIds: [], ipv6: [] },
+    { protocol: "tcp", from: 8080, to: 8080, cidrs: ["10.43.1.0/24"], groupIds: [], prefixListIds: [], ipv6: [] },
+    { protocol: "tcp", from: 8080, to: 8080, cidrs: ["10.43.2.0/24"], groupIds: [], prefixListIds: [], ipv6: [] },
   ];
   let edge = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" }).edges.find((item) => item.to === SLOW);
   assert.equal(edge.status, "ok");
@@ -275,7 +275,7 @@ test("a pod with no EC2 node still joins its cluster", () => {
   const graph = samplePathGraph();
   graph.interfaces[1] = { ...graph.interfaces[1], instanceId: "" };
   const result = diagnose(graph, LB, { ruleArn: "sample-rule-443-api" });
-  assert.equal(result.edges.some((edge) => edge.from === SLOW && edge.to === "cluster:shop"), true);
+  assert.equal(result.edges.some((edge) => edge.from === SLOW && edge.to === "cluster:cloudspider-up"), true);
 });
 
 test("sample ids are not instance ids", () => {

@@ -308,6 +308,9 @@ export function sampleResults(queries, index, end) {
     const hot = /hot|busy|web/.test(String(target.name));
     // The sample's old gate serves nobody (the morning calls it idle).
     const quiet = /old/.test(String(target.name));
+    // The story's broken gate (no healthy target): the ALB itself answers
+    // 503s. Shop API's ALB is the healthy one (200 · 39 ms on the map).
+    const failing = /^sample-gate$/.test(String(target.name));
     const Timestamps = [];
     const Values = [];
     for (let i = 0; i < slots; i++) {
@@ -315,7 +318,8 @@ export function sampleResults(queries, index, end) {
       let value = 0;
       if (spec.name === "CPUUtilization") value = hot ? 78 + wave * 8 : 8 + wave * 30;
       else if (spec.name === "RequestCount") value = quiet ? 0 : 40 + Math.round(wave * 60);
-      else if (spec.name === "HTTPCode_Target_5XX_Count") value = !quiet && i < 3 ? 2 : 0;
+      else if (spec.name === "HTTPCode_Target_5XX_Count") value = failing && i < 3 ? 2 : 0;
+      else if (spec.name === "HTTPCode_ELB_5XX_Count") value = failing ? 3 + (i % 2) : 0;
       else if (spec.name === "TargetResponseTime") value = quiet ? 0 : (0.04 + wave * 0.05) * (spec.stat === "p99" ? 3 : spec.stat === "p95" ? 2 : 1);
       else if (spec.name === "Invocations") value = 6 + Math.round(wave * 6);
       else if (spec.name === "Errors") value = i === 1 ? 2 : 0;

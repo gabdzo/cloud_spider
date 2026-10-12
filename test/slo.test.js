@@ -76,15 +76,18 @@ test("the ledger buckets readings, skips repeats and forgets past the window", (
 test("CloudWatch series become counts: ALB 5XX over requests, Lambda errors over invocations", () => {
   const end = Date.parse("2026-10-11T00:00:00Z");
   const targets = [
-    { id: "alb-1", kind: "alb", name: "web", dims: [] },
+    { id: "alb-1", kind: "alb", name: "sample-gate", dims: [] },
     { id: "fn-1", kind: "lambda", name: "fn", dims: [] },
   ];
   const { queries, index } = metricQueries(targets);
   const answer = metricsAnswer(targets, index, sampleResults(queries, index, end), { end, region: "x" });
   const hits = Object.values(answer.targets);
   const alb = countsFromMetrics({ sli: "availability", source: "alb" }, hits);
-  assert.ok(alb.total > 0 && alb.good === alb.total - 6, "two 5XX in each of the first three slots");
-  assert.equal(alb.recent.total - alb.recent.good, 6, "the 5XX are in the newest slots");
+  assert.ok(alb.total > 0 && alb.good === alb.total - 132, "the broken gate: 3-4 ELB 503s every slot plus two target 5XX in each of the first three");
+  assert.equal(alb.recent.total - alb.recent.good, 48, "the last hour: 42 ELB 503s and the 6 target 5XX");
+  const healthy = metricsAnswer([{ id: "alb-2", kind: "alb", name: "k8s-shop-shopapi-5a1e0c", dims: [] }], metricQueries([{ id: "alb-2", kind: "alb", name: "k8s-shop-shopapi-5a1e0c", dims: [] }]).index, sampleResults(metricQueries([{ id: "alb-2", kind: "alb", name: "k8s-shop-shopapi-5a1e0c", dims: [] }]).queries, metricQueries([{ id: "alb-2", kind: "alb", name: "k8s-shop-shopapi-5a1e0c", dims: [] }]).index, end), { end, region: "x" });
+  const shop = countsFromMetrics({ sli: "availability", source: "alb" }, Object.values(healthy.targets));
+  assert.equal(shop.good, shop.total, "Shop API's ALB serves no 5XX in the story");
   // Latency reads p95 (the sample's p95 is twice its average, 80-180 ms).
   const lat = countsFromMetrics({ sli: "latency", source: "alb", threshold: 130 }, hits);
   assert.ok(lat.good < lat.total && lat.good > 0);

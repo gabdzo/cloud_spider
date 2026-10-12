@@ -193,7 +193,9 @@ export function sampleMapSnapshot() {
   const snap = sampleKubeSnapshot();
   const A = "ip-10-43-64-11.sample.compute.internal";
   const B = "ip-10-43-96-12.sample.compute.internal";
-  const node = (name, id) => ({ ...snap.nodes[0], metadata: { ...snap.nodes[0].metadata, name }, spec: { providerID: `aws:///sample-a/${id}` } });
+  // Two nodes, one per zone (1a/1b), SPOT t4g.medium: the map's two shacks,
+  // the CAPS spot line and the EKS card agree.
+  const node = (name, id, zone) => ({ ...snap.nodes[0], metadata: { ...snap.nodes[0].metadata, name, labels: { ...snap.nodes[0].metadata.labels, "topology.kubernetes.io/zone": zone, "node.kubernetes.io/instance-type": "t4g.medium", "eks.amazonaws.com/capacityType": "SPOT" } }, spec: { providerID: `aws:///${zone}/${id}` } });
   const onto = (pod, nodeName, suffix = "") => ({ ...pod, metadata: { ...pod.metadata, name: pod.metadata.name + suffix }, spec: { ...pod.spec, nodeName } });
   const pods = [];
   for (const pod of snap.pods) {
@@ -209,10 +211,29 @@ export function sampleMapSnapshot() {
   return {
     ...snap,
     clusterName: "cloudspider-up",
-    nodes: [node(A, "sample-node-a"), node(B, "sample-node-b")],
+    nodes: [node(A, "sample-node-a", "eu-north-1a"), node(B, "sample-node-b", "eu-north-1b")],
     pods,
     deployments: snap.deployments.map((d) => (d.metadata.name === "web" ? { ...d, spec: { ...d.spec, replicas: 2 }, status: { readyReplicas: 2 } } : d)),
     daemonsets: snap.daemonsets.map(twice),
     nodeMetrics: [],
+  };
+}
+
+// The CLUSTER tab and the k9s window in SAMPLE: the map's two-node cluster
+// plus namespace shop (Shop API behind the public ALB the map draws:
+// Ingress shop/shopapi -> k8s-shop-shopapi-5a1e0c).
+export function sampleClusterSnapshot() {
+  const snap = sampleMapSnapshot();
+  const [A, B] = snap.nodes.map((n) => n.metadata.name);
+  const api = (name, nodeName) => ({ metadata: { namespace: "shop", name, labels: { app: "shopapi" }, ownerReferences: [{ kind: "ReplicaSet", name: "shopapi-6f8d9c7b4" }] }, spec: { nodeName, containers: [{ name: "shopapi", resources: { requests: { cpu: "25m", memory: "48Mi" } } }] }, status: { phase: "Running", containerStatuses: [{ name: "shopapi", ready: true, restartCount: 0, state: { running: {} } }] } });
+  return {
+    ...snap,
+    notes: [],
+    namespaces: [...snap.namespaces, { metadata: { name: "shop" } }],
+    pods: [...snap.pods, api("shopapi-6f8d9c7b4-a7k2m", A), api("shopapi-6f8d9c7b4-p3x9q", B)],
+    nodeMetrics: [{ metadata: { name: A }, usage: { cpu: "312m", memory: "1490Mi" } }, { metadata: { name: B }, usage: { cpu: "268m", memory: "1210Mi" } }],
+    deployments: [...snap.deployments, { metadata: { namespace: "shop", name: "shopapi" }, spec: { replicas: 2, template: { metadata: { labels: { app: "shopapi" } } } }, status: { readyReplicas: 2 } }],
+    services: [...snap.services, { metadata: { namespace: "shop", name: "shopapi" }, spec: { type: "ClusterIP", selector: { app: "shopapi" }, ports: [{ port: 3000 }] } }],
+    ingresses: [{ metadata: { namespace: "shop", name: "shopapi", annotations: { "alb.ingress.kubernetes.io/scheme": "internet-facing", "alb.ingress.kubernetes.io/target-type": "ip" } }, spec: { ingressClassName: "alb", rules: [{ http: { paths: [{ path: "/", pathType: "Prefix", backend: { service: { name: "shopapi", port: { number: 3000 } } } }] } }] }, status: { loadBalancer: { ingress: [{ hostname: "k8s-shop-shopapi-5a1e0c.eu-north-1.elb.amazonaws.com" }] } } }],
   };
 }

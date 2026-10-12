@@ -90,7 +90,7 @@ test("ALB: routeOn picks the rule, target health explains an empty or a half-hea
   const api = albChecks({ classification: alb, graph }, parseTarget("https://api.sample.test/"));
   assert.equal(by(api, "A-ELB-02").status, "PASS");
   assert.equal(by(api, "A-ELB-02").severity, "medium");
-  assert.match(by(api, "A-ELB-02").text, /k8s-shop-api: 1\/2 healthy\. 10\.0\.12\.31:8080 does not answer HTTP \/healthz in time/);
+  assert.match(by(api, "A-ELB-02").text, /k8s-shop-api: 1\/2 healthy\. 10\.43\.12\.31:8080 does not answer HTTP \/healthz in time/);
   const other = albChecks({ classification: alb, graph }, parseTarget("https://nobody.sample.test/"));
   assert.equal(by(other, "A-ELB-01").status, "FAIL");
   assert.match(by(other, "A-ELB-01").text, /the default rule answers 404 itself \(fixed response\): no rule serves nobody\.sample\.test/);
