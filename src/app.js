@@ -691,6 +691,8 @@ export function createApp({ ec2, trail, logs, metrics, path, cost, upgrade, terr
   }
 
   const api = {
+    // The page's own origin: the server answers 403 to a write from any other.
+    pageOrigin,
     // The effective config (config.js effectiveConfig: redacted, with
     // sources) for /api/config and the settings panel; null in tests.
     settings() {

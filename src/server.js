@@ -1,3 +1,4 @@
+import { originAllowed } from "./origin.js";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -2294,6 +2295,10 @@ export function listen(app, port = 9241, host = "127.0.0.1") {
 
 async function route(app, req, res) {
   const url = new URL(req.url || "/", "http://127.0.0.1");
+  // A write from another page (or with no Origin) is refused inside each
+  // handler, which explains it in the body; the status says so too: 403,
+  // not 200, so nothing (a proxy, a script, the browser) reads it as done.
+  if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && app.pageOrigin && !originAllowed(req.headers.origin, app.pageOrigin)) res.foreign = true;
   if (req.method === "GET" && url.pathname === "/") {
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
@@ -2698,6 +2703,7 @@ async function route(app, req, res) {
 }
 
 function send(res, status, body) {
+  if (res.foreign && status < 400) status = 403;
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
