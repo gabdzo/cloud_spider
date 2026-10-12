@@ -62,7 +62,9 @@ for (const { obj } of rest.filter(({ obj }) => !WORKLOADS.has(obj.kind))) {
   if (/SecurityContextConstraints|Role|ServiceAccount/.test(obj.kind)) security.push(res);
 }
 for (const { obj } of rest.filter(({ obj }) => WORKLOADS.has(obj.kind))) made.push(create(obj, { provider, dependsOn: [ns, ...security] }));
-ship({ k8s, pulumi, opts: inNs, namespace: bundle.namespace, vpcCidr: bundle.options.nodeCidr, labels: { "app.kubernetes.io/managed-by": "cloudspider-observe" } });
+// The API Service's ClusterIP for allow-apiserver-egress (EKS matches it pre-DNAT).
+const apiService = k8s.core.v1.Service.get("kubernetes-api-service", "default/kubernetes", { provider });
+ship({ k8s, pulumi, opts: inNs, namespace: bundle.namespace, vpcCidr: bundle.options.nodeCidr, apiServiceIp: apiService.spec.clusterIP, labels: { "app.kubernetes.io/managed-by": "cloudspider-observe" } });
 for (const { name, spec } of extraPolicies()) {
   new k8s.networking.v1.NetworkPolicy(`netpol-observe-${name}`, { metadata: { name, namespace: bundle.namespace, labels: { "app.kubernetes.io/part-of": "cloudspider", "app.kubernetes.io/managed-by": "cloudspider-observe" } }, spec }, inNs);
 }
