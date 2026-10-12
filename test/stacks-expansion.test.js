@@ -139,7 +139,7 @@ test("pgcluster: CNPG chart pinned, gp3 volumes tagged for the vault, web_anon m
   assert.equal(sc.parameters.tagSpecification_1, "project=pgcluster");
   assert.equal(sc.reclaimPolicy, "Delete");
   const db = find(resources, "postgresql.cnpg.io/v1:Cluster");
-  assert.equal(db.spec.instances, 1);
+  assert.equal(db.spec.instances, 2); // a standby in another zone (test/pgcluster-ha.test.js)
   assert.equal(db.spec.storage.storageClass, "cloudspider-gp3");
   assert.deepEqual(db.spec.bootstrap.initdb.postInitSQL, ["create role web_anon nologin", "grant web_anon to app"]);
   // The EBS CSI driver and the Pod Identity agent are the EKS stack's

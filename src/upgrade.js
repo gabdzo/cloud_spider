@@ -142,7 +142,7 @@ export const UPGRADES = [
   {
     id: "pgcluster",
     title: "Postgres on EKS",
-    note: "CloudNativePG on the EKS cluster: the operator and one 1-instance database shop/shopdb on a 5 Gi gp3 volume. Needs the cluster with its Pod Identity agent and EBS CSI driver (the EKS stack installs both); pick t4g.medium on the EKS card first (a t4g.small runs out of pods).",
+    note: "CloudNativePG on the EKS cluster: the operator and the database shop/shopdb, 2 instances in different zones (a standby takes over) on 5 Gi gp3 volumes each. backups=on: continuous backup with the Barman Cloud plugin to an encrypted S3 bucket (WAL archiving + a daily base backup, 7 days kept), AWS access through EKS Pod Identity. Needs the cluster with its Pod Identity agent and EBS CSI driver (the EKS stack installs both) and cert-manager for the plugin; pick t4g.medium on the EKS card first (a t4g.small runs out of pods).",
     dir: "upgrades/pgcluster",
     stack: "pgcluster",
     project: "cloudspider-pgcluster",
@@ -152,8 +152,13 @@ export const UPGRADES = [
     needs: ["eks"],
     // EKS add-ons it uses (the EKS stack installs them): NEEDS chips + preflight.
     eksAddons: ["eks-pod-identity-agent", "aws-ebs-csi-driver"],
-    cost: [{ price: "ebs-gp3-gb", qty: 5 }],
-    parameters: [{ name: "clusterName", type: "string", default: "cloudspider-up" }],
+    cost: [{ price: "ebs-gp3-gb", qty: 5, times: "instances" }, { price: "s3-gb", qty: 1, when: { backups: "on" } }, { usage: "s3-requests", when: { backups: "on" } }],
+    parameters: [
+      { name: "clusterName", type: "string", default: "cloudspider-up" },
+      // Hardened by default: a standby in another zone and backups on.
+      { name: "instances", type: "string", default: "2", choices: ["1", "2", "3"], labels: { 1: "1 · no standby (SCORE FAILs K8S-CNPG-001)", 2: "2 · primary + standby in another zone", 3: "3 · primary + 2 standbys" }, warn: "1" },
+      { name: "backups", type: "string", default: "on", choices: ["on", "off"], labels: { on: "on · WAL + daily backup to S3 (Barman Cloud plugin)", off: "off · no backups (SCORE FAILs K8S-CNPG-003, K8S-REL-007)" }, warn: "off" },
+    ],
   },
   {
     id: "shopapi",

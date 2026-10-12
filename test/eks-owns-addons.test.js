@@ -95,7 +95,8 @@ const PG = ["upgrades/pgcluster", "cloudspider-pgcluster", "pgcluster", { "cloud
 test("pgcluster never creates the Pod Identity agent or the EBS CSI driver (the 409 of 2026-10-11)", { skip: ready("upgrades/pgcluster") }, async () => {
   const used = await mock(...PG, ALL);
   assert.deepEqual(names(used.resources), []);
-  assert.ok(!used.resources.some((r) => r.type === "aws:iam/role:Role"), "no EBS CSI role of its own");
+  // Its only role is the backup one (Pod Identity for shop/shopdb), never an EBS CSI role.
+  assert.ok(!used.resources.some((r) => r.type === "aws:iam/role:Role" && !/shopdb-backup/.test(r.name)), "no EBS CSI role of its own");
   assert.ok(used.resources.some((r) => r.type.endsWith("Release") && r.name === "cnpg"));
   // Even with the old podIdentityAgent=install config still in the stack.
   const old = await mock(PG[0], PG[1], PG[2], { ...PG[3], "cloudspider-pgcluster:podIdentityAgent": "install" }, ALL);

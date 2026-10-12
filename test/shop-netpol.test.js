@@ -47,6 +47,7 @@ test("shop + cnpg-system: default deny ingress, every flow the shop needs allowe
   const migrate = { ns: "shop", labels: { app: "shopapi-migrate" } };
   const db = { ns: "shop", labels: { "cnpg.io/cluster": "shopdb", "cnpg.io/podRole": "instance" } };
   const operator = { ns: "cnpg-system", labels: { "app.kubernetes.io/name": "cloudnative-pg" } };
+  const plugin = { ns: "cnpg-system", labels: { "app.kubernetes.io/name": "plugin-barman-cloud", "app.kubernetes.io/instance": "barman-cloud" } };
   const alb = { ip: "10.0.1.20" }; // an ALB ENI in a cluster subnet (mock VPC 10.0.0.0/16)
   const controlPlane = { ip: "10.0.2.33" }; // an EKS control-plane ENI
   const need = [
@@ -57,6 +58,8 @@ test("shop + cnpg-system: default deny ingress, every flow the shop needs allowe
     ["CNPG operator → instance status :8000", operator, db, 8000],
     ["CNPG operator → shopdb:5432", operator, db, 5432],
     ["EKS control plane → CNPG webhook :9443", controlPlane, operator, 9443],
+    ["CNPG operator → Barman Cloud plugin :9090", operator, plugin, 9090],
+    ["a scraper → shopdb metrics :9187", { ns: "monitoring", labels: { "cloudspider.io/scrape": "true" } }, db, 9187],
   ];
   for (const [what, src, dst, port] of need) assert.ok(allowed(np, src, dst, port), `${what} must be allowed`);
   const denied = [
@@ -66,6 +69,9 @@ test("shop + cnpg-system: default deny ingress, every flow the shop needs allowe
     ["shopapi → CNPG webhook", shopapi, operator, 9443],
     ["the internet → CNPG webhook", { ip: "203.0.113.9" }, operator, 9443],
     ["migrate → shopapi", migrate, shopapi, 3000],
+    ["shopapi → Barman Cloud plugin", shopapi, plugin, 9090],
+    ["the VPC → Barman Cloud plugin", alb, plugin, 9090],
+    ["demo/web → shopdb metrics", { ns: "demo", labels: { app: "web" } }, db, 9187],
   ];
   for (const [what, src, dst, port] of denied) assert.ok(!allowed(np, src, dst, port), `${what} must be denied`);
 });
