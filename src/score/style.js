@@ -43,6 +43,10 @@ export const SCORE_CSS = `
     background: var(--s-bg); color: var(--s-text); border: 1px solid var(--s-strong); font-family: var(--s-font); font-size: 13px; line-height: 1.45;
     display: flex; flex-direction: column; gap: 14px; }
   #score[hidden] { display: none; }
+  /* The 12px gutter round the panel is painted in the screen colour, so the
+     view under it (a vault tab, an AVAILABLE PERKS line) no longer peeks out
+     at the edges (UX overlaps B, demo dry run). */
+  #score:not([hidden]) { box-shadow: 0 0 0 12px var(--pip-screen); }
   ${TONES}
   #score .sc-label { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--s-text2); }
   #score .sc-muted { color: var(--s-muted); }
