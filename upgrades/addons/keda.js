@@ -6,7 +6,7 @@ import { REGION, helmRelease, podIdentityRole, setup, small, viewerAccess } from
 // own Pod Identity role; the worker has another that may receive and delete.
 // Send work: aws sqs send-message --queue-url <queueUrl> --message-body hi
 export default function keda({ pulumi, aws, k8s, addon }) {
-  const { clusterName, k, tags } = setup({ pulumi, aws, k8s, addon });
+  const { clusterName, k, tags, netpol } = setup({ pulumi, aws, k8s, addon });
   const queue = new aws.sqs.Queue("jobs", { name: `${clusterName}-keda-jobs`, messageRetentionSeconds: 3600, visibilityTimeoutSeconds: 60, sqsManagedSseEnabled: true, tags });
   const read = queue.arn.apply((arn) => ({ Version: "2012-10-17", Statement: [{ Effect: "Allow", Action: ["sqs:GetQueueAttributes", "sqs:GetQueueUrl"], Resource: arn }] }));
   const work = queue.arn.apply((arn) => ({ Version: "2012-10-17", Statement: [{ Effect: "Allow", Action: ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:GetQueueUrl"], Resource: arn }] }));
@@ -20,9 +20,10 @@ export default function keda({ pulumi, aws, k8s, addon }) {
       metricServer: small("50m", "96Mi", "384Mi"),
       webhooks: small("20m", "48Mi", "192Mi"),
     },
-  }, { dependsOn: [operator.association] });
+  }, { dependsOn: [operator.association], netpol });
 
   const ns = new k8s.core.v1.Namespace("keda-demo", { metadata: { name: "keda-demo" } }, k);
+  const demoPolicies = netpol("keda-demo", ns);
   const inNs = { ...k, dependsOn: [ns] };
   const account = new k8s.core.v1.ServiceAccount("jobs-worker", { metadata: { name: "jobs-worker", namespace: "keda-demo" } }, inNs);
   const worker = podIdentityRole({ pulumi, aws, name: "keda-jobs-worker", clusterName, namespace: "keda-demo", serviceAccount: "jobs-worker", inline: work, tags });
@@ -56,7 +57,7 @@ export default function keda({ pulumi, aws, k8s, addon }) {
         },
       },
     },
-  }, { ...inNs, dependsOn: [ns, worker.association], ignoreChanges: ["spec.replicas"], customTimeouts: { create: "5m", update: "5m" } });
+  }, { ...inNs, dependsOn: [ns, worker.association, ...demoPolicies], ignoreChanges: ["spec.replicas"], customTimeouts: { create: "5m", update: "5m" } });
   const auth = new k8s.apiextensions.CustomResource("keda-aws", {
     apiVersion: "keda.sh/v1alpha1",
     kind: "TriggerAuthentication",

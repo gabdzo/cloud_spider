@@ -4,6 +4,7 @@ import * as k8s from "@pulumi/kubernetes";
 import { eksProvider } from "../eks-kube.js";
 import { inheritTags, stackTags } from "../tags.js";
 import { readAddon, usesEksAddon } from "../eks-addons.js";
+import { ship } from "../netpol.js";
 
 // PostgreSQL on the EKS cluster from upgrades/eks, run by CloudNativePG.
 // Stack: pgcluster. Needs the cluster up first, with its EKS add-ons: the
@@ -316,6 +317,9 @@ for (const name of [NAMESPACE, "cnpg-system"]) {
     spec: { podSelector: {}, policyTypes: ["Ingress"] },
   }, { ...k, dependsOn: [nsOf[name], operator] });
 }
+// Egress and the rest each namespace needs (upgrades/netpol.js): DNS,
+// replication, the Kubernetes API and S3, the instances from the operator.
+for (const name of [NAMESPACE, "cnpg-system"]) ship({ k8s, pulumi, opts: { ...k, dependsOn: [nsOf[name]] }, namespace: name, vpcCidr });
 for (const rule of SHOP_INGRESS) {
   const ingress = rule.ingress.map((item) => (item.from === "vpc" ? vpcCidr.apply((cidr) => ({ from: [{ ipBlock: { cidr } }], ports: item.ports })) : item));
   new k8s.networking.v1.NetworkPolicy(rule.name, {

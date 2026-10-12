@@ -1,6 +1,7 @@
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
+import { ship } from "../netpol.js";
 import { inheritTags, stackTags } from "../tags.js";
 import { usesEksAddon } from "../eks-addons.js";
 
@@ -383,6 +384,9 @@ export const DEMO_INGRESS = [
   { name: "allow-otel-gateway-otlp", app: "otel-gateway", from: [{ podSelector: app("otel-collector") }], ports: [4317] },
   { name: "allow-otel-metrics-proxy", app: "otel-gateway", from: "vpc", ports: [8889] },
 ];
+// Egress (upgrades/netpol.js): DNS, the namespace, 443 to CloudWatch Logs,
+// X-Ray and the Kubernetes API, Pod Identity, kubelet stats.
+ship({ k8s, pulumi, opts: inNs, namespace: ns, vpcCidr });
 new k8s.networking.v1.NetworkPolicy("default-deny-ingress", {
   metadata: { name: "default-deny-ingress", namespace: ns },
   spec: { podSelector: {}, policyTypes: ["Ingress"] },

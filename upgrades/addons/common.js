@@ -2,6 +2,7 @@
 // the Kubernetes provider, stack tags, Helm releases, Pod Identity roles and
 // the read access Cloud Spider's viewer group needs for each add-on's CRDs.
 import { readFileSync } from "node:fs";
+import { ship } from "../netpol.js";
 import { eksProvider } from "../eks-kube.js";
 import { inheritTags, stackTags } from "../tags.js";
 import { CLUSTER_NAME, stackName } from "./catalog.js";
@@ -32,18 +33,25 @@ export function setup({ pulumi, aws, k8s, addon }) {
   inheritTags(pulumi, stackTags(addon.id, { cluster: clusterName, cloudspider: "expendable" }));
   const provider = eksProvider({ pulumi, aws, k8s, clusterName, region: REGION });
   const cluster = aws.eks.getClusterOutput({ name: clusterName });
-  return { config, clusterName, provider, k: { provider }, cluster, tags: { cloudspider: "expendable" } };
+  // The namespace's own NetworkPolicies (upgrades/netpol.js), for a
+  // namespace this stack creates; [] for one on the default-deny skip list.
+  const vpcCidr = () => aws.ec2.getVpcOutput({ id: cluster.vpcConfig.vpcId }).cidrBlock;
+  const netpol = (namespace, nsResource) => ship({ k8s, pulumi, opts: { provider, dependsOn: [nsResource] }, namespace, vpcCidr: vpcCidr() });
+  return { config, clusterName, provider, k: { provider }, cluster, tags: { cloudspider: "expendable" }, netpol };
 }
 
 // Helm's createNamespace leaves the namespace behind on destroy (live test
 // 2026-10-11: kyverno, cert-manager and keda stayed, cert-manager with its
 // webhook CA secret). The namespace is a Pulumi resource instead, so take it
 // down removes it too. kube-system is never ours.
-export function helmRelease(k8s, k, addon, values, opts = {}) {
+export function helmRelease(k8s, k, addon, values, { netpol = null, ...opts } = {}) {
   const oci = addon.chart.startsWith("oci://");
   const own = addon.namespace !== "kube-system";
   const ns = own ? new k8s.core.v1.Namespace(`${addon.id}-ns`, { metadata: { name: addon.namespace } }, k) : null;
-  const dependsOn = [...[].concat(opts.dependsOn || []), ...(ns ? [ns] : [])];
+  // Its policies first, so the pods start under them (a namespace created
+  // after Kyverno's generate-default-deny is closed otherwise).
+  const policies = ns && netpol ? netpol(addon.namespace, ns) : [];
+  const dependsOn = [...[].concat(opts.dependsOn || []), ...(ns ? [ns] : []), ...policies];
   return new k8s.helm.v3.Release(
     addon.id,
     {

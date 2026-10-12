@@ -12,7 +12,7 @@ import { setup, small, viewerAccess } from "./common.js";
 //     with namespaces "demo" not found, after the rest was made.
 //   - hpa=off: no HPAs even when the demo app is there
 export default function scalingDemo({ pulumi, aws, k8s, addon }) {
-  const { config, k } = setup({ pulumi, aws, k8s, addon });
+  const { config, k, netpol } = setup({ pulumi, aws, k8s, addon });
   const burst = config.get("burst") || "off";
   const inflate = Number(config.get("inflate") ?? 0);
   const hpa = config.get("hpa") || "on";
@@ -36,7 +36,7 @@ export default function scalingDemo({ pulumi, aws, k8s, addon }) {
   }
 
   const ns = new k8s.core.v1.Namespace("scaling-demo", { metadata: { name: addon.namespace } }, k);
-  const inNs = { ...k, dependsOn: [ns] };
+  const inNs = { ...k, dependsOn: [ns, ...netpol(addon.namespace, ns)] };
   // Not ready in 5 minutes: the run fails and says why (run pane).
   const workload = { ...inNs, customTimeouts: { create: "5m", update: "5m" } };
   const secure = { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } };
