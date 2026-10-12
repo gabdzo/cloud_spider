@@ -61,10 +61,11 @@ test("timeline: events sorted on the window, incident band inside it", () => {
   assert.ok(t.incident[0] > 0 && t.incident[1] < 1 && t.incident[0] < t.incident[1]);
 });
 
-test("the SERVICES tab exists only in SAMPLE mode and is served", () => {
+test("the SERVICES tab follows the graph module, goes live outside SAMPLE, and is served", () => {
   const browser = readFileSync(new URL("../src/browser.js", import.meta.url), "utf8");
-  assert.match(browser, /\{ id: "graph", label: "SERVICES", sampleOnly: true/);
-  assert.match(browser, /button\.hidden = Boolean\(CLUSTER_SCREENS\.find\(\(item\) => item\.id === button\.dataset\.screen\)\?\.sampleOnly\) && !sample;/);
+  assert.match(browser, /\{ id: "graph", label: "SERVICES", needs: "graph"/);
+  assert.match(browser, /graphView\.setLive\(!sample, /);
+  assert.match(browser, /item\?\.needs && modulesVisible && !modulesVisible\.includes\(item\.needs\)/);
   const server = readFileSync(new URL("../src/server.js", import.meta.url), "utf8");
   for (const f of ["graph-sample.js", "graph-model.js", "graph-view.js"]) assert.ok(server.includes(`"${f}"`), f);
   assert.match(server, /<section id="kube-graph"/);

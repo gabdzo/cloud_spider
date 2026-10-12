@@ -88,6 +88,13 @@ export const PATHS = {
   // Scorecard reads (src/score/collectors): policy objects and RBAC
   // bindings. The viewer role may be denied some; a 403 is UNKNOWN there.
   networkPolicies: () => "/apis/networking.k8s.io/v1/networkpolicies",
+  // SERVICES graph (graph-read.js): OpenShift Routes and OLM answer 404 on
+  // plain Kubernetes, which only means "not installed". No Secrets.
+  routes: () => "/apis/route.openshift.io/v1/routes",
+  csvs: () => "/apis/operators.coreos.com/v1alpha1/clusterserviceversions",
+  crds: () => "/apis/apiextensions.k8s.io/v1/customresourcedefinitions",
+  nsRoutes: (ns) => `/apis/route.openshift.io/v1/namespaces/${checkName(ns)}/routes`,
+  nsCsvs: (ns) => `/apis/operators.coreos.com/v1alpha1/namespaces/${checkName(ns)}/clusterserviceversions`,
   pdbs: () => "/apis/policy/v1/poddisruptionbudgets",
   clusterRoleBindings: () => "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings",
   // Namespaced lists: all a Role bound in one namespace can read. A context

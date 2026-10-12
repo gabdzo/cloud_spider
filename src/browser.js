@@ -167,6 +167,8 @@ const kubeOps = document.querySelector("#kube-ops");
 // SERVICES: the service graph + incident review prototype, SAMPLE only
 // (docs/plan-modules-and-service-graph.md).
 const graphView = createGraphView(document.querySelector("#kube-graph"));
+// Modules this page shows (null until /api/config answers): see applyModules.
+let modulesVisible = null;
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
 const tabVaults = document.querySelector("#tab-vaults");
@@ -1704,7 +1706,9 @@ const CLUSTER_SCREENS = [
   { id: "topology", label: "TOPOLOGY" },
   { id: "telemetry", label: "TELEMETRY", show: showTelemetry, hide: hideTelemetry },
   { id: "ops", label: "OPS", show: showOps, hide: hideOps },
-  { id: "graph", label: "SERVICES", sampleOnly: true, show: () => graphView.show(), hide: () => graphView.hide() },
+  // SERVICES: live from the selected context, or the SAMPLE scenarios; off
+  // with the graph module (modules.js).
+  { id: "graph", label: "SERVICES", needs: "graph", show: () => graphView.show(), hide: () => graphView.hide() },
 ];
 const CLUSTER_SCREEN_KEY = "cloudspider.cluster.screen";
 let clusterScreen = "topology";
@@ -1859,8 +1863,10 @@ function syncClusterScreens() {
     }
   }
   // SAMPLE-only screens (the SERVICES prototype) leave with sample mode.
-  for (const button of kubeTabs.children) button.hidden = Boolean(CLUSTER_SCREENS.find((item) => item.id === button.dataset.screen)?.sampleOnly) && !sample;
-  if (!sample && CLUSTER_SCREENS.find((item) => item.id === clusterScreen)?.sampleOnly) {
+  const screenOff = (item) => Boolean(item?.sampleOnly && !sample) || Boolean(item?.needs && modulesVisible && !modulesVisible.includes(item.needs));
+  for (const button of kubeTabs.children) button.hidden = screenOff(CLUSTER_SCREENS.find((item) => item.id === button.dataset.screen));
+  graphView.setLive(!sample, clusterData?.context || clusterContext || "");
+  if (screenOff(CLUSTER_SCREENS.find((item) => item.id === clusterScreen))) {
     CLUSTER_SCREENS.find((item) => item.id === clusterScreen)?.hide?.();
     clusterScreen = "topology";
   }
@@ -5195,7 +5201,6 @@ settingsApi = createSettings({
 // Modules (modules.js): the tab or key of a module that is off at the server
 // or hidden in this browser is not offered. Cost is the CAPS gauge.
 const MODULE_UI = { map: "#tab-map", network: "#path", kubernetes: "#cluster", vaults: "#tab-vaults", radio: "#tab-radio", stacks: "#upgrade", learn: "#learn-key", score: "#score-key", ask: "#ask" };
-let modulesVisible = null;
 function settingsStorage() {
   try {
     return window.localStorage;

@@ -1,4 +1,7 @@
 import { moduleOff } from "./modules.js";
+import { graphScenario } from "./graph-sample.js";
+import { buildGraph } from "./graph-build.js";
+import { readGraph } from "./graph-read.js";
 import { originAllowed } from "./origin.js";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
@@ -2693,6 +2696,22 @@ export function listen(app, port = 9241, host = "127.0.0.1") {
   });
 }
 
+const graphCache = new Map();
+async function liveGraph(kube, context, ttl = 20_000) {
+  const key = context || kube.context || "";
+  const hit = graphCache.get(key);
+  if (hit && Date.now() - hit.at < ttl) return hit.body;
+  let body;
+  try {
+    const reads = await readGraph(kube);
+    body = reads.error ? { error: reads.error, unset: !!reads.unset } : buildGraph(reads, { title: reads.clusterName, namespaces: reads.scope });
+  } catch (error) {
+    body = { error: error?.message || "the graph read failed" };
+  }
+  graphCache.set(key, { at: Date.now(), body });
+  return body;
+}
+
 async function route(app, req, res) {
   const url = new URL(req.url || "/", "http://127.0.0.1");
   // A write from another page (or with no Origin) is refused inside each
@@ -3013,6 +3032,23 @@ async function route(app, req, res) {
     return;
   }
 
+  // SERVICES: the static + ownership graph of a kube context (graph-read.js
+  // reads, graph-build.js shapes). Read-only GETs, no Secrets, the
+  // context's namespace allowlist. Cached 20 s per context.
+  if (req.method === "GET" && url.pathname === "/api/cluster/graph") {
+    if (url.searchParams.get("sample") === "1") {
+      send(res, 200, graphScenario(url.searchParams.get("scenario") === "bundle" ? "bundle" : "bare"));
+      return;
+    }
+    const context = url.searchParams.get("context") || "";
+    const kube = app.kubeOf?.(context);
+    if (!kube) {
+      send(res, 200, { error: "no kube context", unset: true });
+      return;
+    }
+    send(res, 200, await liveGraph(kube, context));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/api/cluster/telemetry") {
     if (url.searchParams.get("sample") === "1") {
       send(res, 200, await sampleTelemetry());
