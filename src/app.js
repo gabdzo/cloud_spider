@@ -449,7 +449,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   async function contextView(ctx) {
     const snap = await readContext(ctx, KUBE_VIEW_TTL);
     if (snap.error) {
-      return { context: ctx.name, error: "", diagram: null, headline: "", note: snap.unset ? `kube context ${ctx.name}: ${snap.error} (docs/RUN-ME.md §19)` : `kube context ${ctx.name}: ${snap.error}` };
+      return { context: ctx.name, error: "", unset: !!snap.unset, reason: snap.error, diagram: null, headline: "", note: snap.unset ? `kube context ${ctx.name}: ${snap.error} (docs/RUN-ME.md §19)` : `kube context ${ctx.name}: ${snap.error}` };
     }
     return {
       context: ctx.name,

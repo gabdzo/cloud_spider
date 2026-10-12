@@ -33,6 +33,7 @@ import { createPodInspector } from "./pod-inspect-view.js";
 import { renderOps } from "./ops-view.js";
 import { createGraphView } from "./graph-view.js";
 import { createLogErrorsView } from "./log-errors-view.js";
+import { createKubeEmpty } from "./kube-empty.js";
 import { addonCommands, confirmPrompt, upgradeSpiderLine } from "./upgrade-rules.js";
 import { liveLine, noteLines, numberProblem, radioLine, runModel } from "./run-pane.js";
 import { sourceText } from "./node-labels.js";
@@ -169,6 +170,8 @@ const kubeOps = document.querySelector("#kube-ops");
 // SERVICES: the service graph + incident review prototype, SAMPLE only
 // (docs/plan-modules-and-service-graph.md).
 const graphView = createGraphView(document.querySelector("#kube-graph"));
+// No cluster to read (no kubeconfig / no such context): how to connect.
+const kubeEmpty = createKubeEmpty(document.querySelector("#kube-empty"), { onRetry: () => pullCluster(), onSample: () => toggleSample() });
 // Modules this page shows (null until /api/config answers): see applyModules.
 let modulesVisible = null;
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
@@ -2114,6 +2117,9 @@ function drawCluster() {
 
 function draw() {
   syncClusterScreens();
+  const noCluster = mode === "cluster" && !sample && Boolean(clusterData?.unset) && !clusterData?.diagram && (!clusterTabsShown || clusterScreen === "topology");
+  if (noCluster) kubeEmpty.show({ context: clusterData.context || "", reason: clusterData.reason || clusterData.note || "" });
+  else if (kubeEmpty.isShown()) kubeEmpty.hide();
   // An HTML screen covers the canvas: nothing to paint underneath.
   if (clusterTabsShown && clusterScreen !== "topology") return;
   // The VAULTS page covers the map; the map does not draw under it.
