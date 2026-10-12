@@ -170,7 +170,20 @@ export const UPGRADES = [
     cost: [{ price: "alb", when: { expose: "alb" } }, { price: "public-ipv4", qty: 2, when: { expose: "alb" } }, { usage: "alb-lcu", when: { expose: "alb" } }],
     parameters: [
       { name: "clusterName", type: "string", default: "cloudspider-up" },
-      { name: "expose", type: "string", default: "none", choices: ["none", "alb"] },
+      {
+        name: "expose",
+        type: "string",
+        default: "none",
+        choices: ["none", "alb"],
+        // What each choice means, said on the card under the field; none
+        // warns (a demo usually wants the public ALB).
+        labels: { none: "none · private, port-forward only", alb: "alb · PUBLIC ALB ≈ $0.82/day" },
+        notes: {
+          none: "Nothing is reachable from the internet: no load balancer, no URL. Reach it with kubectl -n shop port-forward svc/shopapi 3000:80, or pick alb (a demo wants alb). Running with none removes an ALB made before.",
+          alb: "Public: an internet-facing ALB in every cluster AZ (needs the lbc add-on), URL http://<alb>/items, OPEN on this card and the map. About $0.034/h ($0.82/day) + LCU usage while up.",
+        },
+        warn: "none",
+      },
       // 2: one per zone behind the ALB (NET-K8S-002) and a PDB; 1: cheaper, one zone.
       { name: "replicas", type: "string", default: "2", choices: ["1", "2", "3"] },
     ],

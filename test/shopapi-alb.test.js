@@ -24,7 +24,13 @@ async function mock(config) {
 }
 
 test("the card: expose none|alb; NEEDS lbc only with alb; ALB + its 2 IPv4 on the bill only with alb", () => {
-  assert.deepEqual(spec.parameters.find((p) => p.name === "expose"), { name: "expose", type: "string", default: "none", choices: ["none", "alb"] });
+  const expose = spec.parameters.find((p) => p.name === "expose");
+  assert.deepEqual([expose.type, expose.default, expose.choices], ["string", "none", ["none", "alb"]]);
+  // The card says what each means; none warns that nothing is public.
+  assert.equal(expose.warn, "none");
+  assert.match(expose.notes.none, /Nothing is reachable from the internet/);
+  assert.match(expose.labels.alb, /PUBLIC ALB ≈ \$0\.82\/day/);
+  assert.match(expose.notes.alb, /\$0\.82\/day/);
   const listed = createUpgrade({ env: {}, cwd: "/nonexistent" }).list().find((item) => item.id === "shopapi");
   assert.deepEqual(listed.needsWhen, [{ param: "expose", value: "alb", needs: ["lbc"] }]);
   assert.equal(listed.cost.hour, 0, "default none: nothing of its own");

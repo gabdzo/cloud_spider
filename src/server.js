@@ -1583,6 +1583,12 @@ const page = `<!doctype html>
   #public-strip .ps-name { color: var(--pip-bright); white-space: nowrap; }
   #public-strip .ps-url { color: var(--pip-mid, var(--pip-bright)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
   #public-strip a.cmd { min-height: 22px; padding: 0 8px; font-size: 11px; text-decoration: none; }
+  .choice-note.warn { color: var(--status-hang); }
+  .choice-note.warn::before { content: "⚠ "; }
+  .card-open { display: flex; align-items: center; gap: 8px; margin: 6px 0; padding: 4px 6px; border: 1px solid var(--status-hang); flex-wrap: wrap; }
+  .card-open .ps-tag { background: var(--status-hang); color: var(--pip-ink); padding: 1px 6px; font-weight: 700; letter-spacing: 0.12em; }
+  .card-open .ps-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+  .card-open a.cmd { min-height: 22px; padding: 0 8px; font-size: 11px; text-decoration: none; }
   .reach-lamp { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
   .reach-lamp::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--pip-dark); }
   .reach-lamp[data-state="ok"]::before { background: var(--status-ok); box-shadow: 0 0 6px var(--status-ok); }

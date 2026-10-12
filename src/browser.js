@@ -309,6 +309,13 @@ async function probeReach(urls) {
     for (const lamp of document.querySelectorAll(".reach-lamp")) if (lamp.dataset.url === url) paintLamp(lamp, seen);
   }
 }
+// The public endpoints a stack made: public load balancers on the map tagged
+// with its project (Shop API: project=shopapi).
+function cardEndpoints(spec) {
+  const project = spec.vault || spec.id;
+  const mine = (place?.fixtures || []).filter((item) => (item.tags || []).some((tag) => (tag.Key ?? tag.key) === "project" && (tag.Value ?? tag.value) === project));
+  return publicEndpoints(mine);
+}
 function hostOfUrl(url) {
   try {
     return new URL(url).hostname.toLowerCase();
@@ -3491,6 +3498,13 @@ function cardBody(spec, preset = {}) {
   const watch = el("div", { id: "pip-watch" });
   watch.hidden = true;
   body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), needsRow(spec, preset), bundleRows(spec, preset));
+  const endpoints = cardEndpoints(spec);
+  if (endpoints.length) {
+    const row = el("div", { className: "card-open" });
+    for (const item of endpoints) row.append(el("span", { className: "ps-tag", textContent: "PUBLIC" }), el("span", { className: "ps-url", textContent: item.url }), reachLamp(item.url), openLink(item.url));
+    body.append(row);
+    if (!sample) probeReach(endpoints.map((item) => item.url).filter((url) => !reachSeen.has(url)));
+  }
   if (spec.nodeCost) body.append(nodeCostBlock(spec.nodeCost));
   body.append(watch);
   if (spec.id === "eks") body.append(connectRow("pip-connect"), el("div", { id: "pip-live", className: "live-line", hidden: true }, el("span", { className: "live-what" }), el("em", { className: "field-note live-warn" })));
@@ -3517,7 +3531,7 @@ function cardBody(spec, preset = {}) {
     if (parameter.choices) {
       field = el("select");
       for (const choice of parameter.choices) {
-        field.append(el("option", { value: choice, textContent: choice, selected: choice === (kept ?? parameter.default) }));
+        field.append(el("option", { value: choice, textContent: parameter.labels?.[choice] || choice, selected: choice === (kept ?? parameter.default) }));
       }
     } else {
       field = el("input", { value: fixed ?? kept ?? parameter.default ?? "" });
@@ -3546,6 +3560,18 @@ function cardBody(spec, preset = {}) {
       field.addEventListener("input", () => repriceCard(spec));
     }
     body.append(el("label", {}, `${parameter.name} `, field));
+    // A choice's meaning under the field (Shop API expose: none warns that
+    // nothing is reachable from the internet).
+    if (parameter.notes) {
+      const note = el("em", { className: "field-note choice-note", role: "status" });
+      const say = () => {
+        note.textContent = parameter.notes[field.value] || "";
+        note.classList.toggle("warn", parameter.warn === field.value);
+      };
+      field.addEventListener("change", say);
+      say();
+      body.append(note);
+    }
     if (parameter.type === "number") {
       // The allowed range, said while typing (RUN would be refused anyway).
       if (fixed === undefined) Object.assign(field, { type: "number", min: parameter.min, max: parameter.max, step: 1 });

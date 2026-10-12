@@ -17,7 +17,11 @@ test("steps follow the params: lbc only with expose=alb, expose passed to shopap
   assert.deepEqual(mods(alb), ["pgcluster", "lbc", "shopapi"]);
   assert.deepEqual(alb.map((s) => s.params), [{ clusterName: "c1" }, { clusterName: "c1" }, { clusterName: "c1", expose: "alb" }]);
   assert.deepEqual(bundleSteps(demo, { clusterName: "c1" })[1].params, { clusterName: "c1", demoApp: "present", hpa: "on" });
-  assert.deepEqual(bundlesWith("pgcluster").map((b) => b.id), ["shop"]);
+  assert.deepEqual(bundlesWith("pgcluster").map((b) => b.id), ["shop", "shop-public"]);
+  // For a demo: the public ALB fixed on, whatever the card says.
+  const pub = bundleSteps(STACK_BUNDLES.find((b) => b.id === "shop-public"), { clusterName: "c1", expose: "none", replicas: "2" });
+  assert.deepEqual(mods(pub), ["pgcluster", "lbc", "shopapi"]);
+  assert.deepEqual(pub[2].params, { clusterName: "c1", expose: "alb", replicas: "2" });
   assert.deepEqual(bundlesWith("scaling-demo").map((b) => b.id), ["demo"]);
 });
 
