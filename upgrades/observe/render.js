@@ -39,12 +39,17 @@ export const PORTS = { otlpGrpc: 4317, otlpHttp: 4318, prom: 8889, loki: 3100, k
 // requests / limits per piece. crc: OpenShift Local / kind / a laptop.
 export const PROFILES = {
   crc: {
+    // Requests from kubectl top on cloudspider-up (3 nodes, 2026-10-12): CPU
+    // was 1-21m per pod, so CPU requests come down (205m -> 120m for the
+    // bundle) and stop crowding 2-vCPU t4g nodes. Memory follows real use:
+    // Beyla held 420-464Mi on busy nodes (96Mi requested let the scheduler
+    // overcommit), the collector 139Mi.
     // Beyla grows with the processes it instruments: 320Mi was OOMKilled on an EKS node with ~40 pods.
-    beyla: { requests: { cpu: "25m", memory: "96Mi" }, limits: { cpu: "300m", memory: "640Mi" } },
-    agent: { requests: { cpu: "20m", memory: "64Mi" }, limits: { cpu: "200m", memory: "160Mi" } },
-    collector: { requests: { cpu: "30m", memory: "96Mi" }, limits: { cpu: "300m", memory: "256Mi" } },
-    ksm: { requests: { cpu: "10m", memory: "32Mi" }, limits: { cpu: "100m", memory: "96Mi" } },
-    loki: { requests: { cpu: "30m", memory: "96Mi" }, limits: { cpu: "500m", memory: "320Mi" } },
+    beyla: { requests: { cpu: "10m", memory: "384Mi" }, limits: { cpu: "300m", memory: "640Mi" } },
+    agent: { requests: { cpu: "15m", memory: "64Mi" }, limits: { cpu: "200m", memory: "160Mi" } },
+    collector: { requests: { cpu: "25m", memory: "160Mi" }, limits: { cpu: "300m", memory: "256Mi" } },
+    ksm: { requests: { cpu: "5m", memory: "24Mi" }, limits: { cpu: "100m", memory: "96Mi" } },
+    loki: { requests: { cpu: "15m", memory: "96Mi" }, limits: { cpu: "500m", memory: "320Mi" } },
   },
   standard: {
     beyla: { requests: { cpu: "50m", memory: "192Mi" }, limits: { cpu: "500m", memory: "768Mi" } },
@@ -115,6 +120,11 @@ export function collectorConfig(o) {
       memory_limiter: { check_interval: "5s", limit_mib: MEMORY_LIMIT_MIB[o.profile] },
       batch: {},
       "resource/events": { attributes: [{ key: "service.name", value: "k8s-events", action: "upsert" }] },
+      // Beyla series Cloud Spider never reads (live.js LIVE_FAMILIES): the
+      // body-size histograms and the client-side durations were ~80% of a
+      // 23 MB metrics page on cloudspider-up. Live edges come from the
+      // service graph and the server-side durations, which stay.
+      "filter/unused": { error_mode: "ignore", metrics: { metric: [String.raw`IsMatch(name, "^http\.(client|server)\.(request|response)\.body\.size$")`, String.raw`IsMatch(name, "^(http\.client\.request\.duration|rpc\.client\.duration)$")`] } },
     },
     exporters: {
       prometheus: { endpoint: `0.0.0.0:${PORTS.prom}`, metric_expiration: "15m", resource_to_telemetry_conversion: { enabled: true } },
@@ -122,7 +132,7 @@ export function collectorConfig(o) {
     },
     service: {
       pipelines: {
-        metrics: { receivers: ["otlp", "k8s_cluster", ...Object.keys(scrape)], processors: ["memory_limiter", "batch"], exporters: ["prometheus"] },
+        metrics: { receivers: ["otlp", "k8s_cluster", ...Object.keys(scrape)], processors: ["memory_limiter", "filter/unused", "batch"], exporters: ["prometheus"] },
         "logs/events": { receivers: ["k8s_objects"], processors: ["memory_limiter", "resource/events", "batch"], exporters: [logs ? "otlp_http" : "debug"] },
         ...(logs ? { logs: { receivers: ["otlp"], processors: ["memory_limiter", "batch"], exporters: ["otlp_http"] } } : {}),
       },
