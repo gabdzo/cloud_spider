@@ -111,14 +111,21 @@ export function createPodRunner({ cfg = {}, writeContexts = [], kubeFor = () => 
   async function prepare(body = {}, { runId = "plan" } = {}) {
     const sample = body.sample === true;
     const context = sample ? "sample" : contextOf(body);
-    const sourceNs = String(body.namespace || c.namespace);
+    let sourceNs = String(body.namespace || c.namespace);
     let reads;
     if (sample) reads = samplePodReads(parsePodTarget(body.target, { sourceNs, namespaces: SAMPLE_POD_NAMESPACES }));
     else {
       if (c.enabled !== true) return { status: 403, error: "the debug pod is off", hint: "network.pod.enabled: true in cloudspider.yaml turns it on." };
       const kube = kubeFor(context);
-      const pre = parsePodTarget(body.target, { sourceNs, namespaces: [] });
       const nsGuess = kube ? (await kube.read("namespaces")).json?.items?.map((n) => n.metadata?.name) || [] : [];
+      // No namespace picked and network.pod.namespace (default
+      // cloudspider-debug) is not on this cluster: the first sourceNamespace
+      // that is, so a newcomer does not have to create one first.
+      if (!body.namespace && nsGuess.length && !nsGuess.includes(sourceNs)) {
+        const alt = (c.sourceNamespaces || []).find((ns) => nsGuess.includes(ns));
+        if (alt) sourceNs = alt;
+      }
+      const pre = parsePodTarget(body.target, { sourceNs, namespaces: [] });
       const target = parsePodTarget(body.target, { sourceNs, namespaces: nsGuess, clusterDomain: c.clusterDomain });
       reads = await readForPod(kube, target.error ? pre : target, { sourceNs, live: await liveFor(context).catch(() => null) });
       if (reads.error) reads = { namespaces: [], policies: null, endpoints: [], targetPods: [], openshift: false };
@@ -128,7 +135,7 @@ export function createPodRunner({ cfg = {}, writeContexts = [], kubeFor = () => 
     // A namespace that does not exist made the API 404 the pod create
     // ("the pod was not created: not found"). Say which one, before any write.
     if (!sample && names.length && !names.includes(sourceNs)) return { status: 400, error: `namespace ${sourceNs} does not exist on ${context}`, hint: `Pick a namespace that exists, create it (kubectl --context ${context} create namespace ${sourceNs}), or set network.pod.namespace in cloudspider.yaml.` };
-    const plan = buildPlan(body, { cfg: cfgFor, namespaces: names, runId, endpoints: reads.endpoints });
+    const plan = buildPlan(sample ? body : { ...body, namespace: sourceNs }, { cfg: cfgFor, namespaces: names, runId, endpoints: reads.endpoints });
     if (plan.error) return { status: 400, error: plan.error };
     const guard = podGuard({ context, plan, writeContexts, cfg: c, confirm: body.confirm || {}, openshift: reads.openshift, sample });
     const spec = podSpec(plan, { now: now(), user: user(), openshift: reads.openshift });

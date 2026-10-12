@@ -13,7 +13,8 @@ test("profiles resolve, and the full profile leaves observe off", () => {
   assert.equal(full.has("observe"), false);
   const k8s = resolveModules({ modules: { profile: "k8s-only" } });
   assert.deepEqual(k8s.enabled, PROFILES["k8s-only"]);
-  for (const id of ["aws", "map", "network", "cost", "radio"]) assert.equal(k8s.has(id), false, id);
+  for (const id of ["aws", "map", "cost", "radio"]) assert.equal(k8s.has(id), false, id);
+  assert.equal(k8s.has("network"), true, "FROM INSIDE works without AWS");
   const aws = resolveModules({ modules: { profile: "aws-only" } });
   assert.equal(aws.has("kubernetes"), false);
   assert.equal(aws.has("graph"), false);
@@ -44,7 +45,8 @@ test("routes map to modules; sample and config routes are core", () => {
   assert.equal(routeModule("/api/cluster/pod/inspect"), "kubernetes");
   assert.equal(routeModule("/api/costly"), "");
   const k8s = resolveModules({ modules: { profile: "k8s-only" } });
-  assert.equal(moduleOff(k8s, "/api/path"), "network");
+  assert.equal(moduleOff(k8s, "/api/path"), "");
+  assert.equal(moduleOff(k8s, "/api/cost"), "cost");
   assert.equal(moduleOff(k8s, "/api/cluster"), "");
   assert.deepEqual(scorePacks(["kubernetes", "aws"], k8s), ["kubernetes"]);
 });
