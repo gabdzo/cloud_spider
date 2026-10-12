@@ -6,3 +6,4 @@ config:
   cloudspider-observability:clusterName: cloudspider-up
   cloudspider-observability:alarms: "on"
   cloudspider-observability:containerInsights: "off"
+  cloudspider-observability:dashboard: "on"
