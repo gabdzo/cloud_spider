@@ -1,0 +1,5 @@
+name: cloudspider-observability
+runtime: nodejs
+description: "Observability for the EKS cluster: Container Insights (the CloudWatch Observability add-on with Pod Identity, log groups with a retention) and a basic alarm set (ALB 5XX, unhealthy targets, node not ready) to an SNS topic with an email opt-in."
+backend:
+  url: "s3://cloudspider-state-550536272523?region=eu-north-1&awssdk=v2&profile=default"

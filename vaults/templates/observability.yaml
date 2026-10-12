@@ -1,0 +1,29 @@
+# Template: the observability stack (upgrades/observability, Pulumi project
+# cloudspider-observability, stack observability). When it is up, make it
+# living with: npm run vaults:new -- observability observability
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: observability
+  number: 208
+  title: Observability
+  description: Container Insights (CloudWatch Observability add-on) and a basic alarm set to SNS for the EKS cluster.
+  owner: gabriel
+  tags: [upgrade, observability]
+spec:
+  type: data
+  resources:
+    tags:
+      project: observability
+  stack:
+    dir: upgrades/observability
+    name: observability
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/observability
+    dashboard: "https://eu-north-1.console.aws.amazon.com/cloudwatch/home?region=eu-north-1#alarmsV2:"
+  slos:
+    - name: resources-present
+      sli: availability
+      source: resources
+      target: 99.9%
+      window: 30d

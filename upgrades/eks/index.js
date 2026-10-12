@@ -10,6 +10,12 @@ const clusterName = config.get("clusterName") || "cloudspider-up";
 const instanceType = config.get("instanceType") || "t4g.small";
 const nodeCount = config.getNumber("nodeCount") ?? 1;
 const version = "1.32";
+// Control plane logging (K8S-OBS-003): api, audit, authenticator to
+// /aws/eks/<cluster>/cluster, a group this stack creates first so it has a
+// retention (EKS's own would never expire). In place both ways.
+const controlPlaneLogs = (config.get("controlPlaneLogs") || "off") === "on";
+const logRetentionDays = config.getNumber("logRetentionDays") ?? 7;
+const CONTROL_PLANE_LOG_TYPES = ["api", "audit", "authenticator"];
 
 if (!["t4g.small", "t4g.medium"].includes(instanceType)) {
   throw new Error("instanceType must be t4g.small or t4g.medium");
@@ -92,6 +98,10 @@ const nodePolicies = [
     }),
 );
 
+const controlPlaneLogGroup = controlPlaneLogs
+  ? new aws.cloudwatch.LogGroup("control-plane-logs", { name: `/aws/eks/${clusterName}/cluster`, retentionInDays: logRetentionDays, tags })
+  : null;
+
 const cluster = new aws.eks.Cluster(
   "up",
   {
@@ -109,9 +119,10 @@ const cluster = new aws.eks.Cluster(
     // default is false, and setting it would replace the cluster. The
     // deploying user is granted admin by the access entry below.
     accessConfig: { authenticationMode: "API_AND_CONFIG_MAP" },
+    ...(controlPlaneLogs ? { enabledClusterLogTypes: CONTROL_PLANE_LOG_TYPES } : {}),
     tags,
   },
-  { dependsOn: [clusterPolicy], customTimeouts: { create: "40m", update: "40m", delete: "40m" } },
+  { dependsOn: [clusterPolicy, ...(controlPlaneLogGroup ? [controlPlaneLogGroup] : [])], customTimeouts: { create: "40m", update: "40m", delete: "40m" } },
 );
 
 // The cluster-level EKS managed add-ons belong to this stack
@@ -332,3 +343,4 @@ export const podsPerNode = podsPerNodeText(instanceType, maxPods);
 export const vpcCniPrefixDelegation = prefixDelegation;
 export const vpcCniNetworkPolicy = networkPolicy;
 export const nodeCapacity = { capacityType, instanceTypes: nodeInstanceTypes(instanceType, capacityType) };
+export const controlPlaneLogTypes = controlPlaneLogs ? CONTROL_PLANE_LOG_TYPES : [];

@@ -1,0 +1,17 @@
+kind: Control
+id: K8S-OBS-003
+revision: 1
+title: "EKS control plane logging is on (api, audit, authenticator)"
+category: observability
+target: kubernetes
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: obs-control-plane-logs
+aggregation: all-or-nothing
+requires: [obs-aws]
+whyItMatters: "The audit log is the only record of who changed what in the cluster; authenticator logs show who got in."
+remediation: { summary: "EKS card: controlPlaneLogs on (api, audit, authenticator to /aws/eks/<cluster>/cluster, kept 7 days; in place). Costs CloudWatch Logs ingestion, about $0.50 per GB.", effort: S, card: { id: eks, params: { controlPlaneLogs: "on" } } }
+verification: "eks:DescribeCluster shows api, audit and authenticator enabled."
+references:
+  - { source: "EKS control plane logging", url: "https://docs.aws.amazon.com/eks/latest/userguide/control-plane-logs.html" }

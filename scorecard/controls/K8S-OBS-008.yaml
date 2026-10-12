@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-OBS-008
+revision: 1
+title: "The cluster's log groups expire"
+category: observability
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: obs-log-retention
+aggregation: proportional
+requires: [obs-aws]
+whyItMatters: "'Never expire' is the default: storage grows forever at $0.03/GB-month and old logs are a liability."
+remediation: { summary: "Set a retention on /aws/eks/<cluster>/* and /aws/containerinsights/<cluster>/*: the EKS and Observability cards create these groups with retentionDays (7 by default). For an existing group: aws logs put-retention-policy --log-group-name <group> --retention-in-days 7.", effort: S, card: { id: observability, params: { retentionDays: "7" } } }
+verification: "logs:DescribeLogGroups shows retentionInDays on every group under the cluster's prefixes."

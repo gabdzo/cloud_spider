@@ -25,6 +25,7 @@ export const PRICES = {
   "secret": { usd: 0.4, per: "month", text: "Secrets Manager secret" },
   "s3-gb": { usd: 0.023, per: "month", text: "S3 Standard GB" },
   alb: { usd: 0.024, per: "hour", text: "Application Load Balancer" },
+  "cw-alarm": { usd: 0.1, per: "month", text: "CloudWatch standard alarm" },
 };
 
 // Spot: EC2 spot in eu-north-1 for the t4g/c7g/m7g mediums ran at roughly a

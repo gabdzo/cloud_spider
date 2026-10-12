@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-OBS-007
+revision: 1
+title: "The cluster has a dashboard"
+category: observability
+target: kubernetes
+evidenceType: config
+severity: { default: low }
+confidence: medium
+evaluator: obs-dashboards
+aggregation: all-or-nothing
+requires: [obs-agents, obs-aws]
+whyItMatters: "A shared view of the cluster during an incident; WARN only."
+remediation: { summary: "Container Insights (Observability card) brings CloudWatch's cluster dashboards; or add a CloudWatch dashboard named after the cluster, or Grafana.", effort: S, card: { id: observability, params: { containerInsights: "on" } } }
+verification: "A CloudWatch dashboard with the cluster name, the CloudWatch Observability add-on, or Grafana."

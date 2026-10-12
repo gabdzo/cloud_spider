@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-OBS-006
+revision: 1
+title: "Each app has SLOs and they are evaluated"
+category: observability
+target: kubernetes
+evidenceType: runtime
+severity: { default: medium }
+confidence: medium
+evaluator: obs-slos
+aggregation: proportional
+requires: [obs-slos]
+whyItMatters: "An SLO turns 'is it fine?' into a budget: the burn-rate lamp says when to drop everything and when not to."
+remediation: { summary: "Add spec.slos to the app's vault (vaults/*.yaml): availability and latency on source alb for an app behind a load balancer, kube:restarts for the rest. VAULTS evaluates them; a dark lamp means no readings (open VAULTS once or fix the source).", effort: S }
+verification: "Every app vault on the cluster has SLOs; ALB-backed apps have an availability and a latency SLO; VAULTS has readings for them."

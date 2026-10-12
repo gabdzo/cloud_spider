@@ -1,0 +1,17 @@
+kind: Control
+id: K8S-OBS-001
+revision: 1
+title: "Cluster metrics are served and kept (metrics-server + a metrics pipeline)"
+category: observability
+target: kubernetes
+evidenceType: runtime
+severity: { default: high }
+confidence: medium
+evaluator: obs-metrics
+aggregation: all-or-nothing
+requires: [kube-metrics, obs-agents, obs-aws]
+whyItMatters: "metrics-server holds the last minute for autoscaling; without a pipeline (Container Insights, Prometheus/AMP, ADOT) there is no history to alarm on or to explain an incident."
+remediation: { summary: "Keep metricsServer on on the EKS card, and turn on Container Insights on the Observability card (the CloudWatch Observability add-on, with Pod Identity). A self-run OTel collector counts as a WARN until its metrics exporter is proven.", effort: S, card: { id: observability, params: { containerInsights: "on" } } }
+verification: "metrics.k8s.io answers, and the CloudWatch Observability add-on, a CloudWatch agent, Prometheus/AMP or ADOT runs in the cluster."
+references:
+  - { source: "Container Insights on EKS", url: "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/install-CloudWatch-Observability-EKS-addon.html" }
