@@ -21,3 +21,14 @@ test("Learn tape names wrap to two lines instead of a one-line ellipsis", () => 
   const view = readFileSync(new URL("../src/score/view.js", import.meta.url), "utf8");
   assert.match(view, /li\.children\[2\]\.title = c\.title/);
 });
+
+test("narrow MORNING is a 2x2 grid of one-line cards and keeps its name", () => {
+  const narrow = server.slice(server.indexOf("@media (max-width: 1180px) {\n    #morning"));
+  assert.match(narrow, /\.m-lines \{ grid-auto-flow: row; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(narrow, /\.m-head small, \.m-head output \{ display: none; \}/);
+});
+
+test("settings module rows pin each part to its column; SCORE/LEARN get a scrim", () => {
+  assert.match(server, /#settings \.st-mods b \{[^}]*grid-column: 2/);
+  assert.match(server, /\.mapwrap:has\(#score:not\(\[hidden\]\), #learn:not\(\[hidden\]\)\)::before/);
+});
