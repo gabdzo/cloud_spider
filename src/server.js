@@ -46,6 +46,7 @@ export const FILES = new Set([
   "ui.js",
   "layout.js",
   "stack-sample.js",
+  "stack-resources.js",
   "peering.js",
   "arch-layout.js",
   "radio.js",
@@ -2263,6 +2264,57 @@ const page = `<!doctype html>
   #pip .note-more:hover, #pip .note-more:focus-visible { background: var(--pip-bright); color: var(--pip-ink); }
   :root[data-theme="pro"] #pip .note-more { color: var(--accent); border-color: var(--border); border-radius: 4px; font-family: var(--font-ui); }
   :root[data-theme="pro"] #pip .note-more:hover { background: var(--accent); color: #fff; }
+  /* STACKS r2: collapsible sections, real state chips, RESOURCES CREATED */
+  #pip .card-main { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
+  #pip .card-main .card-chips { overflow: visible; flex-wrap: wrap; }
+  #pip .psec { width: calc(100% - 16px); cursor: pointer; text-align: left; font: inherit; font-size: 11px; background-color: transparent; border-left: 0; border-right: 0; }
+  #pip .psec:hover, #pip .psec:focus-visible { color: var(--world-amber); background-image: linear-gradient(90deg, rgba(196, 160, 80, 0.32), transparent 80%); outline: none; }
+  #pip .psec[aria-expanded="true"] .card-chev { transform: rotate(90deg); }
+  #pip .psec .ro { display: inline-flex; gap: 6px; align-items: center; }
+  #pip .psec .sec-n { min-width: 16px; padding: 0 4px; text-align: center; font-weight: normal; color: var(--pip-ink); background: linear-gradient(var(--case-brass), var(--case-brass-lo)); }
+  #pip .psec .sec-up { color: var(--pip-bright); }
+  #pip .st-chip.up { color: var(--pip-ink); border-color: var(--pip-bright); background: linear-gradient(var(--pip-bright), var(--pip-mid)); box-shadow: 0 0 6px var(--glow-bright); }
+  #pip .st-chip.down { color: var(--pip-dim-text); border-color: var(--pip-dark); border-style: dashed; background: transparent; }
+  #pip .st-chip.unk { color: var(--world-amber); border-color: var(--case-brass-lo); background: transparent; }
+  #pip .card-head:hover .st-chip.up, #pip .card.open .card-head .st-chip.up { box-shadow: none; }
+  #pip .res-block { border: 1px solid var(--pip-dark); background: linear-gradient(180deg, rgba(20, 255, 106, 0.06), rgba(0, 0, 0, 0.35)); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6); }
+  #pip .res-head { display: flex; align-items: center; gap: 6px; padding: 3px 6px; font-size: 10px; letter-spacing: 0.16em; color: var(--pip-bright); border-bottom: 1px solid var(--pip-dark); background: linear-gradient(90deg, rgba(20, 255, 106, 0.16), transparent); }
+  #pip .res-head img { image-rendering: pixelated; }
+  #pip .res-head .res-sum { margin-left: auto; letter-spacing: 0.08em; color: var(--pip-dim-text); text-align: right; }
+  #pip .res-list { display: flex; flex-direction: column; max-height: 260px; overflow: auto; }
+  #pip .res-group summary { display: flex; align-items: center; gap: 8px; padding: 3px 8px; cursor: pointer; font-size: 12px; list-style: none; border-bottom: 1px dotted var(--pip-dark); }
+  #pip .res-group summary::-webkit-details-marker { display: none; }
+  #pip .res-group summary::before { content: "›"; display: inline-block; width: 10px; transition: transform 0.15s; color: var(--pip-mid); }
+  #pip .res-group[open] summary::before { transform: rotate(90deg); }
+  #pip .res-group summary:hover, #pip .res-group summary:focus-visible { background: rgba(20, 255, 106, 0.12); outline: none; }
+  #pip .res-type { color: var(--pip-bright); }
+  #pip .res-svc { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pip-dim-text); font-size: 10px; letter-spacing: 0.06em; }
+  #pip .res-n { padding: 0 5px; font-size: 10px; color: var(--pip-ink); background: var(--pip-mid); }
+  #pip .res-group ul { margin: 0; padding: 2px 8px 4px 26px; list-style: none; font-size: 11px; }
+  #pip .res-group li { display: flex; align-items: center; gap: 8px; min-height: 20px; border-bottom: 1px dotted rgba(20, 255, 106, 0.12); }
+  #pip .res-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pip-mid); }
+  #pip .res-id { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pip-dim-text); font-size: 10px; }
+  #pip .res-go { flex: 0 0 auto; min-height: 0; padding: 0 6px; font-size: 10px; letter-spacing: 0.12em; cursor: pointer; color: var(--pip-bright); background: transparent; border: 1px solid var(--pip-mid); }
+  #pip .res-go:hover, #pip .res-go:focus-visible { color: var(--pip-ink); background: var(--pip-bright); }
+  #pip .res-empty { margin: 0; padding: 8px; font-size: 11px; color: var(--pip-dim-text); border-left: 3px dashed var(--pip-dim); }
+  #pip .res-empty.bad { color: var(--world-amber); border-left-color: var(--case-brass-lo); }
+  #pip .res-outputs { padding: 2px 8px 4px; }
+  :root[data-theme="pro"] #pip .psec { color: var(--text-3); }
+  :root[data-theme="pro"] #pip .psec:hover { color: var(--text, #e6e8eb); background-image: none; background-color: var(--surface); }
+  :root[data-theme="pro"] #pip .psec .sec-n { color: var(--text, #e6e8eb); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+  :root[data-theme="pro"] #pip .psec .sec-up { color: #3fb950; }
+  :root[data-theme="pro"] #pip .st-chip.up, :root[data-theme="pro"] #pip .card-head:hover .st-chip.up, :root[data-theme="pro"] #pip .card.open .card-head .st-chip.up { color: #3fb950; border-color: #3fb950; background: rgba(63, 185, 80, 0.12); box-shadow: none; }
+  :root[data-theme="pro"] #pip .st-chip.down, :root[data-theme="pro"] #pip .card-head:hover .st-chip.down, :root[data-theme="pro"] #pip .card.open .card-head .st-chip.down { color: var(--text-3); border-color: var(--border); background: transparent; }
+  :root[data-theme="pro"] #pip .res-block { background: var(--surface); border-color: var(--border); border-radius: 6px; box-shadow: none; }
+  :root[data-theme="pro"] #pip .res-head { background: none; color: var(--text, #e6e8eb); border-bottom-color: var(--border); font-family: var(--font-ui); letter-spacing: 0.06em; }
+  :root[data-theme="pro"] #pip .res-group summary { border-bottom-color: var(--border); font-family: var(--font-ui); }
+  :root[data-theme="pro"] #pip .res-group summary:hover { background: var(--raised); }
+  :root[data-theme="pro"] #pip .res-type { color: var(--text, #e6e8eb); }
+  :root[data-theme="pro"] #pip .res-n { color: var(--text, #e6e8eb); background: var(--raised); border-radius: 8px; }
+  :root[data-theme="pro"] #pip .res-name { color: var(--text-2, #c9d1d9); }
+  :root[data-theme="pro"] #pip .res-group li { border-bottom-color: var(--border); }
+  :root[data-theme="pro"] #pip .res-go { color: var(--accent); border-color: var(--accent); border-radius: 4px; font-family: var(--font-ui); }
+  :root[data-theme="pro"] #pip .res-go:hover { color: #fff; background: var(--accent); }
   #pip .pempty { margin: 8px; padding: 12px; border: 1px dashed var(--pip-dim); color: var(--pip-dim-text); }
   /* ---- TERMINAL: a RobCo CRT over the right side of the map ---- */
   #term {
@@ -3258,6 +3310,19 @@ async function route(app, req, res) {
     // A card whose module is off (the observe bundle) is not offered.
     const on = (id) => !enabled || enabled.includes(stackModule(id));
     send(res, 200, { modules: (app.upgrades() || []).filter((m) => on(m.id)), terraform: app.terraformStacks ? app.terraformStacks() : [] });
+    return;
+  }
+
+  // RESOURCES CREATED and the DEPLOYED chip: a stack's state, read-only.
+  if (req.method === "GET" && url.pathname === "/api/upgrade/resources") {
+    const opts = { sample: url.searchParams.get("sample") === "1", stack: url.searchParams.get("stack") || "" };
+    if (!app.stackResources) return send(res, 200, { state: "error", error: "not available", groups: [] });
+    const ids = (url.searchParams.get("ids") || "").split(",").filter(Boolean).slice(0, 40);
+    if (ids.length) {
+      const all = await Promise.all(ids.map((id) => app.stackResources(id, { sample: opts.sample }).catch(() => ({ id, state: "error" }))));
+      return send(res, 200, { states: Object.fromEntries(all.map((r) => [r.id, { state: r.state, count: r.count || 0, updated: r.updated || 0, error: r.error || "" }])) });
+    }
+    send(res, 200, await app.stackResources(url.searchParams.get("id") || "", opts));
     return;
   }
 

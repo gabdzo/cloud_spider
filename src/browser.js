@@ -1,4 +1,5 @@
 import { samplePreview } from "./stack-sample.js";
+import { CATEGORIES, stackCategory } from "./stack-resources.js";
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, focusLists, paint } from "./draw.js";
@@ -3876,6 +3877,109 @@ function iconImg(name) {
 }
 
 // The head of a card: icon, title, the hourly cost chip and the engine plate.
+// DEPLOYED / NOT DEPLOYED from the stack's state (GET /api/upgrade/resources,
+// pulumi stack export: read-only). Filled once per panel open.
+let stackStates = {};
+let stackStatesAt = 0;
+const STATE_CHIP = {
+  deployed: ["DEPLOYED", "up", (s) => `its state holds ${s.count} resource${s.count === 1 ? "" : "s"}`],
+  empty: ["NOT DEPLOYED", "down", () => "the stack exists but its state is empty"],
+  missing: ["NOT DEPLOYED", "down", () => "no stack state yet: never run here"],
+  error: ["STATE ?", "unk", (s) => `could not read the state: ${s.error || "pulumi did not answer"}`],
+};
+function stateChip(st) {
+  if (!st) return el("span", { className: "st-chip unk", textContent: "…", title: "reading the stack state" });
+  const [word, cls, why] = STATE_CHIP[st.state] || STATE_CHIP.error;
+  return el("span", { className: `st-chip ${cls}`, textContent: st.state === "deployed" ? `${word} · ${st.count}` : word, title: why(st) });
+}
+async function pullStackStates(force = false) {
+  if (!force && Date.now() - stackStatesAt < 60_000) return;
+  stackStatesAt = Date.now();
+  const ids = pipModules.filter((spec) => !spec.addon).map((spec) => spec.id);
+  if (!ids.length) return;
+  const q = new URLSearchParams({ ids: ids.join(",") });
+  if (sample) q.set("sample", "1");
+  const body = await fetch(`/api/upgrade/resources?${q}`).then((r) => r.json()).catch(() => null);
+  if (!body?.states) return;
+  stackStates = body.states;
+  if (pipOpen) drawPipForm();
+}
+
+// RESOURCES CREATED: the open card's stack state grouped by type.
+const resourceCache = new Map();
+function resourcesBlock(spec, stack = "") {
+  const box = el("section", { className: "res-block", ariaLabel: "resources created" });
+  const head = el("div", { className: "res-head" }, iconImg("stack"), el("b", { textContent: "RESOURCES CREATED" }), el("span", { className: "res-sum", textContent: "reading the stack state…" }));
+  const list = el("div", { className: "res-list" });
+  box.append(head, list);
+  const key = `${spec.id}|${stack}|${sample ? 1 : 0}`;
+  const paint = (r) => {
+    const sum = head.querySelector(".res-sum");
+    if (r.state === "error") {
+      sum.textContent = "STATE NOT READABLE";
+      list.replaceChildren(el("p", { className: "res-empty bad", textContent: `${r.error || "pulumi did not answer"}. Cloud Spider reads it with pulumi stack export (read-only); pulumi must be on PATH and logged in to this stack's backend.` }));
+      return;
+    }
+    if (!r.deployed) {
+      sum.textContent = "NOT DEPLOYED";
+      list.replaceChildren(el("p", { className: "res-empty", textContent: r.state === "empty" ? `Stack ${r.stack} exists but holds nothing: it was never run, or it was destroyed. PREVIEW shows what RUN would create.` : `No state for stack ${r.stack || spec.stack || spec.id}: nothing was created yet. PREVIEW shows what RUN would create.` }));
+      return;
+    }
+    sum.textContent = `${r.count} IN ${r.groups.length} TYPE${r.groups.length === 1 ? "" : "S"}${r.sample ? " · SAMPLE" : ""}${r.updated ? ` · ${new Date(r.updated).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}` : ""}`;
+    const targets = mapFocusTargets();
+    list.replaceChildren(...r.groups.map((g) => {
+      const det = el("details", { className: "res-group" });
+      det.append(el("summary", { title: g.type }, el("span", { className: "res-type", textContent: g.label }), el("small", { className: "res-svc", textContent: g.service }), el("span", { className: "res-n", textContent: `×${g.count}` })));
+      det.append(el("ul", {}, ...g.items.map((it) => {
+        const hit = targets.find((t) => [t.item?.id, t.item?.arn, t.item?.name].filter(Boolean).some((v) => it.handles.includes(v) || v === it.id));
+        const li = el("li", {}, el("span", { className: "res-name", textContent: it.name, title: it.urn }));
+        if (hit) {
+          const go = el("button", { type: "button", className: "res-go", textContent: "MAP ›", title: `show ${it.name} on the map` });
+          go.addEventListener("click", () => {
+            mapKeyboard = true;
+            canvas.focus({ preventScroll: true });
+            const all = mapFocusTargets();
+            focusMapTarget(all, all.findIndex((t) => t.key === hit.key));
+          });
+          li.append(go);
+        } else if (it.id && it.id !== it.name) li.append(el("small", { className: "res-id", textContent: it.id.length > 34 ? `…${it.id.slice(-32)}` : it.id, title: it.id }));
+        return li;
+      })));
+      return det;
+    }));
+  };
+  if (resourceCache.has(key)) paint(resourceCache.get(key));
+  else {
+    const q = new URLSearchParams({ id: spec.id });
+    if (stack) q.set("stack", stack);
+    if (sample) q.set("sample", "1");
+    fetch(`/api/upgrade/resources?${q}`).then((r) => r.json()).catch(() => ({ state: "error", error: "the page failed" })).then((r) => {
+      resourceCache.set(key, r);
+      setTimeout(() => resourceCache.delete(key), 60_000);
+      if (box.isConnected) paint(r);
+    });
+  }
+  return box;
+}
+
+// Collapsible sections in the STACKS panel (kept in localStorage).
+const FOLD_KEY = "cloudspider.stacks.folded";
+const foldedSections = new Set((() => { try { return JSON.parse(localStorage.getItem(FOLD_KEY) || "[]"); } catch { return []; } })());
+function sectionHead(id, icon, label, note, list) {
+  const folded = foldedSections.has(id);
+  const up = list ? list.filter((spec) => stackStates[spec.id]?.state === "deployed").length : null;
+  const head = el("button", { type: "button", className: "pdiv psec", ariaExpanded: String(!folded), title: folded ? `show ${label}` : `fold ${label}` },
+    el("span", { className: "card-chev", ariaHidden: "true", textContent: "›" }), iconImg(icon), el("span", { textContent: label }),
+    el("span", { className: "ro" }, ...(list ? [el("b", { className: "sec-n", textContent: String(list.length) }), up ? el("span", { className: "sec-up", textContent: `${up} UP` }) : ""] : []), note ? el("span", { textContent: note }) : ""));
+  head.addEventListener("click", () => {
+    if (foldedSections.has(id)) foldedSections.delete(id);
+    else foldedSections.add(id);
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify([...foldedSections])); } catch {}
+    drawPipForm();
+  });
+  return head;
+}
+
 // A stack's note: the first lines, MORE for the rest (some run to a page).
 function noteBlock(text) {
   const box = el("div", { className: "card-note" }, el("p", { textContent: text }));
@@ -3896,15 +4000,16 @@ function cardHead(spec) {
     "button",
     { type: "button", className: "card-head" },
     iconImg(CARD_ICON[spec.id] || "stack"),
-    el("span", { className: "card-title", textContent: spec.title }),
   );
+  const main = el("span", { className: "card-main" }, el("span", { className: "card-title", textContent: spec.title }));
+  head.append(main);
   // Status chips: CONFIGURED (a Pulumi.<stack>.yaml with values on disk;
   // not a claim that it is up) and what it needs first.
   const chips = el("span", { className: "card-chips" });
-  if (spec.current && Object.keys(spec.current).length) chips.append(el("span", { className: "st-chip cfg", textContent: "CONFIGURED", title: "this stack has config values on disk (Pulumi.<stack>.yaml)" }));
+  chips.append(stateChip(stackStates[spec.id]));
   const needs = (spec.needs || []).map(String);
   if (needs.length) chips.append(el("span", { className: "st-chip need", textContent: `NEEDS ${needs[0].toUpperCase()}${needs.length > 1 ? ` +${needs.length - 1}` : ""}`, title: `needs first: ${needs.join(", ")}` }));
-  if (chips.children.length) head.append(chips);
+  if (chips.children.length) main.append(chips);
   if (spec.cost) head.append(el("span", { className: "cost-chip", textContent: costLine(spec.cost).split(" · ")[0], title: `about ${costLine(spec.cost)} in ${spec.cost.region}` }));
   head.append(el("span", { className: `eng ${spec.engine === "terraform" ? "tf" : ""}`, textContent: spec.engine === "terraform" ? "TF" : "PULUMI" }));
   head.append(el("span", { className: "card-chev", ariaHidden: "true", textContent: "›" }));
@@ -4039,7 +4144,7 @@ function cardBody(spec, preset = {}) {
   const body = el("div", { className: "card-body" });
   const watch = el("div", { id: "pip-watch" });
   watch.hidden = true;
-  body.append(noteBlock(spec.note || ""), costBlock(spec), needsRow(spec, preset), bundleRows(spec, preset));
+  body.append(noteBlock(spec.note || ""), resourcesBlock(spec, spec.addon && preset.clusterName ? `${spec.id}-${preset.clusterName}` : ""), costBlock(spec), needsRow(spec, preset), bundleRows(spec, preset));
   // PUBLIC · URL · lamp · OPEN, filled when the map knows the stack's public
   // load balancers (renderCardOpen, on every chrome render).
   const openRow = el("div", { className: "card-open" });
@@ -4236,6 +4341,7 @@ function addonRow(spec, item, cluster) {
     iconImg(CARD_ICON[item.id] || "addon"),
     el("span", { className: "ad-name" }, el("span", { className: "card-title", textContent: item.title }), el("small", { className: "ad-ver", textContent: sub || "—", title: item.source ? `version from ${item.source}` : `pinned ${item.pinned || "by EKS"}` })),
     el("span", { className: `ad-state ${state.lamp}` }, el("i"), el("b", { textContent: item.busy ? "BUSY" : state.word })),
+    el("span", { className: "card-chev", ariaHidden: "true", textContent: spec ? "›" : "" }),
   );
   head.setAttribute("aria-expanded", String(openCard === key));
   head.addEventListener("click", () => {
@@ -4305,11 +4411,16 @@ function drawPipForm() {
     pipEl.append(el("div", { className: "quiet pempty", textContent: "No stacks found: the upgrades/ folder has no Pulumi or Terraform stack." }));
     return;
   }
-  const section = (icon, label, note) => el("div", { className: "pdiv", role: "separator" }, iconImg(icon), el("span", { textContent: label }), el("span", { className: "ro", textContent: note }));
-  const groups = [["stack", "AWS ACCOUNT", "OWN STACKS", own.filter((spec) => !(spec.needs || []).length)], ["cluster", "ON THE EKS CLUSTER", "NEED EKS FIRST", own.filter((spec) => (spec.needs || []).length)]];
-  for (const [icon, label, note, list] of groups) {
-    if (!list.length) continue;
-    pipEl.append(section(icon, label, `${note} · ${list.length}`));
+  const groups = new Map();
+  for (const spec of own) {
+    const cat = stackCategory(spec.id);
+    if (!groups.has(cat.id)) groups.set(cat.id, { ...cat, list: [] });
+    groups.get(cat.id).list.push(spec);
+  }
+  const order = (id) => { const i = CATEGORIES.findIndex((c) => c[0] === id); return i < 0 ? 99 : i; };
+  for (const { id, icon, label, list } of [...groups.values()].sort((a, b) => order(a.id) - order(b.id))) {
+    pipEl.append(sectionHead(id, icon, label, "", list));
+    if (foldedSections.has(id)) continue;
     for (const spec of list) {
       const card = el("section", { className: "card" });
       card.dataset.id = spec.id;
@@ -4322,12 +4433,16 @@ function drawPipForm() {
     }
   }
   if (pipModules.some((spec) => spec.addon)) {
-    pipEl.append(el("div", { className: "pdiv addons", role: "separator" }, iconImg("addon"), el("span", { textContent: "CLUSTER ADD-ONS" }), el("span", { className: "ro", textContent: "ONE STACK EACH" })));
-    pipEl.append(el("div", { id: "addon-tree" }));
-    drawAddonTree();
+    const addons = pipModules.filter((spec) => spec.addon);
+    pipEl.append(sectionHead("addons", "addon", "CLUSTER ADD-ONS", "ONE STACK EACH", addons));
+    if (!foldedSections.has("addons")) {
+      pipEl.append(el("div", { id: "addon-tree" }));
+      drawAddonTree();
+    }
   }
   if (!pipTerraform.length) return;
-  pipEl.append(el("div", { className: "pdiv", role: "separator" }, iconImg("terraform"), el("span", { textContent: "TERRAFORM" }), el("span", { className: "ro", textContent: "READ-ONLY" })));
+  pipEl.append(sectionHead("terraform", "terraform", "TERRAFORM", "READ-ONLY", pipTerraform));
+  if (foldedSections.has("terraform")) return;
   for (const spec of pipTerraform) {
     const card = el("section", { className: "card tf" });
     card.dataset.id = spec.id;
@@ -4335,7 +4450,7 @@ function drawPipForm() {
     if (openCard === spec.id) {
       card.classList.add("open");
       const body = el("div", { className: "card-body" });
-      body.append(el("div", { textContent: spec.note || "" }), costBlock(spec), el("div", { id: "tf-state", className: "tf-state", textContent: "reading state…" }), el("ul", { id: "tf-outputs", className: "lines" }));
+      body.append(noteBlock(spec.note || ""), el("section", { className: "res-block" }, el("div", { className: "res-head" }, iconImg("terraform"), el("b", { textContent: "STATE & OUTPUTS" }), el("span", { id: "tf-state", className: "res-sum tf-state", textContent: "reading state…" })), el("ul", { id: "tf-outputs", className: "lines res-outputs" })), costBlock(spec));
       body.append(commandRows(spec.commands || []));
       card.append(body);
     }
@@ -5189,6 +5304,7 @@ async function toggleUpgrade() {
   }
   drawPipForm();
   refreshUpgrade(true);
+  pullStackStates();
   if (pipModules.some((spec) => spec.addon)) pullAddons(true);
 }
 

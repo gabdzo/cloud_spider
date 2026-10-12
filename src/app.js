@@ -39,6 +39,8 @@ import { createMetricsCache, sampleMetrics, SLO_PERIOD, SLO_TTL, SLO_WINDOW, slo
 import { idleCandidates, morningReport, nextIdleStreak } from "./layout.js";
 import { createHealthWatch, morningLine, stuckPending } from "./kube-health.js";
 import { DEFAULT_POLL_MS, scopeText } from "./kube-contexts.js";
+import { createStackResources } from "./stack-resources.js";
+import { createStackReader } from "./vault-stacks.js";
 
 const CALL = { stop: "StopInstances", start: "StartInstances" };
 const ACCOUNT_HINT = "Set AWS_PROFILE=default and AWS_REGION=eu-north-1.";
@@ -79,6 +81,7 @@ const NEEDS_MS = 40_000;
 const WAIT_MS = Number(process.env.CLOUDSPIDER_WAIT_MS) || 20_000;
 
 export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL }) {
+  let stackResourcesReader = null;
   // The modules view main.js hands over (settings.modules): aws off = k8s-only.
   const awsOffHere = () => settings?.modules?.modules?.find((m) => m.id === "aws")?.on === false;
   const stdout = [];
@@ -890,6 +893,12 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         report(sink, { call: "GetLogEvents", id, sentence: result.note });
       }
       return result;
+    },
+    // RESOURCES CREATED: a stack's state, read-only (pulumi stack export).
+    async stackResources(id = "", { sample = false, stack = "" } = {}) {
+      if (stack && !/^[a-z0-9][a-z0-9-]{0,99}$/.test(stack)) return { id, state: "error", error: "bad stack name", deployed: false, count: 0, groups: [] };
+      stackResourcesReader ||= createStackResources({ reader: createStackReader(), cardFor: (key) => UPGRADES.find((spec) => spec.id === key) || null });
+      return stackResourcesReader.read(String(id), { sample, stack });
     },
     upgrades() {
       const cards = upgrade?.list?.() || [];
