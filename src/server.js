@@ -799,6 +799,9 @@ const page = `<!doctype html>
 
   .body { flex: 1; min-height: 0; display: flex; }
   .mapwrap { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
+  /* SCORE and LEARN fill the view with a small frame: a scrim under them so
+     the map's labels in that frame do not read as part of the panel. */
+  .mapwrap:has(#score:not([hidden]), #learn:not([hidden]))::before { content: ""; position: absolute; inset: 0; z-index: 5; background: rgba(0, 0, 0, 0.72); pointer-events: none; }
   #map { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--pip-screen); }
 
   /* ---- the morning report: three sentences pinned over the map ---- */
@@ -885,17 +888,22 @@ const page = `<!doctype html>
     #sunrise { width: 96px; height: 54px; }
     .m-line .m-text { font-size: 13px; }
   }
+  /* Narrow: a 2x2 grid of one-line cards (click one to read it whole), not
+     four full-width rows that push the view under the fold; the MORNING
+     word stays so the strip says what it is. */
   @media (max-width: 1180px) {
-    #morning { grid-template-columns: auto minmax(0, 1fr) auto; }
-    .m-head { display: none; }
-    .m-lines { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    #morning { grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 0 10px; padding-top: 6px; padding-bottom: 6px; }
+    #sunrise { width: 48px; height: 27px; }
+    .m-head small, .m-head output { display: none; }
+    .m-lines { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; }
     .m-line { grid-template-rows: auto; padding-top: 3px; padding-bottom: 3px; }
-    .m-line .m-text { grid-column: 3; grid-row: 1; -webkit-line-clamp: 2; }
-    .m-line b { min-width: 92px; }
+    .m-line .m-text { grid-column: 3; grid-row: 1; -webkit-line-clamp: 1; }
+    .m-line b { min-width: 0; }
   }
   @media (max-width: 820px) {
     #morning { grid-template-columns: minmax(0, 1fr) auto; padding-left: 10px; }
-    #sunrise { display: none; }
+    #sunrise, .m-head { display: none; }
+    .m-lines { grid-template-columns: minmax(0, 1fr); }
     .m-line { grid-template-columns: 16px minmax(0, 1fr); grid-template-rows: auto auto; }
     .m-line b { min-width: 0; }
     .m-line .m-text { grid-column: 1 / -1; grid-row: 2; }
@@ -2462,7 +2470,10 @@ const page = `<!doctype html>
   #settings .st-mods label { display: grid; grid-template-columns: 18px 110px 1fr; gap: 8px; align-items: baseline; font-size: 12px; color: var(--text); cursor: pointer; }
   #settings .st-mods input { margin: 0; align-self: center; }
   #settings .st-mods label > * { align-self: center; }
-  #settings .st-mods b { font-weight: 600; }
+  /* each part keeps its column even when the box is hidden (an off module) */
+  #settings .st-mods input { grid-column: 1; }
+  #settings .st-mods b { font-weight: 600; grid-column: 2; min-width: 0; overflow-wrap: anywhere; }
+  #settings .st-mods small { grid-column: 3; min-width: 0; }
   #settings .st-mods small { color: var(--text-3); }
   #settings .st-mods .st-off label { color: var(--text-3); cursor: default; }
   #settings .st-yaml { margin: 8px 0 0; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: var(--text); font: 12px/1.4 var(--font-mono); white-space: pre-wrap; }
