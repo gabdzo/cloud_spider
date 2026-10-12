@@ -60,7 +60,7 @@ export function accountHint(error, env = process.env) {
     else if (env.AWS_PROFILE) parts.push(`AWS_PROFILE=${env.AWS_PROFILE} did not give working credentials: set AWS_PROFILE to a profile that works (check: aws sts get-caller-identity --profile <name>), e.g. AWS_PROFILE=default, or log in again (aws sso login --profile ${env.AWS_PROFILE}).`);
     else parts.push("No AWS_PROFILE is set and the default credential chain found nothing that works: set AWS_PROFILE=<profile>, e.g. AWS_PROFILE=default.");
   }
-  if (!region) parts.push("AWS_REGION is not set: set AWS_REGION=eu-north-1.");
+  if (!region && (creds || /region/i.test(text))) parts.push("AWS_REGION is not set: set AWS_REGION=eu-north-1.");
   return parts.length ? parts.join(" ") : ACCOUNT_HINT;
 }
 
