@@ -58,7 +58,9 @@ const create = (obj, opts) => {
   return Kind ? new Kind(name, args, opts) : new k8s.apiextensions.CustomResource(name, obj, opts); // SecurityContextConstraints (OpenShift only)
 };
 for (const { obj } of rest.filter(({ obj }) => !WORKLOADS.has(obj.kind))) {
-  const res = create(obj, inNs);
+  // ConfigMaps keep fixed names (the pods mount them by name), so a data
+  // change must delete before it creates; the pods roll on the checksum.
+  const res = create(obj, obj.kind === "ConfigMap" ? { ...inNs, deleteBeforeReplace: true } : inNs);
   made.push(res);
   if (/SecurityContextConstraints|Role|ServiceAccount/.test(obj.kind)) security.push(res);
 }
