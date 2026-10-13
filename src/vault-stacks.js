@@ -104,6 +104,10 @@ export function createStackReader({ run = spawn, cwd = root, env = process.env, 
   }
 
   return {
+    // Drop the 60 s cache (after a take-down, so VAULTS reads the stacks now).
+    forget() {
+      cache.clear();
+    },
     // { stacks: [{name, resources, missing?, error?}], handles: Set, outputs, count, error }
     async read(spec) {
       if (!spec?.dir || !spec?.name) return { stacks: [], handles: new Set(), outputs: {}, count: 0, error: "" };

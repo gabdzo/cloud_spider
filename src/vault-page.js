@@ -30,6 +30,7 @@ export function lightOf(vault) {
 }
 
 const LIGHT_TEXT = {
+  gone: "GONE: ITS STACK HAS NO RESOURCES (DELETE THE VAULT FILE TO DROP IT)",
   ok: "ALL CHECKS PASS",
   fail: "CHECK FAILING",
   slow: "SLOW",
@@ -85,7 +86,7 @@ export function vaultSummary(vault) {
 
 // Header counts: how many vaults, and how many need a look.
 export function vaultTally(vaults = []) {
-  const tally = { total: vaults.length, ok: 0, fail: 0, slow: 0, pending: 0, none: 0, damaged: 0, trouble: 0, live: 0 };
+  const tally = { total: vaults.length, ok: 0, fail: 0, slow: 0, pending: 0, none: 0, damaged: 0, gone: 0, trouble: 0, live: 0 };
   for (const vault of vaults) {
     tally[lightOf(vault)] += 1;
     if (vault.trouble?.length) tally.trouble += 1;

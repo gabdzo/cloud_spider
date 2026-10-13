@@ -46,3 +46,19 @@ test("the view lists auto vaults next to the files, in number order, and marks t
   assert.deepEqual(out.vaults.map((v) => [v.name, v.auto]), [["eks", false], ["shopapi", true]]);
   assert.deepEqual(out.templates.map((t) => [t.name, t.live]), [["shopapi", true], ["rds", false]]);
 });
+
+test("a vault file whose stack is empty is GONE; an unreadable stack is not", async () => {
+  const { createVaultView } = await import("../src/vault-view.js");
+  const file = (name, stack) => ({ key: name, name, number: 120, title: name, damaged: false, errors: [], checks: [], slos: [], links: {}, resources: { tags: {}, ids: [] }, stack, file: `${name}.yaml` });
+  const store = { load: async () => ({ vaults: [file("a", { dir: "x", name: "a" }), file("b", { dir: "x", name: "b" }), file("c", null)], note: "", dir: "" }) };
+  let forgot = 0;
+  const stacks = { forget: () => { forgot += 1; }, read: async (spec) => (spec.name === "a" ? { stacks: [{ name: "a", missing: true }], handles: new Set(), outputs: {}, count: 0, error: "" } : { stacks: [], handles: new Set(), outputs: {}, count: 0, error: "pulumi did not run" }) };
+  const view = createVaultView({ store, checker: { peek: () => [] }, stacks });
+  view.forget();
+  assert.equal(forgot, 1);
+  const by = Object.fromEntries((await view.view(null)).vaults.map((v) => [v.name, v]));
+  assert.equal(by.a.gone, true);
+  assert.equal(by.a.status, "gone");
+  assert.equal(by.b.gone, false);
+  assert.equal(by.c.gone, false);
+});

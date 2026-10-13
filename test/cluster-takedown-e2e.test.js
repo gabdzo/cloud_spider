@@ -17,6 +17,10 @@ import { fileURLToPath } from "node:url";
 import { createUpgrade, UPGRADES } from "../src/upgrade.js";
 import { createApp } from "../src/app.js";
 import { cliRunner } from "../src/eks-scale.js";
+import { createVaultView } from "../src/vault-view.js";
+import { createVaultStore } from "../src/vaults.js";
+import { createStackReader } from "../src/vault-stacks.js";
+import { createCheckRunner } from "../src/vault-checks.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const fixtures = join(root, "test", "fixtures", "takedown");
@@ -85,7 +89,19 @@ function world() {
     pulumi(eks, ["config", "set", "--stack", "upgrade", `${eks.project}:maxPods`, "50"]);
   }
   const upgrade = createUpgrade({ cwd: dir, env, policyPack: "" });
-  const app = createApp({ upgrade, pageOrigin: ORIGIN, clock: () => Date.now(), write() {}, autoConnect: false });
+  // VAULTS as Gabriel has them: a vault file bound to a cluster stack
+  // (registration), a template auto-listed while its stack is up, and a
+  // tags-only vault (not Pulumi-managed).
+  const shopDir = UPGRADES.find((s) => s.id === "shopapi").dir;
+  const karpDir = UPGRADES.find((s) => s.id === "karpenter").dir;
+  const vdir = join(dir, "vaults");
+  mkdirSync(join(vdir, "templates"), { recursive: true });
+  const vault = (name, number, stack) => `apiVersion: cloudspider/v1\nkind: Vault\nmetadata:\n  name: ${name}\n  number: ${number}\n  title: ${name}\n  description: e2e vault ${name}\n  owner: gabriel\nspec:\n  type: service\n  resources:\n    tags:\n      project: ${name}\n${stack ? `  stack:\n    dir: ${stack.dir}\n    name: "${stack.name}"\n` : ""}`;
+  writeFileSync(join(vdir, "shop.yaml"), vault("shop", 120, { dir: shopDir, name: "shopapi" }));
+  writeFileSync(join(vdir, "loose.yaml"), vault("loose", 130, null));
+  writeFileSync(join(vdir, "templates", "karpenter.yaml"), vault("karpenter", 150, { dir: karpDir, name: `karpenter-${CLUSTER}` }));
+  const vaults = { live: createVaultView({ store: createVaultStore({ dir: vdir }), checker: createCheckRunner({ fetch: async () => ({ status: 200, text: async () => "" }) }), stacks: createStackReader({ cwd: dir, env }) }) };
+  const app = createApp({ upgrade, vaults, pageOrigin: ORIGIN, clock: () => Date.now(), write() {}, autoConnect: false });
   app.eksScale = { writeContexts: ["cloudspider-up-viewer", "cloudspider-up-admin", "other-admin"], run: cliRunner(execFile, env), store: { forget: async () => {} } };
   // Each run's end, for the test to await.
   const ends = [];
@@ -175,6 +191,10 @@ test("0 nodes, recommended: scale to 1 node first, controllers clean up, nothing
   const { plan } = got;
   assert.ok(plan, JSON.stringify(got));
   assert.deepEqual(plan.pre.map((p) => p.kind), ["scale-up", "webhooks"]);
+  const pre = Object.fromEntries((await w.app.vaultsView()).vaults.map((v) => [v.name, v]));
+  assert.deepEqual(Object.keys(pre).sort(), ["karpenter", "loose", "shop"], JSON.stringify(Object.values(pre).map((v) => [v.name, v.errors, v.stackInfo])));
+  assert.equal(pre.shop.gone, false);
+  assert.equal(pre.karpenter.auto, true);
   const started = await w.app.upgradeTakedown(ORIGIN, { cluster: CLUSTER, confirm: CLUSTER });
   assert.equal(started.running, true);
   const end = await w.ends[0];
@@ -185,6 +205,17 @@ test("0 nodes, recommended: scale to 1 node first, controllers clean up, nothing
   assert.ok(calls.some((c) => /update-nodegroup-config .*desiredSize=1/.test(c)));
   assert.ok(calls.some((c) => /delete nodepools.karpenter.sh --all/.test(c)), "Karpenter's NodePools go before its stack");
   assert.match(log, /nothing tagged for cloudspider-up is left/);
+  // VAULTS afterwards: the auto vault went with its stack, the vault file
+  // stays as GONE (a registration no destroy removes), the tags-only vault
+  // is named as not managed by Pulumi, in the run's report too.
+  const post = Object.fromEntries((await w.app.vaultsView()).vaults.map((v) => [v.name, v]));
+  assert.deepEqual(Object.keys(post).sort(), ["loose", "shop"]);
+  assert.equal(post.shop.gone, true);
+  assert.equal(post.shop.status, "gone");
+  assert.equal(post.loose.gone, false);
+  assert.match(log, /VAULTS GONE: 1 .*shop \(vaults\/shop\.yaml\)/);
+  assert.match(log, /VAULTS NOT MANAGED BY PULUMI: 1 .*loose/);
+  assert.doesNotMatch(log, /VAULTS STILL UP/);
 });
 
 test("a single card's TAKE IT DOWN ignores card values an up would refuse (maxPods 50, bad replicas)", { skip, timeout: 300_000 }, async () => {

@@ -93,8 +93,14 @@ export function createVaultView({ store, checker, stacks = null, codeTime = null
           }
         }
         const resolved = resolveOutputs(entry, info?.outputs || {});
+        // GONE: a vault file names a stack that read fine but has nothing
+        // (destroyed, removed, or never made). The file is only a
+        // registration; the vault stays listed, marked GONE, until the file
+        // goes. A stack that did not read is not GONE (unknown).
+        const gone = Boolean(entry.stack && stacks && info && !info.error && !(info.count > 0));
         return {
           ...entry,
+          gone,
           links: resolved.links,
           checks: resolved.checks,
           resources: info?.handles?.size ? { ...entry.resources, handles: info.handles } : entry.resources,
@@ -127,6 +133,7 @@ export function createVaultView({ store, checker, stacks = null, codeTime = null
       links: entry.links,
       file: entry.file,
       auto: Boolean(entry.auto),
+      gone: Boolean(entry.gone),
       damaged: entry.damaged,
       errors: entry.errors,
       warnings: entry.warnings || [],
@@ -141,7 +148,7 @@ export function createVaultView({ store, checker, stacks = null, codeTime = null
       logGroups: entry.logGroups || [],
       owned,
       checks,
-      status: entry.damaged ? "fail" : vaultStatus(checks, entry.checks.length),
+      status: entry.damaged ? "fail" : entry.gone ? "gone" : vaultStatus(checks, entry.checks.length),
       slos,
       sloLamp: sloLamp(slos),
       insight: entry.insight || null,
@@ -192,6 +199,9 @@ export function createVaultView({ store, checker, stacks = null, codeTime = null
   }
 
   return {
+    forget() {
+      stacks?.forget?.();
+    },
     async view(place, { failures = [], slo = {}, kube = [] } = {}) {
       const ledger = slo.ledger || ownLedger;
       const loaded = await entries();
