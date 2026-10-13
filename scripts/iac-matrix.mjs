@@ -32,7 +32,7 @@ export async function runEntry(entry) {
   }
   if (got.err) return { ok: false, why: got.err.split("\n").filter((l) => /Error|error:/.test(l)).slice(0, 3).join(" | ") || got.err.slice(0, 300) };
   const resources = JSON.parse(got.out.slice(got.out.indexOf("[{")));
-  return resources.length >= (entry.min || 1) ? { ok: true, why: `${resources.length} resources` } : { ok: false, why: `${resources.length} resources, expected at least ${entry.min}` };
+  return resources.length >= (entry.min || 1) ? { ok: true, why: `${resources.length} resources`, resources } : { ok: false, why: `${resources.length} resources, expected at least ${entry.min}`, resources };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
