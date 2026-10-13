@@ -82,7 +82,7 @@ const S = [
     break: async () => { apply(app("k8s001", { probe: "/no-such-path" })); await wait(150_000); },
     expect: (r) => r.findings.some((f) => f.code === "K8S-001"),
     restore: async () => { apply(app("k8s001")); ready("k8s001"); } },
-  { id: "PENDING", what: "Pod requests 64 CPUs: stays Pending (an open question, not a finding)", svc: "pending",
+  { id: "PENDING", what: "Pod requests 64 CPUs: stays Pending (an open question, not a finding)", svc: "pending", questionOnly: true,
     setup: async () => { apply(app("pending")); ready("pending"); },
     break: async () => { apply(app("pending", { cpu: "64" })); await wait(20_000); },
     expect: (r) => r.questions?.some((q) => /Pending/.test(q)) || r.findings.some((f) => /Pending/.test(f.summary)),
@@ -97,17 +97,19 @@ const S = [
     break: async () => { apply(`apiVersion: admissionregistration.k8s.io/v1\nkind: ValidatingWebhookConfiguration\nmetadata: { name: ${HOOK} }\nwebhooks:\n- name: chaos.drill.cloudspider.dev\n  clientConfig: { service: { namespace: ${NS}, name: hook, path: /validate } }\n  rules: [{ apiGroups: [""], apiVersions: [v1], operations: [CREATE], resources: [configmaps] }]\n  namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ${NS} } }\n  failurePolicy: Ignore\n  sideEffects: None\n  admissionReviewVersions: [v1]\n  timeoutSeconds: 2\n`); await wait(5000); },
     expect: (r) => r.findings.some((f) => f.code === "OPS-001" && /chaos/.test(f.summary)),
     restore: async () => { k(["delete", "validatingwebhookconfiguration", HOOK]); } },
-  { id: "NET-002", what: `ALB targets unhealthy: ${SHOP.ns}/${SHOP.deploy} readiness on a wrong path`, ns: SHOP.ns, svc: SHOP.svc,
+  // The ALB health check is broken, not the pods: a bad readiness probe only
+  // stalls the rollout (old pods stay ready, the ALB never sees a bad target).
+  { id: "NET-002", what: `ALB targets unhealthy: ${SHOP.ns}/${SHOP.svc} Ingress health check moved to a path that 404s`, ns: SHOP.ns, svc: SHOP.svc,
     setup: async () => {},
     break: async () => {
-      const d = JSON.parse(k(["-n", SHOP.ns, "get", "deploy", SHOP.deploy, "-o", "json"]));
-      S.shopProbe = d.spec.template.spec.containers[0].readinessProbe;
-      k(["-n", SHOP.ns, "patch", "deploy", SHOP.deploy, "--type", "json", "-p", JSON.stringify([{ op: "add", path: "/spec/template/spec/containers/0/readinessProbe", value: { httpGet: { path: "/no-such-path", port: S.shopProbe?.httpGet?.port || "http" }, periodSeconds: 3, failureThreshold: 1 } }])]);
+      S.shopHc = k(["-n", SHOP.ns, "get", "ingress", SHOP.svc, "-o", "jsonpath={.metadata.annotations.alb\\.ingress\\.kubernetes\\.io/healthcheck-path}"]).trim();
+      if (!S.shopHc) throw new Error(`no ALB Ingress ${SHOP.ns}/${SHOP.svc} (set expose: alb first)`);
+      k(["-n", SHOP.ns, "annotate", "ingress", SHOP.svc, "--overwrite", "alb.ingress.kubernetes.io/healthcheck-path=/no-such-path"]);
       S.shopTouched = true;
-      await wait(150_000);
+      await wait(90_000);
     },
     expect: (r) => r.findings.some((f) => f.code === "NET-002"),
-    restore: async () => { k(["-n", SHOP.ns, "rollout", "undo", `deploy/${SHOP.deploy}`]); ready(SHOP.deploy, SHOP.ns); await wait(60_000); } },
+    restore: async () => { k(["-n", SHOP.ns, "annotate", "ingress", SHOP.svc, "--overwrite", `alb.ingress.kubernetes.io/healthcheck-path=${S.shopHc}`]); S.shopTouched = false; await wait(90_000); } },
   { id: "APP-001", what: "brother-sandbox/db: existing error rate (not broken by the drill, not restored)", ns: "brother-sandbox", svc: "db", noRestore: true,
     setup: async () => {}, break: async () => {},
     expect: (r) => r.findings.some((f) => f.code === "APP-001"),
@@ -139,7 +141,7 @@ async function uiVerify() {
 
 async function cleanup() {
   kq(["delete", "validatingwebhookconfiguration", HOOK, "--ignore-not-found"]);
-  if (S.shopTouched) { kq(["-n", SHOP.ns, "rollout", "undo", `deploy/${SHOP.deploy}`]); S.shopTouched = false; }
+  if (S.shopTouched) { kq(["-n", SHOP.ns, "annotate", "ingress", SHOP.svc, "--overwrite", `alb.ingress.kubernetes.io/healthcheck-path=${S.shopHc}`]); S.shopTouched = false; }
   kq(["delete", "namespace", NS, "--ignore-not-found", "--wait=false"]);
   await browser?.close().catch(() => {});
 }
@@ -169,12 +171,19 @@ try {
       row.fired = !!s.expect(rec);
       await uiInvestigate(ns, s.svc); row.shot_before = await shot(`${s.id}-1-investigate`);
       await s.restore();
-      if (s.id === "NET-002") S.shopTouched = false;
       const v = await api("verify", { investigation_id: rec.investigation_id });
       row.verify = v.status;
       row.verify_checks = (v.checks || []).map((c) => `${c.code || c.id}: ${c.status}${c.why ? ` (${c.why})` : ""}`);
       await uiVerify(); row.shot_after = await shot(`${s.id}-2-verify`);
-      row.pass = row.fired && (s.noRestore ? true : v.status === "resolved");
+      // Pass on the drilled rule's own check: other findings that were
+      // already there (APP-001 on a busy service) may stay inconclusive.
+      const own = (v.checks || []).filter((c) => c.code === s.id);
+      row.verify_own = own.map((c) => c.status).join(",") || null;
+      if (s.questionOnly) {
+        const again = await api("investigate", { context: VIEWER, namespace: ns, service: s.svc });
+        row.verify_own = s.expect(again) ? "still_failing" : "resolved";
+      }
+      row.pass = row.fired && (s.noRestore ? true : row.verify_own === "resolved");
     } catch (e) { row.error = String(e.message || e); row.pass = false; await shot(`${s.id}-error`); }
     console.log(JSON.stringify(row, null, 1));
     results.push(row);

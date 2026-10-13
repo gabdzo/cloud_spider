@@ -15,10 +15,10 @@ node scripts/chaos-drill.mjs --app http://127.0.0.1:9251 \
 |---|---|---|
 | NET-001 | `chaos-drill/net001` scaled to 0 | NET-001 |
 | K8S-001 | readiness probe on `/no-such-path`, waits 150 s (rule needs > 120 s) | K8S-001 |
-| PENDING | a pod requesting 64 CPUs | an open question naming the Pending pod (not a finding by design) |
+| PENDING | a pod requesting 64 CPUs | an open question naming the Pending pod (not a finding by design); "resolved" = the question is gone on a fresh investigate, since VERIFY AGAIN has no finding to check |
 | CERT-001 | Certificate with a ClusterIssuer that does not exist | CERT-001 |
 | OPS-001 | a test ValidatingWebhookConfiguration (`failurePolicy: Ignore`, `namespaceSelector` = `chaos-drill` only) calling a Service with no pods | OPS-001 |
-| NET-002 | `shop/shopapi` readiness on a wrong path, so the ALB targets go unhealthy; restored with `rollout undo` | NET-002 |
+| NET-002 | the `shop/shopapi` Ingress health-check path moved to one that 404s, so every ALB target turns unhealthy; restored to the old path | NET-002 |
 | APP-001 | nothing: reads the existing `brother-sandbox/db` errors | APP-001 (verify stays still_failing) |
 
 Safety:
