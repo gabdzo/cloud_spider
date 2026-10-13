@@ -28,6 +28,8 @@ export const VIEWS = {
   "vault-open": [click("#tab-vaults"), async (p) => { await wait(1500); await p.evaluate(() => [...document.querySelectorAll("#vault-page .vpg-open")].find((x) => /Shop API/.test(x.textContent))?.click()); await wait(1200); await p.evaluate(() => document.querySelector("#vault-page .vpg-rel")?.scrollIntoView()); await wait(600); }],
   stacks: [click("#upgrade")],
   // a stack opened: the bill, fields and buttons inside the wider panel
+  // the EKS card's SCALE DOWN dialog (sample cluster, dry run)
+  "stacks-scale": [click("#upgrade"), async (p) => { await wait(800); await p.evaluate(() => document.querySelector('#pip .card[data-id="eks"] .card-head')?.click()); await wait(1500); await p.evaluate(() => document.querySelector('#pip [data-scale="down"]')?.click()); await wait(1200); }],
   "stacks-open": [click("#upgrade"), async (p) => { await wait(800); await p.evaluate(() => document.querySelector("#pip .card .card-head")?.click()); await wait(1500); }],
   learn: [click("#learn-key")],
   score: [click("#score-key")],

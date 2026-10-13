@@ -1,4 +1,5 @@
 import { samplePreview } from "./stack-sample.js";
+import { mountScale } from "./eks-scale-view.js";
 import { CATEGORIES, stackCategory } from "./stack-resources.js";
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
@@ -4202,6 +4203,13 @@ function cardBody(spec, preset = {}) {
   body.append(openRow);
   if (spec.nodeCost) body.append(nodeCostBlock(spec.nodeCost));
   body.append(watch);
+  if (spec.id === "eks") {
+    // SCALE DOWN / SCALE UP (eks-scale-view.js): chip, buttons, warning, dialog.
+    const scaleBox = el("div", { id: "pip-scale", className: "scale-row", role: "group", ariaLabel: "scale the cluster down or up" });
+    body.append(scaleBox);
+    const scale = mountScale(scaleBox, () => ({ cluster: pipParams().clusterName || spec.current?.clusterName || "cloudspider-up", sample }));
+    queueMicrotask(() => scale.refresh());
+  }
   if (spec.id === "eks") body.append(connectRow("pip-connect"), el("div", { id: "pip-live", className: "live-line", hidden: true }, el("span", { className: "live-what" }), el("em", { className: "field-note live-warn" })));
   if (spec.id === "camp") {
     const grain = el("select", { id: "camp-grain" });

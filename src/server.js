@@ -47,6 +47,7 @@ export const FILES = new Set([
   "ui.js",
   "layout.js",
   "stack-sample.js",
+  "eks-scale-view.js",
   "stack-resources.js",
   "peering.js",
   "arch-layout.js",
@@ -2373,6 +2374,38 @@ const page = `<!doctype html>
   #pip .st-chip.up { color: var(--pip-ink); border-color: var(--pip-bright); background: linear-gradient(var(--pip-bright), var(--pip-mid)); box-shadow: 0 0 6px var(--glow-bright); }
   #pip .st-chip.down { color: var(--pip-dim-text); border-color: var(--pip-dark); border-style: dashed; background: transparent; }
   #pip .st-chip.unk { color: var(--world-amber); border-color: var(--case-brass-lo); background: transparent; }
+  /* SCALE DOWN / UP on the EKS card (eks-scale-view.js) */
+  #pip .scale-row { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 8px; border: 1px dashed var(--pip-dark); min-width: 0; }
+  #pip .scale-head:empty { display: none; }
+  #pip .scale-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+  #pip .st-chip.scaled { color: var(--world-amber); border-color: var(--case-brass-lo); background: linear-gradient(rgba(196, 160, 80, 0.22), rgba(196, 160, 80, 0.05)); }
+  #pip .scale-saved { font-size: 11px; color: var(--pip-dim-text); overflow-wrap: anywhere; min-width: 0; }
+  #pip .scale-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+  #pip .scale-warn { font-size: 11px; font-style: normal; color: var(--world-amber); line-height: 1.35; overflow-wrap: anywhere; }
+  #pip .scale-dialog { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  #pip .scale-dialog h3 { margin: 0; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+  #pip .scale-dialog h3 small, #pip .scale-fine { font-size: 10px; color: var(--pip-dim-text); font-weight: normal; letter-spacing: 0; text-transform: none; }
+  #pip .scale-dialog h4 { margin: 4px 0 0; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--pip-dim-text); }
+  #pip .scale-cost { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
+  #pip .scale-cost b { color: var(--pip-bright); }
+  #pip .scale-steps, #pip .scale-still { margin: 0; padding-left: 18px; font-size: 11px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  #pip .scale-steps li, #pip .scale-still li { overflow-wrap: anywhere; min-width: 0; }
+  #pip .scale-steps code { display: block; font-size: 10px; color: var(--pip-dim-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+  #pip .scale-still { list-style: none; padding-left: 0; }
+  #pip .scale-still li { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 6px; }
+  #pip .scale-wl, #pip .scale-confirm { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11px; min-width: 0; }
+  #pip .scale-confirm input { flex: 1 1 140px; min-width: 0; }
+  #pip .scale-wl { flex-wrap: nowrap; align-items: flex-start; text-transform: none; letter-spacing: 0; }
+  #pip .scale-wl input[type=checkbox] { flex: 0 0 auto; width: 14px; height: 14px; margin: 1px 0 0; padding: 0; }
+  #pip .scale-out:empty { display: none; }
+  #pip .scale-out, #pip .scale-err { margin: 0; font-size: 11px; }
+  #pip .scale-out.bad, #pip .scale-err { color: var(--status-broken); }
+  :root[data-theme="pro"] #pip .scale-row { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+  :root[data-theme="pro"] #pip .st-chip.scaled { color: #b45309; border-color: #f59e0b; background: rgba(245, 158, 11, 0.12); border-radius: 4px; }
+  :root[data-theme="pro"] #pip .scale-saved, :root[data-theme="pro"] #pip .scale-fine, :root[data-theme="pro"] #pip .scale-dialog h4, :root[data-theme="pro"] #pip .scale-steps code { color: var(--text-3); font-family: var(--font-ui); }
+  :root[data-theme="pro"] #pip .scale-warn { color: #b45309; font-family: var(--font-ui); }
+  :root[data-theme="pro"] #pip .scale-cost b { color: var(--accent); }
+  :root[data-theme="pro"] #pip .scale-dialog h3 { font-family: var(--font-ui); letter-spacing: 0; text-transform: none; }
   #pip .card-head:hover .st-chip.up, #pip .card.open .card-head .st-chip.up { box-shadow: none; }
   #pip .res-block { border: 1px solid var(--pip-dark); background: linear-gradient(180deg, rgba(20, 255, 106, 0.06), rgba(0, 0, 0, 0.35)); box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6); }
   #pip .res-head { display: flex; align-items: center; gap: 6px; padding: 3px 6px; font-size: 10px; letter-spacing: 0.16em; color: var(--pip-bright); border-bottom: 1px solid var(--pip-dark); background: linear-gradient(90deg, rgba(20, 255, 106, 0.16), transparent); }
