@@ -2,6 +2,10 @@
 
 Semantic versions per module: major = an input removed/renamed or a change that replaces a resource; minor = a new input or resource; patch = no infrastructure change. Bump package.json `version` with an entry here.
 
+## 1.0.2 (2026-10-14)
+
+- redis-cart, Uptime Kuma and Mealie run as their images' non-root users (fsGroup on the volume); Kuma starts node directly (its entrypoint needs setgid). In place, pods restart.
+
 ## 1.0.1 (2026-10-13)
 
 - Nodes are x86 (m6i.large pool): Online Boutique publishes amd64-only images. No infrastructure change in this stack.

@@ -31,7 +31,10 @@ const vpcCidr = aws.ec2.getVpcOutput({ id: aws.eks.getClusterOutput({ name: clus
 for (const ns of Object.keys(namespaces)) ship({ k8s, pulumi, opts: { ...k, dependsOn: [namespaces[ns]] }, namespace: ns, vpcCidr });
 const inNs = (ns, extra = []) => ({ ...k, dependsOn: [namespaces[ns], ...extra] });
 
-function app(ns, name, { image, port, targetPort, env = {}, cpu, memory, volumes = [], mounts = [], replicas = 1, strategy }) {
+// runAs: each image's own non-root user, so no entrypoint needs chown or
+// setuid (all capabilities are dropped; seen live 2026-10-14: redis, Mealie
+// and Uptime Kuma crashed with "Operation not permitted" as root).
+function app(ns, name, { image, port, targetPort, env = {}, cpu, memory, volumes = [], mounts = [], replicas = 1, strategy, runAs, command }) {
   const labels = { app: name };
   const dep = new k8s.apps.v1.Deployment(`${ns}-${name}`, {
     metadata: { name, namespace: ns, labels },
@@ -41,7 +44,8 @@ function app(ns, name, { image, port, targetPort, env = {}, cpu, memory, volumes
         metadata: { labels },
         spec: {
           topologySpreadConstraints: spread(name),
-          containers: [{ name, image, ports: [{ containerPort: targetPort || port }], env: Object.entries(env).map(([n, value]) => (typeof value === "string" ? { name: n, value } : { name: n, valueFrom: value })), resources: res(cpu, memory), securityContext: hardened, volumeMounts: mounts }],
+          ...(runAs ? { securityContext: { runAsNonRoot: true, runAsUser: runAs, runAsGroup: runAs, fsGroup: runAs, fsGroupChangePolicy: "OnRootMismatch" } } : {}),
+          containers: [{ name, image, ...(command ? { command } : {}), ports: [{ containerPort: targetPort || port }], env: Object.entries(env).map(([n, value]) => (typeof value === "string" ? { name: n, value } : { name: n, valueFrom: value })), resources: res(cpu, memory), securityContext: hardened, volumeMounts: mounts }],
           volumes,
         },
       },
@@ -56,14 +60,14 @@ const pvc = (ns, name, storage) => new k8s.core.v1.PersistentVolumeClaim(`${ns}-
 const single = { type: "Recreate" }; // RWO volume: never two pods at once
 
 // Online Boutique (ALB 2 + NLB).
-app("boutique", "redis-cart", { image: IMAGES.redis, port: 6379, cpu: "20m", memory: "64Mi", volumes: [{ name: "data", emptyDir: {} }], mounts: [{ name: "data", mountPath: "/data" }] });
+app("boutique", "redis-cart", { image: IMAGES.redis, port: 6379, cpu: "20m", memory: "64Mi", runAs: 999, volumes: [{ name: "data", emptyDir: {} }], mounts: [{ name: "data", mountPath: "/data" }] });
 for (const s of BOUTIQUE) app("boutique", s.name, { image: s.image, port: s.name === "frontend" ? 80 : s.port, targetPort: s.name === "frontend" ? 8080 : s.targetPort, env: s.env, cpu: s.cpu, memory: s.memory });
 new k8s.core.v1.Service("boutique-frontend-nlb", NLB_SERVICE, inNs("boutique"));
 
 // Uptime Kuma (SQLite on a PVC).
 const kuma = PRODUCTS.find((p) => p.id === "kuma");
 pvc(kuma.ns, "kuma-data", kuma.storage);
-app(kuma.ns, kuma.service, { image: IMAGES.kuma, port: kuma.port, cpu: kuma.cpu, memory: kuma.memory, strategy: single, volumes: [{ name: "data", persistentVolumeClaim: { claimName: "kuma-data" } }], mounts: [{ name: "data", mountPath: "/app/data" }] });
+app(kuma.ns, kuma.service, { image: IMAGES.kuma, port: kuma.port, cpu: kuma.cpu, memory: kuma.memory, runAs: 1000, command: ["node", "server/server.js"], strategy: single, volumes: [{ name: "data", persistentVolumeClaim: { claimName: "kuma-data" } }], mounts: [{ name: "data", mountPath: "/app/data" }] });
 
 // Wiki.js on a one-instance CNPG Postgres (secret wikidb-app made by CNPG).
 const wiki = PRODUCTS.find((p) => p.id === "wiki");
@@ -78,7 +82,7 @@ app(wiki.ns, wiki.service, { image: IMAGES.wiki, port: wiki.port, cpu: wiki.cpu,
 // Mealie (SQLite on a PVC).
 const mealie = PRODUCTS.find((p) => p.id === "mealie");
 pvc(mealie.ns, "mealie-data", mealie.storage);
-app(mealie.ns, mealie.service, { image: IMAGES.mealie, port: mealie.port, cpu: mealie.cpu, memory: mealie.memory, strategy: single, env: { ALLOW_SIGNUP: "false", BASE_URL: `http://mealie.${domain}` }, volumes: [{ name: "data", persistentVolumeClaim: { claimName: "mealie-data" } }], mounts: [{ name: "data", mountPath: "/app/data" }] });
+app(mealie.ns, mealie.service, { image: IMAGES.mealie, port: mealie.port, cpu: mealie.cpu, memory: mealie.memory, runAs: 911, strategy: single, env: { ALLOW_SIGNUP: "false", BASE_URL: `http://mealie.${domain}` }, volumes: [{ name: "data", persistentVolumeClaim: { claimName: "mealie-data" } }], mounts: [{ name: "data", mountPath: "/app/data" }] });
 
 // ALB 1 (shared, IngressGroup "showcase": 3 host rules) and ALB 2 (Boutique).
 const ingresses = PRODUCTS.map((p) => new k8s.networking.v1.Ingress(`${p.id}-ingress`, ingressFor(p, { domain, certificateArn: cfg.certificateArn || "", wafAclArn: cfg.wafAclArn || "" }), inNs(p.ns, p.id === "wiki" ? [wikidb] : [])));
