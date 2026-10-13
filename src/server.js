@@ -25,6 +25,7 @@ import { LE_CSS } from "./log-errors-style.js";
 import { scoreRoute } from "./score/routes.js";
 import { netdebugRoute } from "./netdebug/routes.js";
 import { eksScaleRoute } from "./eks-scale-route.js";
+import { sampleTakedownPlan, takedownText } from "./cluster-takedown.js";
 import { defaults, effectiveConfig } from "./config.js";
 import { sampleCost } from "./cost.js";
 import { sampleClusterSnapshot, sampleKubeSnapshot, sampleMapSnapshot, samplePodDetail, samplePodInspect } from "./kube-sample.js";
@@ -48,6 +49,7 @@ export const FILES = new Set([
   "layout.js",
   "stack-sample.js",
   "eks-scale-view.js",
+  "takedown-view.js",
   "stack-resources.js",
   "stack-overview.js",
   "peering.js",
@@ -2488,6 +2490,18 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #pip .ov-tip, :root[data-theme="pro"] #pip .ov-drift { color: #d97706; font-family: var(--font-ui); }
   :root[data-theme="pro"] #pip .ov-console, :root[data-theme="pro"] #pip .ov-back { color: #fff; border: 0; border-radius: 6px; background: var(--accent); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); font-family: var(--font-ui); letter-spacing: 0.04em; }
   :root[data-theme="pro"] #pip .ov-close { color: var(--accent); border-color: var(--border); border-radius: 4px; font-family: var(--font-ui); }
+  /* TEAR EVERYTHING DOWN (takedown-view.js): pixel nuke, red/amber glow */
+  #pip .nuke-btn { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; color: #ffd27a; background: linear-gradient(#5a1208, #2a0804); border: 2px solid #ff5a2a; font-weight: bold; letter-spacing: 0.08em; text-shadow: 0 0 6px rgba(255, 140, 40, 0.9); box-shadow: 0 0 10px rgba(255, 70, 20, 0.55), inset 0 0 8px rgba(255, 170, 40, 0.25); cursor: pointer; }
+  #pip .nuke-btn:hover:not(:disabled) { box-shadow: 0 0 16px rgba(255, 90, 20, 0.85), inset 0 0 10px rgba(255, 190, 60, 0.4); color: #fff1c4; }
+  #pip .nuke-btn:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+  #pip .nuke-ico { flex: none; filter: drop-shadow(0 0 3px rgba(255, 170, 40, 0.9)); }
+  #pip .nuke-ico .nuke-bg { fill: #ffb000; }
+  #pip .nuke-ico .nuke-fg { fill: #1a0602; }
+  #pip .scale-dialog h3 .nuke-ico { vertical-align: -5px; margin-right: 4px; }
+  #pip .ov-nukes { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
+  :root[data-theme="pro"] #pip .nuke-btn { color: #fff; background: linear-gradient(#dc2626, #991b1b); border: 1px solid #f59e0b; border-radius: 6px; text-shadow: none; box-shadow: 0 0 10px rgba(245, 158, 11, 0.45); font-family: var(--font-ui); }
+  :root[data-theme="pro"] #pip .nuke-btn:hover:not(:disabled) { box-shadow: 0 0 16px rgba(239, 68, 68, 0.7); }
+  :root[data-theme="pro"] #pip .nuke-ico .nuke-bg { fill: #fbbf24; }
   /* SCALE DOWN / UP on the EKS card (eks-scale-view.js) */
   #pip .scale-row { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 8px; border: 1px dashed var(--pip-dark); min-width: 0; }
   #pip .scale-head:empty { display: none; }
@@ -3408,7 +3422,7 @@ export function listenExit(error, port = 9241) {
 export function featureOff(features, method, path) {
   if (!features) return "";
   if (features.ask === false && path.startsWith("/api/agent")) return "ask";
-  if (features.stacksRun === false && method === "POST" && (path === "/api/upgrade" || path === "/api/upgrade/unlock")) return "stacksRun";
+  if (features.stacksRun === false && method === "POST" && (path === "/api/upgrade" || path === "/api/upgrade/unlock" || path === "/api/upgrade/takedown")) return "stacksRun";
   if (features.learn === false && path.startsWith("/api/learn")) return "learn";
   if (features.scorecard === false && path.startsWith("/api/score")) return "scorecard";
   // FIX runs add-on stacks through upgradeRun directly, so it is gated here too.
@@ -3662,6 +3676,24 @@ async function route(app, req, res) {
     }
     send(res, 200, await app.upgradeRun(req.headers.origin, body));
     return;
+  }
+
+  // TAKE DOWN CLUSTER: GET the ordered plan (read-only), POST runs it with
+  // the cluster name typed (confirm). src/cluster-takedown.js.
+  if (url.pathname === "/api/upgrade/takedown" && (req.method === "GET" || req.method === "POST")) {
+    if (!app.takedownPlan) return send(res, 200, { error: "not available" });
+    if (req.method === "GET") {
+      const q = Object.fromEntries(url.searchParams);
+      if (q.sample === "1") {
+        const plan = sampleTakedownPlan(/^[a-z][a-z0-9-]{1,27}$/.test(q.cluster || "") ? q.cluster : "cloudspider-up", { scaleUp: q.scaleUp === "0" ? false : undefined });
+        return send(res, 200, { plan, text: takedownText(plan), sample: true });
+      }
+      return send(res, 200, await app.takedownPlan({ cluster: q.cluster, context: q.context, scaleUp: q.scaleUp }));
+    }
+    const body = await readJson(req).catch(() => null);
+    if (!body || typeof body !== "object") return send(res, 400, { error: "the request was not JSON" });
+    if (body.sample) return send(res, 200, { error: "SAMPLE mode: nothing is taken down (the plan is made up)" });
+    return send(res, 200, await app.upgradeTakedown(req.headers.origin, body));
   }
 
   if (req.method === "POST" && url.pathname === "/api/upgrade/unlock") {
