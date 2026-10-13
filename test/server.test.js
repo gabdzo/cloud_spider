@@ -105,8 +105,8 @@ test("the process binds loopback and a foreign stop does not describe", async ()
       },
       body: JSON.stringify({ id }),
     });
-    const body = await stopped.json();
-    assert.match(body.status, /the stop did not happen/);
+    assert.equal(stopped.status, 403);
+    assert.match((await stopped.json()).error, /nothing ran/);
     assert.equal(box.calls.some((call) => call[0] === "one"), false);
   } finally {
     server.close();
@@ -203,7 +203,7 @@ test("vaults: /api/vaults answers without booting AWS and TEST checks the origin
       headers: { origin, "content-type": "application/json" },
       body: JSON.stringify({ key: "orders-api", sample: true }),
     }).then((r) => r.json());
-    assert.deepEqual(await post("http://evil.example"), { error: "the test did not run" });
+    assert.match((await post("http://evil.example")).error, /nothing ran/);
     const tested = await post("http://127.0.0.1:8787");
     assert.equal(tested.vault.status, "fail");
     assert.equal(tested.vault.checks[0].error, "expected 200, got 503");

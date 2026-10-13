@@ -277,8 +277,8 @@ test("LEARN routes: listing is open, checks and progress need the page's origin"
     const sample = await fetch(`${base}/api/learn?sample=1`).then((response) => response.json());
     assert.deepEqual(sample.progress, {});
     const post = (path, body, origin) => fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json", ...(origin ? { origin } : {}) }, body: JSON.stringify(body) }).then((response) => response.json());
-    assert.equal((await post("/api/learn/check", { key: "k8s/lab01-workloads" }, "http://evil.test")).error, "the check did not run");
-    assert.equal((await post("/api/learn/progress", { key: "k8s/lab01-workloads", hints: 3 }, "http://evil.test")).error, "progress was not saved");
+    assert.match((await post("/api/learn/check", { key: "k8s/lab01-workloads" }, "http://evil.test")).error, /nothing ran/);
+    assert.match((await post("/api/learn/progress", { key: "k8s/lab01-workloads", hints: 3 }, "http://evil.test")).error, /nothing ran/);
     assert.equal(ran, 0);
     const checked = await post("/api/learn/check", { key: "k8s/lab01-workloads" }, "http://127.0.0.1:9241");
     assert.equal(checked.result.failed, 1);
