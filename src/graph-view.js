@@ -9,6 +9,7 @@ import { routeEdge } from "./graph-route.js";
 import { GROUP_BY, GROUP_BY_KEY, cleanGroupBy, regroup } from "./graph-group.js";
 import { BADGES, KIND_BADGE, KIND_NAME, STATUS_TEXT, callsOf, dotOf, drawnEdges, edgeStatus, groupTalk, isObserved, layerNodes, nodeTraffic, possibleSummary, rateText } from "./graph-layers.js";
 import { EVENT_KINDS, LAYERS, initialExpanded, initialLayers, sceneStats, stepEvent, timeline, visibleGraph } from "./graph-model.js";
+import { openDiagnose } from "./diagnose-view.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 // INCIDENT REVIEW starts as a one-line summary bar so the graph keeps the
@@ -321,8 +322,18 @@ export function createGraphView(root) {
       list("CALLED BY", calls.inbound),
       list("CALLS", calls.outbound),
       ...(hidden ? [h("p", { className: "gv-cnone", text: `${hidden} possible link${hidden === 1 ? "" : "s"} from config hidden · SHOW POSSIBLE LINKS to list them` })] : []),
+      node.ns && /^[a-z0-9-]+$/.test(svcName) ? h("button", { type: "button", className: "gv-btn gv-investigate", text: "◎ INVESTIGATE ›", title: live.on ? `DIAGNOSE ${node.ns}/${svcName}: read-only evidence and findings, then VERIFY AGAIN` : "DIAGNOSE the SAMPLE incident (brother-sandbox/db)", onclick: () => investigateFrom(node) }) : "",
       node.ns && /^[a-z0-9-]+$/.test(svcName) ? h("a", { className: "gv-inside", href: `#path?debug=${encodeURIComponent(`${svcName}.${node.ns}:`)}&inside=1`, text: "DEBUG FROM INSIDE ›", title: "SNIFF › FROM INSIDE: a short-lived debug pod checks DNS, TCP, HTTP, hops and NetworkPolicy to this Service" }) : "",
     );
+  }
+
+  // DIAGNOSE (diagnose-view.js): SAMPLE runs the offline incident; live
+  // fills namespace/Service from the selected card when it names one.
+  function investigateFrom(node) {
+    if (!live.on) return openDiagnose({ sample: true });
+    const svcName = node ? String(node.label || "").split(/[\s:]/)[0] : "";
+    const ok = node?.ns && /^[a-z0-9-]+$/.test(svcName) && !/^(ingress|route)$/.test(svcName);
+    openDiagnose({ context: live.context, namespace: node?.ns || "", service: ok ? svcName : "" });
   }
 
   function emptyScene() {
@@ -499,6 +510,7 @@ export function createGraphView(root) {
       const group = scene.groups.find((g) => g.id === state.focus);
       head.append(h("button", { type: "button", className: "gv-btn gv-follow", "aria-pressed": String(!state.tlAll), title: "the list follows the focused group", text: state.tlAll ? "ALL GROUPS" : `ONLY ${group?.label || state.focus}`, onclick: () => ((state.tlAll = !state.tlAll), render()) }));
     }
+    head.append(h("button", { type: "button", className: "gv-btn gv-investigate", text: "◎ INVESTIGATE", title: live.on ? "DIAGNOSE a Service: read-only evidence, findings, then VERIFY AGAIN after a fix (select a Service first to fill it in)" : "DIAGNOSE the SAMPLE incident: brother-sandbox db fails ~5% of calls", onclick: () => investigateFrom(state.selected && scene.nodes.find((n) => n.id === state.selected)) }));
     head.append(h("small", { className: "gv-tlkeys", text: "← → step through events" }));
     els.tl.classList.toggle("folded", !state.tlOpen);
     els.tl.replaceChildren(head, ...(state.tlOpen ? [h("div", { className: "gv-axis" }, h("span", { text: tl.start }), track, h("span", { text: tl.end })), rows] : []));
