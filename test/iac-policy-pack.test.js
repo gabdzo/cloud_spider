@@ -44,3 +44,19 @@ test("the pack loads with @pulumi/policy", { skip: packReady ? false : "run npm 
   const policy = await import(join(root, "upgrades/policy-pack/node_modules/@pulumi/policy/index.js"));
   assert.equal(typeof policy.PolicyPack, "function");
 });
+
+test("the pack's package.json has a version (CrossGuard refuses to start without one)", () => {
+  assert.match(JSON.parse(readFileSync(join(root, "upgrades/policy-pack/package.json"), "utf8")).version, /^\d+\.\d+\.\d+$/);
+});
+
+test("the card's PREVIEW loads the pack; RUN and destroy do not; a missing pack is said", async () => {
+  const { upgradeSteps, UPGRADES, createUpgrade } = await import("../src/upgrade.js");
+  const shop = UPGRADES.find((s) => s.id === "shopapi");
+  assert.deepEqual(upgradeSteps(shop, "shopapi", "preview", {}, { policyPack: "/p" }).at(-1), ["preview", "--non-interactive", "--diff", "--policy-pack", "/p", "--stack", "shopapi"]);
+  assert.ok(!upgradeSteps(shop, "shopapi", "up", {}, { policyPack: "/p" }).flat().includes("--policy-pack"));
+  const calls = [];
+  const upgrade = createUpgrade({ env: {}, policyPack: "", run: (cmd, args) => { calls.push(args); throw new Error("stop"); } });
+  upgrade.run({ module: "signal", action: "preview", params: {} });
+  for (let i = 0; i < 50 && upgrade.status().running; i += 1) await new Promise((r) => setTimeout(r, 5));
+  assert.match(JSON.stringify(upgrade.status().lines || upgrade.status()), /policy pack not loaded/);
+});
