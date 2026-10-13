@@ -12,7 +12,9 @@ import { assertStackConfig } from "../schema/stacks.js";
 
 // Every config key typed and checked first, before any resource (the STACKS
 // card runs the same schema): upgrades/schema/stacks.js.
-assertStackConfig(pulumi, "cloudspider-observability");
+// Strict: an unknown key is an error, not a warning. Its only stack config
+// (Pulumi.observability.yaml) is in the repo and test/iac-strict-keys checks it.
+assertStackConfig(pulumi, "cloudspider-observability", { strict: true });
 
 // Observability for the EKS cluster from upgrades/eks. Stack: observability.
 //   - containerInsights=on: the CloudWatch Observability EKS add-on (the

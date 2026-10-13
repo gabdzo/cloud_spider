@@ -6,7 +6,9 @@ import { assertStackConfig } from "../schema/stacks.js";
 
 // Every config key typed and checked first, before any resource (the STACKS
 // card runs the same schema): upgrades/schema/stacks.js.
-assertStackConfig(pulumi, "cloudspider-camp");
+// Strict: an unknown key is an error, not a warning. Its only stack config
+// (Pulumi.camp.yaml) is in the repo and test/iac-strict-keys checks it.
+assertStackConfig(pulumi, "cloudspider-camp", { strict: true });
 
 // Vault: vaults/camp.yaml selects project=camp.
 inheritTags(pulumi, stackTags("camp"));

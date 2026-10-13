@@ -18,7 +18,7 @@ test("every Pulumi program under upgrades/ has a schema and runs it before anyth
     const project = /^name:\s*(\S+)/m.exec(readFileSync(join(root, "upgrades", d, "Pulumi.yaml"), "utf8"))[1];
     assert.ok(SCHEMAS[project], `${d} (${project}) has no schema`);
     const src = readFileSync(join(root, "upgrades", d, "index.js"), "utf8");
-    assert.ok(/assertStackConfig\(pulumi, "[^"]+"\)|assertEks\(/.test(src), `${d} does not validate its config`);
+    assert.ok(/assertStackConfig\(pulumi, "[^"]+"(, \{ strict: true \})?\)|assertEks\(/.test(src), `${d} does not validate its config`);
     const first = src.search(/new (aws|k8s)\.|new pulumi\.Config\(/);
     const check = src.search(/assertStackConfig\(pulumi|assertEks\(/);
     assert.ok(first === -1 || check < first, `${d}: validation comes after a resource or config read`);
