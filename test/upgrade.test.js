@@ -149,7 +149,8 @@ test("destroy skips config and refuses a name that does not match", async () => 
   for (let i = 0; i < 12 && upgrade.status().running; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
-  assert.deepEqual(fake.calls.map((call) => call.args[0]), ["stack", "destroy"]);
+  // barrel protects its bucket: the typed-name TAKE IT DOWN unprotects the state first.
+  assert.deepEqual(fake.calls.map((call) => call.args[0]), ["stack", "state", "destroy"]);
   assert.equal(fake.calls.some((call) => call.args.includes("config")), false);
   assert.equal(fake.calls[0].detached, true);
   assert.deepEqual(fake.calls[0].stdio, ["ignore", "pipe", "pipe"]);

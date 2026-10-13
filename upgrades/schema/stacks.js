@@ -15,9 +15,9 @@ const onoff = (fallback, doc) => ({ type: "onoff", default: fallback, doc });
 export const SCHEMAS = {
   "cloudspider-upgrade": EKS_SCHEMA,
   "cloudspider-signal": { project: "cloudspider-signal", keys: named("cloudspider-signal", "log group name") },
-  "cloudspider-barrel": { project: "cloudspider-barrel", keys: named("cloudspider-barrel", "bucket name prefix") },
+  "cloudspider-barrel": { project: "cloudspider-barrel", keys: { ...named("cloudspider-barrel", "bucket name prefix"), protectData: onoff("on", "protect the data resources (refuses destroy/replace; TAKE IT DOWN unprotects first)") } },
   "cloudspider-camp": { project: "cloudspider-camp", keys: named("cloudspider-camp", "resource name prefix") },
-  "cloudspider-rds": { project: "cloudspider-rds", keys: named("cloudspider-rds", "instance name") },
+  "cloudspider-rds": { project: "cloudspider-rds", keys: { ...named("cloudspider-rds", "instance name"), protectData: onoff("on", "protect the data resources (refuses destroy/replace; TAKE IT DOWN unprotects first)") } },
   "cloudspider-site": { project: "cloudspider-site", keys: named("cloudspider-site", "resource name prefix") },
   "cloudspider-worker": { project: "cloudspider-worker", keys: named("cloudspider-worker", "resource name prefix") },
   "cloudspider-demo": { project: "cloudspider-demo", keys: { clusterName: cluster } },
@@ -40,6 +40,7 @@ export const SCHEMAS = {
       backupRetention: { type: "name", pattern: /^[1-9][0-9]?[dw]$/, hint: "must be like 7d or 2w", default: "7d", doc: "backup retention" },
       backupSchedule: { type: "name", pattern: /^\S+(\s+\S+){5}$/, hint: "has six fields (seconds first), like 0 0 3 * * *", default: "0 0 3 * * *", doc: "backup cron, seconds first" },
       podMonitor: onoff("off", "a PodMonitor for Prometheus"),
+      protectData: onoff("on", "protect the data resources (refuses destroy/replace; TAKE IT DOWN unprotects first)"),
       cpu: { type: "name", pattern: /^[1-9][0-9]{0,3}m$/, hint: "must be like 50m", default: "50m", doc: "CPU request per instance" },
     },
     // A standby needs a second instance; backups off with one instance is
@@ -118,6 +119,9 @@ export function cidrOk(text, { hostBits = false } = {}) {
   const ip = octets.reduce((a, o) => a * 256 + o, 0);
   return bits === 0 ? ip === 0 : ip % 2 ** (32 - bits) === 0;
 }
+
+// Stacks whose programs protect data: TAKE IT DOWN unprotects their state first.
+export const DATA_PROJECTS = Object.values(SCHEMAS).filter((s) => s.keys.protectData).map((s) => s.project);
 
 export const schemaFor = (project) => SCHEMAS[project] || null;
 export const validateStack = (project, input, options) => (SCHEMAS[project] ? validate(SCHEMAS[project], input, options) : { values: {}, errors: [], warnings: [] });

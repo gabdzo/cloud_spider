@@ -5,7 +5,11 @@ import { assertStackConfig } from "../schema/stacks.js";
 
 // Every config key typed and checked first, before any resource (the STACKS
 // card runs the same schema): upgrades/schema/stacks.js.
-assertStackConfig(pulumi, "cloudspider-barrel");
+const cfg = assertStackConfig(pulumi, "cloudspider-barrel");
+// Data: protected (Terraform prevent_destroy). A hand-run destroy or a replace
+// is refused; the STACKS card's TAKE IT DOWN unprotects first (state only,
+// src/upgrade.js upgradeSteps), and protectData=off drops it for a lab.
+const protect = cfg.protectData === "on";
 
 // Vault: vaults/barrel.yaml selects project=barrel.
 inheritTags(pulumi, stackTags("barrel"));
@@ -22,6 +26,6 @@ const bucket = new aws.s3.Bucket("barrel", {
   bucket: `${name}-${identity.accountId}`,
   forceDestroy: true,
   tags: { Name: name, cloudspider: "expendable" },
-});
+}, { protect });
 
 export const bucketName = bucket.bucket;
