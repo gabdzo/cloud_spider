@@ -7,6 +7,8 @@
 //   AWS_PROFILE=default node scripts/showcase-snapshot.mjs [--domain showcase.example.com] [--out path]
 // Never touches a kubeconfig. No secrets in the output (DNS names, rules, codes).
 import { mkdirSync, writeFileSync } from "node:fs";
+import http from "node:http";
+import https from "node:https";
 import { dirname } from "node:path";
 import { ElasticLoadBalancingV2Client, DescribeLoadBalancersCommand, DescribeTagsCommand, DescribeListenersCommand, DescribeRulesCommand, DescribeTargetHealthCommand } from "@aws-sdk/client-elastic-load-balancing-v2";
 import { PRODUCTS, SHARED_GROUP } from "../upgrades/showcase/plan.js";
@@ -16,12 +18,15 @@ const domain = arg("domain", "showcase.example.com");
 const out = arg("out", "samples/demo-prod/snapshot.json");
 const elb = new ElasticLoadBalancingV2Client({ region: "eu-north-1" });
 
-export async function probe(url, host) {
+// node:http, not fetch: fetch drops a Host header (forbidden header), so a
+// host rule would be answered by the ALB's default rule (404).
+export function probe(url, host) {
   const started = Date.now();
-  try {
-    const res = await fetch(url, { headers: host ? { Host: host } : {}, redirect: "manual", signal: AbortSignal.timeout(10000) });
-    return { code: res.status, ms: Date.now() - started };
-  } catch (error) { return { code: 0, error: String(error.cause?.code || error.name), ms: Date.now() - started }; }
+  return new Promise((resolve) => {
+    const req = (url.startsWith("https:") ? https : http).get(url, { headers: host ? { Host: host } : {}, timeout: 10000, ...(host ? { servername: host } : {}) }, (res) => { res.resume(); resolve({ code: res.statusCode, ms: Date.now() - started }); });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", (error) => resolve({ code: 0, error: String(error.code || error.message), ms: Date.now() - started }));
+  });
 }
 
 const lbs = (await elb.send(new DescribeLoadBalancersCommand({}))).LoadBalancers || [];
@@ -43,8 +48,10 @@ for (const lb of tagged) {
       const host = (r.Conditions || []).find((c) => c.Field === "host-header")?.HostHeaderConfig?.Values?.[0] || "";
       const tg = r.Actions?.find((a) => a.TargetGroupArn)?.TargetGroupArn;
       const health = tg ? ((await elb.send(new DescribeTargetHealthCommand({ TargetGroupArn: tg }))).TargetHealthDescriptions || []).map((h) => h.TargetHealth?.State) : [];
-      const product = PRODUCTS.find((p) => (host ? host.startsWith(`${p.host}.`) && p.alb === SHARED_GROUP : p.alb !== SHARED_GROUP));
-      rows.push({ priority: r.Priority, host, product: product?.id || "", targets: health, probe: r.IsDefault && host === "" && lb.Type === "application" && product?.alb === SHARED_GROUP ? null : await probe(`${scheme}://${lb.DNSName}:${l.Port}/`, host) });
+      // The shared ALB's default rule (no host) belongs to no product.
+      const shared = rules.some((x) => (x.Conditions || []).some((c) => c.Field === "host-header"));
+      const product = host ? PRODUCTS.find((p) => p.alb === SHARED_GROUP && host.startsWith(`${p.host}.`)) : shared ? null : PRODUCTS.find((p) => p.alb !== SHARED_GROUP);
+      rows.push({ priority: r.Priority, host, product: product?.id || "", targets: health, probe: await probe(`${scheme}://${lb.DNSName}:${l.Port}/`, host) });
     }
     entry.listeners.push({ port: l.Port, protocol: l.Protocol, rules: rows, ...(lb.Type === "network" ? { probe: await probe(`http://${lb.DNSName}:${l.Port}/`) } : {}) });
   }
