@@ -1,32 +1,322 @@
 {
-  "_doc": "Every stack x its sample configs, run under Pulumi mocks (scripts/iac-matrix.mjs; CI .github/workflows/iac.yml). expect: resources (at least min) or error (match). observability is left out: it reads ELBv2 with the AWS SDK directly, which mocks cannot answer.",
+  "_doc": "Every stack x its sample configs, run under Pulumi mocks (scripts/iac-matrix.mjs; CI .github/workflows/iac.yml). expect: resources (at least min) or error (match). observability reads ELBv2 with the AWS SDK directly: fakeElb starts a local stand-in (scripts/fake-elbv2.mjs).",
   "entries": [
-    { "id": "eks-default", "dir": "upgrades/eks", "project": "cloudspider-upgrade", "stack": "upgrade", "config": { "clusterName": "cloudspider-up" }, "env": { "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}" }, "min": 30 },
-    { "id": "eks-committed", "dir": "upgrades/eks", "project": "cloudspider-upgrade", "stack": "upgrade", "configFile": "upgrades/eks/Pulumi.upgrade.yaml", "env": { "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}" }, "min": 30 },
-    { "id": "eks-new-small-spot-auto", "dir": "upgrades/eks", "project": "cloudspider-upgrade", "stack": "eks-small", "config": { "clusterName": "small", "capacityType": "SPOT", "maxPods": "auto" }, "env": { "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}" }, "min": 30 },
-    { "id": "eks-spot-auto-no-prefix", "dir": "upgrades/eks", "project": "cloudspider-upgrade", "stack": "eks-small", "config": { "clusterName": "small", "capacityType": "SPOT", "maxPods": "auto", "prefixDelegation": "off" }, "env": { "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}" }, "expect": "error", "match": "nothing was created" },
-    { "id": "eks-medium-110", "dir": "upgrades/eks", "project": "cloudspider-upgrade", "stack": "upgrade", "config": { "clusterName": "cloudspider-up", "instanceType": "t4g.medium", "maxPods": "110", "nodeCount": "3" }, "env": { "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}" }, "min": 30 },
-    { "id": "eks-type-not-offered", "dir": "upgrades/eks", "project": "cloudspider-upgrade", "stack": "upgrade", "config": { "clusterName": "cloudspider-up" }, "env": { "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}", "CLOUDSPIDER_MOCK_EC2": "{\"offerings\":[]}" }, "expect": "error", "match": "preflight failed" },
-    { "id": "shopapi-default", "dir": "upgrades/shopapi", "project": "cloudspider-shopapi", "stack": "shopapi", "config": {}, "min": 5 },
-    { "id": "shopapi-alb", "dir": "upgrades/shopapi", "project": "cloudspider-shopapi", "stack": "shopapi", "config": { "expose": "alb", "replicas": "3" }, "min": 6 },
-    { "id": "demo-default", "dir": "upgrades/demo", "project": "cloudspider-demo", "stack": "demo", "config": {}, "min": 20 },
-    { "id": "pgcluster-default", "dir": "upgrades/pgcluster", "project": "cloudspider-pgcluster", "stack": "pgcluster", "config": {}, "min": 20 },
-    { "id": "pgcluster-no-backups", "dir": "upgrades/pgcluster", "project": "cloudspider-pgcluster", "stack": "pgcluster", "config": { "backups": "off", "instances": "1" }, "min": 5 },
-    { "id": "observe-k8s", "dir": "upgrades/observe", "project": "cloudspider-observe", "stack": "observe", "config": { "context": "cloudspider-up-admin", "nodeCidr": "10.43.0.0/16", "allowPrivileged": "true", "profile": "standard" }, "min": 20 },
-    { "id": "observe-openshift", "dir": "upgrades/observe", "project": "cloudspider-observe", "stack": "observe", "config": { "context": "crc-admin", "platform": "openshift", "nodeCidr": "192.168.126.0/24", "profile": "crc" }, "min": 20 },
-    { "id": "openshift-default", "dir": "upgrades/openshift", "project": "cloudspider-openshift", "stack": "openshift", "config": {}, "min": 10 },
-    { "id": "rds-default", "dir": "upgrades/rds", "project": "cloudspider-rds", "stack": "rds", "config": {}, "min": 5 },
-    { "id": "signal-default", "dir": "upgrades/signal", "project": "cloudspider-signal", "stack": "signal", "config": {}, "min": 1 },
-    { "id": "barrel-default", "dir": "upgrades/barrel", "project": "cloudspider-barrel", "stack": "barrel", "config": {}, "min": 1 },
-    { "id": "camp-committed", "dir": "upgrades/camp", "project": "cloudspider-camp", "stack": "camp", "configFile": "upgrades/camp/Pulumi.camp.yaml", "min": 10 },
-    { "id": "site-default", "dir": "upgrades/site", "project": "cloudspider-site", "stack": "site", "config": {}, "min": 5 },
-    { "id": "worker-default", "dir": "upgrades/worker", "project": "cloudspider-worker", "stack": "worker", "config": {}, "min": 5 },
-    { "id": "addon-kyverno", "dir": "upgrades/addons", "project": "cloudspider-addons", "stack": "kyverno-cloudspider-up", "config": { "skipRoomCheck": "true" }, "min": 10 },
-    { "id": "addon-karpenter", "dir": "upgrades/addons", "project": "cloudspider-addons", "stack": "karpenter-cloudspider-up", "config": { "skipRoomCheck": "true" }, "min": 20 },
-    { "id": "addon-scaling-demo", "dir": "upgrades/addons", "project": "cloudspider-addons", "stack": "scaling-demo-cloudspider-up", "config": { "skipRoomCheck": "true" }, "min": 5 },
-    { "id": "addon-lbc", "dir": "upgrades/addons", "project": "cloudspider-addons", "stack": "lbc-cloudspider-up", "config": { "skipRoomCheck": "true" }, "min": 5 },
-    { "id": "addon-cert-manager", "dir": "upgrades/addons", "project": "cloudspider-addons", "stack": "cert-manager-cloudspider-up", "config": { "skipRoomCheck": "true" }, "min": 5 },
-    { "id": "addon-keda", "dir": "upgrades/addons", "project": "cloudspider-addons", "stack": "keda-cloudspider-up", "config": { "skipRoomCheck": "true" }, "min": 20 },
-    { "id": "addon-pod-identity-refuses", "dir": "upgrades/addons", "project": "cloudspider-addons", "stack": "pod-identity-cloudspider-up", "config": { "skipRoomCheck": "true" }, "expect": "error", "match": "included with EKS" }
+    {
+      "id": "eks-default",
+      "dir": "upgrades/eks",
+      "project": "cloudspider-upgrade",
+      "stack": "upgrade",
+      "config": {
+        "clusterName": "cloudspider-up"
+      },
+      "env": {
+        "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}"
+      },
+      "min": 30
+    },
+    {
+      "id": "eks-committed",
+      "dir": "upgrades/eks",
+      "project": "cloudspider-upgrade",
+      "stack": "upgrade",
+      "configFile": "upgrades/eks/Pulumi.upgrade.yaml",
+      "env": {
+        "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}"
+      },
+      "min": 30
+    },
+    {
+      "id": "eks-new-small-spot-auto",
+      "dir": "upgrades/eks",
+      "project": "cloudspider-upgrade",
+      "stack": "eks-small",
+      "config": {
+        "clusterName": "small",
+        "capacityType": "SPOT",
+        "maxPods": "auto"
+      },
+      "env": {
+        "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}"
+      },
+      "min": 30
+    },
+    {
+      "id": "eks-spot-auto-no-prefix",
+      "dir": "upgrades/eks",
+      "project": "cloudspider-upgrade",
+      "stack": "eks-small",
+      "config": {
+        "clusterName": "small",
+        "capacityType": "SPOT",
+        "maxPods": "auto",
+        "prefixDelegation": "off"
+      },
+      "env": {
+        "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}"
+      },
+      "expect": "error",
+      "match": "nothing was created"
+    },
+    {
+      "id": "eks-medium-110",
+      "dir": "upgrades/eks",
+      "project": "cloudspider-upgrade",
+      "stack": "upgrade",
+      "config": {
+        "clusterName": "cloudspider-up",
+        "instanceType": "t4g.medium",
+        "maxPods": "110",
+        "nodeCount": "3"
+      },
+      "env": {
+        "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}"
+      },
+      "min": 30
+    },
+    {
+      "id": "eks-type-not-offered",
+      "dir": "upgrades/eks",
+      "project": "cloudspider-upgrade",
+      "stack": "upgrade",
+      "config": {
+        "clusterName": "cloudspider-up"
+      },
+      "env": {
+        "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}",
+        "CLOUDSPIDER_MOCK_EC2": "{\"offerings\":[]}"
+      },
+      "expect": "error",
+      "match": "preflight failed"
+    },
+    {
+      "id": "shopapi-default",
+      "dir": "upgrades/shopapi",
+      "project": "cloudspider-shopapi",
+      "stack": "shopapi",
+      "config": {},
+      "min": 5
+    },
+    {
+      "id": "shopapi-alb",
+      "dir": "upgrades/shopapi",
+      "project": "cloudspider-shopapi",
+      "stack": "shopapi",
+      "config": {
+        "expose": "alb",
+        "replicas": "3"
+      },
+      "min": 6
+    },
+    {
+      "id": "demo-default",
+      "dir": "upgrades/demo",
+      "project": "cloudspider-demo",
+      "stack": "demo",
+      "config": {},
+      "min": 20
+    },
+    {
+      "id": "pgcluster-default",
+      "dir": "upgrades/pgcluster",
+      "project": "cloudspider-pgcluster",
+      "stack": "pgcluster",
+      "config": {},
+      "min": 20
+    },
+    {
+      "id": "pgcluster-no-backups",
+      "dir": "upgrades/pgcluster",
+      "project": "cloudspider-pgcluster",
+      "stack": "pgcluster",
+      "config": {
+        "backups": "off",
+        "instances": "1"
+      },
+      "min": 5
+    },
+    {
+      "id": "observe-k8s",
+      "dir": "upgrades/observe",
+      "project": "cloudspider-observe",
+      "stack": "observe",
+      "config": {
+        "context": "cloudspider-up-admin",
+        "nodeCidr": "10.43.0.0/16",
+        "allowPrivileged": "true",
+        "profile": "standard"
+      },
+      "min": 20
+    },
+    {
+      "id": "observe-openshift",
+      "dir": "upgrades/observe",
+      "project": "cloudspider-observe",
+      "stack": "observe",
+      "config": {
+        "context": "crc-admin",
+        "platform": "openshift",
+        "nodeCidr": "192.168.126.0/24",
+        "profile": "crc"
+      },
+      "min": 20
+    },
+    {
+      "id": "openshift-default",
+      "dir": "upgrades/openshift",
+      "project": "cloudspider-openshift",
+      "stack": "openshift",
+      "config": {},
+      "min": 10
+    },
+    {
+      "id": "rds-default",
+      "dir": "upgrades/rds",
+      "project": "cloudspider-rds",
+      "stack": "rds",
+      "config": {},
+      "min": 5
+    },
+    {
+      "id": "signal-default",
+      "dir": "upgrades/signal",
+      "project": "cloudspider-signal",
+      "stack": "signal",
+      "config": {},
+      "min": 1
+    },
+    {
+      "id": "barrel-default",
+      "dir": "upgrades/barrel",
+      "project": "cloudspider-barrel",
+      "stack": "barrel",
+      "config": {},
+      "min": 1
+    },
+    {
+      "id": "camp-committed",
+      "dir": "upgrades/camp",
+      "project": "cloudspider-camp",
+      "stack": "camp",
+      "configFile": "upgrades/camp/Pulumi.camp.yaml",
+      "min": 10
+    },
+    {
+      "id": "site-default",
+      "dir": "upgrades/site",
+      "project": "cloudspider-site",
+      "stack": "site",
+      "config": {},
+      "min": 5
+    },
+    {
+      "id": "worker-default",
+      "dir": "upgrades/worker",
+      "project": "cloudspider-worker",
+      "stack": "worker",
+      "config": {},
+      "min": 5
+    },
+    {
+      "id": "addon-kyverno",
+      "dir": "upgrades/addons",
+      "project": "cloudspider-addons",
+      "stack": "kyverno-cloudspider-up",
+      "config": {
+        "skipRoomCheck": "true"
+      },
+      "min": 10
+    },
+    {
+      "id": "addon-karpenter",
+      "dir": "upgrades/addons",
+      "project": "cloudspider-addons",
+      "stack": "karpenter-cloudspider-up",
+      "config": {
+        "skipRoomCheck": "true"
+      },
+      "min": 20
+    },
+    {
+      "id": "addon-scaling-demo",
+      "dir": "upgrades/addons",
+      "project": "cloudspider-addons",
+      "stack": "scaling-demo-cloudspider-up",
+      "config": {
+        "skipRoomCheck": "true"
+      },
+      "min": 5
+    },
+    {
+      "id": "addon-lbc",
+      "dir": "upgrades/addons",
+      "project": "cloudspider-addons",
+      "stack": "lbc-cloudspider-up",
+      "config": {
+        "skipRoomCheck": "true"
+      },
+      "min": 5
+    },
+    {
+      "id": "addon-cert-manager",
+      "dir": "upgrades/addons",
+      "project": "cloudspider-addons",
+      "stack": "cert-manager-cloudspider-up",
+      "config": {
+        "skipRoomCheck": "true"
+      },
+      "min": 5
+    },
+    {
+      "id": "addon-keda",
+      "dir": "upgrades/addons",
+      "project": "cloudspider-addons",
+      "stack": "keda-cloudspider-up",
+      "config": {
+        "skipRoomCheck": "true"
+      },
+      "min": 20
+    },
+    {
+      "id": "addon-pod-identity-refuses",
+      "dir": "upgrades/addons",
+      "project": "cloudspider-addons",
+      "stack": "pod-identity-cloudspider-up",
+      "config": {
+        "skipRoomCheck": "true"
+      },
+      "expect": "error",
+      "match": "included with EKS"
+    },
+    {
+      "id": "observability-committed",
+      "dir": "upgrades/observability",
+      "project": "cloudspider-observability",
+      "stack": "observability",
+      "configFile": "upgrades/observability/Pulumi.observability.yaml",
+      "fakeElb": [
+        {
+          "name": "k8s-shop-shopapi",
+          "cluster": "cloudspider-up",
+          "targetGroups": [
+            "k8s-shop-shopapi-tg"
+          ]
+        }
+      ],
+      "min": 5
+    },
+    {
+      "id": "observability-alarms-no-alb",
+      "dir": "upgrades/observability",
+      "project": "cloudspider-observability",
+      "stack": "observability",
+      "config": {
+        "alarms": "on",
+        "dashboard": "on",
+        "containerInsights": "on",
+        "alertEmail": "ops@example.com"
+      },
+      "fakeElb": [],
+      "min": 3
+    }
   ]
 }
