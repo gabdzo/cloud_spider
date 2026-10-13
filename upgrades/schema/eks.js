@@ -7,7 +7,7 @@ import { validate, assertValid } from "./core.js";
 import { cidrOk, privateCidr } from "./net.js";
 import { EKS_AUTO, EKS_VERSIONS } from "../eks-versions.js";
 
-export const EKS_INSTANCE_TYPES = ["t4g.small", "t4g.medium", "m7g.large"];
+export const EKS_INSTANCE_TYPES = ["t4g.small", "t4g.medium", "m7g.large", "m6i.large"];
 
 export const EKS_SCHEMA = {
   project: "cloudspider-upgrade",

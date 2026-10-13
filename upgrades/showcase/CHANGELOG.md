@@ -2,6 +2,10 @@
 
 Semantic versions per module: major = an input removed/renamed or a change that replaces a resource; minor = a new input or resource; patch = no infrastructure change. Bump package.json `version` with an entry here.
 
+## 1.0.1 (2026-10-13)
+
+- Nodes are x86 (m6i.large pool): Online Boutique publishes amd64-only images. No infrastructure change in this stack.
+
 ## 1.0.0 (2026-10-13)
 
 - First release: the demo prod cluster's products (Online Boutique, Uptime Kuma, Wiki.js on CNPG, Mealie), a shared ALB (IngressGroup `showcase`, one host rule per app), a dedicated Boutique ALB and an NLB; typed config schema, pinned images, NetworkPolicies per namespace.

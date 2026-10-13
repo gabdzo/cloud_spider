@@ -2,6 +2,10 @@
 
 Semantic versions per module: major = an input removed/renamed or a change that replaces a resource; minor = a new input or resource; patch = no infrastructure change. Bump package.json `version` with an entry here.
 
+## 1.3.0 (2026-10-13)
+
+- instanceType m6i.large (x86 spot pool m6i/m5/m7i-flex/t3 .large) for amd64-only workloads; the AMI type follows the instance family (Graviton: AL2023 ARM, else AL2023 x86). Every existing Graviton choice keeps the ARM AMI: no change on live stacks.
+
 ## 1.2.0 (2026-10-13)
 
 - A new cluster (kubernetesVersion auto, no live cluster) is created on Kubernetes 1.35 (standard support until 2027-03-27); 1.35 is offered for an in-place upgrade from 1.34. A live cluster keeps its version on auto, as before.

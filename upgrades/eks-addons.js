@@ -167,7 +167,7 @@ export function prefixDelegationOn(configurationValues) {
 // number raises it. kubelet reserves 11 MiB per pod + 255 MiB of memory:
 // 32 on a t4g.small (607 MiB of 2 GiB), 58 (893 MiB) or 110 (1.47 GiB) of a
 // t4g.medium's 4 GiB.
-export const MAX_PODS = { "t4g.small": ["32"], "t4g.medium": ["32", "58", "110"], "m7g.large": ["32", "58", "110"] };
+export const MAX_PODS = { "t4g.small": ["32"], "t4g.medium": ["32", "58", "110"], "m7g.large": ["32", "58", "110"], "m6i.large": ["32", "58", "110"] };
 export const MAX_PODS_CHOICES = ["auto", "32", "58", "110"];
 
 // Capacity type of the managed node group (EKS card capacityType). SPOT
@@ -182,7 +182,13 @@ export const SPOT_POOLS = {
   "t4g.medium": ["t4g.medium", "m7g.medium", "m6g.medium"],
   // 2 vCPU / 8 GiB (demo prod cluster): same memory in every type.
   "m7g.large": ["m7g.large", "m6g.large", "t4g.large"],
+  // x86 (2 vCPU / 8 GiB) for amd64-only images: Online Boutique publishes
+  // no arm64 build (checked 2026-10-13, v0.10.3-v0.10.5). No AMD in eu-north-1.
+  "m6i.large": ["m6i.large", "m5.large", "m7i-flex.large", "t3.large"],
 };
+
+// Graviton (a "g" in the family: t4g, m7g, c6g...) runs the ARM AMI, the rest x86.
+export const amiTypeFor = (instanceType) => (/^[a-z]+\d+g/.test(String(instanceType)) ? "AL2023_ARM_64_STANDARD" : "AL2023_x86_64_STANDARD");
 
 export function nodeInstanceTypes(instanceType, capacityType = "ON_DEMAND") {
   return capacityType === "SPOT" ? SPOT_POOLS[instanceType] || [instanceType] : [instanceType];
@@ -211,7 +217,7 @@ export function capacityProblem(instanceType, capacityType = "ON_DEMAND", maxPod
 
 // kubelet's pod cap without maxPods: the ENI limit, one IP per pod
 // (ENIs x (IPs per ENI - 1) + 2).
-export const ENI_PODS = { "t4g.small": 11, "t4g.medium": 17, "m7g.large": 29 };
+export const ENI_PODS = { "t4g.small": 11, "t4g.medium": 17, "m7g.large": 29, "m6i.large": 29 };
 
 // The EKS stack's podsPerNode output: what kubelet's cap really is.
 export function podsPerNodeText(instanceType, maxPods) {

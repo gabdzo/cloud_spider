@@ -5,7 +5,7 @@
 //   ALB 2 "boutique" (dedicated): Online Boutique's frontend.
 //   NLB: TCP 80 straight to the Boutique frontend pods (ip targets).
 // Every image is pinned; every container has small requests so the lot fits
-// on 2 x m7g.large (2 vCPU / 8 GiB each) next to the add-ons.
+// on 2 x m6i.large (2 vCPU / 8 GiB each; x86, Boutique is amd64-only) next to the add-ons.
 
 export const BOUTIQUE_VERSION = "v0.10.3";
 const ob = (name) => `us-central1-docker.pkg.dev/google-samples/microservices-demo/${name}:${BOUTIQUE_VERSION}`;
@@ -118,14 +118,14 @@ export function totalRequests() {
 // recent average, it moves). The shared ALB is ONE ALB: three rules cost no
 // more than one (LCUs at demo traffic stay well under 1).
 export const PRICES = {
-  eksControlPlane: 0.10, m7gLargeSpot: 0.030, alb: 0.0243, albLcu: 0.008, nlb: 0.0243, nlbLcu: 0.006,
+  eksControlPlane: 0.10, m6iLargeSpot: 0.017, alb: 0.0243, albLcu: 0.008, nlb: 0.0243, nlbLcu: 0.006,
   ebsGp3GbMonth: 0.0836, publicIpv4: 0.005,
 };
 export function costEstimate({ nodes = 2, albs = 2, nlbs = 1, ebsGb = 2 * 20 + 1 + 2 + 1, publicIps = 2 * 2 + 2 + 2 } = {}) {
   const p = PRICES;
   const rows = [
     ["EKS control plane 1.35 (standard support)", p.eksControlPlane],
-    [`${nodes} x m7g.large spot`, nodes * p.m7gLargeSpot],
+    [`${nodes} x m6i.large spot`, nodes * p.m6iLargeSpot],
     [`${albs} ALB (shared Kuma/Wiki/Mealie + Boutique), hour + ~1 LCU`, albs * (p.alb + p.albLcu)],
     [`${nlbs} NLB (Boutique TCP), hour + ~1 NLCU`, nlbs * (p.nlb + p.nlbLcu)],
     [`EBS gp3 ${ebsGb} GB (node roots + PVCs)`, (ebsGb * p.ebsGp3GbMonth) / 730],

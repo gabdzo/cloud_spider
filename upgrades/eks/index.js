@@ -9,7 +9,7 @@ import { eksPreflight } from "../schema/preflight.js";
 import { eksSubnets, eksZones } from "../schema/net.js";
 import { eksVpcComponent } from "../components/eks-vpc.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
-import { EKS_OWNED, adoptList, resolveMaxPods, eksOwnPlan, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon, vpcCniConfig } from "../eks-addons.js";
+import { EKS_OWNED, adoptList, resolveMaxPods, eksOwnPlan, nodeInstanceTypes, amiTypeFor, nodeConfigUserData, ownerText, podsPerNodeText, readAddon, vpcCniConfig } from "../eks-addons.js";
 
 // Every key typed and cross-checked first, before any resource (the STACKS
 // card runs the same schema before it makes the stack): upgrades/schema/eks.js.
@@ -255,7 +255,7 @@ const nodes = new aws.eks.NodeGroup(
     nodeRoleArn: nodeRole.arn,
     subnetIds: [subnetA.id, subnetB.id],
     instanceTypes: nodeInstanceTypes(instanceType, capacityType),
-    amiType: "AL2023_ARM_64_STANDARD",
+    amiType: amiTypeFor(instanceType),
     capacityType,
     // Changing nodeCount updates this node group in place (EKS
     // UpdateNodegroupConfig): the cluster, VPC and subnets do not change.
