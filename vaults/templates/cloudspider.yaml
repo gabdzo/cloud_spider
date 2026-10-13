@@ -1,3 +1,5 @@
+# Listed in VAULTS automatically while its stack is up (auto discovery,
+# src/vault-view.js); gone from VAULTS once the stack is torn down.
 # The test stack: infra/ (Pulumi project cloudspider, stack test). One stack,
 # one vault. The stack's aws:defaultTags put project=cloudspider on every
 # resource, and spec.stack claims whatever the stack made even before the tags

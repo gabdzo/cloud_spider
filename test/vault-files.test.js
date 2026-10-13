@@ -18,6 +18,8 @@ test("every file in vaults/ is a valid vault and follows the conventions", async
   assert.ok(result.ok);
   assert.ok(result.files.includes("templates/example.yaml"));
   assert.ok(result.vaults >= 7);
+  // No registered vault files: every live vault comes from a template while its stack is up.
+  assert.deepEqual(result.files.filter((file) => !file.startsWith("templates/")), []);
 });
 
 test("vaults/templates/ holds templates: checked and listed, never drawn", async () => {
@@ -28,8 +30,8 @@ test("vaults/templates/ holds templates: checked and listed, never drawn", async
   const templates = await store.templates();
   assert.ok(templates.some((item) => item.file === "templates/example.yaml"));
   assert.ok(templates.every((item) => !item.damaged));
-  assert.ok(files.includes("eks.yaml"));
-  assert.ok(loaded.vaults.every((vault) => !vault.damaged));
+  assert.deepEqual(files, [], "vaults/ registers nothing: VAULTS is empty once every stack is down");
+  for (const name of ["camp", "cloudspider", "demo", "eks"]) assert.ok(templates.some((item) => item.file === `templates/${name}.yaml` && !item.damaged), name);
   // The template uses every field the format has.
   const doc = parse(readFileSync(`${vaultsDir}/templates/example.yaml`, "utf8"));
   assert.deepEqual(Object.keys(doc.metadata).sort(), ["description", "name", "number", "owner", "tags", "title"]);
@@ -64,12 +66,12 @@ test("npm run vaults:check passes on vaults/ and fails on the damaged sample", a
 // The Pulumi programs, run under mocks: every taggable resource carries the
 // project tag of exactly one vault file, and each vault selects it.
 const PROGRAMS = [
-  { dir: "infra", project: "cloudspider", stack: "test", stackDefault: "cloudspider", vaults: ["cloudspider"] },
-  { dir: "upgrades/eks", project: "cloudspider-upgrade", stack: "upgrade", vaults: ["eks"] },
+  { dir: "infra", project: "cloudspider", stack: "test", stackDefault: "cloudspider", vaults: ["cloudspider"], template: true },
+  { dir: "upgrades/eks", project: "cloudspider-upgrade", stack: "upgrade", vaults: ["eks"], template: true },
   { dir: "upgrades/signal", project: "cloudspider-signal", stack: "signal", vaults: ["signal"], template: true },
   { dir: "upgrades/barrel", project: "cloudspider-barrel", stack: "barrel", vaults: ["barrel"], template: true },
-  { dir: "upgrades/camp", project: "cloudspider-camp", stack: "camp", vaults: ["camp"] },
-  { dir: "upgrades/demo", project: "cloudspider-demo", stack: "demo", vaults: ["demo"] },
+  { dir: "upgrades/camp", project: "cloudspider-camp", stack: "camp", vaults: ["camp"], template: true },
+  { dir: "upgrades/demo", project: "cloudspider-demo", stack: "demo", vaults: ["demo"], template: true },
   { dir: "upgrades/rds", project: "cloudspider-rds", stack: "rds", vaults: ["rds"], template: true },
   // Its own AWS resources are only the EBS CSI driver it made before the EKS
   // stack owned it (kept until the migration): mock that cluster.
@@ -154,12 +156,12 @@ test("upgrades/eks: a second cluster names its roles and node group after itself
 });
 
 test("living vaults name their Pulumi stack, and the stack folder exists", async () => {
-  const loaded = await createVaultStore({ dir: vaultsDir }).load();
+  const loaded = await createVaultStore({ dir: `${vaultsDir}/templates`, templates: true }).load();
   const byName = Object.fromEntries(loaded.vaults.map((vault) => [vault.name, vault]));
   assert.deepEqual(byName.camp.stack, { dir: "upgrades/camp", name: "camp" });
   assert.deepEqual(byName.cloudspider.stack, { dir: "infra", name: "test" });
   assert.deepEqual(byName.eks.stack, { dir: "upgrades/eks", name: "*" });
-  for (const vault of loaded.vaults.filter((item) => item.stack)) {
+  for (const vault of loaded.vaults.filter((item) => item.stack && ["camp", "cloudspider", "demo", "eks"].includes(item.name))) {
     assert.ok(existsSync(`${root}${vault.stack.dir}/Pulumi.yaml`), `${vault.file}: ${vault.stack.dir}/Pulumi.yaml`);
   }
 });
@@ -170,7 +172,7 @@ test("vaults:new copies a template with the name, a free number and the project 
   const dir = mkdtempSync(`${tmpdir()}/vaults-new-`);
   mkdirSync(`${dir}/templates`);
   cpSync(`${vaultsDir}/templates/example.yaml`, `${dir}/templates/example.yaml`);
-  cpSync(`${vaultsDir}/camp.yaml`, `${dir}/camp.yaml`);
+  cpSync(`${vaultsDir}/templates/camp.yaml`, `${dir}/camp.yaml`);
   const env = { ...process.env, CLOUDSPIDER_VAULTS_DIR: dir };
   await run(process.execPath, ["scripts/vaults-new.mjs", "example", "shop-api"], { cwd: root, env });
   const text = readFileSync(`${dir}/shop-api.yaml`, "utf8");

@@ -1,3 +1,5 @@
+# Listed in VAULTS automatically while its stack is up (auto discovery,
+# src/vault-view.js); gone from VAULTS once the stack is torn down.
 # upgrades/camp (Pulumi project cloudspider-camp, stack camp): a private
 # bucket with index.html, a Lambda (<name>-page) behind a public function URL
 # that returns the page only, a DynamoDB table (<name>-table) with one row, a
