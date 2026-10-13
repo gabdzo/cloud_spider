@@ -170,7 +170,7 @@ try {
       await uiInvestigate(ns, s.svc); row.shot_before = await shot(`${s.id}-1-investigate`);
       await s.restore();
       if (s.id === "NET-002") S.shopTouched = false;
-      const v = await api("verify", { investigation_id: rec.id });
+      const v = await api("verify", { investigation_id: rec.investigation_id });
       row.verify = v.status;
       row.verify_checks = (v.checks || []).map((c) => `${c.code || c.id}: ${c.status}${c.why ? ` (${c.why})` : ""}`);
       await uiVerify(); row.shot_after = await shot(`${s.id}-2-verify`);

@@ -241,7 +241,10 @@ app.netdebug.addCollector(createKubeCollector({
 // when the aws module is on. Snapshots under storage.path/investigations.
 app.diagnose = {
   kubeOf: mods.has("kubernetes") ? (ctx) => app.kubeOf(ctx) : () => null,
-  pathGraph: mods.has("aws") ? () => app.pathGraph() : null,
+  // boot() first: DIAGNOSE can be the first thing asked (API or a fresh
+  // page), and without it the region is never read and NET-002 stays
+  // "unavailable" (found by the chaos drill).
+  pathGraph: mods.has("aws") ? async () => { await app.boot(); return app.pathGraph(); } : null,
   store: createInvestigationStore({ dir: join(stateDir, "investigations") }),
 };
 // SLO history survives a restart (.cloudspider/slo-ledger.json).
