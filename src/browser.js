@@ -1,7 +1,7 @@
 import { samplePreview } from "./stack-sample.js";
 import { mountScale } from "./eks-scale-view.js";
 import { CATEGORIES, stackCategory } from "./stack-resources.js";
-import { ago, driftHint, overviewStatus, pickLayout } from "./stack-overview.js";
+import { ago, driftHint, inventoryRows, overviewStatus, pickLayout, rowMatches } from "./stack-overview.js";
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, focusLists, paint } from "./draw.js";
@@ -4078,11 +4078,22 @@ function drawOverview(own, groups, order) {
   const all = own.length;
   const up = own.filter((spec) => overviewStatus(stackStates[spec.id], stackRuns[spec.id]) === "deployed").length;
   const failed = own.filter((spec) => overviewStatus(stackStates[spec.id], stackRuns[spec.id]) === "failed").length;
+  const rows = invRows(own);
+  const n = (v) => rows.filter((r) => r.status === v).length;
+  const kBtn = (view, cls, word) => {
+    const on = inventoryView === view;
+    const b = el("button", { type: "button", className: `ov-k ${cls}${on ? " on" : ""}`, title: on ? "close the list, back to the tiles" : `list the ${word} stacks${view === "deployed" ? " with everything each one created" : ""} (add-ons included)` },
+      el("b", { textContent: String(n(view)) }), el("i", { textContent: word }), el("span", { className: "ov-kgo", ariaHidden: "true", textContent: on ? "✕" : "›" }));
+    b.dataset.view = view;
+    b.setAttribute("aria-pressed", String(on));
+    b.addEventListener("click", () => { inventoryView = on ? null : view; inventoryQuery = ""; drawPipForm(); });
+    return b;
+  };
+  void all; void up; void failed;
   pipEl.append(el("div", { className: "ov-sum" },
-    el("span", { className: "ov-k up" }, el("b", { textContent: String(up) }), el("i", { textContent: "DEPLOYED" })),
-    el("span", { className: "ov-k down" }, el("b", { textContent: String(all - up - failed) }), el("i", { textContent: "NOT DEPLOYED" })),
-    el("span", { className: "ov-k fail" }, el("b", { textContent: String(failed) }), el("i", { textContent: "FAILED" })),
-    el("span", { className: "ov-tip", textContent: sample ? "SAMPLE DATA · CLICK A STACK" : "CLICK A STACK FOR ITS RESOURCES" })));
+    kBtn("deployed", "up", "DEPLOYED"), kBtn("down", "down", "NOT DEPLOYED"), kBtn("failed", "fail", "FAILED"),
+    el("span", { className: "ov-tip", textContent: inventoryView ? "CLICK A STACK TO OPEN IT" : sample ? "SAMPLE DATA · CLICK A COUNT OR A STACK" : "CLICK A COUNT FOR THE LIST · A STACK FOR ITS RESOURCES" })));
+  if (inventoryView) return drawInventory(rows);
   for (const { id, icon, label, list } of [...groups.values()].sort((a, b) => order(a.id) - order(b.id))) {
     pipEl.append(sectionHead(id, icon, label, "", list));
     if (foldedSections.has(id)) continue;
@@ -4094,9 +4105,92 @@ function drawOverview(own, groups, order) {
   }
 }
 
+// DEPLOYED INVENTORY (a click on a DEPLOYED / NOT DEPLOYED / FAILED count):
+// every stack in that state, add-ons included, each with what it created
+// grouped by type (the stack state, read-only), a filter on top.
+let inventoryView = null;
+let inventoryQuery = "";
+const INV_TITLE = { deployed: "DEPLOYED INVENTORY", down: "NOT DEPLOYED", failed: "FAILED STACKS" };
+function invRows(own) {
+  return inventoryRows({ own, states: stackStates, runs: stackRuns, addonTree: addonData?.tree || [], category: stackCategory });
+}
+function invResourceText(row) {
+  const r = resourceCache.get(`${row.id}|${row.resourceStack}|${sample ? 1 : 0}`);
+  return r?.groups ? r.groups.map((g) => `${g.label} ${g.service} ${g.items.map((it) => `${it.name} ${it.id}`).join(" ")}`).join(" ") : "";
+}
+function openInventoryRow(row) {
+  inventoryView = null;
+  if (row.kind === "addon") {
+    openCard = row.key;
+    markHistory();
+    syncUrl();
+    drawPipForm();
+    setTimeout(() => pipEl.querySelector(`.card[data-id="${CSS.escape(row.key)}"]`)?.scrollIntoView({ block: "nearest" }), 50);
+    return;
+  }
+  overviewPick = row.id;
+  drawPipForm();
+  pipEl.querySelector(".ov-detail")?.scrollIntoView({ block: "nearest" });
+}
+function drawInventory(all) {
+  const rows = all.filter((r) => r.status === inventoryView);
+  const box = el("section", { className: `inv inv-${inventoryView}`, ariaLabel: INV_TITLE[inventoryView] });
+  const total = rows.reduce((a, r) => a + r.count, 0);
+  const close = el("button", { type: "button", className: "ov-close", textContent: "✕ CLOSE", title: "back to the tiles" });
+  close.addEventListener("click", () => { inventoryView = null; drawPipForm(); });
+  const shown = el("span", { className: "inv-n" });
+  box.append(el("header", { className: "ov-dhead" }, iconImg("stack"), el("b", { textContent: INV_TITLE[inventoryView] }),
+    el("span", { className: "inv-sum", textContent: `${rows.length} STACK${rows.length === 1 ? "" : "S"}${inventoryView === "deployed" ? ` · ${total} RESOURCES` : ""}${sample ? " · SAMPLE" : ""}` }), close));
+  const input = el("input", { type: "search", className: "inv-q", placeholder: "filter: stack, cluster, type, resource name…", value: inventoryQuery, ariaLabel: "filter the list" });
+  box.append(el("div", { className: "inv-bar" }, input, shown));
+  const list = el("div", { className: "inv-list" });
+  const empty = el("p", { className: "res-empty inv-empty" });
+  const items = rows.map((row) => {
+    const item = el("article", { className: `inv-row ${row.status}` });
+    item.dataset.key = row.key;
+    const where = [row.cluster, row.region].filter(Boolean).join(" · ");
+    const head = el("button", { type: "button", className: "inv-head", title: row.kind === "addon" ? `open the ${row.title} add-on card on ${row.cluster}` : `open ${row.title}: detail and RUN CONSOLE` },
+      iconImg(CARD_ICON[row.id] || (row.kind === "addon" ? "addon" : "stack")),
+      el("b", { className: "inv-name", textContent: row.title }),
+      el("span", { className: "inv-cat", textContent: row.category }),
+      where ? el("span", { className: "inv-where", textContent: where }) : "",
+      el("span", { className: "inv-stack", textContent: row.stack, title: "Pulumi stack" }),
+      runLine(row.run),
+      row.status === "deployed" ? el("span", { className: "inv-cnt", textContent: `${row.count} RES` }) : "",
+      el("span", { className: "ov-go", ariaHidden: "true", textContent: "OPEN ›" }));
+    head.addEventListener("click", () => openInventoryRow(row));
+    item.append(head);
+    if (row.note) item.append(el("span", { className: "ov-drift", textContent: row.note }));
+    if (row.run?.error) item.append(el("span", { className: "ov-drift", textContent: `⚠ ${row.run.error}` }));
+    const hint = row.kind === "stack" ? driftHint(stackStates[row.id], row.run) : "";
+    if (hint && row.status !== "deployed") item.append(el("span", { className: "ov-drift", textContent: `⚠ ${hint}` }));
+    if (row.status !== "down") {
+      const spec = pipModules.find((s) => s.id === row.id && (row.kind === "addon" ? s.addon : !s.addon)) || { id: row.id, title: row.title };
+      item.append(resourcesBlock(spec, row.resourceStack, () => apply()));
+    }
+    list.append(item);
+    return [row, item];
+  });
+  const apply = () => {
+    let hits = 0;
+    for (const [row, item] of items) {
+      const on = rowMatches(row, inventoryQuery, invResourceText(row));
+      item.hidden = !on;
+      if (on) hits += 1;
+    }
+    shown.textContent = inventoryQuery ? `${hits} / ${rows.length} MATCH` : "";
+    empty.hidden = hits > 0;
+    empty.textContent = rows.length ? `nothing matches "${inventoryQuery}"` : inventoryView === "deployed" ? "No stack has resources yet: PREVIEW then RUN one from its RUN CONSOLE." : inventoryView === "failed" ? "No failed RUN or TAKE IT DOWN in the audit log." : "Every stack is deployed.";
+  };
+  input.addEventListener("input", () => { inventoryQuery = input.value; apply(); });
+  box.append(list, empty);
+  pipEl.append(box);
+  apply();
+}
+
 // RESOURCES CREATED: the open card's stack state grouped by type.
 const resourceCache = new Map();
-function resourcesBlock(spec, stack = "") {
+function resourcesBlock(spec, stack = "", onRead = null) {
   const box = el("section", { className: "res-block", ariaLabel: "resources created" });
   const head = el("div", { className: "res-head" }, iconImg("stack"), el("b", { textContent: "RESOURCES CREATED" }), el("span", { className: "res-sum", textContent: "reading the stack state…" }));
   const list = el("div", { className: "res-list" });
@@ -4145,7 +4239,7 @@ function resourcesBlock(spec, stack = "") {
     fetch(`/api/upgrade/resources?${q}`).then((r) => r.json()).catch(() => ({ state: "error", error: "the page failed" })).then((r) => {
       resourceCache.set(key, r);
       setTimeout(() => resourceCache.delete(key), 60_000);
-      if (box.isConnected) paint(r);
+      if (box.isConnected) { paint(r); onRead?.(); }
     });
   }
   return box;
@@ -4521,8 +4615,12 @@ async function pullAddons(fresh = false) {
   if (fresh) query.set("fresh", "1");
   const body = await fetch(`/api/addons?${query}`).then((response) => response.json()).catch(() => ({ tree: [], notes: ["the add-ons did not answer"] }));
   if (ticket !== addonTicket || !pipOpen) return;
+  const sig = (d) => (d?.tree || []).flatMap((c) => c.addons.map((a) => `${a.id}@${c.cluster}:${a.state}:${a.resources}`)).join(",");
+  const changed = sig(addonData) !== sig(body);
   addonData = body;
-  drawAddonTree();
+  // the DEPLOYED / NOT DEPLOYED counts include the add-on stacks
+  if (changed && stacksLayout() === "overview" && !consoleSpec()) drawPipForm();
+  else drawAddonTree();
 }
 
 function addonRow(spec, item, cluster) {
@@ -4627,6 +4725,8 @@ function drawPipForm() {
   const runConsole = consoleSpec();
   if (runConsole) return drawRunConsole(runConsole, title);
   if (overview) drawOverview(own, groups, order);
+  // the inventory lists the add-on stacks itself
+  if (overview && inventoryView) return;
   else for (const { id, icon, label, list } of [...groups.values()].sort((a, b) => order(a.id) - order(b.id))) {
     pipEl.append(sectionHead(id, icon, label, "", list));
     if (foldedSections.has(id)) continue;
