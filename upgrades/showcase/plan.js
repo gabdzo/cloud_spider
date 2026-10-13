@@ -35,9 +35,9 @@ export const BOUTIQUE = [
 // Requests per product (the tests add them up against the two nodes).
 export const PRODUCTS = [
   { id: "boutique", ns: "boutique", title: "Online Boutique", alb: "boutique", host: "", service: "frontend", port: 80 },
-  { id: "kuma", ns: "uptime-kuma", title: "Uptime Kuma", alb: "showcase", host: "kuma", service: "uptime-kuma", port: 3001, cpu: "50m", memory: "128Mi", storage: "1Gi" },
+  { id: "kuma", ns: "uptime-kuma", title: "Uptime Kuma", alb: "showcase", host: "kuma", service: "uptime-kuma", port: 3001, cpu: "50m", memory: "256Mi", storage: "1Gi" },
   { id: "wiki", ns: "wiki", title: "Wiki.js", alb: "showcase", host: "wiki", service: "wiki", port: 3000, cpu: "50m", memory: "256Mi", db: { name: "wikidb", storage: "2Gi", cpu: "50m", memory: "256Mi" } },
-  { id: "mealie", ns: "mealie", title: "Mealie", alb: "showcase", host: "mealie", service: "mealie", port: 9000, cpu: "50m", memory: "256Mi", storage: "1Gi" },
+  { id: "mealie", ns: "mealie", title: "Mealie", alb: "showcase", host: "mealie", service: "mealie", port: 9000, cpu: "50m", memory: "512Mi", storage: "1Gi" },
 ];
 
 export const SHARED_GROUP = "showcase";
