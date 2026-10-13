@@ -12,6 +12,7 @@
 // (readScaleState); runScale executes a plan's steps one by one. Nothing runs
 // without an explicit run call, which the API and CLI gate behind a typed
 // confirmation (the cluster name).
+import { recoverAfterScaleUp } from "./eks-recover.js";
 import { HOURS_PER_MONTH, PRICES, SPOT_SHARE } from "./stack-costs.js";
 
 const round2 = (v) => Math.round(v * 100) / 100;
@@ -173,6 +174,7 @@ export function planText(plan) {
   const lines = [`SCALE ${plan.mode.toUpperCase()} ${plan.cluster} (context ${plan.context}, ${plan.region}) — dry run, nothing changed`, "", "steps:"];
   plan.steps.forEach((s, i) => lines.push(`  ${i + 1}. ${s.what}${s.cmd ? `\n       $ ${s.cmd} ${s.args.map((x) => (/[\s{}"]/.test(x) ? `'${x}'` : x)).join(" ")}` : ""}`));
   const c = (cost) => (cost ? `$${cost.month.toFixed(2)}/mo` : "?");
+  if (plan.mode === "up") lines.push("  then: wait for a Ready node and for Kyverno, and `rollout restart` DaemonSets/Deployments its webhook refused while it was down (Beyla, otel-agent, CNPG...)");
   lines.push("", `cost now ~${c(plan.before)}, after ~${c(plan.after)}${plan.saves != null ? ` (saves ~$${plan.saves.toFixed(2)}/mo)` : ""}`);
   if (plan.mode === "down") {
     lines.push("still billed while scaled down:");
@@ -204,13 +206,22 @@ export function cliRunner(execFile, env = process.env) {
 }
 
 // One call for API and CLI: read, plan, and (only when run) execute.
-export async function scaleCluster({ cluster, context, region, mode, workloads = false, run, store, execute = false, confirm = "" }) {
+export async function scaleCluster({ cluster, context, region, mode, workloads = false, run, store, execute = false, confirm = "", recover = recoverAfterScaleUp }) {
   const saved = await store.load(cluster);
   const state = await readScaleState({ cluster, context, region, run, workloads: mode === "down" && workloads });
   const plan = planScale(state, { mode, workloads, saved });
   if (!execute || plan.error) return { plan, text: planText(plan), ran: false };
   if (!confirmOk(plan, confirm)) return { plan, text: planText(plan), ran: false, error: `type the cluster name (${cluster}) to confirm` };
-  return { plan, text: planText(plan), ran: true, result: await runScale(plan, { run, store }) };
+  const result = await runScale(plan, { run, store });
+  // SCALE UP: pods refused by Kyverno while it had no pods stay at 0 until
+  // restarted (eks-recover.js). Its failure is reported, not hidden.
+  if (mode === "up" && result.ok && recover) {
+    const rec = await recover({ context, run }).catch((error) => ({ ok: false, steps: [{ what: "recover after scale up", ok: false, error: String(error.message || error) }], restarted: [] }));
+    result.recover = rec;
+    result.done.push(...rec.steps);
+    if (!rec.ok) { result.ok = false; result.error = `scaled up, but recovery after it: ${rec.error || "a step failed"}`; }
+  }
+  return { plan, text: planText(plan), ran: true, result };
 }
 
 // SAMPLE mode (the page's made-up account): a fixed cluster like

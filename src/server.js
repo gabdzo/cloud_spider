@@ -3480,10 +3480,15 @@ async function liveGraph(kube, context, ttl = 20_000) {
 
 async function route(app, req, res) {
   const url = new URL(req.url || "/", "http://127.0.0.1");
-  // A write from another page (or with no Origin) is refused inside each
-  // handler, which explains it in the body; the status says so too: 403,
-  // not 200, so nothing (a proxy, a script, the browser) reads it as done.
-  if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && app.pageOrigin && !originAllowed(req.headers.origin, app.pageOrigin)) res.foreign = true;
+  // A write from another page (or with no Origin) is refused HERE, before any
+  // handler runs or the body is read: no route (scale, stack runs, teardown,
+  // debug pod, stop/start, diagnose...) may act on a cross-site request.
+  // Before, only the status was flipped to 403 and the handler still ran.
+  if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && app.pageOrigin && !originAllowed(req.headers.origin, app.pageOrigin)) {
+    res.writeHead(403, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+    res.end(JSON.stringify({ error: "refused: this request did not come from the Cloud Spider page, nothing ran", hint: "Open Cloud Spider at the address npm start printed." }));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/") {
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
@@ -4078,7 +4083,6 @@ export function sampleKubeCluster() {
 }
 
 function send(res, status, body) {
-  if (res.foreign && status < 400) status = 403;
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
