@@ -21,6 +21,7 @@ import { pathResult, withPeers } from "./path-view.js";
 import { THEME_NAMES, cssVars } from "./theme.js";
 import { SCORE_CSS } from "./score/style.js";
 import { ND_CSS } from "./netdebug/style.js";
+import { DX_CSS } from "./diagnose-style.js";
 import { LE_CSS } from "./log-errors-style.js";
 import { scoreRoute } from "./score/routes.js";
 import { netdebugRoute } from "./netdebug/routes.js";
@@ -51,6 +52,7 @@ export const FILES = new Set([
   "stack-sample.js",
   "eks-scale-view.js",
   "takedown-view.js",
+  "diagnose-view.js",
   "stack-resources.js",
   "stack-overview.js",
   "peering.js",
@@ -169,6 +171,7 @@ const page = `<!doctype html>
   ${cssVars()}
   ${SCORE_CSS}
   ${ND_CSS}
+  ${DX_CSS}
   ${LE_CSS}
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }

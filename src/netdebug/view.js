@@ -8,6 +8,7 @@
 // walkthrough (walkthrough.js) over the same report; its VERIFY re-runs
 // the debug (every 60 s, 10 times at most, while it is open).
 import { albWalkthrough, verifyState } from "./walkthrough.js";
+import { openDiagnose } from "../diagnose-view.js";
 
 export const ORDER = { FAIL: 0, UNKNOWN: 1, PASS: 2, NOT_ASSESSED: 3, NOT_APPLICABLE: 4 };
 export const STATE_TEXT = { FAIL: "FAIL", PASS: "PASS", UNKNOWN: "UNKNOWN", NOT_ASSESSED: "NOT ASSESSED", NOT_APPLICABLE: "N/A" };
@@ -307,7 +308,16 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     h("span", { className: "nd-label", text: "POD IN" }), nsSel, nodeIn, asIn, svcSel,
     h("label", { className: "nd-check" }, httpIn, "HTTP"), tlsLabel, rawLabel,
     h("span", { className: "nd-quiet", text: "read-only otherwise · deleted after the run · TTL" }));
-  const bar = h("div", { className: "nd-bar" }, h("b", { className: "nd-title", text: "DEBUG" }), field, insideBtn, modes, runBtn, meta, exports, fold);
+  // DIAGNOSE: investigate the Service the target names (svc.ns), read-only.
+  const dxBtn = h("button", { className: "nd-btn nd-dx", type: "button", text: "INVESTIGATE", title: "DIAGNOSE a Service: read-only evidence, findings, VERIFY AGAIN after a fix" });
+  dxBtn.addEventListener("click", () => {
+    if (sample()) return openDiagnose({ sample: true });
+    const host = (/^[a-z]+:\/\/([^/:]+)/i.exec(field.value.trim()) || [null, field.value.trim().split(/[/:]/)[0]])[1] || "";
+    const [svc, ns] = host.split(".");
+    const dns = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+    openDiagnose(ns && dns.test(svc) && dns.test(ns) && !/\.(com|net|org|io|aws|amazonaws)$/.test(host) ? { namespace: ns, service: svc } : {});
+  });
+  const bar = h("div", { className: "nd-bar" }, h("b", { className: "nd-title", text: "DEBUG" }), field, insideBtn, modes, runBtn, dxBtn, meta, exports, fold);
   root.replaceChildren(bar, insideRow, body);
   const loadPodCfg = async () => {
     podCfg = await fetchJson("/api/netdebug/pod/config").catch(() => null);

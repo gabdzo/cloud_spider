@@ -44,3 +44,11 @@ Prometheus queries (there is no endpoint configured yet; this is reported as `no
 
 - **Atlas** (the dashboard views) displays investigations and their history.
 - **Diagnose** (`src/diagnose/*`) gathers evidence, runs the rules and verifies fixes. It uses no DOM and no view state, so a future CLI can import `collect`, `investigation` and `verify` directly and print the same JSON.
+
+## 7. In the dashboard (part 2)
+
+- **SERVICES › INCIDENT REVIEW › ◎ INVESTIGATE**, and **◎ INVESTIGATE ›** on a selected Service card. Both open the DIAGNOSE panel (`src/diagnose-view.js`, styles in `src/diagnose-style.js`). In live mode the selected card fills in the namespace and Service.
+- **SNIFF › DEBUG › INVESTIGATE**: a `svc.ns` target fills in the form.
+- The panel shows the findings (code, severity, confidence, status, evidence and read-only next steps with COPY), the hypotheses (marked "not facts"), the capabilities (the debug pod as OPTIONAL ACTION), the path with provenance, and open questions. **VERIFY AGAIN** shows a before/after table and a verdict, and **EXPORT JSON** downloads the record.
+- In SAMPLE mode the brother-sandbox db incident runs offline. The AFTER selector (FIXED, NOT FIXED, EVIDENCE GONE) shows all three verdicts.
+- To try it: run `npm start`, turn on SAMPLE, then go to CLUSTER › SERVICES › INCIDENT REVIEW › ◎ INVESTIGATE.
