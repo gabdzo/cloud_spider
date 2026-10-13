@@ -154,7 +154,8 @@ let bucket = null;
 let association = null;
 if (backups) {
   const identity = await aws.getCallerIdentity();
-  const region = (await aws.getRegion()).name;
+  const regionInfo = await aws.getRegion();
+  const region = regionInfo.region || regionInfo.name; // v7: region (name is deprecated)
   bucket = new aws.s3.BucketV2("backups", { bucket: `${clusterName}-shopdb-backups-${identity.accountId}`, forceDestroy: true, tags }, { protect });
   new aws.s3.BucketPublicAccessBlock("backups", { bucket: bucket.id, blockPublicAcls: true, blockPublicPolicy: true, ignorePublicAcls: true, restrictPublicBuckets: true });
   new aws.s3.BucketOwnershipControls("backups", { bucket: bucket.id, rule: { objectOwnership: "BucketOwnerEnforced" } });

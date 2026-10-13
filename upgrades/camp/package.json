@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@pulumi/aws": "6.83.4",
+    "@pulumi/aws": "7.50.0",
     "@pulumi/pulumi": "3.268.0"
   }
 }
