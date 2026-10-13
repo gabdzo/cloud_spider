@@ -413,7 +413,9 @@ export function nodeGroupChange(live, values) {
   if (cap && cap !== wantCap) return `capacityType ${wantCap} is not the live node group's ${cap}: this REPLACES the node group${live.nodeGroup ? ` ${live.nodeGroup}` : ""} (a new ${wantCap === "SPOT" ? "spot" : "on-demand"} group comes up first, then the old one drains and goes; every pod restarts once). Set CAPACITYTYPE to ${cap} to keep it, or confirm the replace`
   // maxPods: a live node group without the setting in its stack is "auto".
   const pods = live?.maxPods || (live?.nodeGroup ? "auto" : "")
-  const want = String(values?.maxPods || "auto")
+  // SPOT + auto runs as 32 (eks-addons.js resolveMaxPods) with prefix delegation on.
+  const asked = String(values?.maxPods || "auto")
+  const want = asked === "auto" && wantCap === "SPOT" && String(values?.vpcCni || "on") !== "off" && String(values?.prefixDelegation || "on") !== "off" ? "32" : asked
   if (pods && pods !== want) return `maxPods ${want} is not the live node group's ${pods}: this REPLACES the node group${live.nodeGroup ? ` ${live.nodeGroup}` : ""} (a new one with kubelet maxPods ${want} comes up first, then the old one drains and goes; every pod restarts once). Set MAXPODS to ${pods} to keep it, or confirm the replace`
   return ""
 }

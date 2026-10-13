@@ -28,7 +28,8 @@ test("spot pools: same memory as the card's type, so one maxPods fits every node
   assert.deepEqual(nodeInstanceTypes("t4g.small", "SPOT"), ["t4g.small", "c7g.medium", "c6g.medium"]);
   assert.deepEqual(nodeInstanceTypes("t4g.medium", "ON_DEMAND"), ["t4g.medium"]);
   assert.equal(capacityProblem("t4g.medium", "SPOT", "110"), "");
-  assert.match(capacityProblem("t4g.medium", "SPOT", "auto"), /SPOT mixes t4g\.medium, m7g\.medium, m6g\.medium.*set maxPods \(32 or 58 or 110\)/);
+  assert.equal(capacityProblem("t4g.medium", "SPOT", "auto"), "", "auto on spot = 32 (resolveMaxPods)");
+  assert.match(capacityProblem("t4g.medium", "SPOT", "auto", false), /SPOT mixes t4g\.medium, m7g\.medium, m6g\.medium/);
   assert.match(capacityProblem("t4g.small", "BID"), /capacityType must be ON_DEMAND or SPOT/);
   assert.equal(capacityProblem("t4g.small", "ON_DEMAND", "auto"), "");
   const param = UPGRADES.find((s) => s.id === "eks").parameters.find((p) => p.name === "capacityType");
@@ -67,5 +68,36 @@ test("eks stack SPOT: capacityType SPOT, the pool as instanceTypes, launch templ
   assert.ok(nodes.inputs.launchTemplate.id);
   const plain = await mock({ "cloudspider-upgrade:instanceType": "t4g.medium", "cloudspider-upgrade:maxPods": "110" });
   assert.equal(plain.find((r) => r.type === "aws:eks/nodeGroup:NodeGroup").inputs.capacityType, "ON_DEMAND", "no setting: as before");
-  await assert.rejects(mock({ "cloudspider-upgrade:instanceType": "t4g.medium", "cloudspider-upgrade:capacityType": "SPOT" }), (error) => /set maxPods/.test(`${error.stdout}${error.stderr}`));
+  // SPOT + auto: refused only without prefix delegation (else it means 32).
+  await assert.rejects(mock({ "cloudspider-upgrade:instanceType": "t4g.medium", "cloudspider-upgrade:capacityType": "SPOT", "cloudspider-upgrade:prefixDelegation": "off" }), (error) => /turn prefixDelegation on/.test(`${error.stdout}${error.stderr}`));
+});
+
+// 2026-10-13: a new cluster with SPOT and maxPods auto (the card's default)
+// failed inside pulumi up ("set maxPods (32)") after the stack was made.
+import { resolveMaxPods } from "../upgrades/eks-addons.js";
+import { checkParams } from "../src/upgrade.js";
+
+test("SPOT + maxPods auto resolves to 32 (prefix delegation on) instead of failing", () => {
+  assert.equal(resolveMaxPods("t4g.small", "SPOT", "auto", true), "32");
+  assert.equal(resolveMaxPods("t4g.medium", "SPOT", "auto", true), "32");
+  assert.equal(resolveMaxPods("t4g.medium", "SPOT", "110", true), "110");
+  assert.equal(resolveMaxPods("t4g.small", "ON_DEMAND", "auto", true), "auto");
+  assert.equal(capacityProblem("t4g.small", "SPOT", "auto", true), "");
+  assert.match(capacityProblem("t4g.small", "SPOT", "auto", false), /turn prefixDelegation on/);
+  assert.equal(nodeGroupChange({ maxPods: "32", capacityType: "SPOT", nodeGroup: "g" }, { capacityType: "SPOT", maxPods: "auto" }), "", "auto on spot is the live 32: no replace");
+});
+
+test("the EKS card refuses SPOT + auto without prefix delegation before any stack is made", () => {
+  const spec = UPGRADES.find((s) => s.id === "eks");
+  assert.ok(checkParams(spec, { clusterName: "cloudspider-up-2", instanceType: "t4g.small", capacityType: "SPOT", maxPods: "auto" }).values);
+  assert.match(checkParams(spec, { clusterName: "cloudspider-up-2", capacityType: "SPOT", maxPods: "auto", prefixDelegation: "off" }).error, /needs vpcCni and prefixDelegation on/);
+});
+
+test("pulumi mock: SPOT + auto on a t4g.small makes a launch template with kubelet maxPods 32", { skip: ready("upgrades/eks") }, async () => {
+  const res = await mock({ "cloudspider-upgrade:instanceType": "t4g.small", "cloudspider-upgrade:capacityType": "SPOT", "cloudspider-upgrade:maxPods": "auto" });
+  const lt = res.find((r) => r.type === "aws:ec2/launchTemplate:LaunchTemplate");
+  assert.ok(lt, "launch template");
+  assert.match(Buffer.from(lt.inputs.userData, "base64").toString(), /maxPods: 32/);
+  const ng = res.find((r) => r.type === "aws:eks/nodeGroup:NodeGroup");
+  assert.deepEqual(ng.inputs.instanceTypes, ["t4g.small", "c7g.medium", "c6g.medium"]);
 });
