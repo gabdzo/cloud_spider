@@ -40,12 +40,31 @@ test("defaults: the same VPC, subnets and zones as before (no diff on the live s
   assert.deepEqual(await mock({ "cloudspider-upgrade:vpcCidr": "10.50.0.0/16", "aws:region": "eu-west-1" }), { vpc: "10.50.0.0/16", subnets: [["10.50.1.0/24", "eu-west-1a"], ["10.50.2.0/24", "eu-west-1b"]] });
 });
 
-test("kubernetesVersion: default 1.32 (what the live cluster runs), 1.33 in place, nothing else", { skip }, async () => {
-  const { validateEks } = await import("../upgrades/schema/eks.js");
-  assert.equal(validateEks({}).values.kubernetesVersion, "1.32");
-  assert.match(validateEks({ kubernetesVersion: "1.30" }).errors[0], /kubernetesVersion must be 1.32 or 1.33/);
-  const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", "upgrades/eks", "cloudspider-upgrade", "upgrade", JSON.stringify({ "cloudspider-upgrade:clusterName": "cloudspider-up", "cloudspider-upgrade:kubernetesVersion": "1.33" })], { cwd: root, env: { ...process.env, CLOUDSPIDER_MOCK_EKS_ADDONS: "{}" }, maxBuffer: 32 * 1024 * 1024 });
-  assert.equal(JSON.parse(stdout.slice(stdout.indexOf("[{"))).find((r) => r.type === "aws:eks/cluster:Cluster").inputs.version, "1.33");
+// The mock's live cluster: CLOUDSPIDER_MOCK_EKS_CLUSTER (scripts/pulumi-mock.mjs).
+async function mockVersion(config, liveCluster) {
+  const full = { "cloudspider-upgrade:clusterName": "cloudspider-up", ...config };
+  try {
+    const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", "upgrades/eks", "cloudspider-upgrade", "upgrade", JSON.stringify(full)], { cwd: root, env: { ...process.env, CLOUDSPIDER_MOCK_EKS_ADDONS: "{}", CLOUDSPIDER_MOCK_EKS_CLUSTER: liveCluster }, maxBuffer: 32 * 1024 * 1024 });
+    return { version: JSON.parse(stdout.slice(stdout.indexOf("[{"))).find((r) => r.type === "aws:eks/cluster:Cluster").inputs.version };
+  } catch (error) {
+    return { error: `${error.stdout || ""}${error.stderr || ""}` };
+  }
+}
+
+test("kubernetesVersion: auto keeps the live version (no surprise upgrade), 1.34 for a new cluster, one minor up at a time", { skip }, async () => {
+  assert.equal(validateEks({}).values.kubernetesVersion, "auto");
+  assert.match(validateEks({ kubernetesVersion: "1.30" }).errors[0], /kubernetesVersion must be auto or 1.32 or 1.33 or 1.34/);
+  // The deployed stack (Pulumi.upgrade.yaml has no kubernetesVersion) on a 1.32 cluster stays 1.32.
+  assert.deepEqual(await mockVersion({}, '{"version":"1.32"}'), { version: "1.32" });
+  assert.deepEqual(await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "auto" }, '{"version":"1.33"}'), { version: "1.33" });
+  // A new cluster: 1.34.
+  assert.deepEqual(await mockVersion({}, "absent"), { version: "1.34" });
+  // In place, one minor: 1.32 -> 1.33 -> 1.34.
+  assert.deepEqual(await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "1.33" }, '{"version":"1.32"}'), { version: "1.33" });
+  assert.deepEqual(await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "1.34" }, '{"version":"1.33"}'), { version: "1.34" });
+  // A skip or a downgrade is refused before any resource.
+  assert.match((await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "1.34" }, '{"version":"1.32"}')).error, /skips a minor.*UPGRADE TO 1\.33 first/);
+  assert.match((await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "1.32" }, '{"version":"1.33"}')).error, /downgrade/);
 });
 
 test("eks network is an EksVpc component whose children alias the stack root (no replace on move)", async () => {

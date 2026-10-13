@@ -96,6 +96,7 @@ export const FILES = new Set([
   "run-pane.js",
   "node-labels.js",
   "stack-costs.js",
+  "eks-versions.js",
   "stack-bundles.js",
   "theme.js",
   "draw-kit.js",

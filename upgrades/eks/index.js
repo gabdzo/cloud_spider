@@ -4,6 +4,7 @@ import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
 import { assertEks } from "../schema/eks.js";
+import { resolveEksVersion, supportWarning, versionStepProblem } from "../eks-versions.js";
 import { eksPreflight } from "../schema/preflight.js";
 import { eksSubnets, eksZones } from "../schema/net.js";
 import { eksVpcComponent } from "../components/eks-vpc.js";
@@ -34,7 +35,24 @@ const SUBNETS = eksSubnets(cfg.vpcCidr);
 const clusterName = cfg.clusterName;
 const instanceType = cfg.instanceType;
 const nodeCount = cfg.nodeCount;
-const version = cfg.kubernetesVersion;
+// The live cluster's version (read-only eks:DescribeCluster): auto keeps it,
+// an explicit one may only be one minor up (EKS refuses a skip or a down).
+// No cluster of that name: a new one, on resolveEksVersion's default.
+const NO_CLUSTER = /ResourceNotFoundException|couldn't find resource|not found|No cluster/i;
+let liveVersion = "";
+try {
+  liveVersion = String((await aws.eks.getCluster({ name: clusterName })).version || "");
+} catch (error) {
+  if (!NO_CLUSTER.test(String(error?.details || error?.message || error))) throw error;
+}
+const version = resolveEksVersion(cfg.kubernetesVersion, liveVersion);
+{
+  const problem = versionStepProblem(version, liveVersion);
+  if (problem) throw new Error(`cloudspider-upgrade preflight failed, nothing was changed:\n  - ${problem}`);
+  const warn = supportWarning(version, { live: version === liveVersion });
+  if (warn) pulumi.log.warn(warn);
+  if (liveVersion && version !== liveVersion) pulumi.log.warn(`control plane upgrade ${liveVersion} -> ${version} in place (about 10-15 min); the node group keeps its kubelet version until it is replaced`);
+}
 // Control plane logging (K8S-OBS-003): api, audit, authenticator to
 // /aws/eks/<cluster>/cluster, a group this stack creates first so it has a
 // retention (EKS's own would never expire). In place both ways.

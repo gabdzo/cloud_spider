@@ -51,7 +51,15 @@ await pulumi.runtime.setMocks(
       }
       if (token.includes("getCallerIdentity")) return { accountId: "550536272523", arn: "arn:aws:iam::550536272523:user/mock", userId: "mock" };
       if (token.includes("getParameter")) return { value: "ami-test", name: args.inputs?.name, type: "String" };
-      if (token.includes("eks/getCluster")) return { name: args.inputs?.name, endpoint: "https://mock.eks", certificateAuthorities: [{ data: "bW9jaw==" }], arn: `arn:aws:eks:eu-north-1:550536272523:cluster/${args.inputs?.name}`, vpcConfig: { vpcId: "vpc-mock", subnetIds: ["subnet-a", "subnet-b"], clusterSecurityGroupId: "sg-cluster" } };
+      // CLOUDSPIDER_MOCK_EKS_CLUSTER: "absent" (no cluster of that name) or
+      // {"version": "1.32"} (the live cluster's version); unset: no version.
+      const mockCluster = process.env.CLOUDSPIDER_MOCK_EKS_CLUSTER || "";
+      if (token.includes("eks/getCluster") && mockCluster === "absent") {
+        const missing = new Error(`reading EKS Cluster (${args.inputs?.name}): couldn't find resource`);
+        missing.details = missing.message;
+        throw missing;
+      }
+      if (token.includes("eks/getCluster")) return { ...(mockCluster ? JSON.parse(mockCluster) : {}), name: args.inputs?.name, endpoint: "https://mock.eks", certificateAuthorities: [{ data: "bW9jaw==" }], arn: `arn:aws:eks:eu-north-1:550536272523:cluster/${args.inputs?.name}`, vpcConfig: { vpcId: "vpc-mock", subnetIds: ["subnet-a", "subnet-b"], clusterSecurityGroupId: "sg-cluster" } };
       // A mock subnet's zone is its id's last letter: subnet-a is in eu-north-1a.
       // The mock VPC: 10.0.0.0/16.
       if (token.includes("ec2/getVpc")) return { id: args.inputs?.id, cidrBlock: "10.0.0.0/16" };

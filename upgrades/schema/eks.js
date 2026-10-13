@@ -5,6 +5,7 @@
 import { CAPACITY_TYPES, MAX_PODS_CHOICES, capacityProblem, maxPodsProblem, resolveMaxPods } from "../eks-addons.js";
 import { validate, assertValid } from "./core.js";
 import { cidrOk, privateCidr } from "./net.js";
+import { EKS_AUTO, EKS_VERSIONS } from "../eks-versions.js";
 
 export const EKS_INSTANCE_TYPES = ["t4g.small", "t4g.medium"];
 
@@ -14,8 +15,11 @@ export const EKS_SCHEMA = {
     // 28 chars: "<name>-ebs-csi-driver" and the other IAM role names stay under 64.
     clusterName: { type: "name", pattern: /^[a-z][a-z0-9-]{1,27}$/, hint: "must be a short lowercase name (a-z, 0-9, -; 2-28 chars, starts with a letter)", default: "cloudspider-up", doc: "EKS cluster name; the stack is eks-<name> (cloudspider-up: upgrade)" },
     // In place (EKS UpdateClusterVersion), one minor at a time, never down;
-    // the node group follows on its next AMI roll. Default: what the stack has run.
-    kubernetesVersion: { type: "enum", choices: ["1.32", "1.33"], default: "1.32", doc: "control plane version (in place, one minor up at a time, never down)" },
+    // the node group keeps its kubelet until it is next replaced (skew <= 3
+    // minors is supported). auto: what the live cluster runs, or 1.34 for a
+    // new one (upgrades/eks-versions.js), so a RUN never upgrades by surprise.
+    // 1.32 and 1.33 are on EKS extended support ($0.60/h, not $0.10/h).
+    kubernetesVersion: { type: "enum", choices: [EKS_AUTO, ...EKS_VERSIONS], default: EKS_AUTO, doc: "control plane version: auto keeps the live one (1.34 for a new cluster); in place, one minor up at a time, never down" },
     instanceType: { type: "enum", choices: EKS_INSTANCE_TYPES, default: "t4g.small", doc: "node instance type (Graviton)" },
     nodeCount: { type: "int", min: 1, max: 10, default: 1, doc: "managed nodes (in place)" },
     maxPods: { type: "enum", choices: MAX_PODS_CHOICES, default: "auto", doc: "kubelet pod cap; a number replaces the node group once" },

@@ -1,4 +1,5 @@
 // Evaluators for AWS controls. Same contract as evaluators/kube.js. Pure.
+import { eksSupport, nextVersion } from "../../eks-versions.js";
 const OPEN = (p) => p.cidrs.includes("0.0.0.0/0") || p.ipv6.includes("::/0");
 const covers = (p, port) => p.protocol === "-1" || ((p.protocol === "tcp" || p.protocol === "6") && p.from <= port && port <= p.to);
 export const ADMIN_PORTS = [22, 3389, 10250];
@@ -11,6 +12,30 @@ export const awsEvaluators = {
   "lb-has-healthy-targets"({ data }) {
     const live = data["aws-elbv2"].loadBalancers.filter((lb) => lb.listeners > 0 && lb.targetGroups.length);
     return { items: live.map((lb) => { const targets = lb.targetGroups.flatMap((tg) => tg.targets); const healthy = targets.filter((t) => t.state === "healthy").length; return { id: `${lb.region}/${lb.name}`, pass: healthy > 0, detail: healthy ? "" : `0 of ${targets.length} targets healthy${targets[0]?.reason ? ` (${targets[0].reason})` : ""}` }; }) };
+  },
+  // FinOps + support: a control plane on EKS extended support pays $0.60/h
+  // instead of $0.10/h, and at its end EKS upgrades it unasked (eks-versions.js).
+  "eks-standard-support"({ data, now = Date.now() }) {
+    const items = [];
+    const unknown = [];
+    for (const c of data["aws-eks"].clusters) {
+      const id = `${c.region}/${c.name}`;
+      const s = eksSupport(c.version, now);
+      if (s.status === "unknown") {
+        unknown.push({ id, reason: `version ${c.version || "?"} is not in the EKS calendar Cloud Spider knows` });
+        continue;
+      }
+      const next = nextVersion(s.version);
+      const fix = `upgrade one minor at a time: EKS card kubernetesVersion ${next}, PREVIEW, RUN`;
+      items.push({
+        id,
+        pass: s.status === "standard",
+        detail: s.status === "standard" ? "" : s.status === "ended"
+          ? `${s.version} is past end of support (${s.extendedEnd}); EKS upgrades it on its own. ${fix}`
+          : `${s.version} on EXTENDED SUPPORT since ${s.standardEnd}: $${s.usdPerHour.toFixed(2)}/h vs $0.10/h (~$${Math.round(s.feePerHour * 730)}/mo extra), ends ${s.extendedEnd}. ${fix}`,
+      });
+    }
+    return { items, unknown };
   },
   "eks-active"({ data }) {
     return { items: data["aws-eks"].clusters.map((c) => ({ id: `${c.region}/${c.name}`, pass: c.status === "ACTIVE", detail: c.status === "ACTIVE" ? "" : `status ${c.status}` })) };

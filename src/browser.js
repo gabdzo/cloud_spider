@@ -4500,7 +4500,7 @@ function cardBody(spec, preset = {}) {
         pipKept[spec.id] = { ...(pipKept[spec.id] || {}), [parameter.name]: field.value };
       });
     }
-    if (spec.id === "eks" && parameter.name === "instanceType") field.addEventListener("change", () => paintLive());
+    if (spec.id === "eks" && ["instanceType", "kubernetesVersion"].includes(parameter.name)) field.addEventListener("change", () => paintLive());
     if (spec.id === "eks" && parameter.name === "clusterName") field.addEventListener("change", () => {
       refreshLive(true);
       refreshConnect(true);
@@ -4512,7 +4512,7 @@ function cardBody(spec, preset = {}) {
       field.addEventListener("input", () => promptConfirm(spec, body));
     }
     // The bill follows the instance type and node count picked here.
-    if (spec.costLines?.some((line) => line.param === parameter.name || (line.perNode && parameter.name === "nodeCount") || (line.when && parameter.name in line.when) || line.spot === parameter.name)) {
+    if (spec.costLines?.some((line) => line.param === parameter.name || (line.perNode && parameter.name === "nodeCount") || (line.when && parameter.name in line.when) || line.spot === parameter.name || line.extended === parameter.name)) {
       field.addEventListener("change", () => repriceCard(spec));
       field.addEventListener("input", () => repriceCard(spec));
     }
@@ -4523,7 +4523,7 @@ function cardBody(spec, preset = {}) {
       const note = el("em", { className: "field-note choice-note", role: "status" });
       const say = () => {
         note.textContent = parameter.notes[field.value] || "";
-        note.classList.toggle("warn", parameter.warn === field.value);
+        note.classList.toggle("warn", [].concat(parameter.warn ?? []).includes(field.value));
       };
       field.addEventListener("change", say);
       say();
@@ -4575,7 +4575,9 @@ function promptConfirm(spec, body) {
 function cardCost(spec, params = pipParams()) {
   if (!spec?.costLines?.length) return spec?.cost;
   try {
-    return estimate(costFor(spec.costLines, params));
+    // auto: the extended-support fee follows the live cluster's version.
+    const liveVersion = spec.id === "eks" ? liveState.get(params.clusterName || "")?.clusterVersion || "" : "";
+    return estimate(costFor(spec.costLines, { ...params, liveVersion }));
   } catch {
     return spec.cost;
   }
@@ -5307,9 +5309,9 @@ function paintLive() {
   const row = pipEl.querySelector("#pip-live");
   if (!row) return;
   const line = liveLine(liveState.get(pipParams().clusterName || ""), pipParams());
-  row.hidden = !line.text;
+  row.hidden = !line.text && !line.version;
   row.querySelector(".live-what").textContent = line.text;
-  row.querySelector(".live-warn").textContent = line.warn;
+  row.querySelector(".live-warn").textContent = [line.warn, line.version].filter(Boolean).join(" · ");
 }
 
 async function refreshConnect(force = false) {

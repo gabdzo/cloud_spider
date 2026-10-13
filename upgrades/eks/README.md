@@ -10,7 +10,7 @@ Set with `pulumi config set <key> <value>` or the STACKS card. Validated before 
 | key | allowed | default | description |
 |---|---|---|---|
 | clusterName | must be a short lowercase name (a-z, 0-9, -; 2-28 chars, starts with a letter) | cloudspider-up | EKS cluster name; the stack is eks-<name> (cloudspider-up: upgrade) |
-| kubernetesVersion | 1.32 \| 1.33 | 1.32 | control plane version (in place, one minor up at a time, never down) |
+| kubernetesVersion | auto \| 1.32 \| 1.33 \| 1.34 | auto | control plane version: auto keeps the live one (1.34 for a new cluster); in place, one minor up at a time, never down |
 | instanceType | t4g.small \| t4g.medium | t4g.small | node instance type (Graviton) |
 | nodeCount | 1..10 | 1 | managed nodes (in place) |
 | maxPods | auto \| 32 \| 58 \| 110 | auto | kubelet pod cap; a number replaces the node group once |
