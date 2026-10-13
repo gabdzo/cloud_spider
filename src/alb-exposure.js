@@ -86,7 +86,7 @@ export function productExposure(lb = {}, routes = [], seenFor = () => undefined)
   }
   if (!byProduct.size && lbRole(lb) === "nlb") byProduct.set(lb.tags?.project || lb.name || "nlb", []);
   return [...byProduct.entries()].map(([product, rows]) => {
-    const seens = rows.map((r) => r.seen || (r.url && r.probe ? seenFor(r.url) : undefined)).filter(Boolean);
+    const seens = rows.map((r) => r.seen || (r.probe && (r.probeUrl || r.url) ? seenFor(r.probeUrl || r.url) : undefined)).filter(Boolean);
     const seen = seens.find((s) => !s.ok) || seens[0] || (lbRole(lb) === "nlb" ? lb.seen : undefined);
     const checks = exposureChecks(lb, rows[0] || {}, seen);
     const score = exposureScore(checks);

@@ -1,3 +1,6 @@
+import { lookup } from "node:dns/promises";
+import http from "node:http";
+import https from "node:https";
 // REACH: is a public load balancer answering from this machine? One GET
 // (no cookies, no redirects followed, 5 s, the body read up to 64 KB and
 // dropped), only to a URL whose host is a public load balancer on the map,
@@ -14,18 +17,25 @@ export function reachAllowed(url, fixtures = []) {
   if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) return null;
   const host = parsed.hostname.toLowerCase();
   const lb = fixtures.find((item) => item.kind === "alb" && item.public && String(item.dns || "").toLowerCase() === host);
-  return lb ? { url: parsed.toString(), lb } : null;
+  if (!lb) return null;
+  // "#host=<name>": the Host header for a host-routed rule (the request
+  // still goes to the ALB's own name). Only a plain DNS name.
+  const want = new URLSearchParams(parsed.hash.replace(/^#/, "")).get("host") || "";
+  if (want && !/^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(want)) return null;
+  return { url: parsed.toString(), lb, host: want.toLowerCase() };
 }
 
 export function createReach({ fetchImpl = globalThis.fetch, clock = Date.now, ttl = REACH_TTL } = {}) {
   const cache = new Map();
-  return async function reach(url) {
+  return async function reach(url, host = "") {
     const hit = cache.get(url);
     if (hit && clock() - hit.at < ttl) return hit.value;
     const started = clock();
     let value;
     try {
-      const response = await fetchImpl(url, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(5000), headers: { "user-agent": "cloud-spider-reach" } });
+      const target = String(url).split("#")[0];
+      // fetch drops a Host header, so a host-routed rule goes through node:http.
+      const response = host ? await hostGet(target, host) : await fetchImpl(target, { method: "GET", redirect: "manual", signal: AbortSignal.timeout(5000), headers: { "user-agent": "cloud-spider-reach" } });
       const reader = response.body?.getReader?.();
       let read = 0;
       while (reader && read < 65_536) {
@@ -64,4 +74,30 @@ export async function fetchOpenApi(url, fixtures = [], fetchImpl = globalThis.fe
   } catch {
     return null;
   }
+}
+
+// Does a route's host have DNS from this machine? 2 s; cached 5 min.
+const dnsSeen = new Map();
+export async function resolveHost(host, look = lookup, clock = Date.now) {
+  const hit = dnsSeen.get(host);
+  if (hit && clock() - hit.at < 300_000) return hit.ok;
+  const ok = await Promise.race([look(host).then(() => true, () => false), new Promise((r) => setTimeout(() => r(null), 2000))]);
+  if (ok !== null) dnsSeen.set(host, { ok, at: clock() });
+  return ok;
+}
+
+// GET <url> with another Host header (and SNI); no redirects; 5 s; the body
+// is drained, not kept. Same { status, body.getReader } face as fetch.
+export function hostGet(url, host) {
+  const u = new URL(url);
+  const mod = u.protocol === "https:" ? https : http;
+  return new Promise((resolve, reject) => {
+    const req = mod.request(u, { method: "GET", headers: { host, "user-agent": "cloud-spider-reach" }, servername: host, timeout: 5000 }, (res) => {
+      res.resume();
+      resolve({ status: res.statusCode || 0, body: null });
+    });
+    req.on("timeout", () => req.destroy(Object.assign(new Error("timeout"), { name: "TimeoutError" })));
+    req.on("error", reject);
+    req.end();
+  });
 }
