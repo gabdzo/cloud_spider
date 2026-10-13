@@ -5,6 +5,11 @@ import { ADDONS, parseStack } from "./catalog.js";
 import { REGION } from "./common.js";
 import { readPodRoom, roomRefusal } from "./pod-room.js";
 import { addonPlan, needsText, ownerText, readAddon } from "../eks-addons.js";
+import { assertStackConfig } from "../schema/stacks.js";
+
+// Every config key typed and checked first, before any resource (the STACKS
+// card runs the same schema): upgrades/schema/stacks.js.
+assertStackConfig(pulumi, "cloudspider-addons");
 
 // Cluster add-ons for an EKS cluster from upgrades/eks. One stack per add-on
 // and cluster, named <addon>-<cluster>; config clusterName must match.

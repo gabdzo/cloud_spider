@@ -4,6 +4,11 @@ import * as k8s from "@pulumi/kubernetes";
 import { ship } from "../netpol.js";
 import { inheritTags, stackTags } from "../tags.js";
 import { usesEksAddon } from "../eks-addons.js";
+import { assertStackConfig } from "../schema/stacks.js";
+
+// Every config key typed and checked first, before any resource (the STACKS
+// card runs the same schema): upgrades/schema/stacks.js.
+assertStackConfig(pulumi, "cloudspider-demo");
 
 // The demo workload for the EKS cluster from upgrades/eks. Stack: demo.
 //   web (podinfo) → api (podinfo), loadgen hits web (some 500s and slow calls

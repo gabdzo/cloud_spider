@@ -5,6 +5,11 @@ import { eksProvider } from "../eks-kube.js";
 import { inheritTags, stackTags } from "../tags.js";
 import { readAddon, usesEksAddon } from "../eks-addons.js";
 import { ship } from "../netpol.js";
+import { assertStackConfig } from "../schema/stacks.js";
+
+// Every config key typed and checked first, before any resource (the STACKS
+// card runs the same schema): upgrades/schema/stacks.js.
+assertStackConfig(pulumi, "cloudspider-pgcluster");
 
 // PostgreSQL on the EKS cluster from upgrades/eks, run by CloudNativePG.
 // Stack: pgcluster. Needs the cluster up first, with its EKS add-ons: the

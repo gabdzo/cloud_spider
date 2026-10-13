@@ -11,6 +11,7 @@ import { LEGACY_CLUSTER, cardName, confirmMatches, confirmMismatch, confirmNames
 import { volumeSweepStep } from "./volume-sweep.js";
 import { createRunLog } from "./run-log.js";
 import { validateEks } from "../upgrades/schema/eks.js";
+import { validateStack } from "../upgrades/schema/stacks.js";
 
 
 export function childEnvFor(env) {
@@ -362,7 +363,10 @@ export function checkParams(spec, input = {}) {
     }
     values[parameter.name] = text;
   }
-  // A card's own cross-field rule, said before any stack is made.
+  // The stack's own schema (upgrades/schema/stacks.js), the same one its
+  // program runs first, then a card's extra rule: said before any stack is made.
+  const schema = validateStack(spec.project, values);
+  if (schema.errors.length) return { error: schema.errors.join("; ") };
   const problem = spec.check?.(values);
   if (problem) return { error: problem };
   return { values };

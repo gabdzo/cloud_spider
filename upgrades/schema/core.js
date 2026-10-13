@@ -41,6 +41,8 @@ function distance(a, b) {
 
 function one(name, field, raw) {
   const value = raw == null || raw === "" ? field.default : raw;
+  // optional: an unset key stays "" (no default, no rule).
+  if (field.optional && (value == null || value === "")) return { value: "" };
   if (field.type === "int") {
     const number = Number(value);
     if (!Number.isInteger(number) || number < field.min || number > field.max) return { error: `${name} must be a whole number from ${field.min} to ${field.max} (got ${JSON.stringify(raw)})` };
@@ -66,8 +68,11 @@ function one(name, field, raw) {
 
 // input: { key: value } without the project prefix (the card's values), or a
 // Pulumi config map ("<project>:<key>") when { prefixed: true }.
-export function validate(schema, input = {}, { prefixed = false, strict = true } = {}) {
+// unknown: "error" (default) or "warn" (a live stack may hold keys set by hand
+// before its schema existed: said, not refused).
+export function validate(schema, input = {}, { prefixed = false, strict = true, unknown = "error" } = {}) {
   const errors = [];
+  const warnings = [];
   const raw = {};
   for (const [full, value] of Object.entries(input || {})) {
     let key = full;
@@ -78,7 +83,7 @@ export function validate(schema, input = {}, { prefixed = false, strict = true }
     if (!(key in schema.keys)) {
       if (strict) {
         const near = closest(key, Object.keys(schema.keys));
-        errors.push(`unknown config key ${key}${near ? ` (did you mean ${near}?)` : ""}`);
+        (unknown === "warn" ? warnings : errors).push(`unknown config key ${key}${near ? ` (did you mean ${near}?)` : ""}`);
       }
       continue;
     }
@@ -95,11 +100,12 @@ export function validate(schema, input = {}, { prefixed = false, strict = true }
     const problem = rule(values);
     if (problem) errors.push(problem);
   }
-  return { values, errors };
+  return { values, errors, warnings };
 }
 
-export function assertValid(schema, input, options) {
-  const { values, errors } = validate(schema, input, options);
+export function assertValid(schema, input, options = {}) {
+  const { values, errors, warnings } = validate(schema, input, options);
+  for (const w of warnings) (options.warn || console.warn)(`${schema.project}: ${w}`);
   if (errors.length) throw new Error(`${schema.project} config is not valid, nothing was created:\n  - ${errors.join("\n  - ")}`);
   return values;
 }

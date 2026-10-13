@@ -2,6 +2,11 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { inheritTags, stackTags } from "../tags.js";
 import { userData } from "./userdata.js";
+import { assertStackConfig } from "../schema/stacks.js";
+
+// Every config key typed and checked first, before any resource (the STACKS
+// card runs the same schema): upgrades/schema/stacks.js.
+assertStackConfig(pulumi, "cloudspider-openshift");
 
 // OpenShift Local (CRC) on one EC2 host in eu-north-1. Stack: openshift.
 // The recommended option from docs/plan-expansion.md: m7i-flex.2xlarge
