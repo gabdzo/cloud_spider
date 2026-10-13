@@ -82,7 +82,7 @@ app(wiki.ns, wiki.service, { image: IMAGES.wiki, port: wiki.port, cpu: wiki.cpu,
 // Mealie (SQLite on a PVC).
 const mealie = PRODUCTS.find((p) => p.id === "mealie");
 pvc(mealie.ns, "mealie-data", mealie.storage);
-app(mealie.ns, mealie.service, { image: IMAGES.mealie, port: mealie.port, cpu: mealie.cpu, memory: mealie.memory, runAs: 911, strategy: single, env: { ALLOW_SIGNUP: "false", BASE_URL: `http://mealie.${domain}` }, volumes: [{ name: "data", persistentVolumeClaim: { claimName: "mealie-data" } }], mounts: [{ name: "data", mountPath: "/app/data" }] });
+app(mealie.ns, mealie.service, { image: IMAGES.mealie, port: mealie.port, cpu: mealie.cpu, memory: mealie.memory, runAs: 911, strategy: single, env: { ALLOW_SIGNUP: "false", BASE_URL: `http://mealie.${domain}` }, volumes: [{ name: "data", persistentVolumeClaim: { claimName: "mealie-data" } }, { name: "nltk", emptyDir: {} }], mounts: [{ name: "data", mountPath: "/app/data" }, { name: "nltk", mountPath: "/app/nltk_data" }] });
 
 // ALB 1 (shared, IngressGroup "showcase": 3 host rules) and ALB 2 (Boutique).
 const ingresses = PRODUCTS.map((p) => new k8s.networking.v1.Ingress(`${p.id}-ingress`, ingressFor(p, { domain, certificateArn: cfg.certificateArn || "", wafAclArn: cfg.wafAclArn || "" }), inNs(p.ns, p.id === "wiki" ? [wikidb] : [])));
