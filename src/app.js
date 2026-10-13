@@ -41,6 +41,7 @@ import { idleCandidates, morningReport, nextIdleStreak } from "./layout.js";
 import { createHealthWatch, morningLine, stuckPending } from "./kube-health.js";
 import { DEFAULT_POLL_MS, scopeText } from "./kube-contexts.js";
 import { createStackResources } from "./stack-resources.js";
+import { readLastRuns, sampleLastRuns } from "./stack-overview.js";
 import { createStackReader } from "./vault-stacks.js";
 
 const CALL = { stop: "StopInstances", start: "StartInstances" };
@@ -81,7 +82,7 @@ const NEEDS_MS = 40_000;
 // How often a running stack's pods are checked for what they wait on.
 const WAIT_MS = Number(process.env.CLOUDSPIDER_WAIT_MS) || 20_000;
 
-export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL }) {
+export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL, auditFile = "" }) {
   let stackResourcesReader = null;
   // The modules view main.js hands over (settings.modules): aws off = k8s-only.
   const awsOffHere = () => settings?.modules?.modules?.find((m) => m.id === "aws")?.on === false;
@@ -900,6 +901,11 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       if (stack && !/^[a-z0-9][a-z0-9-]{0,99}$/.test(stack)) return { id, state: "error", error: "bad stack name", deployed: false, count: 0, groups: [] };
       stackResourcesReader ||= createStackResources({ reader: createStackReader(), cardFor: (key) => UPGRADES.find((spec) => spec.id === key) || null });
       return stackResourcesReader.read(String(id), { sample, stack });
+    },
+    // STACKS OVERVIEW: the last PREVIEW / RUN / TAKE IT DOWN of each stack (audit.jsonl).
+    async stackLastRuns({ sample = false } = {}) {
+      if (sample) return { runs: sampleLastRuns(), sample: true };
+      return { runs: auditFile ? await readLastRuns(auditFile) : {} };
     },
     upgrades() {
       const cards = upgrade?.list?.() || [];

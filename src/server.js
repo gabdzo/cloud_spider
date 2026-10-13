@@ -49,6 +49,7 @@ export const FILES = new Set([
   "stack-sample.js",
   "eks-scale-view.js",
   "stack-resources.js",
+  "stack-overview.js",
   "peering.js",
   "arch-layout.js",
   "radio.js",
@@ -2374,6 +2375,79 @@ const page = `<!doctype html>
   #pip .st-chip.up { color: var(--pip-ink); border-color: var(--pip-bright); background: linear-gradient(var(--pip-bright), var(--pip-mid)); box-shadow: 0 0 6px var(--glow-bright); }
   #pip .st-chip.down { color: var(--pip-dim-text); border-color: var(--pip-dark); border-style: dashed; background: transparent; }
   #pip .st-chip.unk { color: var(--world-amber); border-color: var(--case-brass-lo); background: transparent; }
+  /* STACKS OVERVIEW: what is deployed (tiles), detail, RUN CONSOLE apart */
+  #pip .lay-tog { display: inline-flex; margin-left: 6px; border: 1px solid var(--pip-ink); }
+  #pip .lay-btn { min-height: 0; padding: 1px 6px; font: inherit; font-size: 9px; letter-spacing: 0.12em; cursor: pointer; color: var(--pip-ink); background: transparent; border: 0; }
+  #pip .lay-btn + .lay-btn { border-left: 1px solid var(--pip-ink); }
+  #pip .lay-btn.on { color: var(--pip-bright); background: var(--pip-ink); }
+  #pip .lay-btn:not(.on):hover, #pip .lay-btn:focus-visible { background: rgba(0, 0, 0, 0.25); text-decoration: underline; outline: none; }
+  #pip .ov-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 8px 0; }
+  #pip .ov-k { display: inline-flex; align-items: baseline; gap: 4px; padding: 2px 8px; border: 1px solid var(--pip-dark); background: linear-gradient(180deg, rgba(20, 255, 106, 0.12), rgba(0, 0, 0, 0.3)); }
+  #pip .ov-k b { font-size: 16px; color: var(--pip-bright); text-shadow: 0 0 6px var(--glow-bright); }
+  #pip .ov-k i { font-style: normal; font-size: 9px; letter-spacing: 0.14em; color: var(--pip-dim-text); }
+  #pip .ov-k.fail b { color: var(--status-broken); text-shadow: none; }
+  #pip .ov-k.down b { color: var(--pip-dim-text); text-shadow: none; }
+  #pip .ov-tip { margin-left: auto; font-size: 9px; letter-spacing: 0.14em; color: var(--world-amber); }
+  #pip .ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 6px; margin: 0 8px 6px; }
+  #pip .ov-tile { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 6px 8px 6px 11px; text-align: left; font: inherit; font-size: 11px; cursor: pointer; color: var(--pip-bright);
+    border: 1px solid var(--pip-mid); background: linear-gradient(160deg, rgba(20, 255, 106, 0.14), rgba(20, 255, 106, 0.03) 55%, rgba(0, 0, 0, 0.35));
+    box-shadow: inset 0 1px 0 rgba(20, 255, 106, 0.2), 0 2px 4px rgba(0, 0, 0, 0.6); transition: transform 0.1s, box-shadow 0.12s; }
+  #pip .ov-tile::before { content: ""; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 3px; background: var(--pip-dim); }
+  #pip .ov-tile.up::before { background: var(--pip-bright); box-shadow: 0 0 6px var(--glow-bright); }
+  #pip .ov-tile.fail::before { background: var(--status-broken); }
+  #pip .ov-tile.fail { border-color: var(--status-broken); }
+  #pip .ov-tile.down { border-style: dashed; border-color: var(--pip-dark); }
+  #pip .ov-tile:hover, #pip .ov-tile:focus-visible, #pip .ov-tile.picked { transform: translateY(-1px); border-color: var(--pip-bright); outline: none; box-shadow: 0 0 0 1px var(--pip-bright), 0 0 12px rgba(20, 255, 106, 0.35); }
+  #pip .ov-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  #pip .ov-top img { image-rendering: pixelated; flex: 0 0 auto; }
+  #pip .ov-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; letter-spacing: 0.04em; }
+  #pip .ov-stat { flex: 0 0 auto; padding: 0 4px; font-size: 9px; line-height: 14px; letter-spacing: 0.1em; border: 1px solid; white-space: nowrap; }
+  #pip .ov-stat.up { color: var(--pip-ink); border-color: var(--pip-bright); background: linear-gradient(var(--pip-bright), var(--pip-mid)); }
+  #pip .ov-stat.down { color: var(--pip-dim-text); border-color: var(--pip-dark); border-style: dashed; }
+  #pip .ov-stat.fail { color: #fff; border-color: var(--status-broken); background: var(--status-broken); }
+  #pip .ov-stat.unk { color: var(--world-amber); border-color: var(--case-brass-lo); }
+  #pip .ov-go { flex: 0 0 auto; padding: 0 4px; font-size: 9px; letter-spacing: 0.1em; color: var(--pip-ink); background: var(--world-amber); }
+  #pip .ov-tile:hover .ov-go, #pip .ov-tile.picked .ov-go { background: var(--pip-bright); }
+  #pip .ov-res { min-height: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--pip-dim-text); font-size: 10px; }
+  #pip .ov-foot { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: center; font-size: 10px; min-width: 0; }
+  #pip .ov-run { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
+  #pip .ov-run i { width: 6px; height: 6px; border-radius: 50%; background: var(--pip-dim); }
+  #pip .ov-run.ok i { background: var(--pip-bright); box-shadow: 0 0 4px var(--glow-bright); }
+  #pip .ov-run.bad i { background: var(--status-broken); } #pip .ov-run.bad b { color: var(--status-broken); }
+  #pip .ov-run.warn i { background: var(--world-amber); } #pip .ov-run.warn b { color: var(--world-amber); }
+  #pip .ov-run b { font-weight: normal; letter-spacing: 0.06em; }
+  #pip .ov-run.none, #pip .ov-run span, #pip .ov-where { color: var(--pip-dim-text); }
+  #pip .ov-where { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  #pip .ov-drift { font-size: 10px; color: var(--world-amber); overflow-wrap: anywhere; }
+  #pip .ov-detail { display: flex; flex-direction: column; gap: 6px; margin: 2px 8px 10px; padding: 8px; border: 1px solid var(--pip-bright); background: linear-gradient(180deg, rgba(20, 255, 106, 0.1), rgba(0, 0, 0, 0.45)); box-shadow: 0 0 14px rgba(20, 255, 106, 0.2); }
+  #pip .ov-dhead { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  #pip .ov-dhead img { image-rendering: pixelated; }
+  #pip .ov-close { margin-left: auto; min-height: 0; padding: 1px 6px; font: inherit; font-size: 10px; cursor: pointer; color: var(--pip-bright); background: transparent; border: 1px solid var(--pip-mid); }
+  #pip .ov-close:hover, #pip .ov-close:focus-visible { color: var(--pip-ink); background: var(--pip-bright); outline: none; }
+  #pip .ov-facts li span:last-child { overflow-wrap: anywhere; text-align: right; }
+  #pip .ov-console, #pip .ov-back { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 6px 12px; font: inherit; font-size: 12px; letter-spacing: 0.14em; cursor: pointer;
+    color: var(--pip-ink); border: 1px solid var(--pip-ink); background: linear-gradient(180deg, var(--pip-hot, var(--pip-bright)), var(--pip-bright) 45%, var(--pip-mid)); box-shadow: 0 0 10px rgba(20, 255, 106, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+  #pip .ov-console img { image-rendering: pixelated; }
+  #pip .ov-console:hover, #pip .ov-console:focus-visible, #pip .ov-back:hover, #pip .ov-back:focus-visible { outline: 2px solid var(--world-amber); outline-offset: 1px; filter: brightness(1.1); }
+  #pip .ov-bar { display: flex; margin: 8px 8px 6px; }
+  #pip .ov-back { font-size: 11px; padding: 4px 10px; }
+  :root[data-theme="pro"] #pip .lay-tog { border-color: var(--border); border-radius: 6px; overflow: hidden; }
+  :root[data-theme="pro"] #pip .lay-btn { color: var(--text-2, var(--text-3)); font-family: var(--font-ui); letter-spacing: 0.04em; }
+  :root[data-theme="pro"] #pip .lay-btn.on { color: #fff; background: var(--accent); }
+  :root[data-theme="pro"] #pip .ov-k, :root[data-theme="pro"] #pip .ov-tile, :root[data-theme="pro"] #pip .ov-detail { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); font-family: var(--font-ui); color: var(--text, inherit); }
+  :root[data-theme="pro"] #pip .ov-tile { overflow: hidden; }
+  :root[data-theme="pro"] #pip .ov-tile.down { border-style: dashed; }
+  :root[data-theme="pro"] #pip .ov-tile.fail { border-color: #ef4444; }
+  :root[data-theme="pro"] #pip .ov-tile.up::before { background: #22c55e; box-shadow: none; }
+  :root[data-theme="pro"] #pip .ov-tile:hover, :root[data-theme="pro"] #pip .ov-tile:focus-visible, :root[data-theme="pro"] #pip .ov-tile.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 4px 12px rgba(0, 0, 0, 0.3); }
+  :root[data-theme="pro"] #pip .ov-k b { color: var(--accent); text-shadow: none; }
+  :root[data-theme="pro"] #pip .ov-k i, :root[data-theme="pro"] #pip .ov-res, :root[data-theme="pro"] #pip .ov-run span, :root[data-theme="pro"] #pip .ov-where, :root[data-theme="pro"] #pip .ov-run.none { color: var(--text-3); }
+  :root[data-theme="pro"] #pip .ov-stat { border-radius: 4px; }
+  :root[data-theme="pro"] #pip .ov-stat.up { color: #fff; border-color: #16a34a; background: #16a34a; }
+  :root[data-theme="pro"] #pip .ov-go { border-radius: 4px; color: #fff; background: var(--accent); }
+  :root[data-theme="pro"] #pip .ov-tip, :root[data-theme="pro"] #pip .ov-drift { color: #d97706; font-family: var(--font-ui); }
+  :root[data-theme="pro"] #pip .ov-console, :root[data-theme="pro"] #pip .ov-back { color: #fff; border: 0; border-radius: 6px; background: var(--accent); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); font-family: var(--font-ui); letter-spacing: 0.04em; }
+  :root[data-theme="pro"] #pip .ov-close { color: var(--accent); border-color: var(--border); border-radius: 4px; font-family: var(--font-ui); }
   /* SCALE DOWN / UP on the EKS card (eks-scale-view.js) */
   #pip .scale-row { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 8px; border: 1px dashed var(--pip-dark); min-width: 0; }
   #pip .scale-head:empty { display: none; }
@@ -3491,9 +3565,16 @@ async function route(app, req, res) {
     const ids = (url.searchParams.get("ids") || "").split(",").filter(Boolean).slice(0, 40);
     if (ids.length) {
       const all = await Promise.all(ids.map((id) => app.stackResources(id, { sample: opts.sample }).catch(() => ({ id, state: "error" }))));
-      return send(res, 200, { states: Object.fromEntries(all.map((r) => [r.id, { state: r.state, count: r.count || 0, updated: r.updated || 0, error: r.error || "" }])) });
+      return send(res, 200, { states: Object.fromEntries(all.map((r) => [r.id, { state: r.state, count: r.count || 0, updated: r.updated || 0, error: r.error || "", stack: r.stack || "", top: (r.groups || []).slice(0, 3).map((g) => ({ label: g.label, service: g.service, count: g.count })) }])) });
     }
     send(res, 200, await app.stackResources(url.searchParams.get("id") || "", opts));
+    return;
+  }
+
+  // STACKS OVERVIEW: each stack's last run from audit.jsonl, read-only.
+  if (req.method === "GET" && url.pathname === "/api/stacks/last-runs") {
+    if (!app.stackLastRuns) return send(res, 200, { runs: {} });
+    send(res, 200, await app.stackLastRuns({ sample: url.searchParams.get("sample") === "1" }));
     return;
   }
 
