@@ -1,3 +1,5 @@
+# Listed in VAULTS automatically while its stack is up (auto discovery,
+# src/vault-view.js); gone from VAULTS once the stack is torn down.
 # upgrades/demo (Pulumi project cloudspider-demo, stack demo): the demo
 # workload on the EKS cluster. Namespace demo: podinfo web → api, a load
 # generator, and an ADOT collector DaemonSet shipping pod logs to CloudWatch

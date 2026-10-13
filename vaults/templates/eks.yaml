@@ -1,3 +1,5 @@
+# Listed in VAULTS automatically while its stack is up (auto discovery,
+# src/vault-view.js); gone from VAULTS once the stack is torn down.
 # EKS clusters from upgrades/eks (Pulumi project cloudspider-upgrade), started
 # from the Stacks panel. Each cluster is its own stack with its own VPC
 # (10.43.0.0/16, public subnets), IAM roles, an EKS 1.32 control plane and one

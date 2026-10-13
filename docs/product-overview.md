@@ -58,7 +58,7 @@ Profiles: **full** (all but observe), **k8s-only** (network, kubernetes, graph, 
 - **Kubernetes API**: GETs only, to a fixed list of paths (`src/kube.js`), through a read-only context (`cloudspider-viewer`: AmazonEKSViewPolicy without Secrets, plus nodes/metrics and `services/proxy` on the collector only). Multiple contexts are supported, each with a namespace allowlist.
 - **Pulumi state**: `pulumi stack export` (cached 60 s) for vault ownership, the STACKS resource lists and versions. Git history is used for "latest version".
 - **Observe bundle** (`upgrades/observe`, opt-in, installed by Pulumi): Grafana **Beyla** (eBPF DaemonSet that sees HTTP/gRPC/SQL with no app changes; needs privileged pods, and an SCC on OpenShift), an **OTel** agent and collector, kube-state-metrics, and **Loki** (logs and Events). Profiles are `crc` (small) and `standard`, and node agents get a PriorityClass. The app reads collector metrics through the kube service proxy (gzip, keeping the last good read when one is slow).
-- **Local files**: `vaults/*.yaml`, and `.cloudspider/` (bill cache, SLO history, run logs, `audit.jsonl`).
+- **Local files**: `vaults/templates/*.yaml` (listed while their stack is up; `vaults/*.yaml` only for optional overrides), and `.cloudspider/` (bill cache, SLO history, run logs, `audit.jsonl`).
 
 ## 5. Write actions and their safety
 

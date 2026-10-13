@@ -91,14 +91,17 @@ The Pulumi stacks set the tag stack-wide, so new resources inherit it:
 - infra/ (stack test): aws:defaultTags in Pulumi.test.yaml puts project=cloudspider and managed-by=pulumi on everything. The parts carry a component tag instead of their own vault: component=alb-test (the load balancer, its group, target groups, listener and rules), component=test-machines (the two expendable machines) and component=test-logs (/cloudspider/test).
 - upgrades/eks, signal, barrel, camp: upgrades/tags.js adds project=<eks|signal|barrel|camp> and managed-by=pulumi to every AWS resource that has tags. EKS also gets cluster=<cluster name>. It is a stack transformation, not provider defaultTags, because the Stacks panel makes these stack files itself and camp uses its own provider.
 
-Vaults for this repo:
+Vaults for this repo are all templates in vaults/templates/. Each is listed in VAULTS automatically while its stack is up and drops out once the stack is torn down, so VAULTS is empty after a full teardown. vaults/ itself registers nothing; a file there (npm run vaults:new) is only an optional override that wins by name.
 
-| file | number | covers |
+| template | number | covers |
 | --- | --- | --- |
-| cloudspider.yaml | 100 | infra/ stack test: the test VPC and subnets, the internal ALB cloudspider-api (the PR #6 broken path), the expendable nanos, the untagged nano, /cloudspider/test |
-| eks.yaml | 110 | upgrades/eks, every stack: each EKS cluster with its VPC, roles and node group |
-| camp.yaml | 140 | upgrades/camp stack camp: page bucket, function, function URL, table, secret, role. VIEW and an HTTP check on the pageUrl output |
-| templates/signal.yaml, templates/barrel.yaml | 120, 130 | upgrades/signal and upgrades/barrel, templates until their stacks are up |
+| templates/cloudspider.yaml | 100 | infra/ stack test: the test VPC and subnets, the internal ALB cloudspider-api (the PR #6 broken path), the expendable nanos, the untagged nano, /cloudspider/test |
+| templates/eks.yaml | 110 | upgrades/eks, every stack: each EKS cluster with its VPC, roles and node group |
+| templates/demo.yaml | 115 | upgrades/demo stack demo: podinfo web and api, load generator, ADOT collector |
+| templates/signal.yaml, templates/barrel.yaml | 120, 130 | upgrades/signal and upgrades/barrel |
+| templates/camp.yaml | 140 | upgrades/camp stack camp: page bucket, function, function URL, table, secret, role. VIEW and an HTTP check on the pageUrl output |
+
+SAMPLE mode reads samples/vaults/ instead and is unaffected.
 
 The state bucket (infra/bootstrap.sh) has no vault; it is not a stack.
 
