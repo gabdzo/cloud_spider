@@ -3,6 +3,11 @@ import * as k8s from "@pulumi/kubernetes";
 import { ship } from "../netpol.js";
 import { stackTags } from "../tags.js";
 import { extraPolicies, footprint, renderBundle } from "./render.js";
+import { assertStackConfig } from "../schema/stacks.js";
+
+// Every config key typed and checked first, before any resource (the STACKS
+// card runs the same schema): upgrades/schema/stacks.js.
+assertStackConfig(pulumi, "cloudspider-observe");
 
 // The observe bundle (opt-in) on any Kubernetes or OpenShift cluster: every
 // object comes from render.js (the app's PREVIEW shows the same list). The

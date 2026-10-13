@@ -4,6 +4,11 @@ import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { eksProvider } from "../eks-kube.js";
 import { inheritTags, stackTags } from "../tags.js";
+import { assertStackConfig } from "../schema/stacks.js";
+
+// Every config key typed and checked first, before any resource (the STACKS
+// card runs the same schema): upgrades/schema/stacks.js.
+assertStackConfig(pulumi, "cloudspider-shopapi");
 
 // A sample backend on EKS wired to the database from upgrades/pgcluster.
 // Stack: shopapi. Needs eks and pgcluster up (the card checks both first).

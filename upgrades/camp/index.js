@@ -2,6 +2,11 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { html } from "./page.js";
 import { inheritTags, stackTags } from "../tags.js";
+import { assertStackConfig } from "../schema/stacks.js";
+
+// Every config key typed and checked first, before any resource (the STACKS
+// card runs the same schema): upgrades/schema/stacks.js.
+assertStackConfig(pulumi, "cloudspider-camp");
 
 // Vault: vaults/camp.yaml selects project=camp.
 inheritTags(pulumi, stackTags("camp"));

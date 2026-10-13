@@ -7,6 +7,11 @@ import { DescribeLoadBalancersCommand, DescribeTagsCommand, DescribeTargetGroups
 import { inheritTags, stackTags } from "../tags.js";
 import { readAddon } from "../eks-addons.js";
 import { alarmSet, dashboardBody, dashboardName, insightsGroups } from "./plan.js";
+import { assertStackConfig } from "../schema/stacks.js";
+
+// Every config key typed and checked first, before any resource (the STACKS
+// card runs the same schema): upgrades/schema/stacks.js.
+assertStackConfig(pulumi, "cloudspider-observability");
 
 // Observability for the EKS cluster from upgrades/eks. Stack: observability.
 //   - containerInsights=on: the CloudWatch Observability EKS add-on (the

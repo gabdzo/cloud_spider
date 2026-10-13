@@ -2,6 +2,11 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import { inheritTags, stackTags } from "../tags.js";
 import { PAGE } from "./page.js";
+import { assertStackConfig } from "../schema/stacks.js";
+
+// Every config key typed and checked first, before any resource (the STACKS
+// card runs the same schema): upgrades/schema/stacks.js.
+assertStackConfig(pulumi, "cloudspider-site");
 
 // A static site: a private bucket (no public access, no website endpoint)
 // read by CloudFront through origin access control. Stack: site.
