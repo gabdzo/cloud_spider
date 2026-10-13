@@ -91,3 +91,36 @@ export async function readLastRuns(file, { fs } = {}) {
     return {};
   }
 }
+
+// DEPLOYED INVENTORY: the rows behind the DEPLOYED / NOT DEPLOYED / FAILED
+// counts. Own stacks by overviewStatus; add-on stacks from the add-on tree
+// (one stack per add-on per cluster): INSTALLED with resources is deployed,
+// anything else is not. Pure: the caller hands in what it already read.
+export const INVENTORY_VIEWS = ["deployed", "down", "failed"];
+export function inventoryRows({ own = [], states = {}, runs = {}, addonTree = [], category = () => ({ label: "OTHER" }) } = {}) {
+  const rows = [];
+  for (const spec of own) {
+    const st = states[spec.id];
+    const run = runs[spec.id] || null;
+    const s = overviewStatus(st, run);
+    rows.push({ key: spec.id, id: spec.id, kind: "stack", title: spec.title || spec.id, category: category(spec.id).label, cluster: spec.current?.clusterName || run?.cluster || "", region: spec.cost?.region || "", stack: st?.stack || spec.stack || spec.id, resourceStack: "", status: s === "reading" || s === "unknown" ? "down" : s, count: st?.count || 0, run, note: s === "unknown" ? "STATE NOT READABLE" : s === "reading" ? "READING…" : "" });
+  }
+  for (const cluster of addonTree || []) {
+    for (const item of cluster.addons || []) {
+      const run = runs[item.stack] || runs[`${item.id}@${cluster.cluster}`] || null;
+      const failed = run && run.result === "failed" && run.action !== "stack.preview";
+      const up = item.state === "installed" && (item.resources || 0) > 0;
+      rows.push({ key: `${item.id}@${cluster.cluster}`, id: item.id, kind: "addon", title: item.title || item.id, category: "CLUSTER ADD-ONS", cluster: cluster.cluster, region: "", stack: item.stack || `${item.id}-${cluster.cluster}`, resourceStack: item.stack || `${item.id}-${cluster.cluster}`, status: failed ? "failed" : up ? "deployed" : "down", count: item.resources || 0, run, note: item.state === "present" ? "PRESENT: INSTALLED, NOT BY THIS STACK" : item.state === "n/a" ? "NEEDS A DOMAIN" : "" });
+    }
+  }
+  return rows;
+}
+
+// Case-insensitive, every word must hit the row's text (name, id, category,
+// cluster, stack, plus resource types/names once they are read).
+export function rowMatches(row, query = "", extra = "") {
+  const words = String(query).toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const hay = [row.title, row.id, row.category, row.cluster, row.region, row.stack, row.kind === "addon" ? "addon add-on" : "", extra].join(" ").toLowerCase();
+  return words.every((w) => hay.includes(w));
+}

@@ -2387,6 +2387,46 @@ const page = `<!doctype html>
   #pip .ov-k i { font-style: normal; font-size: 9px; letter-spacing: 0.14em; color: var(--pip-dim-text); }
   #pip .ov-k.fail b { color: var(--status-broken); text-shadow: none; }
   #pip .ov-k.down b { color: var(--pip-dim-text); text-shadow: none; }
+  #pip button.ov-k { font: inherit; cursor: pointer; color: inherit; min-height: 0; }
+  #pip button.ov-k .ov-kgo { font-size: 11px; color: var(--pip-mid); margin-left: 2px; }
+  #pip button.ov-k:hover, #pip button.ov-k:focus-visible { border-color: var(--pip-bright); background: rgba(20, 255, 106, 0.22); outline: none; }
+  #pip button.ov-k:hover .ov-kgo { color: var(--pip-bright); }
+  #pip button.ov-k.on { border-color: var(--pip-bright); background: var(--pip-bright); }
+  #pip button.ov-k.on b, #pip button.ov-k.on i, #pip button.ov-k.on .ov-kgo { color: var(--pip-ink); text-shadow: none; }
+  #pip .inv { display: flex; flex-direction: column; gap: 6px; margin: 8px; padding: 8px; border: 1px solid var(--pip-bright); background: linear-gradient(180deg, rgba(20, 255, 106, 0.08), rgba(0, 0, 0, 0.45)); }
+  #pip .inv .ov-dhead { display: flex; align-items: center; gap: 8px; }
+  #pip .inv-sum, #pip .inv-n { font-size: 10px; letter-spacing: 0.12em; color: var(--pip-dim-text); }
+  #pip .inv-bar { display: flex; align-items: center; gap: 8px; }
+  #pip .inv-q { flex: 1; min-width: 0; padding: 3px 8px; font: inherit; font-size: 12px; color: var(--pip-bright); background: rgba(0, 0, 0, 0.5); border: 1px solid var(--pip-mid); }
+  #pip .inv-q:focus { outline: none; border-color: var(--pip-bright); box-shadow: 0 0 6px var(--glow-bright); }
+  #pip .inv-list { display: flex; flex-direction: column; gap: 4px; }
+  #pip .inv-row { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--pip-dark); padding: 2px; }
+  #pip .inv-row[hidden] { display: none; }
+  #pip .inv-row.failed { border-color: var(--status-broken); }
+  #pip .inv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; width: 100%; min-height: 0; padding: 3px 6px; font: inherit; font-size: 12px; text-align: left; cursor: pointer; color: inherit; background: transparent; border: 0; }
+  #pip .inv-head:hover, #pip .inv-head:focus-visible { background: rgba(20, 255, 106, 0.14); outline: none; }
+  #pip .inv-head:hover .ov-go { color: var(--pip-bright); }
+  #pip .inv-name { color: var(--pip-bright); }
+  #pip .inv-cat, #pip .inv-where, #pip .inv-stack { font-size: 10px; letter-spacing: 0.08em; color: var(--pip-dim-text); }
+  #pip .inv-stack::before { content: "stack "; opacity: 0.7; }
+  #pip .inv-cnt { margin-left: auto; font-size: 11px; color: var(--pip-bright); border: 1px solid var(--pip-mid); padding: 0 5px; }
+  #pip .inv-head .ov-go { font-size: 10px; color: var(--pip-mid); }
+  #pip .inv-row:not(.deployed) .ov-go { margin-left: auto; }
+  #pip .inv-row .res-block { margin: 0 4px 4px; }
+  #pip .inv-row .ov-drift { padding: 0 8px; }
+  :root[data-theme="pro"] #pip button.ov-k:hover { border-color: var(--accent); background: var(--raised); }
+  :root[data-theme="pro"] #pip button.ov-k.on { border-color: var(--accent); background: var(--accent); }
+  :root[data-theme="pro"] #pip button.ov-k.on b, :root[data-theme="pro"] #pip button.ov-k.on i, :root[data-theme="pro"] #pip button.ov-k.on .ov-kgo { color: #fff; }
+  :root[data-theme="pro"] #pip button.ov-k .ov-kgo { color: var(--text-3); }
+  :root[data-theme="pro"] #pip .inv { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-family: var(--font-ui); }
+  :root[data-theme="pro"] #pip .inv-row { border-color: var(--border); border-radius: 6px; }
+  :root[data-theme="pro"] #pip .inv-head { font-family: var(--font-ui); }
+  :root[data-theme="pro"] #pip .inv-head:hover { background: var(--raised); }
+  :root[data-theme="pro"] #pip .inv-name, :root[data-theme="pro"] #pip .inv-cnt { color: var(--accent); }
+  :root[data-theme="pro"] #pip .inv-cnt { border-color: var(--border); border-radius: 4px; }
+  :root[data-theme="pro"] #pip .inv-cat, :root[data-theme="pro"] #pip .inv-where, :root[data-theme="pro"] #pip .inv-stack, :root[data-theme="pro"] #pip .inv-sum, :root[data-theme="pro"] #pip .inv-n { color: var(--text-3); }
+  :root[data-theme="pro"] #pip .inv-q { color: var(--text, inherit); background: var(--raised); border: 1px solid var(--border); border-radius: 4px; font-family: var(--font-ui); }
+  :root[data-theme="pro"] #pip .inv-q:focus { border-color: var(--accent); box-shadow: none; }
   #pip .ov-tip { margin-left: auto; font-size: 9px; letter-spacing: 0.14em; color: var(--world-amber); }
   #pip .ov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 6px; margin: 0 8px 6px; }
   #pip .ov-tile { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 6px 8px 6px 11px; text-align: left; font: inherit; font-size: 11px; cursor: pointer; color: var(--pip-bright);
