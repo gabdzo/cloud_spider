@@ -9,7 +9,11 @@ import { assertStackConfig } from "../schema/stacks.js";
 
 // Every config key typed and checked first, before any resource (the STACKS
 // card runs the same schema): upgrades/schema/stacks.js.
-assertStackConfig(pulumi, "cloudspider-pgcluster");
+const cfg = assertStackConfig(pulumi, "cloudspider-pgcluster");
+// Data: protected (Terraform prevent_destroy). A hand-run destroy or a replace
+// is refused; the STACKS card's TAKE IT DOWN unprotects first (state only,
+// src/upgrade.js upgradeSteps), and protectData=off drops it for a lab.
+const protect = cfg.protectData === "on";
 
 // PostgreSQL on the EKS cluster from upgrades/eks, run by CloudNativePG.
 // Stack: pgcluster. Needs the cluster up first, with its EKS add-ons: the
@@ -151,7 +155,7 @@ let association = null;
 if (backups) {
   const identity = await aws.getCallerIdentity();
   const region = (await aws.getRegion()).name;
-  bucket = new aws.s3.BucketV2("backups", { bucket: `${clusterName}-shopdb-backups-${identity.accountId}`, forceDestroy: true, tags });
+  bucket = new aws.s3.BucketV2("backups", { bucket: `${clusterName}-shopdb-backups-${identity.accountId}`, forceDestroy: true, tags }, { protect });
   new aws.s3.BucketPublicAccessBlock("backups", { bucket: bucket.id, blockPublicAcls: true, blockPublicPolicy: true, ignorePublicAcls: true, restrictPublicBuckets: true });
   new aws.s3.BucketOwnershipControls("backups", { bucket: bucket.id, rule: { objectOwnership: "BucketOwnerEnforced" } });
   new aws.s3.BucketServerSideEncryptionConfigurationV2("backups", { bucket: bucket.id, rules: [{ applyServerSideEncryptionByDefault: { sseAlgorithm: "AES256" }, bucketKeyEnabled: true }] });
@@ -253,7 +257,7 @@ const db = new k8s.apiextensions.CustomResource(
       enableSuperuserAccess: false,
     },
   },
-  { ...k, dependsOn: [operator, ns, storageClass, ...(backups ? [objectStore, association] : [])] },
+  { ...k, protect, dependsOn: [operator, ns, storageClass, ...(backups ? [objectStore, association] : [])] },
 );
 
 if (backups) {

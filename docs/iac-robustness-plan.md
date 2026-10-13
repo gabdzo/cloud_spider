@@ -116,5 +116,9 @@ so the card refuses exactly what the program refuses, before any stack exists.
   lockfile that disagrees. Still open: one `@pulumi/aws` major (addons/openshift on
   7.50.0, the rest on 6.83.4), EKS version as a config key.
 
-Known gap: fc.sh installs only root + addons deps, so mock tests of eks/observe/etc.
+- #335 item 2: `npm test`'s pretest installs every stack's deps (scripts/stack-deps.mjs); the gate went from 61 to 3 skipped.
+- #336 item 1 for every stack: `upgrades/schema/stacks.js`.
+- item 3: `protect` on rds's instance, barrel's bucket, pgcluster's CNPG Cluster and backup bucket (`protectData`, default on). The typed-name TAKE IT DOWN runs `pulumi state unprotect --all` (state only), then destroy. No `retainOnDelete`: the buckets have fixed names, so a kept bucket would make the next create fail with "already exists"; prefer protect + versioned backups.
+
+Known gap (fixed by #335): fc.sh installs only root + addons deps, so mock tests of eks/observe/etc.
 skip in the gate (61 skipped). Item 2 fixes that.

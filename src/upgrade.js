@@ -11,7 +11,7 @@ import { LEGACY_CLUSTER, cardName, confirmMatches, confirmMismatch, confirmNames
 import { volumeSweepStep } from "./volume-sweep.js";
 import { createRunLog } from "./run-log.js";
 import { validateEks } from "../upgrades/schema/eks.js";
-import { validateStack } from "../upgrades/schema/stacks.js";
+import { DATA_PROJECTS, validateStack } from "../upgrades/schema/stacks.js";
 
 
 export function childEnvFor(env) {
@@ -1036,6 +1036,10 @@ export function upgradeSteps(spec, stack, verb, values) {
       ]),
     );
   }
+  // A stack that protects its data (protectData, Terraform prevent_destroy):
+  // TAKE IT DOWN is the explicit way through, so it unprotects the state
+  // first (no cloud call), then destroys. A hand-run destroy stays refused.
+  if (verb === "destroy" && DATA_PROJECTS.includes(spec.project)) steps.push(["state", "unprotect", "--all", "--yes", "--non-interactive", "--stack", stack]);
   // preview changes nothing: it shows what up would do.
   steps.push(verb === "preview" ? ["preview", "--non-interactive", "--diff", "--stack", stack] : [verb, "--yes", "--non-interactive", "--stack", stack]);
   return steps;

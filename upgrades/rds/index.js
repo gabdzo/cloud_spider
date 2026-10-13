@@ -5,7 +5,11 @@ import { assertStackConfig } from "../schema/stacks.js";
 
 // Every config key typed and checked first, before any resource (the STACKS
 // card runs the same schema): upgrades/schema/stacks.js.
-assertStackConfig(pulumi, "cloudspider-rds");
+const cfg = assertStackConfig(pulumi, "cloudspider-rds");
+// Data: protected (Terraform prevent_destroy). A hand-run destroy or a replace
+// is refused; the STACKS card's TAKE IT DOWN unprotects first (state only,
+// src/upgrade.js upgradeSteps), and protectData=off drops it for a lab.
+const protect = cfg.protectData === "on";
 
 // RDS PostgreSQL at the cheapest dev settings, in eu-north-1. Stack: rds.
 //   - its own VPC (10.44.0.0/16) with two PRIVATE subnets: no internet
@@ -77,7 +81,7 @@ const db = new aws.rds.Instance("db", {
   applyImmediately: true,
   copyTagsToSnapshot: true,
   tags,
-});
+}, { protect });
 
 export const endpoint = db.address;
 export const port = db.port;
