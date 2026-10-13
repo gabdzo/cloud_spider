@@ -50,7 +50,7 @@ test("the Pulumi program scales the node group in place: no 'must be 1', scaling
   assert.match(program, /scalingConfig: \{ desiredSize: nodeCount, minSize: nodeCount, maxSize: nodeCount \}/);
   // Only the node group reads nodeCount: the VPC, subnets and cluster do not.
   const uses = program.split("\n").filter((line) => /nodeCount/.test(line) && !/^\s*\/\//.test(line));
-  assert.ok(uses.every((line) => /config\.getNumber|scalingConfig|throw|Number\.isInteger|nodeCount [<>]/.test(line)), uses.join("\n"));
+  assert.ok(uses.every((line) => /config\.getNumber|cfg\.nodeCount|scalingConfig|throw|Number\.isInteger|nodeCount [<>]/.test(line)), uses.join("\n"));
 });
 
 test("the card's bill counts each node", () => {
