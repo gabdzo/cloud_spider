@@ -24,7 +24,7 @@ Set with `pulumi config set <key> <value>` or the STACKS card. Validated before 
 
 ## Guarantees
 
-- Providers pinned: `@pulumi/aws` 6.83.4, `@pulumi/kubernetes` 4.34.2, `@pulumi/pulumi` 3.268.0 (package-lock.json).
+- Providers pinned: `@pulumi/aws` 7.50.0, `@pulumi/kubernetes` 4.34.2, `@pulumi/pulumi` 3.268.0 (package-lock.json).
 - No data resources to protect.
 - Policy pack: `pulumi preview --policy-pack ../policy-pack`.
 - Tested under Pulumi mocks: upgrades/iac-matrix.json.
