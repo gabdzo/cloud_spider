@@ -13,6 +13,9 @@ export const EKS_SCHEMA = {
   keys: {
     // 28 chars: "<name>-ebs-csi-driver" and the other IAM role names stay under 64.
     clusterName: { type: "name", pattern: /^[a-z][a-z0-9-]{1,27}$/, hint: "must be a short lowercase name (a-z, 0-9, -; 2-28 chars, starts with a letter)", default: "cloudspider-up", doc: "EKS cluster name; the stack is eks-<name> (cloudspider-up: upgrade)" },
+    // In place (EKS UpdateClusterVersion), one minor at a time, never down;
+    // the node group follows on its next AMI roll. Default: what the stack has run.
+    kubernetesVersion: { type: "enum", choices: ["1.32", "1.33"], default: "1.32", doc: "control plane version (in place, one minor up at a time, never down)" },
     instanceType: { type: "enum", choices: EKS_INSTANCE_TYPES, default: "t4g.small", doc: "node instance type (Graviton)" },
     nodeCount: { type: "int", min: 1, max: 10, default: 1, doc: "managed nodes (in place)" },
     maxPods: { type: "enum", choices: MAX_PODS_CHOICES, default: "auto", doc: "kubelet pod cap; a number replaces the node group once" },

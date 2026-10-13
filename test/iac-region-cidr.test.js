@@ -39,3 +39,11 @@ test("defaults: the same VPC, subnets and zones as before (no diff on the live s
   assert.deepEqual(await mock({}), { vpc: "10.43.0.0/16", subnets: [["10.43.1.0/24", "eu-north-1a"], ["10.43.2.0/24", "eu-north-1b"]] });
   assert.deepEqual(await mock({ "cloudspider-upgrade:vpcCidr": "10.50.0.0/16", "aws:region": "eu-west-1" }), { vpc: "10.50.0.0/16", subnets: [["10.50.1.0/24", "eu-west-1a"], ["10.50.2.0/24", "eu-west-1b"]] });
 });
+
+test("kubernetesVersion: default 1.32 (what the live cluster runs), 1.33 in place, nothing else", { skip }, async () => {
+  const { validateEks } = await import("../upgrades/schema/eks.js");
+  assert.equal(validateEks({}).values.kubernetesVersion, "1.32");
+  assert.match(validateEks({ kubernetesVersion: "1.30" }).errors[0], /kubernetesVersion must be 1.32 or 1.33/);
+  const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", "upgrades/eks", "cloudspider-upgrade", "upgrade", JSON.stringify({ "cloudspider-upgrade:clusterName": "cloudspider-up", "cloudspider-upgrade:kubernetesVersion": "1.33" })], { cwd: root, env: { ...process.env, CLOUDSPIDER_MOCK_EKS_ADDONS: "{}" }, maxBuffer: 32 * 1024 * 1024 });
+  assert.equal(JSON.parse(stdout.slice(stdout.indexOf("[{"))).find((r) => r.type === "aws:eks/cluster:Cluster").inputs.version, "1.33");
+});
