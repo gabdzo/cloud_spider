@@ -90,7 +90,7 @@ test("SPOT + maxPods auto resolves to 32 (prefix delegation on) instead of faili
 test("the EKS card refuses SPOT + auto without prefix delegation before any stack is made", () => {
   const spec = UPGRADES.find((s) => s.id === "eks");
   assert.ok(checkParams(spec, { clusterName: "cloudspider-up-2", instanceType: "t4g.small", capacityType: "SPOT", maxPods: "auto" }).values);
-  assert.match(checkParams(spec, { clusterName: "cloudspider-up-2", capacityType: "SPOT", maxPods: "auto", prefixDelegation: "off" }).error, /needs vpcCni and prefixDelegation on/);
+  assert.match(checkParams(spec, { clusterName: "cloudspider-up-2", capacityType: "SPOT", maxPods: "auto", prefixDelegation: "off" }).error, /SPOT mixes .*turn prefixDelegation on/);
 });
 
 test("pulumi mock: SPOT + auto on a t4g.small makes a launch template with kubelet maxPods 32", { skip: ready("upgrades/eks") }, async () => {

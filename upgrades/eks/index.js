@@ -2,27 +2,23 @@ import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
+import { assertEks } from "../schema/eks.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
-import { EKS_OWNED, adoptList, capacityProblem, resolveMaxPods, eksOwnPlan, maxPodsProblem, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon, vpcCniConfig } from "../eks-addons.js";
+import { EKS_OWNED, adoptList, resolveMaxPods, eksOwnPlan, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon, vpcCniConfig } from "../eks-addons.js";
 
-const config = new pulumi.Config();
-const clusterName = config.get("clusterName") || "cloudspider-up";
-const instanceType = config.get("instanceType") || "t4g.small";
-const nodeCount = config.getNumber("nodeCount") ?? 1;
+// Every key typed and cross-checked first, before any resource (the STACKS
+// card runs the same schema before it makes the stack): upgrades/schema/eks.js.
+const cfg = assertEks(pulumi.runtime.allConfig(), { prefixed: true });
+const clusterName = cfg.clusterName;
+const instanceType = cfg.instanceType;
+const nodeCount = cfg.nodeCount;
 const version = "1.32";
 // Control plane logging (K8S-OBS-003): api, audit, authenticator to
 // /aws/eks/<cluster>/cluster, a group this stack creates first so it has a
 // retention (EKS's own would never expire). In place both ways.
-const controlPlaneLogs = (config.get("controlPlaneLogs") || "off") === "on";
-const logRetentionDays = config.getNumber("logRetentionDays") ?? 7;
+const controlPlaneLogs = cfg.controlPlaneLogs === "on";
+const logRetentionDays = cfg.logRetentionDays;
 const CONTROL_PLANE_LOG_TYPES = ["api", "audit", "authenticator"];
-
-if (!["t4g.small", "t4g.medium"].includes(instanceType)) {
-  throw new Error("instanceType must be t4g.small or t4g.medium");
-}
-// The Stacks card caps this at stacks.eks.maxNodes (default 3); this is the
-// program's own ceiling for a hand-run pulumi up.
-if (!Number.isInteger(nodeCount) || nodeCount < 1 || nodeCount > 10) throw new Error("nodeCount must be a whole number from 1 to 10");
 
 // One stack per cluster: eks-<clusterName>. The first cluster predates that
 // and lives in the stack "upgrade" with Pulumi's auto-generated role and node
@@ -134,10 +130,9 @@ const cluster = new aws.eks.Cluster(
 // the old stack's state (no AWS call) and sets adoptAddons + adoptPhase here,
 // so the next up adopts it with the import option (phase import), then puts
 // this stack's tags on it (phase retag). Nothing here ever deletes one.
-const isOn = (key) => !["off", "false", "no", "0"].includes(String(config.get(key) ?? "on").toLowerCase());
-const adopt = adoptList(config.get("adoptAddons"));
-const adoptPhase = config.get("adoptPhase") || "import";
-if (!["import", "retag"].includes(adoptPhase)) throw new Error("adoptPhase must be import or retag");
+const isOn = (key) => cfg[key] === "on";
+const adopt = adoptList(cfg.adoptAddons);
+const adoptPhase = cfg.adoptPhase;
 const addonTags = { ...tags, project: "eks", cluster: clusterName, "managed-by": "pulumi" };
 const addons = {};
 
@@ -162,13 +157,10 @@ const networkPolicy = isOn("vpcCni") && isOn("networkPolicy");
 // ON_DEMAND (default, what a group made before this setting has) or SPOT
 // (several similar types, about a third of the price; an interrupted node is
 // replaced by EKS). A change REPLACES the node group, new one first.
-const capacityType = String(config.get("capacityType") || "ON_DEMAND").toUpperCase();
-const capacityError = capacityProblem(instanceType, capacityType, config.get("maxPods") || "auto", prefixDelegation);
-if (capacityError) throw new Error(capacityError);
-// SPOT + auto resolves to the pool's safe number (resolveMaxPods).
-const maxPods = resolveMaxPods(instanceType, capacityType, config.get("maxPods") || "auto", prefixDelegation);
-const maxPodsError = maxPodsProblem(instanceType, maxPods, prefixDelegation);
-if (maxPodsError) throw new Error(maxPodsError);
+const capacityType = cfg.capacityType;
+// SPOT + auto resolves to the pool's safe number (resolveMaxPods); the schema
+// has already refused every combination maxPodsProblem/capacityProblem would.
+const maxPods = resolveMaxPods(instanceType, capacityType, cfg.maxPods, prefixDelegation);
 
 async function ownAddon(item, dependsOn) {
   if (!isOn(item.key)) return;
