@@ -1,4 +1,5 @@
 import { EC2Client } from "@aws-sdk/client-ec2";
+import { createEksPreflight } from "./stack-preflight.js";
 import { createLogReport } from "./log-report.js";
 import { nodeLookup } from "./graph-lookup.js";
 import { buildGraph } from "./graph-build.js";
@@ -118,7 +119,7 @@ const kube = kubeContexts[0]?.kube || createKube();
 // Stack runs (pulumi). Kept here too: a Ctrl-C waits for them (shutdown.js).
 // Every stack PREVIEW / RUN / TAKE IT DOWN lands in audit.jsonl too (src/stack-audit.js).
 const stackGitSha = (() => { try { return spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).stdout?.trim() || ""; } catch { return ""; } })();
-const stacks = createUpgrade({ runsDir: join(stateDir, "runs"), volumes: aws.volumes, eksMaxNodes: config.stacks.eks.maxNodes, gitSha: stackGitSha, audit: (entry) => fsp.mkdir(stateDir, { recursive: true }).then(() => fsp.appendFile(join(stateDir, "audit.jsonl"), JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n")) });
+const stacks = createUpgrade({ runsDir: join(stateDir, "runs"), volumes: aws.volumes, eksMaxNodes: config.stacks.eks.maxNodes, gitSha: stackGitSha, preflight: createEksPreflight(new EC2Client({ region: "eu-north-1" })), audit: (entry) => fsp.mkdir(stateDir, { recursive: true }).then(() => fsp.appendFile(join(stateDir, "audit.jsonl"), JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n")) });
 const app = createApp({
   ec2: aws.ec2,
   trail: aws.trail,

@@ -37,6 +37,17 @@ await pulumi.runtime.setMocks(
     },
     call(args) {
       const token = String(args.token);
+      // Zones and instance type offerings (upgrades/schema/preflight.js):
+      // eu-north-1a-c available, every asked type offered everywhere, unless
+      // CLOUDSPIDER_MOCK_EC2 = {"zones": [...], "offerings": [{"type","zone"}]}.
+      const ec2 = JSON.parse(process.env.CLOUDSPIDER_MOCK_EC2 || "{}");
+      if (token.includes("getAvailabilityZones")) return { names: ec2.zones || ["eu-north-1a", "eu-north-1b", "eu-north-1c"], zoneIds: [], id: "eu-north-1" };
+      if (token.includes("getInstanceTypeOfferings")) {
+        const want = args.inputs?.filters?.find((f) => f.name === "instance-type")?.values || [];
+        const where = args.inputs?.filters?.find((f) => f.name === "location")?.values || ["eu-north-1a", "eu-north-1b"];
+        const list = ec2.offerings || want.flatMap((type) => where.map((zone) => ({ type, zone })));
+        return { id: "eu-north-1", instanceTypes: list.map((o) => o.type), locations: list.map((o) => o.zone), locationTypes: list.map(() => "availability-zone") };
+      }
       if (token.includes("getCallerIdentity")) return { accountId: "550536272523", arn: "arn:aws:iam::550536272523:user/mock", userId: "mock" };
       if (token.includes("getParameter")) return { value: "ami-test", name: args.inputs?.name, type: "String" };
       if (token.includes("eks/getCluster")) return { name: args.inputs?.name, endpoint: "https://mock.eks", certificateAuthorities: [{ data: "bW9jaw==" }], arn: `arn:aws:eks:eu-north-1:550536272523:cluster/${args.inputs?.name}`, vpcConfig: { vpcId: "vpc-mock", subnetIds: ["subnet-a", "subnet-b"], clusterSecurityGroupId: "sg-cluster" } };
