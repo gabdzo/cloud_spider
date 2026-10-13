@@ -48,6 +48,9 @@ rules:
     resources: [services/proxy]
     resourceNames: ["kube-dns:metrics"]
     verbs: [get]
+  - apiGroups: [admissionregistration.k8s.io]
+    resources: [validatingwebhookconfigurations, mutatingwebhookconfigurations]
+    verbs: [get, list]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
