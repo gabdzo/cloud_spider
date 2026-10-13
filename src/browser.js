@@ -1687,7 +1687,7 @@ function vaultCard(vault, home = "") {
   button.setAttribute("aria-label", `${summary.plate} ${summary.title}: ${summary.lightText}.${home ? ` In vault ${home}.` : ""} Open its page.`);
   button.addEventListener("click", () => openVaultPage(vault.key));
   const facts = vel("div", "vpg-lines");
-  const stack = vel("span", `vpg-stack ${summary.stack.state}`, summary.stack.state === "live" ? (vault.auto ? "LIVE · AUTO" : "LIVE") : summary.stack.state === "down" ? "NOT UP" : summary.stack.state === "error" ? "STACK?" : "TAGS");
+  const stack = vel("span", `vpg-stack ${summary.stack.state}`, summary.stack.state === "live" ? (vault.auto ? "LIVE · AUTO" : "LIVE") : summary.stack.state === "down" ? (vault.gone ? "GONE" : "NOT UP") : summary.stack.state === "error" ? "STACK?" : "TAGS");
   if (vault.auto) stack.title = `listed automatically: its stack is up (${vault.file}). Copy it into vaults/ to customise: npm run vaults:new -- ${vault.name} ${vault.name}`;
   if (vault.insight) {
     // health, version and place say it; one line for what and how big

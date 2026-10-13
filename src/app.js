@@ -18,7 +18,7 @@ import { inspectPod } from "./kube-inspect.js";
 import { opsView, sampleOps } from "./kube-ops.js";
 import { demoAppSeen, detectAddons, refuseUp, sampleAddons } from "./addons.js";
 import { HELD_BY, destroyRefusal } from "../upgrades/eks-addons.js";
-import { planTakedown, takedownSteps, takedownText } from "./cluster-takedown.js";
+import { planTakedown, takedownSteps, takedownText, vaultLeftStep } from "./cluster-takedown.js";
 import { needRefusal, needStates, needsOf } from "./stack-needs.js";
 import { shopReadiness } from "./shop-check.js";
 import { waitingLines } from "./run-waiting.js";
@@ -1274,6 +1274,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       } catch (failure) {
         return { error: failure.message, plan };
       }
+      steps.push(vaultLeftStep({ viewer: vaults?.live || null }));
       const eksStack = upgrade.destroyPlan("eks", { clusterName: plan.cluster }, legacyName).stack;
       const started = upgrade.runSteps({
         module: "eks",

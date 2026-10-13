@@ -245,6 +245,33 @@ export function leftoverStep({ cluster, region, run }) {
   };
 }
 
+// VAULTS after the take-down: re-read the stacks (no 60 s cache) and say
+// which vaults are still listed. A vault file (vaults/*.yaml) is a
+// registration, not a Pulumi resource: no destroy removes it, so its vault
+// stays, marked GONE. Auto-listed vaults (templates) go with their stack.
+export function vaultLeftStep({ viewer }) {
+  return {
+    text: "check VAULTS (read-only)",
+    fn: async () => {
+      if (!viewer?.view) return { lines: ["vaults are not set up"] };
+      viewer.forget?.();
+      const got = await viewer.view(null, {});
+      const list = (got?.vaults || []).filter((v) => !v.damaged);
+      const live = list.filter((v) => v.stack && !v.gone && !v.stackInfo?.error);
+      const gone = list.filter((v) => v.gone);
+      const unknown = list.filter((v) => v.stackInfo?.error);
+      const loose = list.filter((v) => !v.stack);
+      const lines = [];
+      if (gone.length) lines.push(`VAULTS GONE: ${gone.length} (stack empty; the vault file stays listed until you delete it): ${gone.map((v) => `${v.name} (vaults/${v.file})`).join(", ")}`);
+      if (live.length) lines.push(`VAULTS STILL UP: ${live.length} (another stack, not this cluster's): ${live.map((v) => `${v.name} (${(v.stackInfo?.stacks || []).join(", ")})`).join(", ")}`);
+      if (loose.length) lines.push(`VAULTS NOT MANAGED BY PULUMI: ${loose.length} (tags only, no stack): ${loose.map((v) => v.name).join(", ")}`);
+      if (unknown.length) lines.push(`VAULTS UNKNOWN: ${unknown.map((v) => `${v.name}: ${v.stackInfo.error}`).join("; ")}`);
+      if (!lines.length) lines.push("no vaults left");
+      return { lines };
+    },
+  };
+}
+
 // The billable leftovers worth naming; log groups and the like are ignored
 // (the tagging API also lists resources deleted minutes ago: verify by hand).
 export function leftoverKind(arn) {

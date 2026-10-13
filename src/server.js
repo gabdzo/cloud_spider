@@ -1024,6 +1024,8 @@ const page = `<!doctype html>
     box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam);
   }
   .ok .vpg-lamp { background: var(--status-ok); opacity: 1; box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam), 0 0 8px var(--status-ok); }
+  .gone .vpg-lamp { background: #555; opacity: .5; }
+  .gone .vpg-open, .vpg-card.gone { opacity: .6; }
   .slow .vpg-lamp { background: var(--status-hang); opacity: 1; box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam), 0 0 8px var(--status-hang); }
   .fail .vpg-lamp, .damaged .vpg-lamp { background: var(--status-broken); opacity: 1; box-shadow: 0 0 0 2px var(--case-lo), 0 0 0 3px var(--case-seam), 0 0 8px var(--status-broken); }
   .pending .vpg-lamp { animation: vpg-blink 1.2s steps(2) infinite; }
