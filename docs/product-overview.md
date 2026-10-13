@@ -90,7 +90,7 @@ Everything else reads only.
 
 - Plain Node.js ESM. The server and client have no framework: canvas/SVG drawing and hand-written CSS. Runtime deps are the AWS SDK v3 clients and `yaml`; the dev dep is `puppeteer-core` for screenshot/overlap tests.
 - IaC: Pulumi JS programs (`upgrades/*`, `infra/`), some Terraform (`terraform/`), JSON schemas (`schemas/`, `upgrades/schema`), a CrossGuard policy pack.
-- Size: `src/` + `scripts/` ≈ 54k lines of JS (149 entries in `src/`); `upgrades/` + `infra/` ≈ 5.1k lines of JS; tests ≈ 24k lines in 234 files, ~1,500 `test()` cases with `node --test`, using Pulumi mocks for every stack (3 skipped).
+- Size: `src/` + `scripts/` ≈ 54k lines of JS (149 entries in `src/`); `upgrades/` + `infra/` ≈ 5.1k lines of JS; tests ≈ 24k lines in 234 files, 1,363 tests under `node --test` (1,360 pass, 3 skipped on this commit), using Pulumi mocks for every stack (3 skipped).
 - CI: GitHub Actions `iac` workflow runs `npm test` plus 27 stack configs under Pulumi mocks.
 
 ## 9. Known limitations and rough edges
