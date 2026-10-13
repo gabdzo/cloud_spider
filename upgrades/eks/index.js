@@ -3,7 +3,7 @@ import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
-import { EKS_OWNED, adoptList, capacityProblem, eksOwnPlan, maxPodsProblem, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon, vpcCniConfig } from "../eks-addons.js";
+import { EKS_OWNED, adoptList, capacityProblem, resolveMaxPods, eksOwnPlan, maxPodsProblem, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon, vpcCniConfig } from "../eks-addons.js";
 
 const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
@@ -159,15 +159,16 @@ const prefixDelegation = isOn("vpcCni") && isOn("prefixDelegation");
 // it on is an in-place vpc-cni update (aws-node restarts, pods keep their
 // IPs); from then on every NetworkPolicy in the cluster is enforced.
 const networkPolicy = isOn("vpcCni") && isOn("networkPolicy");
-const maxPods = String(config.get("maxPods") || "auto");
-const maxPodsError = maxPodsProblem(instanceType, maxPods, prefixDelegation);
-if (maxPodsError) throw new Error(maxPodsError);
 // ON_DEMAND (default, what a group made before this setting has) or SPOT
 // (several similar types, about a third of the price; an interrupted node is
 // replaced by EKS). A change REPLACES the node group, new one first.
 const capacityType = String(config.get("capacityType") || "ON_DEMAND").toUpperCase();
-const capacityError = capacityProblem(instanceType, capacityType, maxPods);
+const capacityError = capacityProblem(instanceType, capacityType, config.get("maxPods") || "auto", prefixDelegation);
 if (capacityError) throw new Error(capacityError);
+// SPOT + auto resolves to the pool's safe number (resolveMaxPods).
+const maxPods = resolveMaxPods(instanceType, capacityType, config.get("maxPods") || "auto", prefixDelegation);
+const maxPodsError = maxPodsProblem(instanceType, maxPods, prefixDelegation);
+if (maxPodsError) throw new Error(maxPodsError);
 
 async function ownAddon(item, dependsOn) {
   if (!isOn(item.key)) return;

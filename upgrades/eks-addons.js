@@ -186,12 +186,23 @@ export function nodeInstanceTypes(instanceType, capacityType = "ON_DEMAND") {
 }
 
 // A SPOT pool mixes types whose ENI limits differ (8 pods on a c7g.medium,
-// 17 on a t4g.medium), so "auto" would make the cap depend on which type
-// AWS hands out: spot needs an explicit maxPods.
-export function capacityProblem(instanceType, capacityType = "ON_DEMAND", maxPods = "auto") {
+// 17 on a t4g.medium), so a bare "auto" would make the cap depend on which
+// type AWS hands out. With SPOT, "auto" therefore means the card type's
+// smallest explicit maxPods (32: fits the memory of every type in the pool),
+// set through the launch template like a picked number. That needs VPC CNI
+// prefix delegation; without it SPOT needs prefixDelegation on.
+// (Before 2026-10-13 SPOT + auto threw inside the Pulumi program, after the
+// card had already made the stack: "set maxPods (32)".)
+export function resolveMaxPods(instanceType, capacityType = "ON_DEMAND", maxPods = "auto", prefixDelegation = true) {
+  const want = String(maxPods ?? "auto");
+  if (want !== "auto" || String(capacityType || "ON_DEMAND") !== "SPOT" || !prefixDelegation) return want;
+  return (MAX_PODS[instanceType] || ["32"])[0];
+}
+
+export function capacityProblem(instanceType, capacityType = "ON_DEMAND", maxPods = "auto", prefixDelegation = true) {
   const type = String(capacityType || "ON_DEMAND");
   if (!CAPACITY_TYPES.includes(type)) return `capacityType must be ${CAPACITY_TYPES.join(" or ")}`;
-  if (type === "SPOT" && String(maxPods ?? "auto") === "auto") return `capacityType SPOT mixes ${nodeInstanceTypes(instanceType, "SPOT").join(", ")}, whose ENI pod limits differ: set maxPods (${(MAX_PODS[instanceType] || ["32"]).join(" or ")})`;
+  if (type === "SPOT" && resolveMaxPods(instanceType, type, maxPods, prefixDelegation) === "auto") return `capacityType SPOT mixes ${nodeInstanceTypes(instanceType, "SPOT").join(", ")}, whose ENI pod limits differ: turn prefixDelegation on (maxPods auto then means ${(MAX_PODS[instanceType] || ["32"])[0]}) or set maxPods`;
   return "";
 }
 

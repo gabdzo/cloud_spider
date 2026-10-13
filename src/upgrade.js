@@ -68,8 +68,11 @@ export const UPGRADES = [
   {
     id: "eks",
     title: "EKS",
-    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the VPC CNI (with prefix delegation, so a node is not capped at its ENI IPs: 11 pods on a t4g.small, 17 on a t4g.medium, and with networkPolicy on its node agent enforces NetworkPolicy objects; off, they are ignored), the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them. Prefix delegation alone does not raise a managed node's pod cap: maxPods auto keeps the node group as it is, at EKS's ENI limit (11 on a t4g.small, 17 on a t4g.medium); 32 (t4g.small) or 32, 58 or 110 (t4g.medium) REPLACES the node group once, the new group first, so new nodes take that many pods (PREVIEW shows the replace; RUN asks you to confirm it). capacityType SPOT runs the nodes on spot from a pool of similar types (t4g.small, c7g.medium, c6g.medium for a t4g.small; t4g.medium, m7g.medium, m6g.medium for a t4g.medium), about a third of the on-demand price; it needs a maxPods number and REPLACES the node group once (new group first). Cheapest layout that survives a zone: nodeCount 2, SPOT, maxPods 110 on a t4g.medium, one node in eu-north-1a and one in 1b (EKS spreads a group over its two subnets).",
+    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the VPC CNI (with prefix delegation, so a node is not capped at its ENI IPs: 11 pods on a t4g.small, 17 on a t4g.medium, and with networkPolicy on its node agent enforces NetworkPolicy objects; off, they are ignored), the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them. Prefix delegation alone does not raise a managed node's pod cap: maxPods auto keeps the node group as it is, at EKS's ENI limit (11 on a t4g.small, 17 on a t4g.medium); 32 (t4g.small) or 32, 58 or 110 (t4g.medium) REPLACES the node group once, the new group first, so new nodes take that many pods (PREVIEW shows the replace; RUN asks you to confirm it). capacityType SPOT runs the nodes on spot from a pool of similar types (t4g.small, c7g.medium, c6g.medium for a t4g.small; t4g.medium, m7g.medium, m6g.medium for a t4g.medium), about a third of the on-demand price; maxPods auto then means 32 (one number that fits every type in the pool; set 58 or 110 on a t4g.medium for more) and it REPLACES the node group once (new group first). Cheapest layout that survives a zone: nodeCount 2, SPOT, maxPods 110 on a t4g.medium, one node in eu-north-1a and one in 1b (EKS spreads a group over its two subnets).",
     dir: "upgrades/eks",
+    // SPOT + maxPods auto needs prefix delegation (auto then means 32); the
+    // Pulumi program refuses it too (eks-addons.js capacityProblem).
+    check: (v) => (v.capacityType === "SPOT" && v.maxPods === "auto" && (v.vpcCni === "off" || v.prefixDelegation === "off") ? "capacityType SPOT with maxPods auto needs vpcCni and prefixDelegation on (auto then means 32), or set maxPods" : ""),
     stack: "upgrade",
     project: "cloudspider-upgrade",
     vault: "eks",
@@ -358,6 +361,9 @@ export function checkParams(spec, input = {}) {
     }
     values[parameter.name] = text;
   }
+  // A card's own cross-field rule, said before any stack is made.
+  const problem = spec.check?.(values);
+  if (problem) return { error: problem };
   return { values };
 }
 
