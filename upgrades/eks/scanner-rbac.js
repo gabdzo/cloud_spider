@@ -23,4 +23,7 @@ export const SCANNER_RULES = [
   // NET-DNS-004: CoreDNS's Prometheus counters through the API server's
   // service proxy, that one Service port and nothing else.
   { apiGroups: [""], resources: ["services/proxy"], resourceNames: ["kube-dns:metrics"], verbs: ["get"] },
+  // DIAGNOSE OPS-001: which admission webhooks exist and which Service they
+  // call (read-only; webhook configs hold no secrets, only a CA bundle).
+  { apiGroups: ["admissionregistration.k8s.io"], resources: ["validatingwebhookconfigurations", "mutatingwebhookconfigurations"], verbs: ["get", "list"] },
 ];
