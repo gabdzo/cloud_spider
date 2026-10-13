@@ -19,7 +19,7 @@ export const EKS_SCHEMA = {
     // minors is supported). auto: what the live cluster runs, or 1.34 for a
     // new one (upgrades/eks-versions.js), so a RUN never upgrades by surprise.
     // 1.32 and 1.33 are on EKS extended support ($0.60/h, not $0.10/h).
-    kubernetesVersion: { type: "enum", choices: [EKS_AUTO, ...EKS_VERSIONS], default: EKS_AUTO, doc: "control plane version: auto keeps the live one (1.34 for a new cluster); in place, one minor up at a time, never down" },
+    kubernetesVersion: { type: "enum", choices: [EKS_AUTO, ...EKS_VERSIONS], default: EKS_AUTO, doc: "control plane version: auto keeps the live one (1.35 for a new cluster); in place, one minor up at a time, never down" },
     instanceType: { type: "enum", choices: EKS_INSTANCE_TYPES, default: "t4g.small", doc: "node instance type (Graviton)" },
     nodeCount: { type: "int", min: 1, max: 10, default: 1, doc: "managed nodes (in place)" },
     maxPods: { type: "enum", choices: MAX_PODS_CHOICES, default: "auto", doc: "kubelet pod cap; a number replaces the node group once" },

@@ -56,14 +56,14 @@ loudly when the selected or live version is extended, adds the fee to the
 card's cost, and SCORE fails AWS-FIN-002 for such a cluster.
 
 **kubernetesVersion auto** (the default) keeps what the live cluster runs, and
-uses 1.34 for a new cluster, so a RUN never upgrades by surprise. An explicit
+uses 1.35 for a new cluster, so a RUN never upgrades by surprise. An explicit
 version may be at most one minor above the live one, never below (the card,
 the RUN route and the program all refuse otherwise, before any change).
 
-**Upgrading in place, 1.32 -> 1.33 -> 1.34:** on the EKS card set
+**Upgrading in place, 1.32 -> 1.33 -> 1.34 -> 1.35:** on the EKS card set
 kubernetesVersion to 1.33, PREVIEW (the cluster shows as an *update* of
 `version`, not a replace; nothing else should change), RUN (about 10-15
-minutes, the API stays up). Then 1.34 the same way. The managed node group
+minutes, the API stays up). Then 1.34 and 1.35 the same way. The managed node group
 keeps its kubelet version (up to 3 minors behind is supported) until it is
 next replaced; check add-on compatibility (Karpenter, LBC, Kyverno) before
-each step. EKS can roll a control plane back one minor within 7 days.
+each step (the ranges: ADDON_K8S in `src/eks-versions.js`; 1.36 is not offered yet: Kyverno 1.19 stops at 1.35). EKS managed add-ons already on the cluster keep their version after a control plane upgrade: update them (EKS console or `aws eks update-addon`). EKS can roll a control plane back one minor within 7 days.

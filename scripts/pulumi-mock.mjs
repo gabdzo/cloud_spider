@@ -66,6 +66,8 @@ await pulumi.runtime.setMocks(
       if (token.includes("ec2/getSubnet")) return { id: args.inputs?.id, availabilityZone: `eu-north-1${String(args.inputs?.id).slice(-1)}`, vpcId: "vpc-mock" };
       // EKS add-ons on the mock cluster: CLOUDSPIDER_MOCK_EKS_ADDONS is
       // {"<addonName>": {"project": "<tag>"}}; any other add-on is absent.
+      // The default add-on version for a Kubernetes version: <addon>@<k8s>.
+      if (token.includes("eks/getAddonVersion")) return { ...args.inputs, version: `${args.inputs?.addonName}@${args.inputs?.kubernetesVersion}` };
       if (token.includes("eks/getAddon")) {
         // Unset: a cluster as the EKS stack makes it, its three add-ons tagged project=eks.
         const fallback = '{"eks-pod-identity-agent":{"project":"eks"},"metrics-server":{"project":"eks"},"aws-ebs-csi-driver":{"project":"eks"}}';
