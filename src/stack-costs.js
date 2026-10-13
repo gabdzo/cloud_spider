@@ -14,6 +14,7 @@ export const PRICES = {
   "ec2:t4g.micro": { usd: 0.0086, per: "hour", text: "t4g.micro" },
   "ec2:t4g.small": { usd: 0.0172, per: "hour", text: "t4g.small" },
   "ec2:t4g.medium": { usd: 0.0344, per: "hour", text: "t4g.medium" },
+  "ec2:m7g.medium": { usd: 0.0434, per: "hour", text: "m7g.medium" },
   "ec2:m7i-flex.xlarge": { usd: 0.2035, per: "hour", text: "m7i-flex.xlarge" },
   "ec2:m7i-flex.2xlarge": { usd: 0.407, per: "hour", text: "m7i-flex.2xlarge" },
   "ec2:m7i.2xlarge": { usd: 0.4284, per: "hour", text: "m7i.2xlarge" },

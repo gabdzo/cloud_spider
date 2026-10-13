@@ -43,6 +43,9 @@ import { createScanClients } from "./score/aws-clients.js";
 import { createPodWriter } from "./netdebug/pod-kube.js";
 import { readLive as readObserveLive } from "./observe/live.js";
 import { createNetdebug } from "./netdebug/api.js";
+import { cliRunner, fileStore } from "./eks-scale.js";
+import { execFile } from "node:child_process";
+import * as fsp from "node:fs/promises";
 import { createAwsCollector } from "./netdebug/aws.js";
 import { createKubeCollector } from "./netdebug/kube-collect.js";
 import { createCloudFrontReader, createRoute53Reader, createVpcReader } from "./netdebug/aws-readers.js";
@@ -178,6 +181,17 @@ app.score = createScoreApi({
   // App vaults and their evaluated SLOs (K8S-OBS-006).
   vaults: () => app.vaultsView(),
 });
+
+// SCALE DOWN / UP of an EKS cluster (src/eks-scale.js): dry run on GET,
+// POST runs it with the typed cluster name; writes need a kube.writeContexts
+// entry; the saved sizes live under storage.path/eks-scale.
+if (mods.has("kubernetes") && (config.kube.writeContexts || []).length) app.eksScale = {
+  writeContexts: config.kube.writeContexts,
+  pageOrigin,
+  run: cliRunner(execFile),
+  store: fileStore(join(stateDir, "eks-scale"), fsp),
+  audit: (entry) => fsp.appendFile(join(stateDir, "audit.jsonl"), JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n"),
+};
 
 // Network debugging (PATH › DEBUG): local probes of a URL the user typed,
 // reports under storage.path/netdebug, probes in the audit log.
