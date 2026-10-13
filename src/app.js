@@ -1240,7 +1240,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
             this.upgradeLive("eks", { clusterName: body.params?.clusterName || "cloudspider-up" }).catch(() => null),
             new Promise((done) => setTimeout(done, LIVE_MS, null).unref?.()),
           ]);
-          const change = nodeGroupChange({ instanceType: live?.values?.instanceType, maxPods: live?.values?.maxPods, capacityType: live?.values?.capacityType, nodeGroup: live?.nodeGroup }, body.params || {});
+          const change = nodeGroupChange({ instanceType: live?.values?.instanceType, maxPods: live?.values?.maxPods, capacityType: live?.values?.capacityType, nodeGroup: live?.nodeGroup || live?.outputs?.nodeGroup }, body.params || {});
           if (change) return no(change);
         }
         // NEEDS (src/stack-needs.js): a stack on the cluster refuses before
