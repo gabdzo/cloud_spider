@@ -100,7 +100,7 @@ export const UPGRADES = [
       // auto keeps the live cluster's version (1.35 for a new cluster), so a RUN
       // never upgrades by surprise; each label says standard or EXTENDED support.
       { name: "kubernetesVersion", type: "string", default: EKS_AUTO, choices: [EKS_AUTO, ...EKS_VERSIONS], labels: versionLabels(), notes: versionNotes(), warn: EKS_VERSIONS.filter((v) => eksSupport(v).status !== "standard") },
-      { name: "instanceType", type: "string", default: "t4g.small", choices: ["t4g.small", "t4g.medium", "m7g.large"] },
+      { name: "instanceType", type: "string", default: "t4g.small", choices: ["t4g.small", "t4g.medium", "m7g.large", "m6i.large"] },
       // max: stacks.eks.maxNodes in cloudspider.yaml (createUpgrade eksMaxNodes).
       { name: "nodeCount", type: "number", default: 1, min: 1, max: EKS_MAX_NODES },
       // The cluster-level EKS add-ons this stack owns (upgrades/eks-addons.js
@@ -246,7 +246,7 @@ export const UPGRADES = [
   {
     id: "showcase",
     title: "Demo prod showcase",
-    note: "Four products on the demo prod cluster (stack eks-demo-prod: EKS 1.35, 2 x m7g.large spot, fixed size, no Karpenter): Online Boutique behind its own ALB and an NLB, and Uptime Kuma, Wiki.js (CNPG Postgres) and Mealie behind ONE shared ALB (IngressGroup showcase, host rules kuma./wiki./mealie.<domain>). certificateArn: HTTPS on both ALBs; wafAclArn: WAF on both. About $0.09/h for the two ALBs and the NLB at demo traffic. Needs the lbc and kyverno add-ons and the CNPG operator (pgcluster). Take it down deletes the load balancers and volumes; the cluster stays.",
+    note: "Four products on the demo prod cluster (stack eks-demo-prod: EKS 1.35, 2 x m6i.large spot (x86: Online Boutique has no arm64 images), fixed size, no Karpenter): Online Boutique behind its own ALB and an NLB, and Uptime Kuma, Wiki.js (CNPG Postgres) and Mealie behind ONE shared ALB (IngressGroup showcase, host rules kuma./wiki./mealie.<domain>). certificateArn: HTTPS on both ALBs; wafAclArn: WAF on both. About $0.09/h for the two ALBs and the NLB at demo traffic. Needs the lbc and kyverno add-ons and the CNPG operator (pgcluster). Take it down deletes the load balancers and volumes; the cluster stays.",
     dir: "upgrades/showcase",
     stack: "showcase-demo-prod",
     project: "cloudspider-showcase",

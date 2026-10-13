@@ -33,7 +33,7 @@ test("every image is pinned (no latest), Boutique on one release", () => {
   for (const image of [...Object.values(IMAGES), ...BOUTIQUE.map((s) => s.image)]) assert.match(image, /:(v?\d+\.\d+\.\d+|\d+\.\d+\.\d+-alpine)$/, image);
 });
 
-test("the requests fit on 2 x m7g.large next to the add-ons (half of each node left for them)", () => {
+test("the requests fit on 2 x m6i.large next to the add-ons (half of each node left for them)", () => {
   const { cpuM, memMi } = totalRequests();
   assert.ok(cpuM <= 1900, `cpu ${cpuM}m`);
   assert.ok(memMi <= 6 * 1024, `memory ${memMi}Mi`);
@@ -49,4 +49,12 @@ test("schema: the committed config passes; a bad domain or ARN is refused", () =
   assert.deepEqual(validateStack("cloudspider-showcase", { clusterName: "demo-prod", domain: "showcase.example.com" }).errors, []);
   assert.ok(validateStack("cloudspider-showcase", { domain: "Not A Domain" }).errors.length);
   assert.ok(validateStack("cloudspider-showcase", { certificateArn: "arn:nope" }).errors.length);
+});
+
+test("x86 node types get the x86 AMI, Graviton the ARM one", async () => {
+  const { amiTypeFor } = await import("../upgrades/eks-addons.js");
+  assert.equal(amiTypeFor("m6i.large"), "AL2023_x86_64_STANDARD");
+  assert.equal(amiTypeFor("t3.large"), "AL2023_x86_64_STANDARD");
+  assert.equal(amiTypeFor("m7g.large"), "AL2023_ARM_64_STANDARD");
+  assert.equal(amiTypeFor("t4g.small"), "AL2023_ARM_64_STANDARD");
 });
