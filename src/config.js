@@ -45,6 +45,7 @@ export const SCHEMA = {
   ui: {
     theme: { type: "enum", values: ["pip", "pro"], default: "pip", env: "CLOUDSPIDER_THEME", flag: "theme", doc: "pip (Pip-Boy) or pro (clean dark); a choice in the settings panel overrides it per browser" },
     defaultView: { type: "enum", values: ["map", "path", "cluster", "vaults"], default: "map", env: "CLOUDSPIDER_VIEW", flag: "view", doc: "view a bare URL opens on" },
+    stacksLayout: { type: "enum", values: ["overview", "combined"], default: "overview", env: "CLOUDSPIDER_STACKS_LAYOUT", doc: "STACKS opens on: overview (what is deployed; run controls in a separate RUN CONSOLE) or combined (the old cards with the run controls inline); the toggle in the STACKS title overrides it per browser" },
     refresh: {
       mapSeconds: { type: "integer", min: 1, max: 600, default: 1, doc: "how often the map polls instance state" },
       radioSeconds: { type: "integer", min: 10, max: 3600, default: 30, doc: "how often the radio reads CloudTrail" },

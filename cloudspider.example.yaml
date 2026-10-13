@@ -41,6 +41,7 @@ kube:
 ui:
   theme: pip               # pip | pro. env CLOUDSPIDER_THEME, --theme. The settings panel overrides it per browser.
   defaultView: map         # map | path | cluster | vaults. env CLOUDSPIDER_VIEW, --view
+  stacksLayout: overview   # overview | combined: STACKS opens on what is deployed (RUN CONSOLE apart) or the old combined cards. env CLOUDSPIDER_STACKS_LAYOUT; the toggle in the STACKS title overrides it per browser
   refresh:
     mapSeconds: 1          # instance state poll
     radioSeconds: 30       # CloudTrail read

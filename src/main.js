@@ -121,6 +121,7 @@ const kube = kubeContexts[0]?.kube || createKube();
 const stackGitSha = (() => { try { return spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).stdout?.trim() || ""; } catch { return ""; } })();
 const stacks = createUpgrade({ runsDir: join(stateDir, "runs"), volumes: aws.volumes, eksMaxNodes: config.stacks.eks.maxNodes, gitSha: stackGitSha, preflight: createEksPreflight(new EC2Client({ region: "eu-north-1" })), audit: (entry) => fsp.mkdir(stateDir, { recursive: true }).then(() => fsp.appendFile(join(stateDir, "audit.jsonl"), JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n")) });
 const app = createApp({
+  auditFile: join(stateDir, "audit.jsonl"),
   ec2: aws.ec2,
   trail: aws.trail,
   logs: aws.logs,

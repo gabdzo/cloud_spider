@@ -1,6 +1,7 @@
 import { samplePreview } from "./stack-sample.js";
 import { mountScale } from "./eks-scale-view.js";
 import { CATEGORIES, stackCategory } from "./stack-resources.js";
+import { ago, driftHint, overviewStatus, pickLayout } from "./stack-overview.js";
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, focusLists, paint } from "./draw.js";
@@ -3955,6 +3956,144 @@ async function pullStackStates(force = false) {
   if (pipOpen) drawPipForm();
 }
 
+// ---- STACKS OVERVIEW (ui.stacksLayout: overview | combined) ----
+// overview: a grid of what each stack has deployed (state + last run from
+// audit.jsonl); a click opens its detail; OPEN RUN CONSOLE opens the old
+// card (settings, PREVIEW / RUN / TAKE IT DOWN, run log) on its own.
+const LAYOUT_KEY = "cloudspider.stacks.layout";
+let stackRuns = {};
+let overviewPick = null;
+let stacksReadSample = null;
+function stacksLayout() {
+  let stored = "";
+  try { stored = localStorage.getItem(LAYOUT_KEY) || ""; } catch {}
+  return pickLayout(pageConfig?.ui?.stacksLayout, stored);
+}
+function setStacksLayout(next) {
+  try { localStorage.setItem(LAYOUT_KEY, next); } catch {}
+  drawPipForm();
+}
+async function pullLastRuns() {
+  stacksReadSample = sample;
+  const q = sample ? "?sample=1" : "";
+  const body = await fetch(`/api/stacks/last-runs${q}`).then((r) => r.json()).catch(() => null);
+  if (!body?.runs) return;
+  stackRuns = body.runs;
+  if (pipOpen) drawPipForm();
+}
+// In the overview, an own stack's open card is its RUN CONSOLE.
+function consoleSpec() {
+  if (stacksLayout() !== "overview" || !openCard || String(openCard).includes("@")) return null;
+  return pipModules.find((spec) => spec.id === openCard && !spec.addon) || null;
+}
+const OV_STATUS = {
+  deployed: ["DEPLOYED", "up"], down: ["NOT DEPLOYED", "down"], failed: ["FAILED", "fail"], unknown: ["STATE ?", "unk"], reading: ["READING…", "unk"],
+};
+function layoutToggle() {
+  const now = stacksLayout();
+  const box = el("span", { className: "lay-tog", role: "group", ariaLabel: "STACKS layout" });
+  for (const [id, word, tip] of [["overview", "OVERVIEW", "what is deployed; run controls in a separate RUN CONSOLE"], ["combined", "COMBINED", "the old cards: settings and RUN inline"]]) {
+    const b = el("button", { type: "button", className: `lay-btn${now === id ? " on" : ""}`, textContent: word, title: `layout: ${tip} (ui.stacksLayout in cloudspider.yaml; this choice is kept in this browser)` });
+    b.setAttribute("aria-pressed", String(now === id));
+    b.addEventListener("click", () => setStacksLayout(id));
+    box.append(b);
+  }
+  return box;
+}
+function runLine(run) {
+  if (!run) return el("span", { className: "ov-run none", textContent: "NO RUN LOGGED", title: "no PREVIEW / RUN / TAKE IT DOWN in audit.jsonl for this stack" });
+  const cls = run.result === "ok" ? "ok" : run.result === "failed" ? "bad" : "warn";
+  const when = new Date(run.at).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+  return el("span", { className: `ov-run ${cls}`, title: `${run.verb} ${run.result} at ${when}${run.durationMs ? ` in ${Math.round(run.durationMs / 1000)}s` : ""}${run.error ? `: ${run.error}` : ""}` },
+    el("i"), el("b", { textContent: `${run.verb} ${run.result.toUpperCase()}` }), el("span", { textContent: ago(run.at) }));
+}
+function overviewTile(spec) {
+  const st = stackStates[spec.id];
+  const run = stackRuns[spec.id];
+  const status = overviewStatus(st, run);
+  const [word, cls] = OV_STATUS[status];
+  const tile = el("button", { type: "button", className: `ov-tile ${cls}${overviewPick === spec.id ? " picked" : ""}`, title: `open ${spec.title}: what it created, its last run, and the RUN CONSOLE` });
+  tile.dataset.id = spec.id;
+  const where = [spec.current?.clusterName, spec.cost?.region].filter(Boolean).join(" · ");
+  const top = (st?.top || []).map((g) => `${g.label} ×${g.count}`).join(" · ");
+  const hint = driftHint(st, run);
+  tile.append(
+    el("span", { className: "ov-top" }, iconImg(CARD_ICON[spec.id] || "stack"), el("b", { className: "ov-name", textContent: spec.title }), el("span", { className: `ov-stat ${cls}`, textContent: status === "deployed" ? `${word} · ${st.count}` : word }), el("span", { className: "ov-go", ariaHidden: "true", textContent: "OPEN ›" })),
+    el("span", { className: "ov-res", textContent: top || (status === "deployed" ? "" : "nothing created") }),
+    el("span", { className: "ov-foot" }, runLine(run), where ? el("span", { className: "ov-where", textContent: where }) : ""),
+  );
+  if (hint) tile.append(el("span", { className: "ov-drift", textContent: `⚠ ${hint}` }));
+  tile.addEventListener("click", () => {
+    overviewPick = overviewPick === spec.id ? null : spec.id;
+    drawPipForm();
+    pipEl.querySelector(".ov-detail")?.scrollIntoView({ block: "nearest" });
+  });
+  return tile;
+}
+function overviewDetail(spec) {
+  const st = stackStates[spec.id];
+  const run = stackRuns[spec.id];
+  const box = el("section", { className: "ov-detail", ariaLabel: `${spec.title}: deployed` });
+  const close = el("button", { type: "button", className: "ov-close", textContent: "✕ CLOSE", title: "back to the overview" });
+  close.addEventListener("click", () => { overviewPick = null; drawPipForm(); });
+  box.append(el("header", { className: "ov-dhead" }, iconImg(CARD_ICON[spec.id] || "stack"), el("b", { textContent: spec.title }), stateChip(st), close));
+  const facts = el("ul", { className: "lines ov-facts" });
+  const fact = (k, v) => facts.append(el("li", {}, el("span", { textContent: k }), el("span", { textContent: v })));
+  fact("stack", st?.stack || spec.stack || spec.id);
+  if (spec.current?.clusterName) fact("cluster", spec.current.clusterName);
+  if (spec.cost?.region) fact("region", spec.cost.region);
+  fact("state updated", st?.updated ? new Date(st.updated).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "—");
+  fact("last run", run ? `${run.verb} ${run.result} · ${ago(run.at)}` : "none logged");
+  if (run?.error) fact("error", run.error);
+  const hint = driftHint(st, run);
+  if (hint) fact("drift hint", hint);
+  box.append(facts, resourcesBlock(spec));
+  const go = el("button", { type: "button", className: "ov-console", title: `settings, PREVIEW, RUN, TAKE IT DOWN and the run log for ${spec.title}` }, iconImg("terminal"), el("span", { textContent: "OPEN RUN CONSOLE ›" }));
+  go.addEventListener("click", () => {
+    openCard = spec.id;
+    markHistory();
+    syncUrl();
+    drawPipForm();
+    refreshUpgrade(true);
+  });
+  box.append(go);
+  return box;
+}
+function drawRunConsole(spec, title) {
+  const back = el("button", { type: "button", className: "ov-back", title: "close the run console, back to what is deployed" }, el("span", { textContent: "‹ BACK TO OVERVIEW" }));
+  back.addEventListener("click", () => {
+    overviewPick = spec.id;
+    openCard = null;
+    markHistory();
+    syncUrl();
+    drawPipForm();
+  });
+  title.querySelector(".pcount").textContent = `RUN CONSOLE · ${spec.title.toUpperCase()}`;
+  const card = el("section", { className: "card open run-console" });
+  card.dataset.id = spec.id;
+  card.append(cardHead(spec), cardBody(spec));
+  pipEl.append(el("div", { className: "ov-bar" }, back), card);
+}
+function drawOverview(own, groups, order) {
+  const all = own.length;
+  const up = own.filter((spec) => overviewStatus(stackStates[spec.id], stackRuns[spec.id]) === "deployed").length;
+  const failed = own.filter((spec) => overviewStatus(stackStates[spec.id], stackRuns[spec.id]) === "failed").length;
+  pipEl.append(el("div", { className: "ov-sum" },
+    el("span", { className: "ov-k up" }, el("b", { textContent: String(up) }), el("i", { textContent: "DEPLOYED" })),
+    el("span", { className: "ov-k down" }, el("b", { textContent: String(all - up - failed) }), el("i", { textContent: "NOT DEPLOYED" })),
+    el("span", { className: "ov-k fail" }, el("b", { textContent: String(failed) }), el("i", { textContent: "FAILED" })),
+    el("span", { className: "ov-tip", textContent: sample ? "SAMPLE DATA · CLICK A STACK" : "CLICK A STACK FOR ITS RESOURCES" })));
+  for (const { id, icon, label, list } of [...groups.values()].sort((a, b) => order(a.id) - order(b.id))) {
+    pipEl.append(sectionHead(id, icon, label, "", list));
+    if (foldedSections.has(id)) continue;
+    const grid = el("div", { className: "ov-grid" });
+    for (const spec of list) grid.append(overviewTile(spec));
+    pipEl.append(grid);
+    const picked = list.find((spec) => spec.id === overviewPick);
+    if (picked) pipEl.append(overviewDetail(picked));
+  }
+}
+
 // RESOURCES CREATED: the open card's stack state grouped by type.
 const resourceCache = new Map();
 function resourcesBlock(spec, stack = "") {
@@ -4462,8 +4601,18 @@ function drawAddonTree() {
 
 function drawPipForm() {
   const own = pipModules.filter((spec) => !spec.addon);
-  const title = el("div", { className: "ptitle" }, iconImg("stack"), el("span", { textContent: "STACKS" }), el("span", { className: "pcount", textContent: `${own.length + pipTerraform.length} STACKS · CLICK ONE TO OPEN` }));
+  const overview = stacksLayout() === "overview";
+  // SAMPLE flipped since the last read: the states and runs are re-read.
+  if (stacksReadSample !== null && stacksReadSample !== sample) {
+    stacksReadSample = sample;
+    stackStates = {};
+    stackRuns = {};
+    pullStackStates(true);
+    pullLastRuns();
+  }
+  const title = el("div", { className: "ptitle" }, iconImg("stack"), el("span", { textContent: "STACKS" }), el("span", { className: "pcount", textContent: overview ? `${own.length + pipTerraform.length} STACKS` : `${own.length + pipTerraform.length} STACKS · CLICK ONE TO OPEN` }), layoutToggle());
   pipEl.replaceChildren(title);
+  pipEl.classList.toggle("ov-mode", overview);
   if (!pipModules.length && !pipTerraform.length) {
     pipEl.append(el("div", { className: "quiet pempty", textContent: "No stacks found: the upgrades/ folder has no Pulumi or Terraform stack." }));
     return;
@@ -4475,7 +4624,10 @@ function drawPipForm() {
     groups.get(cat.id).list.push(spec);
   }
   const order = (id) => { const i = CATEGORIES.findIndex((c) => c[0] === id); return i < 0 ? 99 : i; };
-  for (const { id, icon, label, list } of [...groups.values()].sort((a, b) => order(a.id) - order(b.id))) {
+  const runConsole = consoleSpec();
+  if (runConsole) return drawRunConsole(runConsole, title);
+  if (overview) drawOverview(own, groups, order);
+  else for (const { id, icon, label, list } of [...groups.values()].sort((a, b) => order(a.id) - order(b.id))) {
     pipEl.append(sectionHead(id, icon, label, "", list));
     if (foldedSections.has(id)) continue;
     for (const spec of list) {
@@ -5362,6 +5514,7 @@ async function toggleUpgrade() {
   drawPipForm();
   refreshUpgrade(true);
   pullStackStates();
+  pullLastRuns();
   if (pipModules.some((spec) => spec.addon)) pullAddons(true);
 }
 
