@@ -20,6 +20,7 @@ const files = (dir) => readdirSync(dir).flatMap((n) => { const p = join(dir, n);
 const CREATORS = {
   "upgrades/pgcluster/index.js": ["shop", "cnpg-system"],
   "upgrades/demo/index.js": ["demo"],
+  "upgrades/showcase/index.js": ["boutique", "uptime-kuma", "wiki", "mealie"],
   "upgrades/observability/index.js": ["amazon-cloudwatch"],
   "upgrades/observe/index.js": ["cloudspider-observe"],
   "upgrades/addons/scaling-demo.js": ["scaling-demo"],

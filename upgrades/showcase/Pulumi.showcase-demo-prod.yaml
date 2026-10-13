@@ -1,0 +1,7 @@
+config:
+  aws:region: eu-north-1
+  aws:profile: default
+  aws:allowedAccountIds:
+    - 550536272523
+  cloudspider-showcase:clusterName: demo-prod
+  cloudspider-showcase:domain: showcase.example.com

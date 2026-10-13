@@ -167,7 +167,7 @@ export function prefixDelegationOn(configurationValues) {
 // number raises it. kubelet reserves 11 MiB per pod + 255 MiB of memory:
 // 32 on a t4g.small (607 MiB of 2 GiB), 58 (893 MiB) or 110 (1.47 GiB) of a
 // t4g.medium's 4 GiB.
-export const MAX_PODS = { "t4g.small": ["32"], "t4g.medium": ["32", "58", "110"] };
+export const MAX_PODS = { "t4g.small": ["32"], "t4g.medium": ["32", "58", "110"], "m7g.large": ["32", "58", "110"] };
 export const MAX_PODS_CHOICES = ["auto", "32", "58", "110"];
 
 // Capacity type of the managed node group (EKS card capacityType). SPOT
@@ -180,6 +180,8 @@ export const CAPACITY_TYPES = ["ON_DEMAND", "SPOT"];
 export const SPOT_POOLS = {
   "t4g.small": ["t4g.small", "c7g.medium", "c6g.medium"],
   "t4g.medium": ["t4g.medium", "m7g.medium", "m6g.medium"],
+  // 2 vCPU / 8 GiB (demo prod cluster): same memory in every type.
+  "m7g.large": ["m7g.large", "m6g.large", "t4g.large"],
 };
 
 export function nodeInstanceTypes(instanceType, capacityType = "ON_DEMAND") {
@@ -209,7 +211,7 @@ export function capacityProblem(instanceType, capacityType = "ON_DEMAND", maxPod
 
 // kubelet's pod cap without maxPods: the ENI limit, one IP per pod
 // (ENIs x (IPs per ENI - 1) + 2).
-export const ENI_PODS = { "t4g.small": 11, "t4g.medium": 17 };
+export const ENI_PODS = { "t4g.small": 11, "t4g.medium": 17, "m7g.large": 29 };
 
 // The EKS stack's podsPerNode output: what kubelet's cap really is.
 export function podsPerNodeText(instanceType, maxPods) {

@@ -50,6 +50,14 @@ export function namespaceSpecs({ intra = true, https = false, podIdentity = fals
 // (test/namespace-netpol.test.js holds each stack to it). exempt: the
 // namespace is on generate-default-deny's skip list.
 export const NAMESPACE_NETPOL = {
+  // showcase (demo prod cluster). ALB/NLB ip targets and Uptime Kuma reach
+  // each app's port from the VPC range (pod IPs are VPC IPs on the VPC CNI).
+  boutique: { intraIngress: true, ingressFromVpc: [{ name: "allow-lb-frontend", podSelector: { matchLabels: { app: "frontend" } }, ports: [8080] }] },
+  "uptime-kuma": { intraIngress: true, https: true, ingressFromVpc: [{ name: "allow-lb-kuma", ports: [3001] }], egressTo: [{ name: "allow-kuma-to-boutique", namespace: "boutique", to: { matchLabels: { app: "frontend" } }, ports: [8080] }, { name: "allow-kuma-to-wiki", namespace: "wiki", to: { matchLabels: { app: "wiki" } }, ports: [3000] }, { name: "allow-kuma-to-mealie", namespace: "mealie", to: { matchLabels: { app: "mealie" } }, ports: [9000] }] },
+  // Wiki.js on CNPG: the operator reaches the instance manager (8000) and
+  // Postgres (5432); the instance calls the Kubernetes API (443).
+  wiki: { intraIngress: true, https: true, ingressFromVpc: [{ name: "allow-lb-wiki", podSelector: { matchLabels: { app: "wiki" } }, ports: [3000] }], ingressFromAnyNamespace: [{ name: "allow-cnpg-operator", podSelector: { matchExpressions: [{ key: "cnpg.io/cluster", operator: "Exists" }] }, ports: [8000, 5432] }] },
+  mealie: { intraIngress: true, https: true, ingressFromVpc: [{ name: "allow-lb-mealie", ports: [9000] }] },
   // pgcluster + shopapi. Instances: replication (intra), the Kubernetes API
   // and S3 for WAL/backups (443), credentials via Pod Identity. shopapi and
   // the migrate Job only reach the database (intra).

@@ -22,6 +22,16 @@ export const SCHEMAS = {
   "cloudspider-site": { project: "cloudspider-site", keys: named("cloudspider-site", "resource name prefix") },
   "cloudspider-worker": { project: "cloudspider-worker", keys: named("cloudspider-worker", "resource name prefix") },
   "cloudspider-demo": { project: "cloudspider-demo", keys: { clusterName: cluster } },
+  "cloudspider-showcase": {
+    project: "cloudspider-showcase",
+    keys: {
+      clusterName: { ...cluster, default: "demo-prod" },
+      domain: { type: "name", pattern: /^([a-z0-9-]+\.)+[a-z]{2,}$/, hint: "must be a DNS name like demo.example.com", default: "showcase.example.com", doc: "host rules on the shared ALB: kuma.<domain>, wiki.<domain>, mealie.<domain>" },
+      certificateArn: { type: "name", optional: true, pattern: /^arn:aws:acm:[a-z0-9-]+:\d{12}:certificate\/[0-9a-f-]+$/, hint: "must be an ACM certificate ARN", doc: "HTTPS on both ALBs (HTTP redirects); none: HTTP only" },
+      wafAclArn: { type: "name", optional: true, pattern: /^arn:aws:wafv2:[a-z0-9-]+:\d{12}:regional\/webacl\/.+$/, hint: "must be a regional WAFv2 web ACL ARN", doc: "WAF on both ALBs (about $5/month + $1/rule)" },
+      storageClass: { type: "name", pattern: /^[a-z0-9-]{1,63}$/, hint: "must be a StorageClass name", default: "showcase-gp3", doc: "PVCs (Kuma, Mealie, Wiki.js DB); showcase-gp3 is made by this stack" },
+    },
+  },
   "cloudspider-shopapi": {
     project: "cloudspider-shopapi",
     keys: {
