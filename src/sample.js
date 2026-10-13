@@ -1,6 +1,7 @@
 import { sampleStackState } from "./vault-sample.js";
 import { idleCandidates, morningReport } from "./layout.js";
 import { ingressRoutes, openApiRoutes, rootRoute } from "./alb-routes.js";
+import { lbExposure } from "./alb-exposure.js";
 
 const SHOP_DNS = "k8s-shop-shopapi-5a1e0c.eu-north-1.elb.amazonaws.com";
 export const SAMPLE_SHOP_ALB = {
@@ -58,7 +59,57 @@ const SAMPLE_OPENAPI = {
   ]),
 };
 
+// The demo "prod" showcase (offline): Online Boutique on its own ALB
+// (HTTPS, WAF), Uptime Kuma + Wiki.js + Mealie on one SHARED ALB (the LBC
+// IngressGroup "demo-apps", one host rule each; no WAF yet), and an NLB in
+// front of the Boutique's gRPC/TLS entrypoint (with a stray debug port).
+const lbBase = (id, name, extra) => {
+  const dns = `${name}.eu-north-1.elb.amazonaws.com`;
+  return { id, vpcId: "sample-eks-vpc", kind: "alb", lbType: "application", name, status: "ok", state: "active", scheme: "internet-facing", public: true, dns, zones: ["sample-a", "sample-b"], lbSubnetIds: ["sample-public-a", "sample-public-b"], cluster: "cloudspider-up", targetZones: ["sample-a", "sample-b"], targetHealth: "healthy", ...extra(dns) };
+};
+const HTTPS = (cert) => [{ protocol: "HTTP", port: 80, redirectsToHttps: true }, { protocol: "HTTPS", port: 443, certificate: cert }];
+export const SAMPLE_BOUTIQUE_ALB = lbBase("alb-sample-boutique", "k8s-boutique-frontend-7c21d4", (dns) => ({ ingress: "boutique/frontend", url: `https://shop.demo.cloudspider.dev/`, targetCount: 2, healthyCount: 2, tags: { project: "boutique" }, listeners: HTTPS("ACM shop.demo.cloudspider.dev"), waf: { name: "boutique-waf" }, dns }));
+export const SAMPLE_APPS_ALB = lbBase("alb-sample-apps", "k8s-demoapps-3f9a20b1e6", () => ({ ingress: "demo-apps", ingressGroup: "demo-apps", url: `https://kuma.demo.cloudspider.dev/`, targetCount: 3, healthyCount: 3, tags: { project: "demo-apps" }, listeners: HTTPS("ACM *.demo.cloudspider.dev"), waf: false }));
+export const SAMPLE_NLB = lbBase("nlb-sample-boutique", "k8s-boutique-grpc-9d0e11", () => ({ lbType: "network", ingress: "boutique/frontend-grpc", url: "", targetCount: 2, healthyCount: 2, tags: { project: "boutique" }, listeners: [{ protocol: "TLS", port: 443, certificate: "ACM grpc.demo.cloudspider.dev" }, { protocol: "TCP", port: 8080 }], seen: { ok: true, status: 0, ms: 22, sample: true } }));
+const demoIngress = (ns, name, host, svc, port, group) => ({
+  metadata: { namespace: ns, name, annotations: group ? { "alb.ingress.kubernetes.io/group.name": group } : {} },
+  spec: { rules: [{ host, http: { paths: [{ path: "/", pathType: "Prefix", backend: { service: { name: svc, port: { number: port } } } }] } }] },
+  status: { loadBalancer: { ingress: [{ hostname: group ? SAMPLE_APPS_ALB.dns : SAMPLE_BOUTIQUE_ALB.dns }] } },
+});
+const DEMO_INGRESSES = [
+  demoIngress("boutique", "frontend", "shop.demo.cloudspider.dev", "frontend", 80),
+  demoIngress("kuma", "uptime-kuma", "kuma.demo.cloudspider.dev", "uptime-kuma", 3001, "demo-apps"),
+  demoIngress("wiki", "wikijs", "wiki.demo.cloudspider.dev", "wikijs", 3000, "demo-apps"),
+  demoIngress("mealie", "mealie", "mealie.demo.cloudspider.dev", "mealie", 9000, "demo-apps"),
+];
+export const SAMPLE_SHOWCASE = [SAMPLE_BOUTIQUE_ALB, SAMPLE_APPS_ALB, SAMPLE_NLB];
+const seenOk = (ms) => ({ ok: true, status: 200, ms, sample: true });
+
+function showcaseRoutes(lb) {
+  if (lb.lbType === "network") {
+    const routes = lb.listeners.map((l) => ({ host: "", path: `${l.protocol}:${l.port}`, service: l.port === 443 ? "boutique/frontend-grpc:8443" : "boutique/frontend-debug:8080", source: "listener", note: "boutique/NLB listener", methods: [], url: "", probe: false }));
+    return { from: "listener", routes };
+  }
+  const rules = ingressRoutes(lb, DEMO_INGRESSES).map((r, i) => {
+    const prio = { kuma: 10, wiki: 20, mealie: 30 }[r.note.split("/")[0]];
+    const note = lb.ingressGroup ? `${r.note} · HTTPS:443 · priority ${prio}` : `${r.note} · HTTPS:443`;
+    // A host rule answers on its own name: the sample says it was reached.
+    return { ...r, note, probe: true, seen: { ...seenOk([46, 52, 61][i % 3]), status: r.note.startsWith("wiki") ? 302 : 200, url: r.url } };
+  });
+  return { from: "ingress", routes: rules };
+}
+
 export function sampleAlbRoutes(id) {
+  const show = SAMPLE_SHOWCASE.find((lb) => lb.id === id);
+  if (show) {
+    const { from, routes } = showcaseRoutes(show);
+    return { id, from, openapi: false, routes, sample: true, lb: { role: lbRoleOf(show), listeners: show.listeners, waf: show.waf, seen: show.seen }, exposure: lbExposure(show, routes), seen: show.url ? { ...seenOk(44), url: show.url } : undefined };
+  }
+  return sampleShopRoutes(id);
+}
+const lbRoleOf = (lb) => lbExposure(lb, []).role;
+
+function sampleShopRoutes(id) {
   if (id !== SAMPLE_SHOP_ALB.id) return { id, error: "only public load balancers list routes", routes: [] };
   const alb = SAMPLE_SHOP_ALB;
   const rules = ingressRoutes(alb, SAMPLE_INGRESSES);
@@ -161,6 +212,8 @@ export function samplePlace() {
       // The Shop API's ALB, as the AWS Load Balancer Controller builds it:
       // public, both zones, both targets healthy (ROUTES, the PUBLIC badge).
       SAMPLE_SHOP_ALB,
+      // The demo showcase: dedicated ALB, shared ALB (IngressGroup), NLB.
+      ...SAMPLE_SHOWCASE,
       { id: "camp-bucket", vpcId: "", kind: "bucket", name: "cloudspider-camp", status: "ok", tags: { project: "camp" } },
       {
         id: "camp-function",

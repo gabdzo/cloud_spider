@@ -239,7 +239,7 @@ function rowOfCards(items, x, y, room) {
 // Room under the edge row for a public ALB's dock (browser.js): the reach
 // lamp, OPEN ↗ and the folded ROUTES, hung under its card, not over subnets.
 export const DOCK_ROOM = 28;
-export const hasDock = (item) => item?.kind === "alb" && item.public === true && Boolean(item.url);
+export const hasDock = (item) => item?.kind === "alb" && item.public === true && Boolean(item.url || (item.lbType === "network" && item.dns));
 
 // ---- edges ----
 

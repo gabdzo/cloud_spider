@@ -18,15 +18,17 @@ const { PRO_GLYPHS, glyphKey } = await import("../src/map-pro-icons.js");
 // legend is one flat KEY strip instead of a box per item.
 // Changed on purpose (UX overlaps B): the PUBLIC tab moved to the card's
 // left edge so the vault number badge no longer covers it.
+// Changed on purpose (ALB rules showcase): the SAMPLE map gains the demo
+// showcase balancers (dedicated Boutique ALB, shared demo-apps ALB, an NLB).
 const PIP_GOLDEN = {
-  w1440: ["2b824d8108d69c0b", { width: 1440 }],
-  w760: ["c5b61f889c573937", { width: 760, animTime: 1234 }],
+  w1440: ["c173cc2adcd776e1", { width: 1440 }],
+  w760: ["ffb18305b0519b5b", { width: 760, animTime: 1234 }],
   // Changed on purpose (#pro-map-2): side-by-side VPCs leave a chip row
   // above the first row so peering chips clear the ARCH / BY TAG switch.
-  w1920flow: ["0f66f7d26f4bb58f", { width: 1920, flow: true, animTime: 5000 }],
-  tag: ["80a3239930bbbeb4", { width: 1440, view: "tag" }],
-  selBuilding: ["73ec311d3241f9a9", { width: 1440, select: "building" }],
-  selFixture: ["7014b61dd4cc0387", { width: 1440, select: "fixture" }],
+  w1920flow: ["8b377488fe988d56", { width: 1920, flow: true, animTime: 5000 }],
+  tag: ["d3ac33f6eb8e83a2", { width: 1440, view: "tag" }],
+  selBuilding: ["a3557029a41fab7d", { width: 1440, select: "building" }],
+  selFixture: ["169b8feca36d723e", { width: 1440, select: "fixture" }],
 };
 
 function render(opts, theme) {
