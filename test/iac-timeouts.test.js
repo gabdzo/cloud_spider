@@ -36,3 +36,16 @@ test("every EKS add-on, RDS instance, EKS cluster and node group has customTimeo
   }
   assert.ok(seen >= 8, `only ${seen} found`);
 });
+
+test("every Helm release is atomic, cleans up on failure and has a timeout", () => {
+  let seen = 0;
+  for (const file of files(up)) {
+    const src = readFileSync(file, "utf8");
+    for (const m of src.matchAll(/new k8s\.helm\.v3\.Release\(/g)) {
+      seen += 1;
+      const s = statement(src, m.index);
+      for (const key of ["atomic: true", "cleanupOnFail: true", "timeout: "]) assert.ok(s.includes(key), `${file.slice(up.length)}: Helm release without ${key}`);
+    }
+  }
+  assert.ok(seen >= 3);
+});
