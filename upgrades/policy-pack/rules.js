@@ -6,7 +6,7 @@ const OPEN = ["0.0.0.0/0", "::/0"];
 const WEB_PORTS = [80, 443];
 export const ALLOWED_INSTANCE_TYPES = [
   "t4g.small", "t4g.medium", "c6g.medium", "c7g.medium", "m6g.medium", "m7g.medium",
-  "m7i-flex.2xlarge", "m7i.2xlarge", "c5.metal", "t3.micro", "t4g.micro", "t4g.nano",
+  "m7g.large", "m6g.large", "t4g.large", "m7i-flex.2xlarge", "m7i.2xlarge", "c5.metal", "t3.micro", "t4g.micro", "t4g.nano",
 ];
 export const ALLOWED_DB_CLASSES = ["db.t4g.micro", "db.t4g.small"];
 export const MAX_NODES = 10;

@@ -116,6 +116,34 @@
       "min": 20
     },
     {
+      "id": "eks-demo-prod",
+      "dir": "upgrades/eks",
+      "project": "cloudspider-upgrade",
+      "stack": "eks-demo-prod",
+      "configFile": "upgrades/eks/Pulumi.eks-demo-prod.yaml",
+      "env": {
+        "CLOUDSPIDER_MOCK_EKS_ADDONS": "{}"
+      },
+      "min": 30
+    },
+    {
+      "id": "showcase-committed",
+      "dir": "upgrades/showcase",
+      "project": "cloudspider-showcase",
+      "stack": "showcase-demo-prod",
+      "configFile": "upgrades/showcase/Pulumi.showcase-demo-prod.yaml",
+      "min": 60
+    },
+    {
+      "id": "showcase-wrong-stack",
+      "dir": "upgrades/showcase",
+      "project": "cloudspider-showcase",
+      "stack": "showcase-other",
+      "config": {},
+      "expect": "error",
+      "match": "must be showcase-demo-prod"
+    },
+    {
       "id": "pgcluster-default",
       "dir": "upgrades/pgcluster",
       "project": "cloudspider-pgcluster",

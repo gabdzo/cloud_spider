@@ -1,0 +1,11 @@
+{
+  "name": "cloudspider-showcase",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@pulumi/aws": "7.50.0",
+    "@pulumi/kubernetes": "4.34.2",
+    "@pulumi/pulumi": "3.268.0"
+  }
+}

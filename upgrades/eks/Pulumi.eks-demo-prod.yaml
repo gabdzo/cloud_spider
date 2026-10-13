@@ -1,0 +1,17 @@
+# The demo "prod" cluster (2026-10-13): EKS 1.35, two m7g.large spot nodes
+# (1a + 1b), fixed size (min = desired = max = 2). Karpenter is NOT installed
+# on it, so nothing can add a node. Apps: upgrades/showcase (stack showcase-demo-prod).
+config:
+  aws:region: eu-north-1
+  aws:profile: default
+  aws:allowedAccountIds:
+    - 550536272523
+  cloudspider-upgrade:clusterName: demo-prod
+  cloudspider-upgrade:kubernetesVersion: "1.35"
+  cloudspider-upgrade:instanceType: m7g.large
+  cloudspider-upgrade:capacityType: SPOT
+  cloudspider-upgrade:nodeCount: "2"
+  cloudspider-upgrade:maxPods: "58"
+  cloudspider-upgrade:networkPolicy: "on"
+  cloudspider-upgrade:controlPlaneLogs: "off"
+  cloudspider-upgrade:vpcCidr: 10.44.0.0/16

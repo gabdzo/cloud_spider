@@ -1,0 +1,25 @@
+# Template (not up yet). upgrades/showcase (Pulumi project cloudspider-showcase,
+# stack showcase-demo-prod): the demo prod cluster's products. The ALBs, the
+# NLB and the gp3 volumes carry project=showcase; the pods are in the Cluster
+# view, namespaces boutique, uptime-kuma, wiki, mealie.
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: showcase
+  number: 116
+  title: Demo prod showcase
+  description: Online Boutique (own ALB + NLB) and Uptime Kuma, Wiki.js, Mealie behind one shared ALB with a host rule each.
+  owner: gabriel
+  tags: [demo, eks]
+spec:
+  type: service
+  resources:
+    tags:
+      project: showcase
+  stack:
+    dir: upgrades/showcase
+    name: showcase-demo-prod
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/upgrades/showcase
+    docs: https://github.com/gabdzo/cloud_spider/blob/main/upgrades/showcase/README.md
+    dashboard: "https://eu-north-1.console.aws.amazon.com/ec2/home?region=eu-north-1#LoadBalancers:"
