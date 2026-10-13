@@ -111,6 +111,11 @@ export const PATHS = {
   nsRoutes: (ns) => `/apis/route.openshift.io/v1/namespaces/${checkName(ns)}/routes`,
   nsCsvs: (ns) => `/apis/operators.coreos.com/v1alpha1/namespaces/${checkName(ns)}/clusterserviceversions`,
   pdbs: () => "/apis/policy/v1/poddisruptionbudgets",
+  // Diagnose (src/diagnose): admission webhooks and cert-manager Certificates, GETs only
+  validatingWebhooks: () => "/apis/admissionregistration.k8s.io/v1/validatingwebhookconfigurations",
+  mutatingWebhooks: () => "/apis/admissionregistration.k8s.io/v1/mutatingwebhookconfigurations",
+  certificates: () => "/apis/cert-manager.io/v1/certificates",
+  nsCertificates: (ns) => `/apis/cert-manager.io/v1/namespaces/${checkName(ns)}/certificates`,
   clusterRoleBindings: () => "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings",
   // Namespaced lists: all a Role bound in one namespace can read. A context
   // scoped to namespaces (kube-contexts.js) uses only these.
