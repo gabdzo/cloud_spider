@@ -116,6 +116,7 @@ export const FILES = new Set([
   "vault-insight-view.js",
   "vault-perks.js",
   "alb-routes.js",
+  "alb-exposure.js",
   "perk-view.js",
   "url-state.js",
   "settings-view.js",
@@ -2085,6 +2086,20 @@ const page = `<!doctype html>
   .reach-lamp.skip { color: var(--pip-dim-text); }
   .alr-route a.cmd { min-height: 18px; padding: 0 6px; font-size: 11px; text-decoration: none; }
   .alr-empty { margin: 6px 8px; color: var(--pip-dim-text); }
+  .alr-role { padding: 0 5px; font-size: 9px; letter-spacing: 0.12em; color: var(--pip-ink); background: var(--world-amber); }
+  .alr-role.shared { background: #6ec8ff; }
+  .alr-role.nlb { background: #c49bff; }
+  .alr-grade, .alx-grade { padding: 0 5px; font-size: 10px; font-weight: bold; color: var(--pip-ink); background: var(--pip-dim); }
+  .g-A { background: #14ff6a !important; } .g-B { background: #b8f046 !important; } .g-C { background: #ffcc33 !important; } .g-D { background: #ff9933 !important; } .g-F { background: #ff4d4d !important; }
+  .alx-head { display: flex; align-items: baseline; gap: 10px; padding: 5px 8px 2px; }
+  .alx-head b { color: var(--world-amber); letter-spacing: 0.18em; }
+  .alx-list { padding: 0 8px 6px; border-bottom: 1px solid rgba(255, 204, 51, 0.35); }
+  .alx-row { display: grid; grid-template-columns: auto minmax(60px, auto) 1fr; align-items: center; gap: 6px; padding: 2px 0; }
+  .alx-product { color: var(--pip-bright); font-weight: normal; }
+  .alx-checks { display: flex; flex-wrap: wrap; gap: 4px; }
+  .alx-check { padding: 0 4px; font-size: 9px; letter-spacing: 0.08em; border: 1px solid currentColor; }
+  .alx-check.pass { color: #14ff6a; } .alx-check.warn { color: #ffcc33; } .alx-check.fail { color: #ff4d4d; } .alx-check.unknown { color: var(--pip-dim-text); }
+  .alr-app { padding: 0 4px; font-size: 9px; letter-spacing: 0.08em; color: #6ec8ff; border: 1px solid rgba(110, 200, 255, 0.5); }
   .alb-exposed {
     position: absolute; height: 22px; padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; cursor: pointer;
     font: inherit; font-size: 11px; letter-spacing: 0.06em; color: var(--world-amber);

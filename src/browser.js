@@ -7,6 +7,7 @@ import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys 
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, focusLists, paint } from "./draw.js";
 import { FILTER_AT, filterRoutes, groupRoutes, ruleCount } from "./alb-routes.js";
+import { lbExposure, routeProduct } from "./alb-exposure.js";
 import { hasDock } from "./arch-layout.js";
 import { mapTargets, stepTarget, targetLine } from "./map-focus.js";
 import { createQuickFind, mapItem } from "./quick-find.js";
@@ -2361,6 +2362,7 @@ function routeList(id, list) {
       where.append(vel("code", "alr-path", r.path), vel("span", "alr-svc", r.service ? `→ ${r.service}` : ""));
       const tags = vel("span", "alr-tags");
       if (r.methods?.length) tags.append(vel("span", "alr-methods", r.methods.join(" ")));
+      if (r.source !== "openapi") tags.append(vel("span", "alr-app", routeProduct(r)));
       if (r.source === "openapi") tags.append(vel("span", "alr-from", "from OpenAPI"));
       else if (r.note) tags.append(vel("span", "alr-note", r.note));
       where.append(tags);
@@ -2378,6 +2380,36 @@ function routeList(id, list) {
   return box;
 }
 
+// EXPOSURE (alb-exposure.js): the role badge and per-product checks, with
+// REACH from the routes' probes (or the sample's).
+function dockExposure(alb, body) {
+  const lb = { ...alb, ...(body?.lb || {}), role: undefined };
+  return lbExposure(lb, body?.routes || [], (url) => reachSeen.get(url));
+}
+
+function exposureList(exp) {
+  const box = vel("div", "alx-list");
+  box.setAttribute("aria-label", "exposure checks");
+  for (const p of exp.products) {
+    const row = vel("div", "alx-row");
+    const grade = vel("span", `alx-grade g-${p.grade}`, `${p.grade} ${p.score ?? "?"}`);
+    grade.title = `exposure score ${p.score ?? "unknown"}/100`;
+    const name = vel("b", "alx-product", p.product);
+    if (p.hosts.length) name.title = p.hosts.join(", ");
+    const checks = vel("span", "alx-checks");
+    for (const c of p.checks) {
+      const chip = vel("span", `alx-check ${c.state}`, `${c.state === "pass" ? "✓" : c.state === "fail" ? "✗" : c.state === "warn" ? "!" : "?"} ${c.label}`);
+      chip.title = `${c.label} (${c.weight} pts): ${c.detail}`;
+      chip.dataset.check = c.key;
+      checks.append(chip);
+    }
+    row.dataset.product = p.product;
+    row.append(grade, name, checks);
+    box.append(row);
+  }
+  return box;
+}
+
 function albDock(alb) {
   const state = albRoutes.get(alb.id);
   const list = state?.body?.routes || [];
@@ -2389,8 +2421,14 @@ function albDock(alb) {
   dock.style.top = `${alb.y + alb.h + 4}px`;
   dock.style.minWidth = `${alb.w}px`;
   const bar = vel("div", "alr-bar");
-  bar.title = `${alb.url}\nGET from this machine every 30 s`;
-  const toggle = vel("button", "cmd alr-routes-toggle", state?.body ? `${open ? "▾" : "▸"} ${rules} route${rules === 1 ? "" : "s"}` : "▸ routes…");
+  bar.title = alb.url ? `${alb.url}\nGET from this machine every 30 s` : `${alb.dns}\nTCP/TLS: not probed over HTTP`;
+  const exp = dockExposure(alb, state?.body);
+  dock.dataset.role = exp.role;
+  const role = vel("span", `alr-role ${exp.role}`, exp.role === "nlb" ? "NLB" : exp.role === "shared" ? "SHARED" : "DEDICATED");
+  role.title = exp.role === "shared" ? `one ALB for an IngressGroup (${alb.ingressGroup || alb.ingress}): one listener rule per app` : exp.role === "nlb" ? "network load balancer: layer 4, listeners → target groups" : "one ALB for one Ingress";
+  const grade = vel("span", `alr-grade g-${exp.grade}`, `${exp.grade}`);
+  grade.title = `exposure: worst product ${exp.score ?? "unknown"}/100`;
+  const toggle = vel("button", "cmd alr-routes-toggle", state?.body ? `${open ? "▾" : "▸"} ${rules} ${exp.role === "nlb" ? "listener" : "route"}${rules === 1 ? "" : "s"}${exp.role === "shared" ? ` → ${exp.products.length} apps` : ""}` : "▸ routes…");
   toggle.type = "button";
   toggle.dataset.focus = `routes:${alb.id}`;
   toggle.setAttribute("aria-expanded", String(open));
@@ -2403,7 +2441,8 @@ function albDock(alb) {
     probeRoutes(alb.id);
     albDocksEl.querySelector(`[data-focus="routes:${CSS.escape(alb.id)}"]`)?.focus();
   });
-  bar.append(reachLamp(alb.url), openLink(alb.url), toggle);
+  if (alb.url) bar.append(role, grade, reachLamp(alb.url), openLink(alb.url), toggle);
+  else bar.append(role, grade, vel("span", "reach-lamp skip", alb.lbType === "network" ? "TCP" : "—"), toggle);
   dock.append(bar);
   if (open) {
     const panel = vel("div", "alr-panel");
@@ -2412,6 +2451,9 @@ function albDock(alb) {
     const head = vel("div", "alr-head");
     head.append(vel("b", "", "ROUTES"), vel("span", "alr-src", state?.body?.from === "listener" ? "from listener rules" : state?.body?.from === "ingress" ? `from Ingress${state.body.openapi ? " + OpenAPI" : ""}` : state?.body?.error || "reading…"));
     panel.append(head);
+    const xh = vel("div", "alx-head");
+    xh.append(vel("b", "", "EXPOSURE"), vel("span", "alr-src", exp.role === "shared" ? `${exp.label} · IngressGroup ${alb.ingressGroup || alb.ingress} · ${rules} rules → ${exp.products.length} apps` : exp.label));
+    panel.append(xh, exposureList(exp));
     let listEl = routeList(alb.id, list);
     if (list.length > FILTER_AT) {
       const search = vel("input", "alr-search");

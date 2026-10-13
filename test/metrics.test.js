@@ -158,7 +158,7 @@ test("alerts list only what is not ok", () => {
 test("the sample answer is keyed by the sample map's ids", () => {
   const p = samplePlace();
   const answer = sampleMetrics(p, { now: 1_800_000_000_000 });
-  assert.deepEqual(Object.keys(answer.targets).sort(), ["alb-sample", "alb-sample-old", "alb-sample-shop", "camp-function", "fn-sample-worker", "sample-node-a", "sample-node-b", "sample-running"]);
+  assert.deepEqual(Object.keys(answer.targets).sort(), ["alb-sample", "alb-sample-apps", "alb-sample-boutique", "alb-sample-old", "alb-sample-shop", "camp-function", "fn-sample-worker", "nlb-sample-boutique", "sample-node-a", "sample-node-b", "sample-running"]);
   assert.equal(answer.targets["alb-sample"].flag, "hang");
   assert.equal(answer.targets["sample-running"].series[0].points.length, 36);
 });

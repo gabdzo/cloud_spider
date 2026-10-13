@@ -1,6 +1,7 @@
 import { originAllowed } from "./origin.js";
 import { createReach, fetchOpenApi, reachAllowed } from "./reach.js";
 import { ingressRoutes, listenerRoutes, openApiRoutes, rootRoute } from "./alb-routes.js";
+import { lbExposure, listenerFacts } from "./alb-exposure.js";
 import { isInstanceId } from "./ids.js";
 import { report } from "./report.js";
 import { pickRegion, readPlace } from "./map.js";
@@ -866,9 +867,11 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
           notes.push(`Ingress read: ${err?.message || err}`);
         }
       }
+      // The listeners (TLS, open ports) for EXPOSURE, read once either way.
+      const listeners = path?.listeners && region ? await path.listeners(region, alb.id) : { items: [] };
+      if (listeners.error) notes.push(`DescribeListeners: ${listeners.error}`);
+      const lb = { listeners: listenerFacts(listeners.items || []) };
       if (!routes.length && path?.listeners && region) {
-        const listeners = await path.listeners(region, alb.id);
-        if (listeners.error) notes.push(`DescribeListeners: ${listeners.error}`);
         const rules = [];
         for (const listener of listeners.items || []) {
           const out = await path.rules(region, listener.arn);
@@ -887,7 +890,8 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         if (!cached || cached.doc !== doc) openApiCache.set(base.url, { doc, at: now() });
         api = openApiRoutes(alb, doc, base);
       }
-      const value = { id, from, openapi: api.length > 0, routes: [...routes, ...api], notes };
+      const all = [...routes, ...api];
+      const value = { id, from, openapi: api.length > 0, routes: all, notes, lb, exposure: lbExposure({ ...alb, ...lb }, all) };
       routeCache.set(id, { value, at: now() });
       return value;
     },
