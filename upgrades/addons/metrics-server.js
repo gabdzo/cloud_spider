@@ -1,3 +1,4 @@
+import { TIMEOUTS } from "../timeouts.js";
 import { setup, viewerAccess } from "./common.js";
 
 // metrics-server as the EKS community add-on. Included with EKS now: this
@@ -12,7 +13,7 @@ import { setup, viewerAccess } from "./common.js";
 export default function metricsServer({ pulumi, aws, k8s, addon }) {
   const { clusterName, tags, k } = setup({ pulumi, aws, k8s, addon });
   pulumi.log.warn(`${addon.eksAddon}: made by this stack before the EKS stack owned it; kept (retainOnDelete). Hand it over: node scripts/migrate-eks-addons.mjs ${clusterName}`);
-  const managed = new aws.eks.Addon(addon.id, { clusterName, addonName: addon.eksAddon, resolveConflictsOnCreate: "OVERWRITE", tags }, { retainOnDelete: true });
+  const managed = new aws.eks.Addon(addon.id, { clusterName, addonName: addon.eksAddon, resolveConflictsOnCreate: "OVERWRITE", tags }, { retainOnDelete: true, customTimeouts: TIMEOUTS.eksAddon });
   viewerAccess(k8s, k, addon.id, [
     { apiGroups: [""], resources: ["nodes"] },
     { apiGroups: ["metrics.k8s.io"], resources: ["pods", "nodes"] },

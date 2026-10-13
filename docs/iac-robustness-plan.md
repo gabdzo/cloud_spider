@@ -120,5 +120,9 @@ so the card refuses exactly what the program refuses, before any stack exists.
 - #336 item 1 for every stack: `upgrades/schema/stacks.js`.
 - item 3: `protect` on rds's instance, barrel's bucket, pgcluster's CNPG Cluster and backup bucket (`protectData`, default on). The typed-name TAKE IT DOWN runs `pulumi state unprotect --all` (state only), then destroy. No `retainOnDelete`: the buckets have fixed names, so a kept bucket would make the next create fail with "already exists"; prefer protect + versioned backups.
 
+- #338 item 5: stack runs in audit.jsonl (src/stack-audit.js).
+- #339 item 6: read-only EKS preflight (zones, node types / spot pool offered, VPC quota note), card first step + program.
+- item 7 (part): `upgrades/timeouts.js` customTimeouts on every EKS add-on and the RDS instance (resource option, no diff). Recovery that already existed: the app notices pending operations and a held lock and offers `pulumi cancel` (src/pulumi-locks.js). Left: Helm Release `timeout`/`atomic`/`cleanupOnFail` are inputs, so adding them shows an update on live releases: needs a preview go-ahead.
+
 Known gap (fixed by #335): fc.sh installs only root + addons deps, so mock tests of eks/observe/etc.
 skip in the gate (61 skipped). Item 2 fixes that.

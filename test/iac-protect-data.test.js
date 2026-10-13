@@ -18,7 +18,7 @@ test("rds, pgcluster and barrel protect their data, on by default, off only by p
   assert.deepEqual([...DATA_PROJECTS].sort(), ["cloudspider-barrel", "cloudspider-pgcluster", "cloudspider-rds"]);
   for (const p of DATA_PROJECTS) assert.equal(validateStack(p, {}).values.protectData, "on");
   const src = (d) => readFileSync(join(root, "upgrades", d, "index.js"), "utf8");
-  assert.match(src("rds"), /new aws\.rds\.Instance\("db"[\s\S]*?\}, \{ protect \}\);/);
+  assert.match(src("rds"), /new aws\.rds\.Instance\("db"[\s\S]*?\}, \{ protect(, customTimeouts: TIMEOUTS\.rdsInstance)? \}\);/);
   assert.match(src("barrel"), /new aws\.s3\.Bucket\("barrel"[\s\S]*?\}, \{ protect \}\);/);
   assert.match(src("pgcluster"), /BucketV2\("backups".*\{ protect \}\)/);
   assert.match(src("pgcluster"), /\{ \.\.\.k, protect, dependsOn: \[operator/);

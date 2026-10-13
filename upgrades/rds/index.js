@@ -1,4 +1,5 @@
 import * as pulumi from "@pulumi/pulumi";
+import { TIMEOUTS } from "../timeouts.js";
 import * as aws from "@pulumi/aws";
 import { inheritTags, stackTags } from "../tags.js";
 import { assertStackConfig } from "../schema/stacks.js";
@@ -81,7 +82,7 @@ const db = new aws.rds.Instance("db", {
   applyImmediately: true,
   copyTagsToSnapshot: true,
   tags,
-}, { protect });
+}, { protect, customTimeouts: TIMEOUTS.rdsInstance });
 
 export const endpoint = db.address;
 export const port = db.port;
