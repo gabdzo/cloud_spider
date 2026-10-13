@@ -105,5 +105,16 @@ so the card refuses exactly what the program refuses, before any stack exists.
 
 ## Done in this round
 
-See the PR list in the merge commits (`iac:` prefix). Status is tracked at the top of
-each section above as items land.
+- #332 this plan.
+- #333 item 1 for **eks**: `upgrades/schema/core.js` (typed schema, unknown key = error
+  with did-you-mean, `docTable` for READMEs) + `upgrades/schema/eks.js`; the card
+  (`checkParams`) and the program run it, the program before any resource. Mocks
+  test: all 32 instanceType x maxPods x capacityType x prefixDelegation combos, card
+  and program agree. Case #1 (SPOT + maxPods auto) covered.
+- item 4 (part): every stack's npm deps pinned exactly to what its lockfile already
+  resolved (no version changed), test `iac-pinned-versions` refuses ranges or a
+  lockfile that disagrees. Still open: one `@pulumi/aws` major (addons/openshift on
+  7.50.0, the rest on 6.83.4), EKS version as a config key.
+
+Known gap: fc.sh installs only root + addons deps, so mock tests of eks/observe/etc.
+skip in the gate (61 skipped). Item 2 fixes that.
