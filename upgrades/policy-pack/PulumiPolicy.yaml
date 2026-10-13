@@ -1,0 +1,2 @@
+runtime: nodejs
+description: Cloud Spider guardrails (tags, no public/unencrypted RDS, ingress only 80/443, instance types, cost caps).
