@@ -3,12 +3,26 @@ import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
 import { assertEks } from "../schema/eks.js";
+import { EKS_ZONES, eksPreflight } from "../schema/preflight.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
 import { EKS_OWNED, adoptList, resolveMaxPods, eksOwnPlan, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon, vpcCniConfig } from "../eks-addons.js";
 
 // Every key typed and cross-checked first, before any resource (the STACKS
 // card runs the same schema before it makes the stack): upgrades/schema/eks.js.
 const cfg = assertEks(pulumi.runtime.allConfig(), { prefixed: true });
+// Read-only account checks (zones, node types offered there), still before
+// any resource: the same function the STACKS card runs (schema/preflight.js).
+{
+  // Only zones in state "available" come back; a missing one is down or not opted in.
+  const zones = await aws.getAvailabilityZones({ state: "available" });
+  const found = await aws.ec2.getInstanceTypeOfferings({ locationType: "availability-zone", filters: [{ name: "instance-type", values: nodeInstanceTypes(cfg.instanceType, cfg.capacityType) }, { name: "location", values: EKS_ZONES }] });
+  const { problems, notes } = eksPreflight(cfg, {
+    zones: (zones.names || []).map((name) => ({ name, state: "available" })),
+    offerings: (found.instanceTypes || []).map((type, i) => ({ type, zone: found.locations[i] })),
+  });
+  for (const note of notes) pulumi.log.warn(note);
+  if (problems.length) throw new Error(`cloudspider-upgrade preflight failed, nothing was created:\n  - ${problems.join("\n  - ")}`);
+}
 const clusterName = cfg.clusterName;
 const instanceType = cfg.instanceType;
 const nodeCount = cfg.nodeCount;

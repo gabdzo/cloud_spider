@@ -398,7 +398,7 @@ function tailLines(lines, max = SHOW_CHARS) {
 // are kept in memory only (the tests).
 const ALL_UPGRADES = UPGRADES;
 
-export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) => process.kill(pid, signal), hostname = osHostname(), processName = processNameOf, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES, audit = null, gitSha = "" } = {}) {
+export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) => process.kill(pid, signal), hostname = osHostname(), processName = processNameOf, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES, audit = null, gitSha = "", preflight = null } = {}) {
   // audit.jsonl (src/stack-audit.js): never lets a failed write stop a run.
   const record = (item, phase) => {
     if (!audit) return;
@@ -760,7 +760,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
         where: spec.dir,
         command,
         onDone,
-        steps: [...noteSteps(notes), ...steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}` })), ...afterSteps(spec, verb, checked.values)],
+        steps: [...noteSteps(notes), ...preflightSteps(spec, verb, checked.values), ...steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}` })), ...afterSteps(spec, verb, checked.values)],
       });
     },
     // Any list of steps as one run in a card's pane (CONNECT, an add-on
@@ -888,6 +888,13 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
 
   // In-process steps after a stack's own: pgcluster's take it down waits
   // until its EBS volumes are gone (volume-sweep.js).
+  // Read-only account checks before the stack is even selected or created
+  // (upgrades/schema/preflight.js): EKS PREVIEW and RUN.
+  function preflightSteps(spec, verb, values) {
+    if (!preflight || spec.id !== "eks" || verb === "destroy") return [];
+    return [{ text: "preflight (read-only): zones, node types offered, VPC count", fn: () => preflight(spec, values) }];
+  }
+
   function afterSteps(spec, verb, values) {
     if (verb !== "destroy" || !volumes || spec.id !== "pgcluster") return [];
     return [volumeSweepStep({ volumes, project: "pgcluster", clusterName: values.clusterName || "cloudspider-up", clock, sleep, limits: sweepLimits })];
