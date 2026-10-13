@@ -1,3 +1,4 @@
+import { TIMEOUTS } from "./timeouts.js";
 // EKS managed add-ons. Since 2026-10-11 (docs/design/stack-dependencies.md)
 // the EKS stack (upgrades/eks) owns the cluster-level ones (EKS_OWNED) and
 // no other stack creates them: EKS keeps one add-on of a name per cluster,
@@ -102,7 +103,7 @@ export async function usesEksAddon({ pulumi, aws, clusterName, addonName, self, 
   if (plan === "need") throw new Error(needsText(addonName, clusterName));
   if (plan === "use") return null;
   pulumi.log.warn(`${addonName}: made by this stack before the EKS stack owned it; kept (retainOnDelete). Hand it over: node scripts/migrate-eks-addons.mjs ${clusterName}`);
-  return new aws.eks.Addon(name, { clusterName, addonName, resolveConflictsOnCreate: "OVERWRITE", tags, ...extra }, { ...opts, retainOnDelete: true });
+  return new aws.eks.Addon(name, { clusterName, addonName, resolveConflictsOnCreate: "OVERWRITE", tags, ...extra }, { ...opts, customTimeouts: TIMEOUTS.eksAddon, retainOnDelete: true });
 }
 
 // Stacks that made an EKS-owned add-on before the rule, and which ones.

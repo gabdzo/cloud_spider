@@ -1,4 +1,5 @@
 import * as pulumi from "@pulumi/pulumi";
+import { TIMEOUTS } from "../timeouts.js";
 import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { eksProvider } from "../eks-kube.js";
@@ -64,7 +65,7 @@ if (containerInsights) {
     resolveConflictsOnCreate: "OVERWRITE",
     podIdentityAssociations: [{ roleArn: role.arn, serviceAccount: "cloudwatch-agent" }],
     tags: { ...tags, project: "observability" },
-  }, { dependsOn: groups });
+  }, { dependsOn: groups, customTimeouts: TIMEOUTS.eksAddon });
 }
 
 // The cluster's ALBs (tag elbv2.k8s.aws/cluster) with their target groups.

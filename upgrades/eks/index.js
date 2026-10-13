@@ -1,4 +1,5 @@
 import * as pulumi from "@pulumi/pulumi";
+import { TIMEOUTS } from "../timeouts.js";
 import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
@@ -214,6 +215,7 @@ async function ownAddon(item, dependsOn) {
       ...opts,
       import: `${clusterName}:${item.addonName}`,
       ignoreChanges: ["podIdentityAssociations", "resolveConflictsOnCreate", "resolveConflictsOnUpdate", "configurationValues"],
+      customTimeouts: TIMEOUTS.eksAddon,
     });
     return;
   }
@@ -223,7 +225,7 @@ async function ownAddon(item, dependsOn) {
     resolveConflictsOnCreate: "OVERWRITE",
     ...extra,
     tags: addonTags,
-  }, opts);
+  }, { ...opts, customTimeouts: TIMEOUTS.eksAddon });
 }
 
 const cniItem = EKS_OWNED.find((item) => item.addonName === "vpc-cni");
