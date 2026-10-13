@@ -1,0 +1,48 @@
+# Unit tests, then every stack x sample config under Pulumi mocks (no cloud
+# credentials, no Pulumi backend). docs/iac-robustness-plan.md item 10.
+name: iac
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # pretest installs every stack's own deps (scripts/stack-deps.mjs).
+      - run: npm test
+  matrix-list:
+    runs-on: ubuntu-latest
+    outputs:
+      ids: ${{ steps.list.outputs.ids }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - id: list
+        run: echo "ids=$(node scripts/iac-matrix.mjs list)" >> "$GITHUB_OUTPUT"
+  stack:
+    needs: matrix-list
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        id: ${{ fromJson(needs.matrix-list.outputs.ids) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && node scripts/stack-deps.mjs
+      - run: node scripts/iac-matrix.mjs run ${{ matrix.id }}
