@@ -4,23 +4,29 @@ import * as aws from "@pulumi/aws";
 import * as k8s from "@pulumi/kubernetes";
 import { inheritTags, stackTags } from "../tags.js";
 import { assertEks } from "../schema/eks.js";
-import { EKS_ZONES, eksPreflight } from "../schema/preflight.js";
+import { eksPreflight } from "../schema/preflight.js";
+import { eksSubnets, eksZones } from "../schema/net.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
 import { EKS_OWNED, adoptList, resolveMaxPods, eksOwnPlan, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon, vpcCniConfig } from "../eks-addons.js";
 
 // Every key typed and cross-checked first, before any resource (the STACKS
 // card runs the same schema before it makes the stack): upgrades/schema/eks.js.
 const cfg = assertEks(pulumi.runtime.allConfig(), { prefixed: true });
+// Region from aws:region (eu-north-1 by default); zones <region>a/b; the
+// subnets carved from vpcCidr (defaults give exactly what the stack had).
+const region = aws.config.region || "eu-north-1";
+const ZONES = eksZones(region);
+const SUBNETS = eksSubnets(cfg.vpcCidr);
 // Read-only account checks (zones, node types offered there), still before
 // any resource: the same function the STACKS card runs (schema/preflight.js).
 {
   // Only zones in state "available" come back; a missing one is down or not opted in.
   const zones = await aws.getAvailabilityZones({ state: "available" });
-  const found = await aws.ec2.getInstanceTypeOfferings({ locationType: "availability-zone", filters: [{ name: "instance-type", values: nodeInstanceTypes(cfg.instanceType, cfg.capacityType) }, { name: "location", values: EKS_ZONES }] });
+  const found = await aws.ec2.getInstanceTypeOfferings({ locationType: "availability-zone", filters: [{ name: "instance-type", values: nodeInstanceTypes(cfg.instanceType, cfg.capacityType) }, { name: "location", values: ZONES }] });
   const { problems, notes } = eksPreflight(cfg, {
     zones: (zones.names || []).map((name) => ({ name, state: "available" })),
     offerings: (found.instanceTypes || []).map((type, i) => ({ type, zone: found.locations[i] })),
-  });
+  }, ZONES);
   for (const note of notes) pulumi.log.warn(note);
   if (problems.length) throw new Error(`cloudspider-upgrade preflight failed, nothing was created:\n  - ${problems.join("\n  - ")}`);
 }
@@ -53,7 +59,7 @@ inheritTags(pulumi, stackTags("eks", { cluster: clusterName }));
 const tags = { Name: clusterName, cloudspider: "expendable" };
 
 const vpc = new aws.ec2.Vpc("up", {
-  cidrBlock: "10.43.0.0/16",
+  cidrBlock: cfg.vpcCidr,
   enableDnsHostnames: true,
   enableDnsSupport: true,
   tags,
@@ -81,8 +87,8 @@ function subnet(name, cidr, zone) {
   return net;
 }
 
-const subnetA = subnet("a", "10.43.1.0/24", "eu-north-1a");
-const subnetB = subnet("b", "10.43.2.0/24", "eu-north-1b");
+const subnetA = subnet("a", SUBNETS[0], ZONES[0]);
+const subnetB = subnet("b", SUBNETS[1], ZONES[1]);
 
 const assume = (service) =>
   JSON.stringify({
@@ -330,7 +336,7 @@ const kubeconfig = pulumi.all([cluster.name, cluster.endpoint, cluster.certifica
     clusters: [{ name, cluster: { server: endpoint, "certificate-authority-data": ca.data } }],
     contexts: [{ name, context: { cluster: name, user: name } }],
     "current-context": name,
-    users: [{ name, user: { exec: { apiVersion: "client.authentication.k8s.io/v1beta1", command: "aws", args: ["--region", aws.config.region || "eu-north-1", "eks", "get-token", "--cluster-name", name, "--output", "json"] } } }],
+    users: [{ name, user: { exec: { apiVersion: "client.authentication.k8s.io/v1beta1", command: "aws", args: ["--region", region, "eks", "get-token", "--cluster-name", name, "--output", "json"] } } }],
   }),
 );
 const kube = new k8s.Provider("scanner", { kubeconfig, enableServerSideApply: true }, { dependsOn: [adminAccess] });

@@ -6,7 +6,9 @@
 // read. Problems refuse; notes are said.
 import { nodeInstanceTypes } from "../eks-addons.js";
 
-export const EKS_ZONES = ["eu-north-1a", "eu-north-1b"];
+import { eksZones } from "./net.js";
+
+export const EKS_ZONES = eksZones("eu-north-1");
 // The default per-region VPC quota; every EKS cluster stack makes one VPC.
 export const VPC_QUOTA_DEFAULT = 5;
 
