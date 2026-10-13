@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { startFakeElb } from "./fake-elbv2.mjs";
 
 const run = promisify(execFile);
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -25,7 +26,11 @@ function configOf(entry) {
 export async function runEntry(entry) {
   const args = ["scripts/pulumi-mock.mjs", entry.dir, entry.project, entry.stack, JSON.stringify(configOf(entry))];
   const env = { ...process.env, ...(entry.env || {}) };
+  // fakeElb: ALBs a local ELBv2 stand-in answers (scripts/fake-elbv2.mjs).
+  const fake = entry.fakeElb ? await startFakeElb(entry.fakeElb) : null;
+  if (fake) Object.assign(env, { AWS_ENDPOINT_URL_ELASTIC_LOAD_BALANCING_V2: fake.url, AWS_ACCESS_KEY_ID: "fake", AWS_SECRET_ACCESS_KEY: "fake", AWS_REGION: "eu-north-1", AWS_PROFILE: "" });
   const got = await run(process.execPath, args, { cwd: root, env, maxBuffer: 64 * 1024 * 1024, timeout: 120_000 }).then((r) => ({ out: r.stdout }), (e) => ({ err: `${e.stdout || ""}${e.stderr || ""}` || e.message }));
+  fake?.close();
   if (entry.expect === "error") {
     if (!got.err) return { ok: false, why: "expected a refusal, the program registered its resources" };
     return new RegExp(entry.match).test(got.err) ? { ok: true, why: "refused as expected" } : { ok: false, why: `refused, but not with /${entry.match}/: ${got.err.split("\n").find((l) => /Error/.test(l)) || got.err.slice(0, 300)}` };
