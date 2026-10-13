@@ -18,6 +18,7 @@ import { inspectPod } from "./kube-inspect.js";
 import { opsView, sampleOps } from "./kube-ops.js";
 import { demoAppSeen, detectAddons, refuseUp, sampleAddons } from "./addons.js";
 import { HELD_BY, destroyRefusal } from "../upgrades/eks-addons.js";
+import { planTakedown, takedownSteps, takedownText } from "./cluster-takedown.js";
 import { needRefusal, needStates, needsOf } from "./stack-needs.js";
 import { shopReadiness } from "./shop-check.js";
 import { waitingLines } from "./run-waiting.js";
@@ -1214,6 +1215,81 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       if (!upgrade?.unlock) return { error: "upgrades are not set up", hint: "" };
       return upgrade.unlock({ stack: String(body.stack || ""), confirmName: String(body.confirmName || "") });
     },
+    // TAKE DOWN CLUSTER (src/cluster-takedown.js): the plan (GET, read-only:
+    // pulumi stack export of each stack, the node groups) and, with the
+    // cluster name typed, the run (POST) in the EKS card's pane.
+    async takedownPlan(body = {}) {
+      const cluster = String(body.cluster || body.clusterName || "");
+      if (!validCluster(cluster)) return { error: "cluster must be a short lowercase name" };
+      if (!upgrade?.stackCount || !upgrade?.destroyPlan) return { error: "upgrades are not set up" };
+      const legacyName = upgrade.legacyCluster ? await upgrade.legacyCluster().catch(() => undefined) : undefined;
+      const scale = this.eksScale || null;
+      // Only a write context of THIS cluster ever deletes a webhook.
+      const ofCluster = (ctx) => ctx === cluster || ctx.startsWith(`${cluster}-`) || ctx.endsWith(`/${cluster}`);
+      // A *-viewer context is read-only by design: never picked to write.
+      const writable = (scale?.writeContexts || []).filter((ctx) => ofCluster(ctx) && !/viewer/.test(ctx)).sort((a, b) => Number(/admin/.test(b)) - Number(/admin/.test(a)));
+      const context = body.context ? (writable.includes(String(body.context)) ? String(body.context) : "") : writable[0] || "";
+      if (body.context && !context) return { error: `context ${body.context} is not a kube.writeContexts entry for ${cluster}` };
+      const eksCount = await upgrade.stackCount("eks", { clusterName: cluster }, legacyName);
+      const stacks = [];
+      const errors = eksCount.error ? [eksCount.error] : [];
+      for (const spec of UPGRADES.filter((item) => item.id !== "eks" && item.needs?.includes("eks"))) {
+        const got = await upgrade.stackCount(spec.id, { clusterName: cluster }, legacyName);
+        if (got.error) { errors.push(got.error); continue; }
+        if (!spec.addon && got.count && got.cluster !== cluster) continue;
+        stacks.push({ id: spec.id, stack: got.stack, addon: Boolean(spec.addon), count: got.count });
+      }
+      if (errors.length) return { error: `could not read every stack, nothing planned: ${errors.join("; ")}` };
+      let nodes = null;
+      let nodegroups = [];
+      if (scale?.run && eksCount.count) {
+        try {
+          const region = body.region || "eu-north-1";
+          const names = JSON.parse(await scale.run("aws", ["eks", "list-nodegroups", "--cluster-name", cluster, "--region", region, "--output", "json"])).nodegroups || [];
+          for (const name of names) {
+            const g = JSON.parse(await scale.run("aws", ["eks", "describe-nodegroup", "--cluster-name", cluster, "--nodegroup-name", name, "--region", region, "--output", "json"])).nodegroup;
+            nodegroups.push({ name, desired: g.scalingConfig.desiredSize, min: g.scalingConfig.minSize, max: g.scalingConfig.maxSize });
+          }
+          nodes = nodegroups.reduce((sum, g) => sum + (g.desired || 0), 0);
+        } catch {
+          nodes = null;
+        }
+      }
+      const scaleUp = body.scaleUp === false || body.scaleUp === "0" ? false : undefined;
+      const plan = planTakedown({ cluster, stacks, eks: { stack: eksCount.stack, count: eksCount.count }, nodes, nodegroups, context, scaleUp });
+      return { plan, text: takedownText(plan) };
+    },
+    async upgradeTakedown(requestOrigin, body = {}) {
+      if (!originAllowed(requestOrigin, pageOrigin)) return { error: "nothing was taken down", hint: "Open Cloud Spider at the address npm start printed; another page cannot change stacks." };
+      const got = await this.takedownPlan(body);
+      if (got.error || got.plan?.error) return { error: got.error || got.plan.error, plan: got.plan };
+      const { plan } = got;
+      if (String(body.confirm || "").trim() !== plan.cluster) return { error: `type the cluster name (${plan.cluster}) to confirm`, plan, text: got.text };
+      const legacyName = upgrade.legacyCluster ? await upgrade.legacyCluster().catch(() => undefined) : undefined;
+      const scale = this.eksScale || null;
+      const run = scale?.run || (() => Promise.reject(new Error("aws/kubectl are not set up (kube.writeContexts)")));
+      let steps;
+      try {
+        steps = takedownSteps(plan, { run, region: body.region || "eu-north-1", destroyPlan: (id, values) => upgrade.destroyPlan(id, values, id === "eks" ? legacyName : undefined) });
+      } catch (failure) {
+        return { error: failure.message, plan };
+      }
+      const eksStack = upgrade.destroyPlan("eks", { clusterName: plan.cluster }, legacyName).stack;
+      const started = upgrade.runSteps({
+        module: "eks",
+        action: "take down cluster",
+        stack: eksStack,
+        cluster: plan.cluster,
+        locks: [eksStack, ...plan.order.map((s) => s.stack)],
+        steps,
+        command: `TAKE DOWN CLUSTER ${plan.cluster} (again resumes: stacks already down are skipped)`,
+        onDone: (done) => {
+          if (done.state === "done") scale?.store?.forget?.(plan.cluster)?.catch?.(() => {});
+          if (autoConnectOn && connector && done.state === "done" && plan.eks) autoDisconnectAfter(plan.cluster, done)?.catch?.(() => {});
+        },
+      });
+      return { ...started, plan, text: got.text };
+    },
     async upgradeRun(requestOrigin, body = {}) {
       if (!originAllowed(requestOrigin, pageOrigin)) return { error: "the upgrade did not happen", hint: "Open Cloud Spider at the address npm start printed (http://127.0.0.1:9241); another page cannot run stacks." };
       if (!upgrade?.run) return { error: "upgrades are not set up", hint: "" };
@@ -1307,7 +1383,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
           if (/\sanyway$/i.test(typed)) params = { ...params, confirmName: typed.replace(/\s+anyway$/i, "") };
           else if (validCluster(target) && [target, target === (legacyName || "cloudspider-up") ? "upgrade" : `eks-${target}`].includes(typed)) {
             const still = await stacksOn(target);
-            if (still.length) return no(`${target} still has stacks on it: ${still.join(", ")}. Take them down first (their cards), or type "${target} anyway"`);
+            if (still.length) return no(`${target} still has stacks on it: ${still.join(", ")}. Use TEAR EVERYTHING DOWN on this card (it removes them in order, then the cluster), take them down on their cards, or type "${target} anyway"`);
           }
         }
         // "with add-ons": after the cluster is DONE, CONNECT, then the bundle.

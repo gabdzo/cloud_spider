@@ -1,5 +1,6 @@
 import { samplePreview } from "./stack-sample.js";
 import { mountScale } from "./eks-scale-view.js";
+import { mountTakedown } from "./takedown-view.js";
 import { CATEGORIES, stackCategory } from "./stack-resources.js";
 import { ago, driftHint, inventoryRows, overviewStatus, pickLayout, rowMatches } from "./stack-overview.js";
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
@@ -4093,6 +4094,21 @@ function drawOverview(own, groups, order) {
   pipEl.append(el("div", { className: "ov-sum" },
     kBtn("deployed", "up", "DEPLOYED"), kBtn("down", "down", "NOT DEPLOYED"), kBtn("failed", "fail", "FAILED"),
     el("span", { className: "ov-tip", textContent: inventoryView ? "CLICK A STACK TO OPEN IT" : sample ? "SAMPLE DATA · CLICK A COUNT OR A STACK" : "CLICK A COUNT FOR THE LIST · A STACK FOR ITS RESOURCES" })));
+  // TEAR EVERYTHING DOWN per cluster (takedown-view.js): plan, typed name, run.
+  const eksSpec = own.find((spec) => spec.id === "eks");
+  const clusters = [...new Set([
+    ...(eksSpec && overviewStatus(stackStates.eks, stackRuns.eks) === "deployed" ? [eksSpec.current?.clusterName || stackRuns.eks?.cluster || "cloudspider-up"] : []),
+    ...Object.values(stackRuns).filter((r) => r?.cluster && r.result !== "failed").map((r) => r.cluster),
+  ])].filter((c) => /^[a-z][a-z0-9-]{1,27}$/.test(c));
+  if (clusters.length && !inventoryView) {
+    const strip = el("div", { className: "ov-nukes", role: "group", ariaLabel: "tear a cluster down with every stack on it" });
+    for (const cluster of clusters) {
+      const box = el("div", { className: "scale-row ov-nuke" });
+      strip.append(box);
+      mountTakedown(box, () => ({ cluster, sample }), { onStarted: () => { openCard = "eks"; markHistory(); syncUrl(); drawPipForm(); refreshUpgrade(true); } });
+    }
+    pipEl.append(strip);
+  }
   if (inventoryView) return drawInventory(rows);
   for (const { id, icon, label, list } of [...groups.values()].sort((a, b) => order(a.id) - order(b.id))) {
     pipEl.append(sectionHead(id, icon, label, "", list));
@@ -4442,6 +4458,10 @@ function cardBody(spec, preset = {}) {
     body.append(scaleBox);
     const scale = mountScale(scaleBox, () => ({ cluster: pipParams().clusterName || spec.current?.clusterName || "cloudspider-up", sample }));
     queueMicrotask(() => scale.refresh());
+    // TAKE DOWN CLUSTER (takedown-view.js): plan, typed name, run in this pane.
+    const downBox = el("div", { id: "pip-takedown", className: "scale-row", role: "group", ariaLabel: "take the cluster down with every stack on it" });
+    body.append(downBox);
+    mountTakedown(downBox, () => ({ cluster: pipParams().clusterName || spec.current?.clusterName || "cloudspider-up", sample }), { onStarted: (out) => { paintUpgrade(out); refreshUpgrade(true); } });
   }
   if (spec.id === "eks") body.append(connectRow("pip-connect"), el("div", { id: "pip-live", className: "live-line", hidden: true }, el("span", { className: "live-what" }), el("em", { className: "field-note live-warn" })));
   if (spec.id === "camp") {

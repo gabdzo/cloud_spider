@@ -377,6 +377,27 @@ export function checkParams(spec, input = {}) {
   return { values };
 }
 
+// The parameters that say WHICH stack a card is (stackFor, confirmNames).
+export const IDENTITY_PARAMS = ["clusterName", "name", "context"];
+
+// TAKE IT DOWN's values: only the identity parameters as typed, every other
+// one at its default, so the card's up-time rules (maxPods for an instance
+// type, SPOT with auto) cannot refuse a destroy.
+export function destroyValues(spec, input = {}) {
+  const values = {};
+  for (const parameter of spec.parameters || []) {
+    const given = input?.[parameter.name];
+    const identity = IDENTITY_PARAMS.includes(parameter.name);
+    const raw = identity && given != null && given !== "" ? String(given) : String(parameter.default ?? "");
+    if (identity && raw) {
+      if (parameter.choices && !parameter.choices.includes(raw)) return { error: `${parameter.name} must be ${parameter.choices.join(" or ")}` };
+      if (parameter.pattern ? !parameter.pattern.test(raw) : !parameter.choices && !NAME.test(raw)) return { error: `${parameter.name} must be a short lowercase name` };
+    }
+    values[parameter.name] = raw;
+  }
+  return { values };
+}
+
 const CAMP_MS = 30_000;
 
 // What a card shows of a run: the newest output, at most this many
@@ -732,7 +753,11 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       if (!spec) return refuse({ module, action, error: "no such upgrade" });
       const verb = ["destroy", "up", "preview"].includes(action) ? action : "";
       if (!verb) return refuse({ module, action, error: "action must be preview, up or destroy" });
-      const checked = checkParams(spec, params);
+      // TAKE IT DOWN reads only which stack (clusterName, name, context):
+      // a card value an up would refuse (maxPods 50 on a t4g.small) must
+      // never block removing what is already there. pulumi destroy works
+      // from the state; it does not run the program.
+      const checked = verb === "destroy" ? destroyValues(spec, params) : checkParams(spec, params);
       if (checked.error) return refuse({ module, action: verb, error: checked.error });
       if (spec.id === "observe" && verb !== "destroy") {
         if (!checked.values.context) return refuse({ module, action: verb, error: "context is required: the kube context of the cluster to install into (a write context; the current context is never used by default)" });
@@ -768,6 +793,49 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
         onDone,
         steps: [...noteSteps(notes), ...packNote, ...preflightSteps(spec, verb, checked.values), ...steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}` })), ...afterSteps(spec, verb, checked.values)],
       });
+    },
+    // The steps of one stack's TAKE IT DOWN, for the ordered TAKE DOWN
+    // CLUSTER (src/cluster-takedown.js): the same steps run() would use
+    // (unprotect for data stacks, destroy, pgcluster's volume sweep),
+    // each with its own folder. No confirm here: the caller has its own.
+    destroyPlan(module, params = {}, legacyName) {
+      const spec = UPGRADES.find((item) => item.id === module);
+      if (!spec) return { error: `no such stack card ${module}` };
+      const checked = destroyValues(spec, params);
+      if (checked.error) return { error: checked.error };
+      const stack = stackFor(spec, checked.values, legacyName);
+      const directory = join(cwd, spec.dir);
+      const steps = upgradeSteps(spec, stack, "destroy", checked.values).map((args) => ({ args, cwd: directory, text: `pulumi ${args.join(" ")}` }));
+      return { module: spec.id, stack, directory, where: spec.dir, steps: [...steps, ...afterSteps(spec, "destroy", checked.values)] };
+    },
+    // How many resources a stack's state holds (pulumi stack export; no
+    // cloud call) and, for a stack that is not per cluster, which cluster
+    // its config names. { stack, count, cluster, missing, error }.
+    async stackCount(module, values = {}, legacyName) {
+      const spec = UPGRADES.find((item) => item.id === module);
+      if (!spec) return { error: `no such stack card ${module}` };
+      const checked = destroyValues(spec, values);
+      if (checked.error) return { error: checked.error };
+      const stack = stackFor(spec, checked.values, legacyName);
+      const directory = join(cwd, spec.dir);
+      const out = await capture(run, directory, childEnvFor(env), ["stack", "export", "--stack", stack]);
+      if (out.error) {
+        const missing = /no stack named|not found|does not exist/i.test(out.error);
+        return { stack, count: 0, missing, ...(missing ? {} : { error: `pulumi stack export ${stack}: ${String(out.error).split("\n")[0]}` }) };
+      }
+      let resources = [];
+      try {
+        resources = JSON.parse(out.text || "{}")?.deployment?.resources || [];
+      } catch {
+        return { stack, count: 0, error: `pulumi stack export ${stack} was not JSON` };
+      }
+      const count = resources.filter((r) => r.type && r.type !== "pulumi:pulumi:Stack" && !r.type.startsWith("pulumi:providers:")).length;
+      let cluster = checked.values.clusterName || "";
+      if (!spec.addon && spec.id !== "eks" && count) {
+        const got = await capture(run, directory, childEnvFor(env), ["config", "get", `${spec.project}:clusterName`, "--stack", stack]);
+        cluster = got.error ? LEGACY_CLUSTER : got.text.trim() || LEGACY_CLUSTER;
+      }
+      return { stack, count, cluster };
     },
     // Any list of steps as one run in a card's pane (CONNECT, an add-on
     // batch): { cmd, args } spawned like pulumi, or { fn } done in-process.

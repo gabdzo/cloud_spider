@@ -164,7 +164,7 @@ test("taking a cluster down with stacks still on it is refused unless typed with
   const tree = [{ cluster: "cs-a", addons: [{ id: "lbc", state: "installed" }, { id: "kyverno", state: "absent" }, { id: "metrics-server", state: "present" }] }];
   const shop = app(upgrade, tree);
   const refused = await shop.upgradeRun(ORIGIN, { module: "eks", action: "destroy", params: { clusterName: "cs-a", confirmName: "cs-a" } });
-  assert.equal(refused.error, 'cs-a still has stacks on it: lbc-cs-a, pgcluster. Take them down first (their cards), or type "cs-a anyway"');
+  assert.equal(refused.error, 'cs-a still has stacks on it: lbc-cs-a, pgcluster. Use TEAR EVERYTHING DOWN on this card (it removes them in order, then the cluster), take them down on their cards, or type "cs-a anyway"');
   assert.match(refused.hint, /strands what those stacks made/);
   assert.equal(fake.spawned.length, 0, "nothing ran");
   // The stack name also counts as the confirm.
