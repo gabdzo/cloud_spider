@@ -1,0 +1,52 @@
+# Listed in VAULTS automatically while its stack is up (auto discovery,
+# src/vault-view.js); gone from VAULTS once the stack is torn down.
+# The test stack: infra/ (Pulumi project cloudspider, stack test). One stack,
+# one vault. The stack's aws:defaultTags put project=cloudspider on every
+# resource, and spec.stack claims whatever the stack made even before the tags
+# land. Inside: the 10.42.0.0/16 VPC and its two subnets, the internal ALB
+# cloudspider-api with its rules (the broken path, component=alb-test), the
+# expendable nanos (component=test-machines), the "untagged" t4g.nano the map
+# must refuse to stop or start, and /cloudspider/test (component=test-logs).
+apiVersion: cloudspider/v1
+kind: Vault
+metadata:
+  name: cloudspider
+  number: 100
+  title: Test stack
+  description: The infra/ test stack in eu-north-1. The 10.42.0.0/16 VPC, the internal ALB cloudspider-api (the broken path), the expendable nanos and /cloudspider/test.
+  owner: gabriel
+  tags: [test, infra]
+spec:
+  type: other
+  resources:
+    tags:
+      project: cloudspider
+    ids:
+      - cloudspider-api        # the load balancer's name
+      - cloudspider-running
+      - cloudspider-stopped
+  stack:
+    dir: infra
+    name: test
+  links:
+    repo: https://github.com/gabdzo/cloud_spider/tree/main/infra
+    docs: https://github.com/gabdzo/cloud_spider#readme
+    dashboard: https://eu-north-1.console.aws.amazon.com/vpcconsole/home?region=eu-north-1#vpcs:tag:project=cloudspider
+  # SLOs (docs/RUN-ME.md §17): measured from reads Cloud Spider already makes.
+  slos:
+    - name: gate-availability
+      sli: availability
+      source: alb
+      target: 99%
+      window: 30d
+    - name: gate-latency
+      sli: latency
+      source: alb
+      threshold: 500
+      target: 99%
+      window: 30d
+    - name: machines-healthy
+      sli: availability
+      source: ec2
+      target: 99.5%
+      window: 30d
