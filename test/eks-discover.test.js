@@ -146,7 +146,7 @@ test("the plate and the context switcher show unconnected EKS clusters", () => {
   // The switcher: "+ cluster" entries that open the EKS panel, shown even
   // with one context.
   assert.match(browser, /function unconnectedClusters\(\)/);
-  assert.match(browser, /kubeCtxEl\.hidden = list\.length < 2 && !pending\.length;/);
+  assert.match(browser, /kubeCtxEl\.hidden = list\.length < 2 && !pending\.length && !hiddenCount;/);
   assert.match(browser, /NOT CONNECTED · CONNECT"\)\);/);
   assert.match(browser, /setConnectStripOpen\(true\)/);
   const server = readFileSync(new URL("../src/server.js", import.meta.url), "utf8");

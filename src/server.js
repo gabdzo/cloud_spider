@@ -1503,6 +1503,14 @@ const page = `<!doctype html>
   #kube-empty .ke-btn { font: inherit; padding: 6px 12px; color: var(--pip-ink); background: var(--pip-bright); border: 1px solid var(--pip-bright); cursor: pointer; letter-spacing: 0.06em; }
   #kube-empty .ke-btn.ke-ghost { color: var(--pip-bright); background: transparent; }
   #kube-empty .ke-note { color: var(--pip-dim-text); }
+  #kube-empty .ke-link { color: var(--pip-bright); text-decoration: underline; cursor: pointer; }
+  #kube-ctx button.gone, #kube-ctx button.unreachable { opacity: 0.5; border-style: dotted; }
+  #kube-ctx button.gone span { text-decoration: line-through; }
+  #kube-ctx button.gone small, #kube-ctx button.unreachable small { color: var(--status-hang); }
+  #kube-ctx button.gone i, #kube-ctx button.unreachable i { background: transparent; box-shadow: inset 0 0 0 1px var(--pip-dim-text); animation: none; }
+  #kube-ctx button u { position: absolute; top: 2px; right: 4px; font-size: 10px; line-height: 12px; text-decoration: none; color: var(--pip-dim-text); }
+  #kube-ctx button u:hover { color: var(--pip-bright); }
+  #kube-ctx button.hidden-more { min-width: 0; opacity: 0.7; }
   #kube-graph > * { flex-shrink: 0; }
   #kube-graph .gv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 8px; }
   #kube-graph .gv-title { display: flex; align-items: baseline; gap: 8px; margin-right: 4px; }
@@ -3101,6 +3109,8 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #kube-empty { background: var(--bg); color: var(--text-2); font-family: var(--font-ui); font-size: 13px; }
   :root[data-theme="pro"] #kube-empty .ke-title { color: var(--text); letter-spacing: 0; text-transform: none; font-weight: 600; }
   :root[data-theme="pro"] #kube-empty .ke-reason { color: var(--warn); }
+  :root[data-theme="pro"] #kube-empty .ke-region .ke-reason { color: var(--text-2); }
+  :root[data-theme="pro"] #kube-empty .ke-link { color: var(--accent, var(--text)); }
   :root[data-theme="pro"] #kube-empty .ke-step { border: 1px solid var(--border); border-radius: 6px; background: var(--raised); }
   :root[data-theme="pro"] #kube-empty .ke-step h3 { color: var(--text); font-weight: 600; }
   :root[data-theme="pro"] #kube-empty .ke-code { background: var(--surface); border-color: var(--border); border-radius: 4px; color: var(--text); font-family: var(--font-mono); }
