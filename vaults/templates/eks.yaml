@@ -2,7 +2,7 @@
 # src/vault-view.js); gone from VAULTS once the stack is torn down.
 # EKS clusters from upgrades/eks (Pulumi project cloudspider-upgrade), started
 # from the Stacks panel. Each cluster is its own stack with its own VPC
-# (10.43.0.0/16, public subnets), IAM roles, an EKS 1.32 control plane and one
+# (10.43.0.0/16, public subnets), IAM roles, an EKS control plane (1.34 for a new cluster) and one
 # t4g node. Every resource carries project=eks and cluster=<name>. The control
 # plane is about $0.10 an hour. The API endpoint is per cluster, so no check.
 apiVersion: cloudspider/v1
@@ -11,7 +11,7 @@ metadata:
   name: eks
   number: 110
   title: EKS clusters
-  description: Small EKS 1.32 clusters from the Stacks panel, one stack each, with their own VPC, roles and a single t4g node group.
+  description: Small EKS clusters (1.34 for a new one) from the Stacks panel, one stack each, with their own VPC, roles and a single t4g node group.
   owner: gabriel
   tags: [upgrade, kubernetes]
 spec:

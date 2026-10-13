@@ -6,6 +6,7 @@ import { judgeLock, lockRefusal, parseLocks, pendingOps, processNameOf, staleNot
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { costFor, estimate } from "./stack-costs.js";
+import { EKS_AUTO, EKS_NEW_VERSION, EKS_VERSIONS, eksSupport, supportText, supportWarning } from "./eks-versions.js";
 import { ADDONS, DIR as ADDON_DIR, PROJECT as ADDON_PROJECT } from "../upgrades/addons/catalog.js";
 import { LEGACY_CLUSTER, cardName, confirmMatches, confirmMismatch, confirmNames, errorHead, failureText, historyFact, maskKubeconfig, rerunCommand, resourceFact, runHint, stackFor, tooManyClusters } from "./upgrade-rules.js";
 import { volumeSweepStep } from "./volume-sweep.js";
@@ -67,11 +68,23 @@ const ADDON_PARAMETERS = {
 // must be up first (needs), and its cost lines (src/stack-costs.js) for the
 // card's estimate in eu-north-1. A stack that runs on the EKS cluster
 // counts only what it adds (the cluster is the eks card).
+// The kubernetesVersion field: each choice with its support window and price.
+function versionLabels(now = Date.now()) {
+  const labels = { [EKS_AUTO]: `auto · keep the live version (${EKS_NEW_VERSION} for a new cluster)` };
+  for (const v of EKS_VERSIONS) labels[v] = supportText(v, now);
+  return labels;
+}
+function versionNotes(now = Date.now()) {
+  const notes = { [EKS_AUTO]: "RUN keeps what the cluster runs; pick the next minor to upgrade in place (one at a time)." };
+  for (const v of EKS_VERSIONS) notes[v] = supportWarning(v, { now }) || `standard support until ${eksSupport(v, now).standardEnd}: control plane $0.10/h.`;
+  return notes;
+}
+
 export const UPGRADES = [
   {
     id: "eks",
     title: "EKS",
-    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane. Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the VPC CNI (with prefix delegation, so a node is not capped at its ENI IPs: 11 pods on a t4g.small, 17 on a t4g.medium, and with networkPolicy on its node agent enforces NetworkPolicy objects; off, they are ignored), the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them. Prefix delegation alone does not raise a managed node's pod cap: maxPods auto keeps the node group as it is, at EKS's ENI limit (11 on a t4g.small, 17 on a t4g.medium); 32 (t4g.small) or 32, 58 or 110 (t4g.medium) REPLACES the node group once, the new group first, so new nodes take that many pods (PREVIEW shows the replace; RUN asks you to confirm it). capacityType SPOT runs the nodes on spot from a pool of similar types (t4g.small, c7g.medium, c6g.medium for a t4g.small; t4g.medium, m7g.medium, m6g.medium for a t4g.medium), about a third of the on-demand price; maxPods auto then means 32 (one number that fits every type in the pool; set 58 or 110 on a t4g.medium for more) and it REPLACES the node group once (new group first). Cheapest layout that survives a zone: nodeCount 2, SPOT, maxPods 110 on a t4g.medium, one node in eu-north-1a and one in 1b (EKS spreads a group over its two subnets).",
+    note: "One small cluster in eu-north-1, about $0.10 an hour for the control plane on a standard-support Kubernetes version ($0.60 an hour on one in EKS extended support: 1.32 and 1.33 since 2026; kubernetesVersion auto keeps the live version, 1.34 for a new cluster, and upgrades go one minor at a time). Each cluster name is its own stack (eks-<name>; cloudspider-up keeps the stack upgrade). It installs the cluster's EKS add-ons too, free: the VPC CNI (with prefix delegation, so a node is not capped at its ENI IPs: 11 pods on a t4g.small, 17 on a t4g.medium, and with networkPolicy on its node agent enforces NetworkPolicy objects; off, they are ignored), the Pod Identity agent, metrics-server and the EBS CSI driver (about 6 pods on one node; turn one off below). Other stacks use them and never create them. Prefix delegation alone does not raise a managed node's pod cap: maxPods auto keeps the node group as it is, at EKS's ENI limit (11 on a t4g.small, 17 on a t4g.medium); 32 (t4g.small) or 32, 58 or 110 (t4g.medium) REPLACES the node group once, the new group first, so new nodes take that many pods (PREVIEW shows the replace; RUN asks you to confirm it). capacityType SPOT runs the nodes on spot from a pool of similar types (t4g.small, c7g.medium, c6g.medium for a t4g.small; t4g.medium, m7g.medium, m6g.medium for a t4g.medium), about a third of the on-demand price; maxPods auto then means 32 (one number that fits every type in the pool; set 58 or 110 on a t4g.medium for more) and it REPLACES the node group once (new group first). Cheapest layout that survives a zone: nodeCount 2, SPOT, maxPods 110 on a t4g.medium, one node in eu-north-1a and one in 1b (EKS spreads a group over its two subnets).",
     dir: "upgrades/eks",
     // The same schema the program runs first (upgrades/schema/eks.js): the
     // card refuses exactly what pulumi would, before any stack is made.
@@ -80,11 +93,13 @@ export const UPGRADES = [
     project: "cloudspider-upgrade",
     vault: "eks",
     needs: [],
-    cost: [{ price: "eks-cluster" }, { price: "ec2:t4g.small", param: "instanceType", prefix: "ec2:", perNode: true, spot: "capacityType" }, { price: "ebs-gp3-gb", qty: 20, perNode: true }, { price: "public-ipv4", perNode: true }],
+    cost: [{ price: "eks-cluster" }, { price: "eks-extended-support", extended: "kubernetesVersion" }, { price: "ec2:t4g.small", param: "instanceType", prefix: "ec2:", perNode: true, spot: "capacityType" }, { price: "ebs-gp3-gb", qty: 20, perNode: true }, { price: "public-ipv4", perNode: true }],
     parameters: [
       { name: "clusterName", type: "string", default: "cloudspider-up" },
       // Control plane version (upgrades/schema/eks.js): in place, one minor up at a time.
-      { name: "kubernetesVersion", type: "string", default: "1.32", choices: ["1.32", "1.33"] },
+      // auto keeps the live cluster's version (1.34 for a new cluster), so a RUN
+      // never upgrades by surprise; each label says standard or EXTENDED support.
+      { name: "kubernetesVersion", type: "string", default: EKS_AUTO, choices: [EKS_AUTO, ...EKS_VERSIONS], labels: versionLabels(), notes: versionNotes(), warn: EKS_VERSIONS.filter((v) => eksSupport(v).status !== "standard") },
       { name: "instanceType", type: "string", default: "t4g.small", choices: ["t4g.small", "t4g.medium"] },
       // max: stacks.eks.maxNodes in cloudspider.yaml (createUpgrade eksMaxNodes).
       { name: "nodeCount", type: "number", default: 1, min: 1, max: EKS_MAX_NODES },

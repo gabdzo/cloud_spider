@@ -1,0 +1,15 @@
+kind: Control
+id: AWS-FIN-002
+revision: 1
+title: "EKS clusters run a Kubernetes version on standard support"
+category: finops
+target: aws
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: eks-standard-support
+aggregation: proportional
+requires: [aws-eks]
+whyItMatters: "A version on EKS extended support bills the control plane at $0.60/h instead of $0.10/h (about $365 a month extra per cluster), and when extended support ends EKS upgrades the control plane on its own."
+remediation: { summary: "Upgrade in place one minor at a time (EKS card: kubernetesVersion the next minor, PREVIEW, RUN; 1.32 -> 1.33 -> 1.34), then roll the node group.", effort: M }
+verification: "Every EKS cluster's version is inside its standard support window (eks:DescribeCluster version against the EKS release calendar)."

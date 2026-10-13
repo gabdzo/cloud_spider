@@ -6,11 +6,16 @@
 // per hour, per day and per month (730 h) figures. Usage-billed services
 // (requests, data out) are $0 while idle and listed as `usage` so the card
 // can say "plus what you use" instead of pretending they are free.
+import { eksSupport, resolveEksVersion } from "./eks-versions.js";
+
 export const PRICES_AS_OF = "2026-10-10";
 export const HOURS_PER_MONTH = 730;
 
 export const PRICES = {
   "eks-cluster": { usd: 0.1, per: "hour", text: "EKS control plane" },
+  // On top of eks-cluster while the version is on EKS extended support
+  // (upgrades/eks-versions.js): $0.60/h in all for the control plane.
+  "eks-extended-support": { usd: 0.5, per: "hour", text: "EKS extended support fee (old Kubernetes version)" },
   "ec2:t4g.micro": { usd: 0.0086, per: "hour", text: "t4g.micro" },
   "ec2:t4g.small": { usd: 0.0172, per: "hour", text: "t4g.small" },
   "ec2:t4g.medium": { usd: 0.0344, per: "hour", text: "t4g.medium" },
@@ -87,7 +92,9 @@ export function costFor(lines = [], params = {}) {
   const nodes = Math.max(1, Number(params.nodeCount) || 1);
   // A line with `when` ({ param: value }) counts only when the card is set so
   // (shopapi's ALB with expose=alb).
-  const on = (line) => !line.when || Object.entries(line.when).every(([key, value]) => String(params[key] ?? "") === String(value));
+  // `extended` ({ extended: "<param>" }): counts only while that version is
+  // on EKS extended support (auto: the live version the card passes in).
+  const on = (line) => (!line.extended || ["extended", "ended"].includes(eksSupport(resolveEksVersion(params[line.extended], params.liveVersion)).status)) && (!line.when || Object.entries(line.when).every(([key, value]) => String(params[key] ?? "") === String(value)));
   return lines.filter(on).map((line) => {
     if (line.usage) return { usage: line.usage };
     let price = line.price;

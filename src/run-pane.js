@@ -4,6 +4,7 @@
 // failed or was refused, the ERROR plate with the first lines that matter,
 // the hint and the command to run it by hand.
 import { errorHead, runHint } from "./upgrade-rules.js";
+import { resolveEksVersion, supportWarning, versionStepProblem } from "./eks-versions.js";
 
 const MARK = { done: "✓", running: "▶", failed: "✗", waiting: "·", skipped: "–" };
 const VERB = { up: "RUN", preview: "PREVIEW", destroy: "TAKE DOWN", unlock: "UNLOCK" };
@@ -95,13 +96,28 @@ export function numberProblem(parameter, value) {
 // /api/upgrade/live), and a warning when the card's instance type differs.
 export function liveLine(live, values = {}) {
   const v = live?.values || {};
-  if (!v.instanceType && !v.nodeCount) return { text: "", warn: "" };
+  const liveVersion = String(live?.clusterVersion || "");
+  const version = versionLine(liveVersion, values.kubernetesVersion);
+  if (!v.instanceType && !v.nodeCount) return { text: liveVersion ? `LIVE · EKS ${liveVersion}` : "", warn: "", version };
   const nodes = v.nodeCount ? ` · ${v.nodeCount} node${v.nodeCount === "1" ? "" : "s"}` : "";
   const spot = v.capacityType === "SPOT" ? " · spot" : "";
-  const text = `LIVE · ${v.instanceType || "?"}${spot}${nodes} (${live.source || "stack config"})`;
+  const text = `LIVE · ${liveVersion ? `EKS ${liveVersion} · ` : ""}${v.instanceType || "?"}${spot}${nodes} (${live.source || "stack config"})`;
   const wantCap = String(values.capacityType || "").toUpperCase();
+  // warn: a node group REPLACE only (RUN asks to confirm it); the version
+  // has its own line, so it never sets replaceNodeGroup.
   const warn = v.instanceType && values.instanceType && values.instanceType !== v.instanceType
     ? `instanceType ${values.instanceType} REPLACES the node group (live: ${v.instanceType})`
     : v.capacityType && wantCap && wantCap !== v.capacityType ? `capacityType ${wantCap} REPLACES the node group (live: ${v.capacityType})` : "";
-  return { text, warn };
+  return { text, warn, version };
+}
+
+// The version line under LIVE: a refused step (skip or down), the upgrade
+// RUN would do, or the loud EXTENDED SUPPORT warning (with UPGRADE TO next).
+export function versionLine(liveVersion = "", picked = "", now = Date.now()) {
+  const target = resolveEksVersion(picked, liveVersion);
+  const step = versionStepProblem(target, liveVersion);
+  if (step) return step;
+  const upgrade = liveVersion && target !== liveVersion ? `RUN upgrades the control plane ${liveVersion} -> ${target} in place (PREVIEW shows it as an update, not a replace)` : "";
+  const warn = supportWarning(target, { live: target === liveVersion && Boolean(liveVersion), now });
+  return [upgrade, warn].filter(Boolean).join(" · ");
 }

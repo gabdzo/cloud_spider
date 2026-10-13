@@ -549,7 +549,7 @@ export async function describeUpgradeCluster(name) {
   try {
     const eks = new EKSClient({ region: "eu-north-1" });
     const out = await eks.send(new DescribeClusterCommand({ name }));
-    return { found: true, status: out.cluster?.status || "UNKNOWN", endpoint: out.cluster?.endpoint || "" };
+    return { found: true, status: out.cluster?.status || "UNKNOWN", endpoint: out.cluster?.endpoint || "", version: out.cluster?.version || "" };
   } catch (error) {
     const code = error?.name || error?.Code || "";
     if (/NotFound/.test(code)) return { found: false, status: "" };

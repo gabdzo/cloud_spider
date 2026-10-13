@@ -93,7 +93,12 @@ test("a new cluster (no live node group) is never refused for its type", () => {
 
 test("the card's LIVE line and its warning", () => {
   const live = { values: { instanceType: "t4g.medium", nodeCount: "1" }, source: "node group nodes-1e07ff9" };
-  assert.deepEqual(liveLine(live, { instanceType: "t4g.medium" }), { text: "LIVE · t4g.medium · 1 node (node group nodes-1e07ff9)", warn: "" });
+  assert.deepEqual(liveLine(live, { instanceType: "t4g.medium" }), { text: "LIVE · t4g.medium · 1 node (node group nodes-1e07ff9)", warn: "", version: "" });
+  // The control plane version joins the text; its warning never touches warn (RUN confirms only node group replaces).
+  const old = liveLine({ ...live, clusterVersion: "1.32" }, { instanceType: "t4g.medium", kubernetesVersion: "auto" });
+  assert.equal(old.warn, "");
+  assert.match(old.text, /LIVE · EKS 1\.32 · t4g\.medium/);
+  assert.match(old.version, /(EXTENDED SUPPORT|END OF SUPPORT): the live cluster runs 1\.32.*UPGRADE TO 1\.33/);
   assert.match(liveLine(live, { instanceType: "t4g.small" }).warn, /t4g\.small REPLACES the node group \(live: t4g\.medium\)/);
   assert.equal(liveLine({ values: {} }).text, "");
 });

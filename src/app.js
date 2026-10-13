@@ -18,6 +18,7 @@ import { inspectPod } from "./kube-inspect.js";
 import { opsView, sampleOps } from "./kube-ops.js";
 import { demoAppSeen, detectAddons, refuseUp, sampleAddons } from "./addons.js";
 import { HELD_BY, destroyRefusal } from "../upgrades/eks-addons.js";
+import { resolveEksVersion, versionStepProblem } from "./eks-versions.js";
 import { planTakedown, takedownSteps, takedownText, vaultLeftStep } from "./cluster-takedown.js";
 import { needRefusal, needStates, needsOf } from "./stack-needs.js";
 import { shopReadiness } from "./shop-check.js";
@@ -1196,6 +1197,10 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       const got = await upgrade.liveParams(module, values).catch((error) => ({ error: error?.message || "the stack did not answer" }));
       if (got.error || module !== "eks") return got;
       const cluster = got.outputs?.name || got.values?.clusterName || values.clusterName || "";
+      // The control plane's version (eks DescribeCluster, read-only): the card
+      // says its support status and what auto keeps.
+      const described = cluster && eks?.describeCluster ? await eks.describeCluster(cluster).catch(() => null) : null;
+      if (described?.found && described.version) got.clusterVersion = described.version;
       const group = got.outputs?.nodeGroup || "";
       if (!cluster || !group || !eks?.describeNodegroup) return { ...got, source: "stack config" };
       const live = await eks.describeNodegroup(cluster, group).catch(() => null);
@@ -1325,6 +1330,17 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
           ]);
           const change = nodeGroupChange({ instanceType: live?.values?.instanceType, maxPods: live?.values?.maxPods, capacityType: live?.values?.capacityType, nodeGroup: live?.nodeGroup || live?.outputs?.nodeGroup }, body.params || {});
           if (change) return no(change);
+        }
+        // kubernetesVersion: one minor up at a time, never down (EKS's rule;
+        // the program checks it too). No live answer: no check here.
+        if (body.module === "eks" && ["up", "preview"].includes(body.action) && eks?.describeCluster) {
+          const described = await Promise.race([
+            eks.describeCluster(String(body.params?.clusterName || "cloudspider-up")).catch(() => null),
+            new Promise((done) => setTimeout(done, LIVE_MS, null).unref?.()),
+          ]);
+          const live = described?.found ? String(described.version || "") : "";
+          const step = versionStepProblem(resolveEksVersion(body.params?.kubernetesVersion, live), live);
+          if (step) return no(step);
         }
         // NEEDS (src/stack-needs.js): a stack on the cluster refuses before
         // pulumi when something it needs is missing there (Shop API without

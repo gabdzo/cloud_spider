@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { promisify } from "node:util";
 import { parse } from "yaml";
-import { HOURS_PER_MONTH, PRICES, costLine, estimate } from "../src/stack-costs.js";
+import { HOURS_PER_MONTH, PRICES, costFor, costLine, estimate } from "../src/stack-costs.js";
 import { UPGRADES, createUpgrade, upgradeSteps } from "../src/upgrade.js";
 import { cardName, confirmMatches } from "../src/upgrade-rules.js";
 import { READ_ONLY, TERRAFORM_STACKS, createTerraformReader, listTerraform, plainOutputs, sampleTerraformState, stateResources } from "../src/terraform.js";
@@ -24,13 +24,17 @@ const read = (path) => readFileSync(join(root, path), "utf8");
 // ---- costs ----
 
 test("estimate: hourly lines and monthly lines add up per hour, day and 730-hour month", () => {
-  const eks = estimate(UPGRADES.find((item) => item.id === "eks").cost);
+  const eks = estimate(costFor(UPGRADES.find((item) => item.id === "eks").cost, {}));
   // 0.10 control plane + 0.0172 t4g.small + 0.005 IPv4 + 20 GB gp3 (0.0836/GB-mo)
   const hourly = 0.1 + 0.0172 + 0.005 + (20 * 0.0836) / HOURS_PER_MONTH;
   assert.equal(eks.hour, Math.round(hourly * 1e4) / 1e4);
   assert.equal(eks.day, Math.round(hourly * 24 * 100) / 100);
   assert.equal(eks.month, 90.88);
   assert.equal(eks.region, "eu-north-1");
+  // A version on EKS extended support adds its $0.50/h fee (auto: the live version).
+  const old = estimate(costFor(UPGRADES.find((item) => item.id === "eks").cost, { kubernetesVersion: "1.32" }));
+  assert.equal(Math.round((old.hour - eks.hour) * 100) / 100, 0.5);
+  assert.equal(estimate(costFor(UPGRADES.find((item) => item.id === "eks").cost, { kubernetesVersion: "auto", liveVersion: "1.33" })).hour, old.hour);
   const rds = estimate(UPGRADES.find((item) => item.id === "rds").cost);
   assert.equal(rds.month, 14.48, "db.t4g.micro 11.68 + 20 GB gp3 2.40 + secret 0.40");
   assert.equal(costLine(rds), "$0.0198/h · $0.48/day · $14.48/mo");
