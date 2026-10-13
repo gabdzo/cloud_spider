@@ -3486,7 +3486,7 @@ async function route(app, req, res) {
   // Before, only the status was flipped to 403 and the handler still ran.
   if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && app.pageOrigin && !originAllowed(req.headers.origin, app.pageOrigin)) {
     res.writeHead(403, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
-    res.end(JSON.stringify({ error: "refused: this request did not come from the Cloud Spider page, nothing ran", hint: "Open Cloud Spider at the address npm start printed." }));
+    res.end(JSON.stringify({ error: "refused: this request did not come from the Cloud Spider page, nothing ran", hint: `Open Cloud Spider at ${app.pageOrigin} (the address npm start printed).` }));
     return;
   }
   if (req.method === "GET" && url.pathname === "/") {
