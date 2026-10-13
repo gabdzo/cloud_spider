@@ -83,6 +83,8 @@ export const UPGRADES = [
     cost: [{ price: "eks-cluster" }, { price: "ec2:t4g.small", param: "instanceType", prefix: "ec2:", perNode: true, spot: "capacityType" }, { price: "ebs-gp3-gb", qty: 20, perNode: true }, { price: "public-ipv4", perNode: true }],
     parameters: [
       { name: "clusterName", type: "string", default: "cloudspider-up" },
+      // Control plane version (upgrades/schema/eks.js): in place, one minor up at a time.
+      { name: "kubernetesVersion", type: "string", default: "1.32", choices: ["1.32", "1.33"] },
       { name: "instanceType", type: "string", default: "t4g.small", choices: ["t4g.small", "t4g.medium"] },
       // max: stacks.eks.maxNodes in cloudspider.yaml (createUpgrade eksMaxNodes).
       { name: "nodeCount", type: "number", default: 1, min: 1, max: EKS_MAX_NODES },

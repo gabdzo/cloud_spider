@@ -33,7 +33,7 @@ const SUBNETS = eksSubnets(cfg.vpcCidr);
 const clusterName = cfg.clusterName;
 const instanceType = cfg.instanceType;
 const nodeCount = cfg.nodeCount;
-const version = "1.32";
+const version = cfg.kubernetesVersion;
 // Control plane logging (K8S-OBS-003): api, audit, authenticator to
 // /aws/eks/<cluster>/cluster, a group this stack creates first so it has a
 // retention (EKS's own would never expire). In place both ways.
