@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { homedir, hostname as osHostname } from "node:os";
 import { judgeLock, lockRefusal, parseLocks, pendingOps, processNameOf, staleNote } from "./pulumi-locks.js";
@@ -398,7 +398,8 @@ function tailLines(lines, max = SHOW_CHARS) {
 // are kept in memory only (the tests).
 const ALL_UPGRADES = UPGRADES;
 
-export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) => process.kill(pid, signal), hostname = osHostname(), processName = processNameOf, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES, audit = null, gitSha = "", preflight = null } = {}) {
+export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) => process.kill(pid, signal), hostname = osHostname(), processName = processNameOf, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES, audit = null, gitSha = "", preflight = null, policyPack = undefined } = {}) {
+  const pack = policyPack ?? defaultPolicyPack(cwd);
   // audit.jsonl (src/stack-audit.js): never lets a failed write stop a run.
   const record = (item, phase) => {
     if (!audit) return;
@@ -737,7 +738,8 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       if (spec.localState) mkdirSync(join(env.HOME || homedir(), ".cloudspider", `pulumi-${spec.id}`), { recursive: true });
       const stack = stackFor(spec, checked.values, legacyName);
       const directory = join(cwd, spec.dir);
-      const steps = upgradeSteps(spec, stack, verb, checked.values);
+      const steps = upgradeSteps(spec, stack, verb, checked.values, { policyPack: pack });
+      const packNote = verb === "preview" && !pack ? noteSteps([{ text: "policy pack not loaded: run npm ci in upgrades/policy-pack to check this preview against it" }]) : [];
       const command = rerunCommand(directory, steps);
       const no = (error) => refuse({ module: spec.id, action: verb, stack, error, command });
       if (verb === "destroy" && !confirmMatches(confirmNames(spec, checked.values, legacyName), params?.confirmName)) {
@@ -760,7 +762,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
         where: spec.dir,
         command,
         onDone,
-        steps: [...noteSteps(notes), ...preflightSteps(spec, verb, checked.values), ...steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}` })), ...afterSteps(spec, verb, checked.values)],
+        steps: [...noteSteps(notes), ...packNote, ...preflightSteps(spec, verb, checked.values), ...steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}` })), ...afterSteps(spec, verb, checked.values)],
       });
     },
     // Any list of steps as one run in a card's pane (CONNECT, an add-on
@@ -1030,7 +1032,15 @@ export function stackConfig(spec, cwd = root, read = (file) => readFileSync(file
   return out;
 }
 
-export function upgradeSteps(spec, stack, verb, values) {
+// The CrossGuard pack (upgrades/policy-pack) when its deps are installed:
+// PREVIEW reports its findings (mandatory ones fail the preview), RUN does not
+// load it (the preview already said). "" when missing: PREVIEW says so.
+export function defaultPolicyPack(base = root) {
+  const dir = join(base, "upgrades", "policy-pack");
+  return existsSync(join(dir, "node_modules", "@pulumi", "policy")) ? dir : "";
+}
+
+export function upgradeSteps(spec, stack, verb, values, { policyPack = "" } = {}) {
   const steps = [["stack", "select", stack, "--create", "--non-interactive"]];
   if (verb !== "destroy") {
     steps.push(["install"]);
@@ -1057,7 +1067,7 @@ export function upgradeSteps(spec, stack, verb, values) {
   // first (no cloud call), then destroys. A hand-run destroy stays refused.
   if (verb === "destroy" && DATA_PROJECTS.includes(spec.project)) steps.push(["state", "unprotect", "--all", "--yes", "--non-interactive", "--stack", stack]);
   // preview changes nothing: it shows what up would do.
-  steps.push(verb === "preview" ? ["preview", "--non-interactive", "--diff", "--stack", stack] : [verb, "--yes", "--non-interactive", "--stack", stack]);
+  steps.push(verb === "preview" ? ["preview", "--non-interactive", "--diff", ...(policyPack ? ["--policy-pack", policyPack] : []), "--stack", stack] : [verb, "--yes", "--non-interactive", "--stack", stack]);
   return steps;
 }
 
