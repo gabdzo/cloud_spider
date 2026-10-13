@@ -9,7 +9,14 @@
 // that carry every one of the stack's tags (project, cluster, cloudspider)
 // AND the CSI driver's own tag, and only in state `available`. Then it waits
 // until they are gone. Anything else stops the run with a hint.
-export const SWEEP = { graceMs: 90_000, timeoutMs: 10 * 60_000, everyMs: 10_000 };
+//
+// In TAKE DOWN CLUSTER (cluster-takedown.js) the run passes deferInUse: a
+// volume still `in-use` after inUseMs is attached to a node (a CNPG pod or
+// its PV held it; live run 2026-10-13: vol-007425c832df349ee stayed in-use
+// until the nodes went). It goes with the nodes when the EKS stack deletes
+// them, so the step warns and hands its id on to the re-check after the
+// cluster is gone instead of failing the run.
+export const SWEEP = { graceMs: 90_000, inUseMs: 3 * 60_000, timeoutMs: 10 * 60_000, everyMs: 10_000 };
 
 export function sweepFilters(project, clusterName) {
   return [
@@ -30,7 +37,7 @@ export function volumeSweepStep({ volumes, project, clusterName, region = "eu-no
   const filters = sweepFilters(project, clusterName);
   return {
     text: `wait until ${project}'s EBS volumes on ${clusterName} are gone (tags project=${project}, cluster=${clusterName})`,
-    fn: async ({ say }) => {
+    fn: async ({ say = () => {}, deferInUse = null } = {}) => {
       const started = clock();
       const deleted = new Set();
       for (;;) {
@@ -39,8 +46,16 @@ export function volumeSweepStep({ volumes, project, clusterName, region = "eu-no
         const left = (got.items || []).filter((v) => v.state !== "deleted");
         if (!left.length) return { lines: [deleted.size ? `${deleted.size} leftover volume${deleted.size === 1 ? "" : "s"} deleted; no ${project} volume left` : `no ${project} volume left`] };
         const waited = clock() - started;
+        const inUse = left.filter((v) => v.state === "in-use");
+        if (deferInUse && inUse.length === left.length && waited >= (limits.inUseMs ?? limits.graceMs)) {
+          deferInUse(inUse.map((v) => v.id));
+          return { lines: [`! ${inUse.map((v) => v.id).join(", ")} still in-use after ${Math.round(waited / 1000)} s: attached to a node, so it goes with the nodes when the EKS stack deletes them (not a failure; re-checked once the cluster is gone)`] };
+        }
         if (waited >= limits.timeoutMs) {
-          const list = left.map((v) => `${v.id} (${v.state})`).join(", ");
+          if (deferInUse && inUse.length) deferInUse(inUse.map((v) => v.id));
+          const rest = deferInUse ? left.filter((v) => v.state !== "in-use") : left;
+          if (deferInUse && !rest.length) return { lines: [`! ${inUse.map((v) => v.id).join(", ")} still in-use: goes with the nodes; re-checked once the cluster is gone`] };
+          const list = rest.map((v) => `${v.id} (${v.state})`).join(", ");
           return { error: `${project} volumes still there after ${Math.round(waited / 60_000)} min: ${list}`, hint: `An in-use volume is still attached to a node: wait for it to detach, then aws ec2 delete-volume --region ${region} --volume-id <id>. Take the cluster down only after this is clean.` };
         }
         for (const v of left) {
