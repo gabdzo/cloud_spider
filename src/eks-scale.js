@@ -212,3 +212,27 @@ export async function scaleCluster({ cluster, context, region, mode, workloads =
   if (!confirmOk(plan, confirm)) return { plan, text: planText(plan), ran: false, error: `type the cluster name (${cluster}) to confirm` };
   return { plan, text: planText(plan), ran: true, result: await runScale(plan, { run, store }) };
 }
+
+// SAMPLE mode (the page's made-up account): a fixed cluster like
+// cloudspider-up; nothing is read or run.
+export function sampleScaleState() {
+  return {
+    cluster: "cloudspider-up", context: "cloudspider-up-admin", region: "eu-north-1",
+    nodegroups: [{ name: "nodes-f8e62c8", min: 2, desired: 2, max: 2 }],
+    nodepools: [{ name: "default", limits: { cpu: "4", memory: "8Gi" } }],
+    nodeclaims: [{ name: "default-kp84c", instanceType: "t4g.medium", spot: true, nodeName: "ip-10-43-2-30" }],
+    nodes: [
+      { name: "ip-10-43-1-241", instanceType: "m7g.medium", spot: true, publicIp: true, rootGb: 20 },
+      { name: "ip-10-43-2-89", instanceType: "m7g.medium", spot: true, publicIp: true, rootGb: 20 },
+      { name: "ip-10-43-2-30", instanceType: "t4g.medium", spot: true, publicIp: true, rootGb: 20 },
+    ],
+    pvGb: 15, natGateways: 0, idleEips: 0,
+    loadBalancers: [{ name: "k8s-shop-shopapi", type: "application", zones: 2 }],
+    workloads: [
+      { kind: "Deployment", namespace: "shop", name: "shopapi", replicas: 2 },
+      { kind: "Deployment", namespace: "demo", name: "web", replicas: 1 },
+      { kind: "Deployment", namespace: "demo", name: "api", replicas: 1 },
+      { kind: "Deployment", namespace: "kube-system", name: "coredns", replicas: 2 },
+    ],
+  };
+}

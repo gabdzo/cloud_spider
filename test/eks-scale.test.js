@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { planScale, costOf, runScale, confirmOk, planText, readScaleState, scaleCluster } from "../src/eks-scale.js";
 import { eksScaleRoute } from "../src/eks-scale-route.js";
-import { scaleDialogHtml, confirmReady } from "../src/eks-scale-view.js";
+import { scaleDialogHtml, scaleRowHtml, confirmReady, SCALE_WARNING } from "../src/eks-scale-view.js";
+import { _sampleReset } from "../src/eks-scale-route.js";
 
 const state = () => ({
   cluster: "cloudspider-up", context: "cloudspider-up-admin", region: "eu-north-1",
@@ -77,7 +78,9 @@ test("text and dialog show the steps, cost and what keeps billing", () => {
   assert.match(t, /still billed while scaled down/);
   assert.match(t, /load balancer k8s-shop/);
   const h = scaleDialogHtml(p);
-  assert.match(h, /disabled>RUN SCALE DOWN/);
+  assert.match(h, /disabled>run scale down/);
+  assert.match(h, /data-scale-workloads/);
+  assert.match(h, /now <b>\$\d+\.\d\d<\/b>\/mo/);
   assert.match(h, /data-expect="cloudspider-up"/);
 });
 
@@ -146,4 +149,35 @@ test("route: POST from another origin or a context outside writeContexts scales 
   assert.equal(sent[2].status, 200);
   assert.equal(sent[2].body.ran, false);
   assert.ok(!calls.some((c) => /patch|delete|update-nodegroup/.test(c)));
+});
+
+test("card row: SCALED DOWN chip with the saved sizes, buttons follow the state, Pulumi warning always", () => {
+  const upRow = scaleRowHtml({ cluster: "c", status: { scaledDown: false, canScale: true } });
+  assert.doesNotMatch(upRow, /SCALED DOWN/);
+  assert.match(upRow, /data-scale="down" title/);
+  assert.match(upRow, /data-scale="up" disabled/);
+  assert.ok(upRow.includes(SCALE_WARNING.replace(/'/g, "&#39;")));
+  const p = planScale(state(), { mode: "down", workloads: true });
+  const downRow = scaleRowHtml({ cluster: "c", status: { scaledDown: true, canScale: true, saved: { ...p.record, at: "2026-10-13T05:00:00Z" } } });
+  assert.match(downRow, /SCALED DOWN/);
+  assert.match(downRow, /saved: nodes-1 2\/2\/2 · NodePool default cpu 4, memory 8Gi · 1 workload at 0/);
+  assert.match(downRow, /data-scale="down" disabled/);
+  assert.match(scaleRowHtml({ cluster: "c", status: { canScale: false } }), /kube.writeContexts/);
+});
+
+test("route sample=1: dry run and a pretend run, nothing executed, status follows", async () => {
+  _sampleReset();
+  const sent = [];
+  const send = (res, status, body) => sent.push({ status, body });
+  const host = "127.0.0.1:9241";
+  const get = (q) => eksScaleRoute({ method: "GET", headers: { host } }, {}, new URL(`http://x${q}`), null, { send, readJson: async () => ({}) });
+  await get("/api/eks/scale?cluster=cloudspider-up&mode=down&sample=1");
+  assert.equal(sent.at(-1).body.plan.cluster, "cloudspider-up");
+  await eksScaleRoute({ method: "POST", headers: { host, origin: `http://${host}` } }, {}, new URL("http://x/api/eks/scale"), null, { send, readJson: async () => ({ sample: true, cluster: "cloudspider-up", mode: "down", confirm: "cloudspider-up" }) });
+  assert.equal(sent.at(-1).body.ran, true);
+  await get("/api/eks/scale/status?cluster=cloudspider-up&sample=1");
+  assert.equal(sent.at(-1).body.scaledDown, true);
+  await get("/api/eks/scale?cluster=cloudspider-up&mode=down&sample=1");
+  assert.match(sent.at(-1).body.plan.error, /already scaled down/);
+  _sampleReset();
 });
