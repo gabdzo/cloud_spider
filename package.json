@@ -9,6 +9,7 @@
     "cloudspider": "scripts/cloudspider.mjs"
   },
   "scripts": {
+    "pretest": "node scripts/stack-deps.mjs",
     "start": "node src/main.js",
     "test": "node --test test/*.test.js",
     "vaults:check": "node scripts/vaults-check.mjs",
