@@ -404,7 +404,11 @@ export function maskKubeconfig(text) {
 
 // An EKS RUN whose instance type is not the live node group's replaces the
 // node group (new nodes, every pod moved). Said before it runs.
+// Only a node group that exists can be replaced: a stack with config but no
+// node group (new, never deployed, or a refused first RUN) is never refused
+// (2026-10-13: eks-cloudspider-up-2 read its config's maxPods auto as "live").
 export function nodeGroupChange(live, values) {
+  if (!live?.nodeGroup) return ""
   const was = live?.instanceType
   if (was && values?.instanceType && was !== values.instanceType) return `instanceType ${values.instanceType} is not the live node group's ${was}: this REPLACES the node group${live.nodeGroup ? ` ${live.nodeGroup}` : ""} (new nodes, every pod restarts). Set INSTANCETYPE to ${was} to keep it, or confirm the replace`
   // capacityType is fixed at creation too; a group made before the setting is ON_DEMAND.
@@ -412,7 +416,7 @@ export function nodeGroupChange(live, values) {
   const wantCap = String(values?.capacityType || "ON_DEMAND").toUpperCase()
   if (cap && cap !== wantCap) return `capacityType ${wantCap} is not the live node group's ${cap}: this REPLACES the node group${live.nodeGroup ? ` ${live.nodeGroup}` : ""} (a new ${wantCap === "SPOT" ? "spot" : "on-demand"} group comes up first, then the old one drains and goes; every pod restarts once). Set CAPACITYTYPE to ${cap} to keep it, or confirm the replace`
   // maxPods: a live node group without the setting in its stack is "auto".
-  const pods = live?.maxPods || (live?.nodeGroup ? "auto" : "")
+  const pods = live.maxPods || "auto"
   // SPOT + auto runs as 32 (eks-addons.js resolveMaxPods) with prefix delegation on.
   const asked = String(values?.maxPods || "auto")
   const want = asked === "auto" && wantCap === "SPOT" && String(values?.vpcCni || "on") !== "off" && String(values?.prefixDelegation || "on") !== "off" ? "32" : asked
