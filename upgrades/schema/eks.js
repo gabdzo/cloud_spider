@@ -4,6 +4,7 @@
 // accepted by the card and failed in preview).
 import { CAPACITY_TYPES, MAX_PODS_CHOICES, capacityProblem, maxPodsProblem, resolveMaxPods } from "../eks-addons.js";
 import { validate, assertValid } from "./core.js";
+import { cidrOk, privateCidr } from "./net.js";
 
 export const EKS_INSTANCE_TYPES = ["t4g.small", "t4g.medium"];
 
@@ -24,10 +25,13 @@ export const EKS_SCHEMA = {
     ebsCsiDriver: { type: "onoff", default: "on", doc: "EBS CSI driver add-on" },
     controlPlaneLogs: { type: "onoff", default: "off", doc: "api/audit/authenticator logs to CloudWatch" },
     logRetentionDays: { type: "int", min: 1, max: 3653, default: 7, doc: "control plane log retention" },
+    // The VPC's range; the two subnets are its 2nd and 3rd /+8 blocks. A change REPLACES the VPC (and the cluster).
+    vpcCidr: { type: "name", pattern: /^\d{1,3}(\.\d{1,3}){3}\/1[67]$/, hint: "must be a /16 or /17 CIDR, like 10.43.0.0/16 (subnets /24 or /25)", default: "10.43.0.0/16", doc: "VPC range (/16 or /17, private); changing it replaces the VPC and the cluster" },
     adoptAddons: { type: "list", default: "", doc: "set by scripts/migrate-eks-addons.mjs" },
     adoptPhase: { type: "enum", choices: ["import", "retag"], default: "import", doc: "set by scripts/migrate-eks-addons.mjs" },
   },
   rules: [
+    (v) => (!cidrOk(v.vpcCidr) ? `vpcCidr ${v.vpcCidr} is not a network address (octets 0-255, no host bits)` : !privateCidr(v.vpcCidr) ? `vpcCidr ${v.vpcCidr} is not a private range (10/8, 172.16/12, 192.168/16)` : ""),
     (v) => capacityProblem(v.instanceType, v.capacityType, v.maxPods, v.vpcCni === "on" && v.prefixDelegation === "on"),
     (v) => {
       const prefix = v.vpcCni === "on" && v.prefixDelegation === "on";

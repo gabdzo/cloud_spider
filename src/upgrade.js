@@ -99,6 +99,8 @@ export const UPGRADES = [
       { name: "podIdentityAgent", type: "string", default: "on", choices: ["on", "off"] },
       { name: "metricsServer", type: "string", default: "on", choices: ["on", "off"] },
       { name: "ebsCsiDriver", type: "string", default: "on", choices: ["on", "off"] },
+      // The VPC range (upgrades/schema/eks.js vpcCidr); a change replaces the VPC and the cluster.
+      { name: "vpcCidr", type: "string", default: "10.43.0.0/16", pattern: /^\d{1,3}(\.\d{1,3}){3}\/1[67]$/ },
       // K8S-OBS-003: api, audit, authenticator to /aws/eks/<cluster>/cluster (in place).
       { name: "controlPlaneLogs", type: "string", default: "off", choices: ["off", "on"], labels: { off: "off · no audit trail (SCORE FAILs K8S-OBS-003)", on: "on · api, audit, authenticator, kept 7 days (~$0.10-0.25/day: $0.50/GB ingested, audit is the noisy one)" }, warn: "off" },
     ],

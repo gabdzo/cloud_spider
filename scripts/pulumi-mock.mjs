@@ -41,10 +41,11 @@ await pulumi.runtime.setMocks(
       // eu-north-1a-c available, every asked type offered everywhere, unless
       // CLOUDSPIDER_MOCK_EC2 = {"zones": [...], "offerings": [{"type","zone"}]}.
       const ec2 = JSON.parse(process.env.CLOUDSPIDER_MOCK_EC2 || "{}");
-      if (token.includes("getAvailabilityZones")) return { names: ec2.zones || ["eu-north-1a", "eu-north-1b", "eu-north-1c"], zoneIds: [], id: "eu-north-1" };
+      const mockRegion = JSON.parse(process.env.PULUMI_CONFIG || "{}")["aws:region"] || "eu-north-1";
+      if (token.includes("getAvailabilityZones")) return { names: ec2.zones || ["a", "b", "c"].map((z) => `${mockRegion}${z}`), zoneIds: [], id: mockRegion };
       if (token.includes("getInstanceTypeOfferings")) {
         const want = args.inputs?.filters?.find((f) => f.name === "instance-type")?.values || [];
-        const where = args.inputs?.filters?.find((f) => f.name === "location")?.values || ["eu-north-1a", "eu-north-1b"];
+        const where = args.inputs?.filters?.find((f) => f.name === "location")?.values || [`${mockRegion}a`, `${mockRegion}b`];
         const list = ec2.offerings || want.flatMap((type) => where.map((zone) => ({ type, zone })));
         return { id: "eu-north-1", instanceTypes: list.map((o) => o.type), locations: list.map((o) => o.zone), locationTypes: list.map(() => "availability-zone") };
       }
