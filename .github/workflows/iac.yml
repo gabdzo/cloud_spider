@@ -7,6 +7,10 @@ on:
     branches: [main]
 permissions:
   contents: read
+# The map golden hashes (test/map-theme-golden.test.js) include a log time
+# formatted in local time; the gate runs in Europe/Prague, so CI does too.
+env:
+  TZ: Europe/Prague
 jobs:
   test:
     runs-on: ubuntu-latest
