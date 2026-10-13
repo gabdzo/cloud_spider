@@ -6,6 +6,7 @@ import { inheritTags, stackTags } from "../tags.js";
 import { assertEks } from "../schema/eks.js";
 import { eksPreflight } from "../schema/preflight.js";
 import { eksSubnets, eksZones } from "../schema/net.js";
+import { eksVpcComponent } from "../components/eks-vpc.js";
 import { SCANNER_ROLE, SCANNER_RULES } from "./scanner-rbac.js";
 import { EKS_OWNED, adoptList, resolveMaxPods, eksOwnPlan, nodeInstanceTypes, nodeConfigUserData, ownerText, podsPerNodeText, readAddon, vpcCniConfig } from "../eks-addons.js";
 
@@ -58,37 +59,11 @@ inheritTags(pulumi, stackTags("eks", { cluster: clusterName }));
 
 const tags = { Name: clusterName, cloudspider: "expendable" };
 
-const vpc = new aws.ec2.Vpc("up", {
-  cidrBlock: cfg.vpcCidr,
-  enableDnsHostnames: true,
-  enableDnsSupport: true,
-  tags,
-});
-const gateway = new aws.ec2.InternetGateway("up", { vpcId: vpc.id, tags });
-const route = new aws.ec2.RouteTable("up", {
-  vpcId: vpc.id,
-  routes: [{ cidrBlock: "0.0.0.0/0", gatewayId: gateway.id }],
-  tags,
-});
-
-function subnet(name, cidr, zone) {
-  const net = new aws.ec2.Subnet(name, {
-    vpcId: vpc.id,
-    cidrBlock: cidr,
-    availabilityZone: zone,
-    mapPublicIpOnLaunch: true,
-    tags: {
-      ...tags,
-      [`kubernetes.io/cluster/${clusterName}`]: "shared",
-      "kubernetes.io/role/elb": "1",
-    },
-  });
-  new aws.ec2.RouteTableAssociation(name, { subnetId: net.id, routeTableId: route.id });
-  return net;
-}
-
-const subnetA = subnet("a", SUBNETS[0], ZONES[0]);
-const subnetB = subnet("b", SUBNETS[1], ZONES[1]);
+// The network as a module (upgrades/components/eks-vpc.js): VPC, gateway,
+// route table, two subnets; aliases keep the live resources in place.
+const EksVpc = eksVpcComponent(pulumi, aws);
+const network = new EksVpc("network", { clusterName, cidr: cfg.vpcCidr, subnets: SUBNETS, zones: ZONES, tags });
+const [subnetA, subnetB] = network.subnets;
 
 const assume = (service) =>
   JSON.stringify({

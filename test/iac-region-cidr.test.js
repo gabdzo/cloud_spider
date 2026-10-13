@@ -47,3 +47,11 @@ test("kubernetesVersion: default 1.32 (what the live cluster runs), 1.33 in plac
   const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", "upgrades/eks", "cloudspider-upgrade", "upgrade", JSON.stringify({ "cloudspider-upgrade:clusterName": "cloudspider-up", "cloudspider-upgrade:kubernetesVersion": "1.33" })], { cwd: root, env: { ...process.env, CLOUDSPIDER_MOCK_EKS_ADDONS: "{}" }, maxBuffer: 32 * 1024 * 1024 });
   assert.equal(JSON.parse(stdout.slice(stdout.indexOf("[{"))).find((r) => r.type === "aws:eks/cluster:Cluster").inputs.version, "1.33");
 });
+
+test("eks network is an EksVpc component whose children alias the stack root (no replace on move)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../upgrades/components/eks-vpc.js", import.meta.url), "utf8");
+  const assert = (await import("node:assert/strict")).default;
+  assert.match(src, /aliases: \[\{ parent: pulumi\.rootStackResource \}\]/);
+  for (const n of ['Vpc("up"', 'InternetGateway("up"', 'RouteTable("up"', 'Subnet(id', 'RouteTableAssociation(id']) assert.ok(src.includes(n), n);
+});
