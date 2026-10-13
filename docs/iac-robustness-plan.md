@@ -124,5 +124,11 @@ so the card refuses exactly what the program refuses, before any stack exists.
 - #339 item 6: read-only EKS preflight (zones, node types / spot pool offered, VPC quota note), card first step + program.
 - item 7 (part): `upgrades/timeouts.js` customTimeouts on every EKS add-on and the RDS instance (resource option, no diff). Recovery that already existed: the app notices pending operations and a held lock and offers `pulumi cancel` (src/pulumi-locks.js). Left: Helm Release `timeout`/`atomic`/`cleanupOnFail` are inputs, so adding them shows an update on live releases: needs a preview go-ahead.
 
+- #341 item 10: `.github/workflows/iac.yml` (npm test + `upgrades/iac-matrix.json`, 27 stack x config entries under mocks; observability left out, it reads ELBv2 with the AWS SDK directly).
+- #342 item 9: CrossGuard pack `upgrades/policy-pack` (tag advisory; public/unencrypted RDS, open ingress, instance types, cost caps mandatory). Every matrix config passes. Not yet wired into the card's PREVIEW.
+- item 11: generated README per module (`scripts/iac-docs.mjs`, test keeps them current), `version` 1.0.0 + CHANGELOG.md per module.
+
+Needs Gabriel's go-ahead (live preview): one `@pulumi/aws` major across stacks; ComponentResources with aliases (0 replaces on live `upgrade`); Helm Release timeout/atomic/cleanupOnFail inputs; EKS version as a config key.
+
 Known gap (fixed by #335): fc.sh installs only root + addons deps, so mock tests of eks/observe/etc.
 skip in the gate (61 skipped). Item 2 fixes that.
