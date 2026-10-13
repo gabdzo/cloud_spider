@@ -51,20 +51,32 @@ async function mockVersion(config, liveCluster) {
   }
 }
 
-test("kubernetesVersion: auto keeps the live version (no surprise upgrade), 1.34 for a new cluster, one minor up at a time", { skip }, async () => {
+test("kubernetesVersion: auto keeps the live version (no surprise upgrade), 1.35 for a new cluster, one minor up at a time", { skip }, async () => {
   assert.equal(validateEks({}).values.kubernetesVersion, "auto");
-  assert.match(validateEks({ kubernetesVersion: "1.30" }).errors[0], /kubernetesVersion must be auto or 1.32 or 1.33 or 1.34/);
+  assert.match(validateEks({ kubernetesVersion: "1.30" }).errors[0], /kubernetesVersion must be auto or 1.32 or 1.33 or 1.34 or 1.35/);
   // The deployed stack (Pulumi.upgrade.yaml has no kubernetesVersion) on a 1.32 cluster stays 1.32.
   assert.deepEqual(await mockVersion({}, '{"version":"1.32"}'), { version: "1.32" });
   assert.deepEqual(await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "auto" }, '{"version":"1.33"}'), { version: "1.33" });
-  // A new cluster: 1.34.
-  assert.deepEqual(await mockVersion({}, "absent"), { version: "1.34" });
+  // A new cluster: 1.35.
+  assert.deepEqual(await mockVersion({}, "absent"), { version: "1.35" });
   // In place, one minor: 1.32 -> 1.33 -> 1.34.
   assert.deepEqual(await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "1.33" }, '{"version":"1.32"}'), { version: "1.33" });
   assert.deepEqual(await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "1.34" }, '{"version":"1.33"}'), { version: "1.34" });
+  assert.deepEqual(await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "1.35" }, '{"version":"1.34"}'), { version: "1.35" });
   // A skip or a downgrade is refused before any resource.
   assert.match((await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "1.34" }, '{"version":"1.32"}')).error, /skips a minor.*UPGRADE TO 1\.33 first/);
   assert.match((await mockVersion({ "cloudspider-upgrade:kubernetesVersion": "1.32" }, '{"version":"1.33"}')).error, /downgrade/);
+});
+
+test("a new 1.35 cluster: each EKS managed add-on it creates is pinned to the default version for 1.35; existing ones keep theirs", { skip }, async () => {
+  const run1 = async (addons) => {
+    const { stdout } = await run(process.execPath, ["scripts/pulumi-mock.mjs", "upgrades/eks", "cloudspider-upgrade", "upgrade", JSON.stringify({ "cloudspider-upgrade:clusterName": "fresh" })], { cwd: root, env: { ...process.env, CLOUDSPIDER_MOCK_EKS_ADDONS: addons, CLOUDSPIDER_MOCK_EKS_CLUSTER: "absent" }, maxBuffer: 32 * 1024 * 1024 });
+    return JSON.parse(stdout.slice(stdout.indexOf("[{"))).filter((r) => r.type === "aws:eks/addon:Addon");
+  };
+  const fresh = await run1("{}");
+  assert.deepEqual(fresh.map((a) => [a.inputs.addonName, a.inputs.addonVersion]).sort(), [["aws-ebs-csi-driver", "aws-ebs-csi-driver@1.35"], ["eks-pod-identity-agent", "eks-pod-identity-agent@1.35"], ["metrics-server", "metrics-server@1.35"], ["vpc-cni", "vpc-cni@1.35"]]);
+  const owned = await run1('{"vpc-cni":{"project":"eks"},"eks-pod-identity-agent":{"project":"eks"},"metrics-server":{"project":"eks"},"aws-ebs-csi-driver":{"project":"eks"}}');
+  assert.ok(owned.length >= 4 && owned.every((a) => a.inputs.addonVersion === undefined), "managed add-ons keep their version");
 });
 
 test("eks network is an EksVpc component whose children alias the stack root (no replace on move)", async () => {

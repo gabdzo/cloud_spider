@@ -218,6 +218,12 @@ async function ownAddon(item, dependsOn) {
     });
     return;
   }
+  // A new add-on gets EKS's default version for this cluster's Kubernetes
+  // version (1.35 on a new cluster), named in the plan instead of left to
+  // EKS. One already there keeps its version (no update on every RUN); after
+  // an in-place control plane upgrade update add-ons with the EKS console or
+  // aws eks update-addon.
+  if (plan === "create") extra.addonVersion = (await aws.eks.getAddonVersion({ addonName: item.addonName, kubernetesVersion: version })).version;
   addons[item.addonName] = new aws.eks.Addon(item.addonName, {
     clusterName: cluster.name,
     addonName: item.addonName,

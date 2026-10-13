@@ -21,9 +21,34 @@ export const EKS_CALENDAR = {
 
 // What the card and the stack accept. A deployed cluster moves up one minor
 // at a time (EKS UpdateClusterVersion refuses a skip) and never down.
-export const EKS_VERSIONS = ["1.32", "1.33", "1.34"];
-// A NEW cluster (no cluster of that name in the account yet).
-export const EKS_NEW_VERSION = "1.34";
+export const EKS_VERSIONS = ["1.32", "1.33", "1.34", "1.35"];
+// A NEW cluster (no cluster of that name in the account yet): the newest
+// minor every pinned add-on supports, so the longest standard support we can
+// use (1.35: until 2027-03-27). Not 1.36/1.37 (both standard on EKS): Kyverno
+// 1.19 supports Kubernetes 1.33-1.35 only. The pins and their ranges:
+// ADDON_K8S below; test/eks-versions.test.js keeps this in their range.
+export const EKS_NEW_VERSION = "1.35";
+
+// The Kubernetes minors each pinned add-on supports upstream (read
+// 2026-10-13): [oldest, newest]. Helm pins: upgrades/addons/catalog.js and
+// upgrades/pgcluster (CNPG). The EKS managed add-ons (vpc-cni, Pod Identity,
+// metrics-server, EBS CSI; CoreDNS and kube-proxy come with the cluster) are
+// not pinned: upgrades/eks resolves each one's default version for the
+// cluster's Kubernetes version (aws.eks.getAddonVersion) when it creates it.
+export const ADDON_K8S = {
+  kyverno: { pin: "v1.19.1", min: "1.33", max: "1.35", source: "kyverno.io/docs/installation/releases" },
+  karpenter: { pin: "1.15.0", min: "1.31", max: "1.37", source: "karpenter.sh/docs/upgrading/compatibility (1.35 needs >= 1.9)" },
+  lbc: { pin: "v3.6.0", min: "1.22", max: "", source: "aws-load-balancer-controller installation guide (v2.5.0+: Kubernetes 1.22+)" },
+  "cert-manager": { pin: "v1.21.2", min: "1.33", max: "1.36", source: "cert-manager.io/docs/releases" },
+  keda: { pin: "2.21.0", min: "1.34", max: "1.36", source: "keda.sh/docs/latest/operate/cluster (tested window)" },
+  cnpg: { pin: "1.30 (chart 0.29.1)", min: "1.34", max: "1.36", source: "cloudnative-pg 1.30 supported releases" },
+};
+
+// Does every pinned add-on support `version`? [] when yes, else the ids.
+export function addonsBlocking(version) {
+  const m = minor(version);
+  return Object.entries(ADDON_K8S).filter(([, r]) => m < minor(r.min) || (r.max && m > minor(r.max))).map(([id]) => id);
+}
 // kubernetesVersion "auto": the version the live cluster runs, or
 // EKS_NEW_VERSION when there is none. A RUN never changes the version by itself.
 export const EKS_AUTO = "auto";
