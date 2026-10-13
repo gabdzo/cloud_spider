@@ -10,6 +10,7 @@ import { ADDONS, DIR as ADDON_DIR, PROJECT as ADDON_PROJECT } from "../upgrades/
 import { LEGACY_CLUSTER, cardName, confirmMatches, confirmMismatch, confirmNames, errorHead, failureText, historyFact, maskKubeconfig, rerunCommand, resourceFact, runHint, stackFor, tooManyClusters } from "./upgrade-rules.js";
 import { volumeSweepStep } from "./volume-sweep.js";
 import { createRunLog } from "./run-log.js";
+import { stackAuditEntry } from "./stack-audit.js";
 import { validateEks } from "../upgrades/schema/eks.js";
 import { DATA_PROJECTS, validateStack } from "../upgrades/schema/stacks.js";
 
@@ -397,7 +398,12 @@ function tailLines(lines, max = SHOW_CHARS) {
 // are kept in memory only (the tests).
 const ALL_UPGRADES = UPGRADES;
 
-export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) => process.kill(pid, signal), hostname = osHostname(), processName = processNameOf, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES } = {}) {
+export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) => process.kill(pid, signal), hostname = osHostname(), processName = processNameOf, cwd = root, env = process.env, clock = () => Date.now(), runsDir = null, volumes = null, sleep = undefined, sweepLimits = undefined, eksMaxNodes = EKS_MAX_NODES, audit = null, gitSha = "" } = {}) {
+  // audit.jsonl (src/stack-audit.js): never lets a failed write stop a run.
+  const record = (item, phase) => {
+    if (!audit) return;
+    Promise.resolve().then(() => audit(stackAuditEntry(item, phase, { gitSha }))).catch(() => {});
+  };
   // Every child this server spawned that has not exited yet (pulumi and the
   // odd npm/kubectl step), for a clean shutdown (src/shutdown.js). Each runs
   // detached, in its own process group: a terminal Ctrl-C reaches the server
@@ -520,6 +526,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
     // A refusal on a stack that is running stays out of its card: the card
     // keeps showing the live run (the answer still carries the refusal).
     if (stack && !jobs.get(stack)?.running) notices.set(stack, notice);
+    if (module || stack) record(notice, "refused");
     if (stack && runLog) {
       notice.logHandle = runLog.start(stack, { startedAt: at });
       notice.log = notice.logHandle?.rel || "";
@@ -961,6 +968,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
     }
     const mine = job;
     for (const lock of mine.locks) jobs.set(lock, mine);
+    record(mine, "start");
     apply(run, directory, job, childEnvFor(env), {
       clock,
       stopping: () => stopping,
@@ -968,6 +976,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       save,
       gate: gateDir,
       done: () => {
+        record(mine, "end");
         if (mine.stack) outputsCache.delete(mine.stack);
         if (onDone) Promise.resolve().then(() => onDone(view(mine))).catch(() => {});
       },
