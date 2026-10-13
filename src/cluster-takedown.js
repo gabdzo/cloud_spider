@@ -1,3 +1,4 @@
+import { csiMade } from "./volume-sweep.js";
 // TAKE DOWN CLUSTER (EKS card): one action that removes every stack on a
 // cluster in reverse-dependency order, then the cluster itself.
 //
@@ -287,11 +288,117 @@ export function leftoverKind(arn) {
   return "";
 }
 
+// pgcluster's volumes, after its pulumi destroy and before the volume sweep
+// (live run 2026-10-13: vol-007425c832df349ee stayed in-use 10 min after the
+// stack was gone: a CNPG pod / PV still held it). With the admin context:
+// the CNPG Cluster CR first (the operator stops its pods), then the PVCs in
+// its namespace, then wait until their PVs are deleted (the EBS CSI driver
+// deletes the volume with the PV). A wait that runs out is a warning: the
+// sweep then defers a volume still attached to a node to the nodes.
+export const PG_NAMESPACE = "shop";
+export function pgReleaseStep({ context, run, namespace = PG_NAMESPACE, timeout = "180s" }) {
+  return {
+    text: `release pgcluster's volumes: delete the CNPG Cluster, then the PVCs in ${namespace}, wait for their PVs (admin context)`,
+    fn: async () => {
+      const lines = [];
+      const first = (e) => String(e?.message || e).split("\n")[0];
+      try {
+        await run("kubectl", kube(context, "-n", namespace, "delete", "clusters.postgresql.cnpg.io", "--all", "--ignore-not-found", "--wait=true", `--timeout=${timeout}`));
+        lines.push(`CNPG Cluster(s) in ${namespace} deleted`);
+      } catch (error) {
+        lines.push(`! CNPG Cluster in ${namespace}: ${first(error)} (going on)`);
+      }
+      let pvs = [];
+      try {
+        const out = JSON.parse(await run("kubectl", kube(context, "get", "pv", "-o", "json")));
+        pvs = (out.items || []).filter((pv) => pv?.spec?.claimRef?.namespace === namespace).map((pv) => pv.metadata.name);
+      } catch (error) {
+        lines.push(`! could not list PVs: ${first(error)} (going on)`);
+      }
+      try {
+        await run("kubectl", kube(context, "-n", namespace, "delete", "pvc", "--all", "--ignore-not-found", "--wait=false"));
+        lines.push(`PVCs in ${namespace} deleted`);
+      } catch (error) {
+        lines.push(`! PVCs in ${namespace}: ${first(error)} (going on)`);
+      }
+      for (const pv of pvs) {
+        try {
+          await run("kubectl", kube(context, "wait", "--for=delete", `pv/${pv}`, `--timeout=${timeout}`));
+          lines.push(`PV ${pv} gone`);
+        } catch (error) {
+          lines.push(`! PV ${pv} still there after ${timeout} (${first(error)}): its volume is likely still attached to a node; the sweep next decides`);
+        }
+      }
+      if (!pvs.length) lines.push(`no PV bound in ${namespace}`);
+      return { lines };
+    },
+  };
+}
+
+// After the EKS stack: the volumes the sweep left to the nodes. Gone: went
+// with the nodes. Still there and `available`, CSI-made with the stack's
+// tags: deleted (as the sweep would). Anything else: named, never failed.
+export function deferredVolumesStep({ region, run, deferred }) {
+  return {
+    text: "re-check volumes left to the nodes (EBS)",
+    fn: async () => {
+      if (!deferred.length) return { lines: ["no volume was left to the nodes"], skipped: true };
+      const ids = [...new Set(deferred)];
+      let vols;
+      try {
+        vols = JSON.parse(await run("aws", ["ec2", "describe-volumes", "--region", region, "--filters", `Name=volume-id,Values=${ids.join(",")}`, "--output", "json"])).Volumes || [];
+      } catch (error) {
+        return { lines: [`! could not re-check ${ids.join(", ")}: ${String(error?.message || error).split("\n")[0]}; check by hand: aws ec2 describe-volumes --region ${region} --volume-ids ${ids.join(" ")}`] };
+      }
+      const lines = [];
+      const left = new Map(vols.map((v) => [v.VolumeId, v]));
+      for (const id of ids) {
+        const v = left.get(id);
+        if (!v || v.State === "deleted") { lines.push(`${id} went with the nodes`); continue; }
+        const tags = Object.fromEntries((v.Tags || []).map((t) => [t.Key, t.Value]));
+        if (v.State === "available" && csiMade({ tags }) && tags.project === "pgcluster") {
+          try {
+            await run("aws", ["ec2", "delete-volume", "--region", region, "--volume-id", id]);
+            lines.push(`${id} was detached but not deleted: deleted it`);
+            continue;
+          } catch (error) {
+            lines.push(`! could not delete ${id}: ${String(error?.message || error).split("\n")[0]}`);
+          }
+        }
+        lines.push(`LEFT IN AWS: EBS volume ${id} (${v.State}); it keeps billing: aws ec2 delete-volume --region ${region} --volume-id ${id}`);
+      }
+      return { lines };
+    },
+  };
+}
+
+const RESUME = "Nothing is lost: press TAKE DOWN CLUSTER again and it carries on from here (stacks already down are skipped; the lookup at the end lists anything left in AWS).";
+// Every in-process step: a failure or a wait that ran out stops the run
+// with a hint that it resumes.
+function resumable(step) {
+  if (!step.fn) return step;
+  return {
+    ...step,
+    fn: async (ctx) => {
+      let out;
+      try {
+        out = await step.fn(ctx);
+      } catch (error) {
+        const msg = String(error?.message || error);
+        return { error: /timed out|timeout/i.test(msg) ? `wait ran out: ${msg.split("\n")[0]}` : msg.split("\n")[0], hint: RESUME };
+      }
+      if (out?.error) return { ...out, hint: [out.hint, RESUME].filter(Boolean).join(" ") };
+      return out;
+    },
+  };
+}
+
 // The whole run: plan -> steps. destroyPlan(id, stack) -> { steps } from
 // upgrade.destroyPlan.
 export function takedownSteps(plan, { run, region = "eu-north-1", destroyPlan, nodegroups = [] }) {
   const steps = [{ text: "plan", fn: () => ({ lines: takedownText(plan).split("\n") }) }];
   const { context, cluster } = plan;
+  const deferred = [];
   for (const p of plan.pre) {
     if (p.kind === "scale-up") steps.push(scaleUpStep({ cluster, region, nodegroup: p.nodegroup || nodegroups[0], context, run }));
     if (p.kind === "webhooks") steps.push(webhookStep({ context, run }));
@@ -303,7 +410,12 @@ export function takedownSteps(plan, { run, region = "eu-north-1", destroyPlan, n
     const got = destroyPlan(s.id, { clusterName: cluster });
     if (got.error) throw new Error(`${s.stack}: ${got.error}`);
     steps.push({ text: `── ${s.n}/${plan.order.length + (plan.eks ? 1 : 0)} take down ${s.stack} (${s.count} resources)`, fn: () => ({ lines: [] }) });
-    steps.push(...got.steps);
+    for (const st of got.steps) {
+      if (s.id === "pgcluster" && st.fn && /EBS volumes/.test(st.text || "")) {
+        if (context) steps.push(pgReleaseStep({ context, run }));
+        steps.push({ ...st, fn: (ctx = {}) => st.fn({ ...ctx, deferInUse: (ids) => deferred.push(...ids) }) });
+      } else steps.push(st);
+    }
   }
   if (plan.eks) {
     const got = destroyPlan("eks", { clusterName: cluster });
@@ -311,8 +423,9 @@ export function takedownSteps(plan, { run, region = "eu-north-1", destroyPlan, n
     steps.push({ text: `── ${plan.order.length + 1}/${plan.order.length + 1} take down ${plan.eks.stack}: the cluster`, fn: () => ({ lines: [] }) });
     steps.push(...got.steps);
   }
+  if (plan.order.some((s) => s.id === "pgcluster")) steps.push(deferredVolumesStep({ region, run, deferred }));
   steps.push(leftoverStep({ cluster, region, run }));
-  return steps;
+  return steps.map(resumable);
 }
 
 // SAMPLE mode: cloudspider-up as Gabriel's account had it (0 nodes).

@@ -34,7 +34,14 @@ export function connectSteps(context = "cloudspider-viewer") {
   ];
 }
 
-export function createKubeEmpty(root, { onRetry = () => {}, onSample = () => {} } = {}) {
+// The region has no EKS cluster at all (not "no access"): one sentence and
+// a link straight to the STACKS > EKS card. Pure text, pinned by the tests.
+export function emptyRegionText(region = "") {
+  const at = region || "this region";
+  return { title: `No EKS cluster in ${at}`, text: `No EKS cluster in ${at}. Create one from STACKS > EKS, or pick another context.` };
+}
+
+export function createKubeEmpty(root, { onRetry = () => {}, onSample = () => {}, onStacks = () => {} } = {}) {
   const el = (tag, cls, text) => {
     const node = document.createElement(tag);
     if (cls) node.className = cls;
@@ -67,6 +74,36 @@ export function createKubeEmpty(root, { onRetry = () => {}, onSample = () => {} 
       sample.type = "button";
       sample.addEventListener("click", () => onSample());
       row.append(retry, sample, el("small", "ke-note", "Cloud Spider only sends GET requests and runs none of these commands."));
+      card.append(row);
+      root.append(card);
+    },
+    // No EKS cluster in the region: a short card with the STACKS link.
+    // hasContexts: the switcher (top right) offers others, so say so.
+    showRegion({ region = "", hasContexts = false } = {}) {
+      root.hidden = false;
+      if (key === `region|${region}|${hasContexts}`) return;
+      key = `region|${region}|${hasContexts}`;
+      root.replaceChildren();
+      const words = emptyRegionText(region);
+      const card = el("div", "ke-card ke-region");
+      card.append(el("h2", "ke-title", words.title));
+      const p = el("p", "ke-reason");
+      const link = el("a", "ke-link", "STACKS > EKS");
+      link.href = "#stacks-eks";
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        onStacks();
+      });
+      p.append(`No EKS cluster in ${region || "this region"}. Create one from `, link, `, or pick another context${hasContexts ? " (top right)" : ""}.`);
+      card.append(p);
+      const row = el("div", "ke-actions");
+      const open = el("button", "ke-btn", "OPEN STACKS > EKS");
+      open.type = "button";
+      open.addEventListener("click", () => onStacks());
+      const sample = el("button", "ke-btn ke-ghost", "SHOW SAMPLE");
+      sample.type = "button";
+      sample.addEventListener("click", () => onSample());
+      row.append(open, sample);
       card.append(row);
       root.append(card);
     },

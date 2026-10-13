@@ -230,7 +230,7 @@ const kubeOps = document.querySelector("#kube-ops");
 // (docs/plan-modules-and-service-graph.md).
 const graphView = createGraphView(document.querySelector("#kube-graph"));
 // No cluster to read (no kubeconfig / no such context): how to connect.
-const kubeEmpty = createKubeEmpty(document.querySelector("#kube-empty"), { onRetry: () => pullCluster(), onSample: () => toggleSample() });
+const kubeEmpty = createKubeEmpty(document.querySelector("#kube-empty"), { onRetry: () => pullCluster(), onSample: () => toggleSample(), onStacks: () => openEksCard() });
 // Modules this page shows (null until /api/config answers): see applyModules.
 // The server stamps <html data-modules> with the modules that are on and
 // hides every [data-module] element of the rest (modules.js gateStyle); what
@@ -2009,31 +2009,79 @@ function unconnectedClusters() {
 }
 
 let contextsBody = null;
+// Contexts hidden in this browser (the switcher's ×); cloudspider.yaml's
+// kube.hideContexts hides them for everyone. The kubeconfig is not touched.
+const HIDDEN_CONTEXTS_KEY = "cloudspider.cluster.hiddenContexts";
+let hiddenContexts = new Set(parseList(readPref(HIDDEN_CONTEXTS_KEY, "")));
+function parseList(text) {
+  try {
+    const got = JSON.parse(text || "[]");
+    return Array.isArray(got) ? got.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+function setContextHidden(name, hide) {
+  if (hide) hiddenContexts.add(name);
+  else hiddenContexts.delete(name);
+  writePref(HIDDEN_CONTEXTS_KEY, JSON.stringify([...hiddenContexts]));
+  contextsShown = "";
+  if (contextsBody) renderContexts(contextsBody);
+}
+// A context the page may land on by itself: not GONE, not hidden.
+const REACH_WORD = { gone: "GONE", unreachable: "UNREACHABLE" };
+// Only a click picks a GONE context; a stored or default pick never does.
+let contextPickedByHand = false;
 function renderContexts(body) {
   contextsBody = body;
   if (Array.isArray(body?.contexts) && body.contexts.length) knownContexts = body.contexts;
-  const list = mode === "cluster" && !sample && Array.isArray(body?.contexts) ? body.contexts : [];
-  const pending = mode === "cluster" && !sample && list.length ? unconnectedClusters() : [];
-  kubeCtxEl.hidden = list.length < 2 && !pending.length;
+  const all = mode === "cluster" && !sample && Array.isArray(body?.contexts) ? body.contexts : [];
+  const current = body?.context || all.find((item) => item.primary)?.context || all[0]?.context || "";
+  const list = all.filter((item) => item.context === current || (!item.hidden && !hiddenContexts.has(item.context)));
+  const hiddenCount = all.length - list.length;
+  const here = all.find((item) => item.context === current);
+  if (here && !contextPickedByHand && (here.reach === "gone" || here.hidden || hiddenContexts.has(here.context))) {
+    const next = all.find((item) => item.reach !== "gone" && !item.hidden && !hiddenContexts.has(item.context));
+    if (next && next.context !== current) {
+      setClusterContext(next.context, { auto: true });
+      return;
+    }
+  }
+  const pending = mode === "cluster" && !sample && all.length ? unconnectedClusters() : [];
+  kubeCtxEl.hidden = list.length < 2 && !pending.length && !hiddenCount;
   if (kubeCtxEl.hidden) {
     contextsShown = "";
     placeConnectChip();
     return;
   }
-  const current = body.context || list[0].context;
-  const key = JSON.stringify([current, list.map((item) => [item.context, item.label, item.lamp, item.total, item.scope]), pending.map((item) => [item.cluster, item.state])]);
+  const key = JSON.stringify([current, list.map((item) => [item.context, item.label, item.lamp, item.total, item.scope, item.reach]), pending.map((item) => [item.cluster, item.state]), hiddenCount]);
   if (key === contextsShown) return;
   contextsShown = key;
   const title = vel("b", "", "CONTEXT");
   const buttons = list.map((item) => {
-    const button = vel("button", item.lamp);
+    const word = REACH_WORD[item.reach] || "";
+    const button = vel("button", word ? item.reach : item.lamp);
     button.type = "button";
     button.setAttribute("aria-pressed", String(item.context === current));
     const issues = item.total ? `${item.total} issue${item.total === 1 ? "" : "s"}: ${(item.worst || []).map((w) => w.line).join("; ")}` : item.lamp === "ok" ? "every pod healthy" : item.error || "not read yet";
-    button.title = `${item.context} · ${item.scope === "*" ? "every namespace" : item.scope.join(", ")} · ${issues}`;
-    button.append(vel("i"), vel("span", "", item.label.toUpperCase()), vel("small", "", contextScope(item)));
-    if (item.total) button.append(vel("em", "", String(item.total)));
-    button.addEventListener("click", () => setClusterContext(item.context));
+    button.title = word ? `${item.context} · ${word}: ${item.reachText || "the cluster does not answer"} · × hides it in this browser (kube.hideContexts in cloudspider.yaml hides it for everyone; your kubeconfig is not changed)` : `${item.context} · ${item.scope === "*" ? "every namespace" : item.scope.join(", ")} · ${issues}`;
+    button.append(vel("i"), vel("span", "", item.label.toUpperCase()), vel("small", "", word || contextScope(item)));
+    if (item.total && !word) button.append(vel("em", "", String(item.total)));
+    if (word) {
+      const hide = vel("u", "", "×");
+      hide.title = `hide ${item.context} in this browser`;
+      hide.setAttribute("role", "button");
+      hide.setAttribute("aria-label", `hide ${item.context}`);
+      hide.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setContextHidden(item.context, true);
+      });
+      button.append(hide);
+    }
+    button.addEventListener("click", () => {
+      contextPickedByHand = true;
+      setClusterContext(item.context);
+    });
     return button;
   });
   for (const item of pending) {
@@ -2047,15 +2095,28 @@ function renderContexts(body) {
     });
     buttons.push(button);
   }
+  const browserHidden = all.filter((item) => hiddenContexts.has(item.context) && item.context !== current);
+  if (browserHidden.length) {
+    const more = vel("button", "hidden-more");
+    more.type = "button";
+    more.title = `hidden in this browser: ${browserHidden.map((item) => item.context).join(", ")} · click: show them again`;
+    more.append(vel("i"), vel("span", "", `+${browserHidden.length}`), vel("small", "", "HIDDEN"));
+    more.addEventListener("click", () => {
+      for (const item of browserHidden) hiddenContexts.delete(item.context);
+      setContextHidden("", false);
+    });
+    buttons.push(more);
+  }
   kubeCtxEl.replaceChildren(title, ...buttons);
   placeConnectChip();
 }
 
-function setClusterContext(name) {
+function setClusterContext(name, { auto = false } = {}) {
   if (name === (clusterData?.context || clusterContext)) return;
   kubeSearchText.set(clusterData?.context || clusterContext, kubeSearchEl.value);
   clusterContext = name;
-  writePref(CLUSTER_CONTEXT_KEY, name);
+  // An automatic move off a GONE context is not remembered as a choice.
+  if (!auto) writePref(CLUSTER_CONTEXT_KEY, name);
   kubeSearchEl.value = kubeSearchText.get(name) || "";
   searchCursor = -1;
   k9s.reset();
@@ -2260,7 +2321,9 @@ function drawCluster() {
 function draw() {
   syncClusterScreens();
   const noCluster = mode === "cluster" && !sample && Boolean(clusterData?.unset) && !clusterData?.diagram && (!clusterTabsShown || clusterScreen === "topology");
+  const noRegionCluster = mode === "cluster" && !sample && Boolean(clusterData?.emptyRegion) && !clusterData?.diagram?.nodes?.length && (!clusterTabsShown || clusterScreen === "topology");
   if (noCluster) kubeEmpty.show({ context: clusterData.context || "", reason: clusterData.reason || clusterData.note || "" });
+  else if (noRegionCluster) kubeEmpty.showRegion({ region: clusterData.emptyRegion, hasContexts: !kubeCtxEl.hidden });
   else if (kubeEmpty.isShown()) kubeEmpty.hide();
   // An HTML screen covers the canvas: nothing to paint underneath.
   if (clusterTabsShown && clusterScreen !== "topology") return;

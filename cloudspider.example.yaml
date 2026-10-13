@@ -25,6 +25,7 @@ kube:
   contextsFile: cloudspider.contexts.yaml  # env CLOUDSPIDER_KUBE_CONTEXTS_FILE: the file CONNECT writes
   autoConnect: true                    # env CLOUDSPIDER_KUBE_AUTO_CONNECT: CONNECT after an EKS RUN on Stacks, DISCONNECT after TAKE IT DOWN
   writeContexts: []                    # env CLOUDSPIDER_KUBE_WRITE_CONTEXTS: contexts where the network debug pod may be created (none by default)
+  hideContexts: []                     # env CLOUDSPIDER_KUBE_HIDE_CONTEXTS: contexts the CONTEXT switcher never shows (a deleted cluster's leftover); the kubeconfig is not changed
   # Contexts and namespace allowlists. Listed here first; entries of the
   # contexts file are added after them (a name in both keeps this entry).
   # env CLOUDSPIDER_KUBE_CONTEXTS="ctxA:ns1,ns2;ctxB:*" replaces both.

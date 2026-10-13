@@ -1,4 +1,5 @@
 import { EC2Client } from "@aws-sdk/client-ec2";
+import { createReach } from "./kube-reach.js";
 import { createEksPreflight } from "./stack-preflight.js";
 import { createLogReport } from "./log-report.js";
 import { nodeLookup } from "./graph-lookup.js";
@@ -141,6 +142,8 @@ const app = createApp({
   agent: createAgent({ cwd: root }),
   kube,
   kubeContexts,
+  hideContexts: config.kube.hideContexts || [],
+  reach: createReach({ describe: mods.has("aws") && aws.eks?.describeCluster ? (name) => aws.eks.describeCluster(name) : null }),
   addons: createAddons({ eks: aws.eks, kube }),
   logGroup: config.aws.logGroup,
   regionsAllow: config.aws.regions,

@@ -120,7 +120,9 @@ test("the cluster tab is its own route and sample does not list clusters", async
     assert.equal(reads, 0);
     const live = await fetch(`${base}/api/cluster`);
     const listed = await live.json();
-    assert.equal(listed.headline, "no cluster in this region");
+    assert.match(listed.headline, /^No EKS cluster in [a-z0-9-]+\. Create one from STACKS > EKS, or pick another context\.$/);
+    assert.ok(!/OpenShift reader/.test(listed.note));
+    assert.ok(listed.emptyRegion);
     assert.equal(reads, 1);
   } finally {
     server.close();

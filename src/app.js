@@ -85,7 +85,7 @@ const NEEDS_MS = 40_000;
 // How often a running stack's pods are checked for what they wait on.
 const WAIT_MS = Number(process.env.CLOUDSPIDER_WAIT_MS) || 20_000;
 
-export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL, auditFile = "" }) {
+export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, hideContexts = [], reach = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL, auditFile = "" }) {
   let stackResourcesReader = null;
   // The modules view main.js hands over (settings.modules): aws off = k8s-only.
   const awsOffHere = () => settings?.modules?.modules?.find((m) => m.id === "aws")?.on === false;
@@ -467,8 +467,15 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   async function readKube(maxAge) {
     return readContext(primary, maxAge);
   }
+  // Is each context's cluster still there (kube-reach.js)? Cached, cheap,
+  // never waited on: GONE / UNREACHABLE dim the switcher's button.
+  const reacher = reach || { get: () => ({ state: "unknown", text: "" }) };
+  const hiddenByConfig = new Set((hideContexts || []).map(String));
   function contextList() {
-    return contexts.map((ctx) => ({ ...health.summary(ctx), primary: ctx.primary, poll: ctx.pollMs }));
+    return contexts.map((ctx) => {
+      const r = reacher.get(ctx);
+      return { ...health.summary(ctx), primary: ctx.primary, poll: ctx.pollMs, reach: r.state, reachText: r.text || "", ...(hiddenByConfig.has(ctx.name) ? { hidden: "config" } : {}) };
+    });
   }
   function contextFor(name) {
     return name ? contexts.find((ctx) => ctx.name === name) || null : primary;
@@ -1594,8 +1601,9 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         region: at,
         error: "",
         diagram,
-        headline: diagram.nodes.length ? "" : "no cluster in this region",
-        note: "EKS in this region. An OpenShift reader fills the same picture.",
+        headline: diagram.nodes.length ? "" : `No EKS cluster in ${at}. Create one from STACKS > EKS, or pick another context.`,
+        note: diagram.nodes.length ? "EKS in this region. An OpenShift reader fills the same picture." : "",
+        ...(diagram.nodes.length ? {} : { emptyRegion: at }),
       };
     },
     // The map's cluster compound: the same kube diagram the Cluster view

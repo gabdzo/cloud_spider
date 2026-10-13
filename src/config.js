@@ -40,6 +40,7 @@ export const SCHEMA = {
     contexts: { type: "contexts", default: [], doc: "contexts and namespace allowlists; merged with cloudspider.contexts.yaml (these first)" },
     contextsFile: { type: "string", default: "cloudspider.contexts.yaml", env: "CLOUDSPIDER_KUBE_CONTEXTS_FILE", doc: "the contexts file CONNECT writes (still read, merged after kube.contexts)" },
     autoConnect: { type: "boolean", default: true, env: "CLOUDSPIDER_KUBE_AUTO_CONNECT", doc: "CONNECT a cluster after its EKS RUN on Stacks, DISCONNECT it after TAKE IT DOWN (the current context is never changed)" },
+    hideContexts: { type: "list", items: CONTEXT, default: [], env: "CLOUDSPIDER_KUBE_HIDE_CONTEXTS", doc: "contexts the CONTEXT switcher never shows (a deleted cluster's leftover context, say); the kubeconfig is not changed" },
     writeContexts: { type: "list", items: CONTEXT, default: [], env: "CLOUDSPIDER_KUBE_WRITE_CONTEXTS", doc: "contexts where Cloud Spider may create its network debug pod (a separate identity with the netdebug Role); [] = none, ppf-* need a typed confirm" },
   },
   ui: {
