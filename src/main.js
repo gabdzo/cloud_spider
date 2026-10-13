@@ -116,7 +116,9 @@ async function loadKubeContexts() {
 const connector = createConnector({ env: process.env, contextsFile, exampleFile: join(root, "cloudspider.contexts.example.yaml") });
 const kube = kubeContexts[0]?.kube || createKube();
 // Stack runs (pulumi). Kept here too: a Ctrl-C waits for them (shutdown.js).
-const stacks = createUpgrade({ runsDir: join(stateDir, "runs"), volumes: aws.volumes, eksMaxNodes: config.stacks.eks.maxNodes });
+// Every stack PREVIEW / RUN / TAKE IT DOWN lands in audit.jsonl too (src/stack-audit.js).
+const stackGitSha = (() => { try { return spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).stdout?.trim() || ""; } catch { return ""; } })();
+const stacks = createUpgrade({ runsDir: join(stateDir, "runs"), volumes: aws.volumes, eksMaxNodes: config.stacks.eks.maxNodes, gitSha: stackGitSha, audit: (entry) => fsp.mkdir(stateDir, { recursive: true }).then(() => fsp.appendFile(join(stateDir, "audit.jsonl"), JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n")) });
 const app = createApp({
   ec2: aws.ec2,
   trail: aws.trail,
