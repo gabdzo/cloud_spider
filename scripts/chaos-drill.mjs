@@ -6,7 +6,7 @@
 // end, also on failure or Ctrl-C.
 //
 //   node scripts/chaos-drill.mjs --app http://127.0.0.1:9251 --admin cloudspider-up-admin \
-//     --viewer cloudspider-up-viewer [--only NET-001,K8S-001] [--shots dir --pw path/to/playwright-core]
+//     --viewer cloudspider-up-viewer [--only NET-001,K8S-001] [--shots dir --pw path/to/playwright-core/index.mjs [--chrome binary]]
 //
 // Writes go ONLY through --admin (kubectl --context, never current-context).
 import { spawnSync } from "node:child_process";
@@ -149,7 +149,7 @@ for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, async () => { await onc
 
 const results = [];
 try {
-  if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); if (PW) { const { chromium } = await import(PW); browser = await chromium.launch(); page = await browser.newPage({ viewport: { width: 1440, height: 900 } }); } }
+  if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); if (PW) { const { chromium } = await import(PW); browser = await chromium.launch(arg("chrome") ? { executablePath: arg("chrome") } : {}); page = await browser.newPage({ viewport: { width: 1440, height: 900 } }); } }
   apply(`apiVersion: v1\nkind: Namespace\nmetadata: { name: ${NS}, labels: { cloudspider.dev/purpose: chaos-drill } }\n`);
   for (const s of S) {
     if (ONLY && !ONLY.includes(s.id)) continue;
