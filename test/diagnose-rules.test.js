@@ -113,3 +113,24 @@ test("edgeDelta: subtracts counters, takes a reset counter as the window", () =>
   const d = edgeDelta([{ from: "a", to: "b", total: 100, failed: 10 }, { from: "c", to: "b", total: 100, failed: 1 }], [{ from: "a", to: "b", total: 160, failed: 12 }, { from: "c", to: "b", total: 40, failed: 0 }]);
   assert.deepEqual(d.map((x) => [x.total, x.failed, !!x.reset]), [[60, 2, false], [40, 0, true]]);
 });
+
+// Live gaps found on cloudspider-up (2026-10-13).
+test("failing calls under MIN_CALLS: no APP-001, but an open question (never silent)", () => {
+  const facts = { ...demo.before(), edges: [{ from: "shop/shopapi", to: "brother-sandbox/db", total: 41, failed: 41 }], logs: [] };
+  const rec = investigation(facts);
+  assert.deepEqual(validate(rec), []);
+  assert.ok(!rec.findings.some((f) => f.code === "APP-001"));
+  assert.ok(rec.questions.some((q) => /41 of 41 calls .* failed \(100\.0%\).*too few/.test(q)), rec.questions.join("\n"));
+  const quiet = investigation({ ...demo.before(), edges: [{ from: "shop/shopapi", to: "brother-sandbox/db", total: 30, failed: 0 }], logs: [] });
+  assert.ok(!quiet.questions.some((q) => /too few/.test(q)));
+});
+
+test("a Pending pod is named in evidence and an open question, not hidden", () => {
+  const base = demo.before();
+  const pods = [...base.pods, { name: "db-pending-x", phase: "Pending", ready: false, restarts: 0 }];
+  const rec = investigation({ ...base, pods });
+  assert.deepEqual(validate(rec), []);
+  assert.ok(rec.evidence.some((e) => /1 pending/.test(e.summary)));
+  assert.ok(rec.questions.some((q) => /Pending.*db-pending-x.*describe pod db-pending-x/.test(q)), rec.questions.join("\n"));
+  assert.ok(!investigation(base).questions.some((q) => /Pending/.test(q)));
+});
