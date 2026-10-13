@@ -25,6 +25,7 @@ import { LE_CSS } from "./log-errors-style.js";
 import { scoreRoute } from "./score/routes.js";
 import { netdebugRoute } from "./netdebug/routes.js";
 import { eksScaleRoute } from "./eks-scale-route.js";
+import { diagnoseRoute } from "./diagnose/route.js";
 import { sampleTakedownPlan, takedownText } from "./cluster-takedown.js";
 import { defaults, effectiveConfig } from "./config.js";
 import { sampleCost } from "./cost.js";
@@ -3541,6 +3542,7 @@ async function route(app, req, res) {
   if (await scoreRoute(req, res, url, app.score, { send, readJson })) return;
   if (await netdebugRoute(req, res, url, app.netdebug, { send, readJson })) return;
   if (await eksScaleRoute(req, res, url, app.eksScale, { send, readJson })) return;
+  if (await diagnoseRoute(req, res, url, app.diagnose, { send, readJson })) return;
 
   if (req.method === "GET" && url.pathname === "/api/sample") {
     send(res, 200, { place: samplePlace(), trail: sampleTrail(), morning: sampleMorning() });

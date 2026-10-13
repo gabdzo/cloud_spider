@@ -51,6 +51,7 @@ import { createAwsCollector } from "./netdebug/aws.js";
 import { createKubeCollector } from "./netdebug/kube-collect.js";
 import { createCloudFrontReader, createRoute53Reader, createVpcReader } from "./netdebug/aws-readers.js";
 import { awsOff, modulesView, resolveModules, scorePacks } from "./modules.js";
+import { createInvestigationStore } from "./diagnose/store.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 // cloudspider.yaml (config.js): defaults < file < env < flags. A bad value
@@ -235,6 +236,14 @@ app.netdebug.addCollector(createKubeCollector({
   },
 }));
 
+// Diagnose (src/diagnose): read-only investigations of one Service through
+// the viewer kube client, plus SNIFF's AWS path graph for ALB target health
+// when the aws module is on. Snapshots under storage.path/investigations.
+app.diagnose = {
+  kubeOf: mods.has("kubernetes") ? (ctx) => app.kubeOf(ctx) : () => null,
+  pathGraph: mods.has("aws") ? () => app.pathGraph() : null,
+  store: createInvestigationStore({ dir: join(stateDir, "investigations") }),
+};
 // SLO history survives a restart (.cloudspider/slo-ledger.json).
 const sloStore = createSloStore({ file: join(stateDir, "slo-ledger.json"), ledger: app.sloLedger() });
 const sloLoaded = await sloStore.load();
