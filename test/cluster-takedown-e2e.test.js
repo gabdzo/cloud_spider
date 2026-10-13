@@ -88,7 +88,18 @@ function world() {
     const eks = UPGRADES.find((s) => s.id === "eks");
     pulumi(eks, ["config", "set", "--stack", "upgrade", `${eks.project}:maxPods`, "50"]);
   }
-  const upgrade = createUpgrade({ cwd: dir, env, policyPack: "" });
+  // Fake EC2 for pgcluster's volume sweep, over the same fake cluster: a
+  // volume lives while its PV does; a stuck one (a pod / attachment holds
+  // it) stays in-use until the EKS stack deletes the nodes.
+  const volumes = {
+    async list() {
+      const s = read();
+      const nodes = Boolean(s.objects["upgrade:nodegroup"]);
+      return { items: (s.volumes || []).filter((v) => !v.pvDeleted && (!v.stuck || nodes)).map((v) => ({ id: v.id, state: v.state || "in-use", size: 5, tags: {} })) };
+    },
+    async remove() { return {}; },
+  };
+  const upgrade = createUpgrade({ cwd: dir, env, policyPack: "", volumes, sweepLimits: { graceMs: 0, inUseMs: 0, timeoutMs: 1500, everyMs: 20 } });
   // VAULTS as Gabriel has them: a vault file bound to a cluster stack
   // (registration), a template auto-listed while its stack is up, and a
   // tags-only vault (not Pulumi-managed).
@@ -244,4 +255,44 @@ test("a single card's TAKE IT DOWN ignores card values an up would refuse (maxPo
   const refusedNot = w.upgrade.run({ module: "eks", action: "destroy", params: { clusterName: CLUSTER, maxPods: "50", instanceType: "t4g.small", capacityType: "SPOT", confirmName: "wrong" } });
   assert.doesNotMatch(refusedNot.error || "", /maxPods|must be/);
   assert.match(refusedNot.error || "", /type|confirm|name/i);
+});
+
+test("pgcluster's volume stays in-use (live run 2026-10-13): CR then PVCs deleted, the stuck one goes with the nodes, re-checked at the end", { skip, timeout: 600_000 }, async () => {
+  const w = world();
+  w.write({ volumes: [{ id: "vol-007425c832df349ee", pv: "pvc-shopdb-1", stuck: true }, { id: "vol-0aaaaaaaaaaaaaaa1", pv: "pvc-shopdb-2" }] });
+  const started = await w.app.upgradeTakedown(ORIGIN, { cluster: CLUSTER, confirm: CLUSTER });
+  assert.equal(started.running, true, JSON.stringify(started).slice(0, 400));
+  const end = await w.ends[0];
+  const log = logOf(w, end) + "\n" + (end.lines || []).join("\n");
+  assert.equal(end.state, "done", log.slice(-3000));
+  const calls = w.read().calls;
+  const cr = calls.findIndex((c) => /-n shop delete clusters.postgresql.cnpg.io --all/.test(c));
+  const pvc = calls.findIndex((c) => /-n shop delete pvc --all/.test(c));
+  assert.ok(cr >= 0 && pvc > cr, "the CNPG Cluster goes before its PVCs");
+  assert.ok(calls.some((c) => /wait --for=delete pv\/pvc-shopdb-2/.test(c)));
+  assert.match(log, /PV pvc-shopdb-2 gone/);
+  assert.match(log, /PV pvc-shopdb-1 still there/);
+  assert.match(log, /vol-007425c832df349ee still in-use .*goes with the nodes/);
+  assert.match(log, /vol-007425c832df349ee went with the nodes/);
+  assert.doesNotMatch(log, /LEFT IN AWS: EBS volume/);
+  assert.deepEqual(Object.values(w.counts()), STACKS.map(() => 0));
+});
+
+test("a volume wait that runs out stops the run with a resume hint; pressing again finishes", { skip, timeout: 600_000 }, async () => {
+  const w = world();
+  // Neither in-use (would go with the nodes) nor available: still deleting.
+  w.write({ volumes: [{ id: "vol-0bbbbbbbbbbbbbbb2", pv: "pvc-x", stuck: true, state: "deleting" }] });
+  await w.app.upgradeTakedown(ORIGIN, { cluster: CLUSTER, confirm: CLUSTER });
+  const first = await w.ends[0];
+  const log1 = logOf(w, first) + "\n" + (first.lines || []).join("\n") + "\n" + (first.hint || "");
+  assert.equal(first.state, "failed", log1.slice(-3000));
+  assert.match(log1, /pgcluster volumes still there after .*vol-0bbbbbbbbbbbbbbb2 \(deleting\)/);
+  assert.match(log1, /press TAKE DOWN CLUSTER again and it carries on from here/);
+  w.write({ volumes: [] });
+  const again = await w.app.upgradeTakedown(ORIGIN, { cluster: CLUSTER, confirm: CLUSTER });
+  assert.equal(again.running, true, JSON.stringify(again).slice(0, 400));
+  assert.ok(!again.plan.order.some((s) => s.id === "pgcluster"), "pgcluster is already down: skipped");
+  const end = await w.ends[1];
+  assert.equal(end.state, "done", (logOf(w, end) + (end.lines || []).join("\n")).slice(-3000));
+  assert.deepEqual(Object.values(w.counts()), STACKS.map(() => 0));
 });
