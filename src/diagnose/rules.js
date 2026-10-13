@@ -78,7 +78,8 @@ export function evaluate(facts) {
   else {
     const unready = facts.pods.filter((p) => p.phase === "Running" && !p.ready);
     const persistent = unready.filter((p) => (ageS(p.readySince, at) ?? Infinity) >= READY_PERSIST_S);
-    const e = ev("kubernetes-api:pods", `${facts.pods.length} pod(s): ${facts.pods.filter((p) => p.ready).length} ready, ${unready.length} running but not ready`, { pods: facts.pods.slice(0, 20).map(({ name, phase, ready, readySince, restarts, reason }) => ({ name, phase, ready, readySince, restarts, reason })) });
+    const pending = facts.pods.filter((p) => p.phase === "Pending");
+    const e = ev("kubernetes-api:pods", `${facts.pods.length} pod(s): ${facts.pods.filter((p) => p.ready).length} ready, ${unready.length} running but not ready${pending.length ? `, ${pending.length} pending` : ""}`, { pods: facts.pods.slice(0, 20).map(({ name, phase, ready, readySince, restarts, reason }) => ({ name, phase, ready, readySince, restarts, reason })) });
     for (const p of facts.pods) resources.push({ ref: k8sRef(cluster, ns, "pod", p.name), kind: "Pod", name: p.name, namespace: ns });
     if (persistent.length) {
       find("K8S-001", {
@@ -87,6 +88,9 @@ export function evaluate(facts) {
         next_steps: [{ text: "Why the readiness probe fails", command: kubectl(ns, `describe pod ${persistent[0].name}`) }, { text: "Recent logs", command: kubectl(ns, `logs ${persistent[0].name} --tail=50`) }],
       });
     } else if (unready.length) questions.push(`${unready.length} pod(s) are not ready but for less than ${READY_PERSIST_S}s (could be a rollout); look again shortly.`);
+    // A Pending pod is not "running but not ready", so K8S-001 does not cover
+    // it; say so instead of staying quiet (seen live: an unschedulable replica).
+    if (pending.length) questions.push(`${pending.length} pod(s) behind ${svcName} are Pending (not scheduled or not started): ${pending.slice(0, 4).map((p) => p.name).join(", ")}. Why? See: ${kubectl(ns, `describe pod ${pending[0].name}`)}`);
   }
 
   // ---- ALB target groups (NET-002) ----
@@ -144,6 +148,11 @@ export function evaluate(facts) {
       const pct = edge.total ? (100 * edge.failed) / edge.total : 0;
       const e = ev("observe:beyla-service-graph", `${edge.from} → ${edge.to}: ${edge.failed} of ${edge.total} calls failed (${pct.toFixed(1)}%, ${facts.edgeWindow?.kind || "cumulative"})`, { ...edge, pct: +pct.toFixed(2), window: facts.edgeWindow || { kind: "cumulative" } });
       relationships.push({ from: k8sRef(cluster, edge.from.split("/")[0], "service", edge.from.split("/")[1]), to: svcRef, type: "calls", provenance: "verified", how: "observed calls (eBPF service graph)" });
+      if (edge.total < MIN_CALLS && edge.failed > 0) {
+        // Too few calls for APP-001, but failures are there: never stay silent.
+        questions.push(`${edge.failed} of ${edge.total} calls from ${edge.from} to ${svcName} failed (${pct.toFixed(1)}%), but under ${MIN_CALLS} calls is too few to call it an error rate. Look again once more traffic has passed.`);
+        continue;
+      }
       if (edge.total < MIN_CALLS || pct < ERROR_PCT) continue;
       find("APP-001", {
         severity: pct >= 10 ? "high" : "medium", confidence: "medium", status: "confirmed", resource_ref: svcRef, subject: edge.from, evidence_refs: [e],
