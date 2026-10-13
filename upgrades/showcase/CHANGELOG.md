@@ -4,7 +4,7 @@ Semantic versions per module: major = an input removed/renamed or a change that 
 
 ## 1.0.2 (2026-10-14)
 
-- redis-cart, Uptime Kuma and Mealie run as their images' non-root users (fsGroup on the volume); Kuma starts node directly (its entrypoint needs setgid). In place, pods restart.
+- redis-cart, Uptime Kuma and Mealie run as their images' non-root users (fsGroup on the volume); Kuma starts node directly (its entrypoint needs setgid). Memory: Kuma 256Mi (128Mi was OOMKilled), Mealie 512Mi. In place, pods restart.
 
 ## 1.0.1 (2026-10-13)
 
