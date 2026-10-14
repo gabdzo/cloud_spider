@@ -29,7 +29,7 @@ import { csiMade } from "./volume-sweep.js";
 // "the EKS stack installs these now", free pod slots, NEEDS) do not apply:
 // pulumi destroy works from the state and never runs the program.
 
-export const WORKLOAD_ORDER = ["shopapi", "demo", "scaling-demo", "pgcluster", "observability"];
+export const WORKLOAD_ORDER = ["shopapi", "showcase", "demo", "scaling-demo", "pgcluster", "observability", "observe"];
 export const ADDON_ORDER = ["keda", "cert-manager", "karpenter", "lbc", "external-dns", "metrics-server", "pod-identity", "kyverno"];
 
 // Kinds whose finalizer only a controller removes (LBC, CNPG, Karpenter,
@@ -407,7 +407,7 @@ export function takedownSteps(plan, { run, region = "eu-north-1", destroyPlan, n
   for (const s of plan.order) {
     if (s.id === "karpenter" && context && !plan.zeroNodes) steps.push(karpenterNodesStep({ context, run }));
     if (s.id === "karpenter" && context && plan.zeroNodes && plan.scaleUp) steps.push(karpenterNodesStep({ context, run }));
-    const got = destroyPlan(s.id, { clusterName: cluster });
+    const got = destroyPlan(s.id, { clusterName: cluster, ...(s.stack ? { stack: s.stack } : {}) });
     if (got.error) throw new Error(`${s.stack}: ${got.error}`);
     steps.push({ text: `── ${s.n}/${plan.order.length + (plan.eks ? 1 : 0)} take down ${s.stack} (${s.count} resources)`, fn: () => ({ lines: [] }) });
     for (const st of got.steps) {
