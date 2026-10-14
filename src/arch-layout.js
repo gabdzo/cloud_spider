@@ -216,7 +216,9 @@ export const WIRE_GAP = 112;
 export const BADGE_ROOM = 16;
 const fronts = (lb, item) => lb?.kind === "alb" && item?.kind === "eks" && lb.cluster && lb.cluster === item.name;
 
-function rowOfCards(items, x, y, room) {
+// wrapGap: extra room between wrapped lines (a public ALB's dock under one
+// line and the PUBLIC badge over the next), so lines never overlap.
+function rowOfCards(items, x, y, room, wrapGap = 0) {
   const placed = [];
   let cx = x;
   let cy = y;
@@ -227,7 +229,7 @@ function rowOfCards(items, x, y, room) {
     if (previous && previous.y === cy && fronts(previous, item)) cx += WIRE_GAP - A.GAP;
     if (cx > x && cx + w > x + room) {
       cx = x;
-      cy = bottom + A.GAP;
+      cy = bottom + A.GAP + wrapGap;
     }
     placed.push({ ...item, label: item.label || item.name || item.id, x: cx, y: cy, w, h: A.CARD_H });
     cx += w + A.GAP;
@@ -238,7 +240,7 @@ function rowOfCards(items, x, y, room) {
 
 // Room under the edge row for a public ALB's dock (browser.js): the reach
 // lamp, OPEN ↗ and the folded ROUTES, hung under its card, not over subnets.
-export const DOCK_ROOM = 28;
+export const DOCK_ROOM = 50; // a dock may wrap onto two lines (it is no wider than its card)
 export const hasDock = (item) => item?.kind === "alb" && item.public === true && Boolean(item.url || (item.lbType === "network" && item.dns));
 
 // ---- edges ----
@@ -302,7 +304,8 @@ export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fi
   let right = x + A.INSET + textWidth(label) + 40;
 
   if (edge.some((item) => item.public || item.exposedBy?.length)) cursorY += BADGE_ROOM;
-  const edgeRow = rowOfCards(edge.sort((a, b) => KIND_ORDER(a) - KIND_ORDER(b) || byId(a, b)), left, cursorY, Math.max(inner, A.CARD_MAX));
+  const wrapGap = (edge.some(hasDock) ? DOCK_ROOM : 0) + (edge.some((item) => item.public || item.exposedBy?.length) ? BADGE_ROOM : 0);
+  const edgeRow = rowOfCards(edge.sort((a, b) => KIND_ORDER(a) - KIND_ORDER(b) || byId(a, b)), left, cursorY, Math.max(inner, A.CARD_MAX), wrapGap);
   if (edgeRow.items.length) {
     cursorY = edgeRow.bottom + A.GAP + (edge.some(hasDock) ? DOCK_ROOM : 0);
     right = Math.max(right, edgeRow.right);
