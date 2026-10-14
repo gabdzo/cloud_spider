@@ -87,7 +87,8 @@ export function addonTree({ clusters = [], stacks = [], outputs = {}, detected =
   for (const row of stacks) {
     const parsed = parseStack(row?.name);
     if (!parsed) continue;
-    if (!byCluster.has(parsed.cluster)) byCluster.set(parsed.cluster, { live: false });
+    // a gone cluster's empty leftovers (0 resources) do not bring it back
+    if (!byCluster.has(parsed.cluster) && row.resourceCount > 0) byCluster.set(parsed.cluster, { live: false });
     ours.set(`${parsed.addon}|${parsed.cluster}`, row);
   }
   return [...byCluster.entries()]

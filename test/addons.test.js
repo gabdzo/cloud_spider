@@ -90,7 +90,7 @@ test("the tree: installed from its stack, present from elsewhere, missing needs,
     detected,
     detectedCluster: "cloudspider-up",
   });
-  assert.deepEqual(tree.map((c) => [c.cluster, c.live]), [["cloudspider-up", true], ["gone-cluster", false], ["old", false]]);
+  assert.deepEqual(tree.map((c) => [c.cluster, c.live]), [["cloudspider-up", true], ["gone-cluster", false]]);
   const up = Object.fromEntries(tree[0].addons.map((a) => [a.id, a]));
   assert.equal(up.kyverno.state, "installed");
   assert.equal(up.kyverno.version, "v1.19.1");
