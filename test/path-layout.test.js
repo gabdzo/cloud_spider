@@ -46,9 +46,9 @@ test("a supplied width squeezes columns and a tiny width stops at the floor", ()
   }
   // Hop cards (path-card.js) never shrink below 168px; a tiny window
   // stacks them into more bands and scrolls instead of clipping the text.
-  const floor = layoutPath(diagram(), 200);
+  const floor = layoutPath(diagram(), 150);
   assert.equal(floor.nodes[0].w, 168);
-  assert.ok(floor.contentWidth > 200);
+  assert.ok(floor.contentWidth > 150);
   for (const a of floor.nodes) {
     for (const b of floor.nodes) {
       if (a === b || a.x !== b.x) continue;

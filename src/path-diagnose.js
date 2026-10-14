@@ -465,7 +465,7 @@ function ruleNode(rule) {
     kind: "rule",
     label: rule.isDefault ? "default" : `rule ${rule.priority}`,
     caption: match,
-    facts: { hosts: rule.hosts, paths: rule.paths, isDefault: Boolean(rule.isDefault), priority: rule.priority, action: rule.actions[0]?.type || "" },
+    facts: { hosts: rule.hosts, paths: rule.paths, isDefault: Boolean(rule.isDefault), priority: rule.priority, action: rule.actions[0] ? actionWords(rule.actions[0], "", "") : "" },
     status: "ok",
     sentence: `${ruleName(rule)} matches ${match} and ${actionWords(rule.actions[0], "", "")}.`,
   };

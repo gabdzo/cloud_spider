@@ -321,6 +321,16 @@ function drawCard(ctx, node, selected, glyph, phase) {
   }
   const left = node.x + 14;
   const room = node.w - 26;
+  if (node.aside) {
+    // Context card: TYPE and lamp, then name · what it does.
+    ctx.font = SMALL;
+    ctx.fillStyle = muted();
+    ctx.fillText(fitText(ctx, card.type, room - 24), left, node.y + 18);
+    drawLight(ctx, node.x + node.w - 16, node.y + 14, card.light, phase);
+    ctx.fillStyle = text();
+    ctx.fillText(fitText(ctx, [card.name, card.port].filter(Boolean).join(" · "), room), left, node.y + 36);
+    return;
+  }
   // Row 1: icon, TYPE, lamp.
   ctx.fillStyle = rgba(INK.bright, 0.08);
   ctx.fillRect(left - 2, node.y + 8, 20, 20);
@@ -332,13 +342,13 @@ function drawCard(ctx, node, selected, glyph, phase) {
   // Row 2: the name.
   ctx.font = FONT;
   ctx.fillStyle = text();
-  ctx.fillText(fitText(ctx, card.name, room), left, node.y + 47);
+  ctx.fillText(fitText(ctx, card.name, room), left, node.y + 45);
   // Row 3: protocol and port; row 4: the detail.
   ctx.font = SMALL;
   ctx.fillStyle = INK.bright;
-  if (card.port) ctx.fillText(fitText(ctx, card.port, room), left, node.y + 66);
+  if (card.port) ctx.fillText(fitText(ctx, card.port, room), left, node.y + 62);
   ctx.fillStyle = muted();
-  ctx.fillText(fitText(ctx, card.detail, room), left, node.y + (card.port ? 83 : 66));
+  ctx.fillText(fitText(ctx, card.detail, room), left, node.y + (card.port ? 78 : 62));
 }
 
 // Where the diagnosis panel for a node goes on a canvas of this size. The

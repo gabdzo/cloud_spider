@@ -22,16 +22,18 @@ test("cards say what each hop is, its port and the key fact", () => {
   assert.equal(lb.full, "k8s-boutique-boutique-79ade2d979");
   assert.equal(lb.port, "HTTP :80");
   assert.equal(cardOf({ kind: "lb", label: "n", facts: { lbType: "network", scheme: "internal" } }).type, "NLB · internal");
-  const rule = cardOf({ kind: "rule", status: "ok", facts: { hosts: ["kuma.demo"], paths: ["/"], priority: 1, action: "forward" } });
+  const rule = cardOf({ kind: "rule", status: "ok", facts: { hosts: ["kuma.demo"], paths: ["/"], priority: 1, action: "forwards" } });
   assert.equal(rule.type, "RULE · #1");
   assert.equal(rule.name, "kuma.demo");
-  assert.equal(rule.detail, "host kuma.demo · path /");
+  assert.equal(rule.detail, "path /");
+  assert.equal(rule.full, "host kuma.demo · path /");
+  assert.equal(rule.port, "forward → target group");
   const tg = cardOf({ kind: "tg", label: "k8s-x-y-0123456789", status: "hang", facts: { protocol: "HTTP", port: 8080, service: "boutique/frontend:80", healthy: 1, total: 2, targetType: "ip" } });
   assert.equal(tg.port, "HTTP → :8080");
   assert.equal(tg.detail, "1/2 healthy · ip");
   assert.equal(tg.light, "hang");
   const node = cardOf({ kind: "node", label: "demo-prod-a", status: "ok", facts: { instanceType: "t3.large", zone: "eu-north-1a", state: "running", ip: "10.0.1.5" } });
-  assert.equal(node.detail, "t3.large · eu-north-1a · running");
+  assert.equal(node.detail, "t3.large · eu-north-1a");
   assert.equal(cardOf({ kind: "target", status: "weird" }).light, "unknown");
 });
 
@@ -87,4 +89,21 @@ test("diagnose attaches facts the cards read", () => {
   assert.deepEqual(lb.facts.ports, ["HTTP :80"]);
   const listener = out.nodes.find((n) => n.kind === "listener");
   assert.equal(listener.facts.port, 80);
+});
+
+test("an off-path sibling (default rule) is a short aside card under the path card", () => {
+  const placed = layoutPath(diagram, 1000);
+  const rule2 = placed.nodes.find((n) => n.id === "rule2");
+  const rule = placed.nodes.find((n) => n.id === "rule");
+  assert.ok(rule2.aside && !rule.aside);
+  assert.ok(rule2.h < rule.h && rule2.y > rule.y);
+});
+
+test("port lists and service names read cleanly", async () => {
+  const { portList, serviceName } = await import("../src/path-card.js");
+  assert.equal(portList(["HTTP :80", "HTTP :8081"]), "HTTP :80 :8081");
+  assert.equal(portList(["HTTP :80", "HTTPS :443"]), "HTTP :80 HTTPS :443");
+  assert.equal(serviceName("uptime-kuma/uptime-kuma:3001"), "uptime-kuma:3001");
+  assert.equal(serviceName("boutique/boutique-frontend:80"), "boutique-frontend:80");
+  assert.equal(portList(["HTTP :8082", "HTTP :80", "HTTP :8081"]), "HTTP :80 :8081 :8082");
 });
