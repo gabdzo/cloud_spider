@@ -124,3 +124,14 @@ export function rowMatches(row, query = "", extra = "") {
   const hay = [row.title, row.id, row.category, row.cluster, row.region, row.stack, row.kind === "addon" ? "addon add-on" : "", extra].join(" ").toLowerCase();
   return words.every((w) => hay.includes(w));
 }
+
+// Clusters TEAR EVERYTHING DOWN offers: the live EKS stack's cluster (its
+// config, else the current cluster from /api/upgrades) and any cluster a
+// non-failed run used. Never a hard-coded name.
+export function nukeClusters({ eksDeployed = false, eksCluster = "", current = "", runs = {} } = {}) {
+  const names = [
+    ...(eksDeployed && (eksCluster || current) ? [eksCluster || current] : []),
+    ...Object.values(runs || {}).filter((r) => r?.cluster && r.result !== "failed").map((r) => r.cluster),
+  ];
+  return [...new Set(names)].filter((c) => /^[a-z][a-z0-9-]{1,27}$/.test(c));
+}
