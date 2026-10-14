@@ -5235,7 +5235,7 @@ async function postUpgrade(action) {
   const body = await upgradeJson("/api/upgrade", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ module: spec.id, action, params: pipParams(), ...(replaceNodeGroup ? { replaceNodeGroup: true } : {}), ...(spec.id === "eks" && action === "up" && bundleWith ? { withAddons: bundlePicked(pipParams().clusterName || "") } : {}) }),
+    body: JSON.stringify({ module: spec.id, action, params: pipParams(), ...(replaceNodeGroup ? { replaceNodeGroup: true } : {}), ...(spec.id === "eks" && action === "up" && bundleWith ? { withAddons: bundlePicked(pipParams().clusterName || ""), confirmKubeconfig: window.confirm(`RUN with add-ons CONNECTs ${pipParams().clusterName || "the cluster"} first: it writes kube context ${pipParams().clusterName || "<cluster>"}-viewer (read-only) to your kubeconfig after a backup; your current context is kept. OK? (Cancel: the add-ons wait until you press CONNECT.)`) } : {}) }),
   });
   const line = upgradeSpiderLine({ action, title: spec.title, response: body });
   noteSpider(line.text, line.status);

@@ -425,7 +425,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     const item = bundleQueue.get(cluster);
     if (item) bundleQueue.set(cluster, { ...item, stage, text });
   }
-  async function afterCreate(cluster, items, done) {
+  async function afterCreate(cluster, items, done, confirmKubeconfig = false) {
     if (done?.error || done?.state !== "done") {
       queueSay(cluster, "stopped", `add-ons not installed: the cluster run ${done?.state || "stopped"}`);
       return;
@@ -439,12 +439,13 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     };
     if (st?.state === "connected") return install();
     queueSay(cluster, "connect", "connecting the cluster");
-    const started = await api.connectRun(pageOrigin, { cluster, action: "connect", onDone: async (connected) => {
+    const started = await api.connectRun(pageOrigin, { cluster, action: "connect", confirmKubeconfig, onDone: async (connected) => {
       const after = connected?.state === "done" ? await api.connectStatus(cluster, { fresh: true }).catch(() => null) : null;
       if (after?.state === "connected") return install();
       queueSay(cluster, "stopped", `add-ons not installed: CONNECT ${connected?.state === "done" ? `ended ${after?.text || "not connected"}` : "failed"}`);
     } }).catch((failure) => ({ error: failure?.message }));
-    if (started?.error) queueSay(cluster, "stopped", `add-ons not installed: CONNECT did not start (${started.error})`);
+    if (started?.needsConfirm) queueSay(cluster, "stopped", "add-ons wait: CONNECT would write your kubeconfig, so it asks first. Press CONNECT, then INSTALL SELECTED");
+    else if (started?.error) queueSay(cluster, "stopped", `add-ons not installed: CONNECT did not start (${started.error})`);
   }
   const k9sEvents = new Map(); // context -> { at, items, note }
   async function k9sRead(name, sample, wantEvents) {
@@ -1474,7 +1475,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
           legacyName,
           notes,
           onDone: withAddons.length
-            ? (done) => afterCreate(cluster, withAddons, done)
+            ? (done) => afterCreate(cluster, withAddons, done, body.confirmKubeconfig === true)
             : autoConnectOn && connector && body.module === "eks" && validCluster(cluster || defaultCluster()) && ["up", "destroy"].includes(body.action)
               ? (done) => (body.action === "up" ? autoConnectAfter : autoDisconnectAfter)(cluster || defaultCluster(), done)
               : undefined,

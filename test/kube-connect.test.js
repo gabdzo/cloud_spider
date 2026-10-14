@@ -107,7 +107,10 @@ test("CONNECT writes only the viewer context, keeps the current context, lists i
     const status = await fetch(`${base}/api/kube/connect?cluster=cloudspider-medium`).then((x) => x.json());
     assert.equal(status.state, "not-connected");
     assert.equal(status.alias, "cloudspider-medium-viewer");
-    const started = await fetch(`${base}/api/kube/connect`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: JSON.stringify({ cluster: "cloudspider-medium" }) }).then((x) => x.json());
+    const asked = await fetch(`${base}/api/kube/connect`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: JSON.stringify({ cluster: "cloudspider-medium" }) }).then((x) => x.json());
+    assert.equal(asked.needsConfirm, true);
+    assert.equal(readFileSync(r.kubeconfigFile, "utf8"), before, "nothing written before the yes");
+    const started = await fetch(`${base}/api/kube/connect`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN }, body: JSON.stringify({ cluster: "cloudspider-medium", confirmKubeconfig: true }) }).then((x) => x.json());
     assert.equal(started.running, true);
     assert.equal(started.stack, "eks-cloudspider-medium");
     const done = await settle(r.upgrade);
@@ -133,10 +136,11 @@ test("CONNECT writes only the viewer context, keeps the current context, lists i
     assert.equal(after.state, "connected");
     // Pressing it again writes nothing.
     const written = readFileSync(r.kubeconfigFile, "utf8");
-    await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium" });
+    await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", confirmKubeconfig: true });
     const again = await settle(r.upgrade);
     assert.equal(again.state, "done");
-    assert.equal(again.steps[1].status, "skipped");
+    assert.equal(again.steps[0].status, "skipped");
+    assert.ok(!again.steps.some((step) => /back up/.test(step.text || "")), "no backup when nothing is written");
     assert.equal(readFileSync(r.kubeconfigFile, "utf8"), written);
   } finally {
     server.close();
@@ -155,7 +159,7 @@ test("a context made elsewhere for the same viewer role counts as CONNECTED and 
     const refused = await r.app.connectRun(ORIGIN, { cluster: "cloudspider-up", action: "disconnect" });
     assert.match(refused.error, /was not made by CONNECT/);
     // Connecting the medium cluster keeps the user's comments and entries.
-    await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium" });
+    await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", confirmKubeconfig: true });
     assert.equal((await settle(r.upgrade)).state, "done");
     const yaml = readFileSync(r.contextsFile, "utf8");
     assert.match(yaml, /# mine, keep me/);
@@ -169,7 +173,7 @@ test("a context made elsewhere for the same viewer role counts as CONNECTED and 
 test("NO ACCESS: the role is not mapped; the run fails on the check with a hint", async () => {
   const r = rig({ access: { "cloudspider-medium-viewer": "unauthorized" } });
   try {
-    await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium" });
+    await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", confirmKubeconfig: true });
     const done = await settle(r.upgrade);
     assert.equal(done.state, "failed");
     assert.match(done.error, /NO ACCESS/);
@@ -187,7 +191,7 @@ test("NO ACCESS: the role is not mapped; the run fails on the check with a hint"
 test("DISCONNECT removes only our context, its user and its list entry", async () => {
   const r = rig();
   try {
-    await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium" });
+    await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", confirmKubeconfig: true });
     await settle(r.upgrade);
     await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", action: "disconnect" });
     const done = await settle(r.upgrade);
@@ -207,7 +211,7 @@ test("DISCONNECT removes only our context, its user and its list entry", async (
 test("errors land on the ERROR plate: expired AWS creds, aws missing, a cluster that is not up, a name clash", async () => {
   const expired = rig({ env: { FAKE_AWS_FAIL: "1" } });
   try {
-    await expired.app.connectRun(ORIGIN, { cluster: "cloudspider-medium" });
+    await expired.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", confirmKubeconfig: true });
     const done = await settle(expired.upgrade);
     assert.equal(done.state, "failed");
     assert.match(done.head.join("\n"), /ExpiredTokenException/);
@@ -223,7 +227,7 @@ test("errors land on the ERROR plate: expired AWS creds, aws missing, a cluster 
   for (const tool of ["pulumi", "kubectl"]) symlinkSync(join(BIN, tool), join(only, tool));
   const noAws = rig({ env: { PATH: only } });
   try {
-    await noAws.app.connectRun(ORIGIN, { cluster: "cloudspider-medium" });
+    await noAws.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", confirmKubeconfig: true });
     const done = await settle(noAws.upgrade);
     assert.equal(done.state, "failed");
     assert.match(done.error, /aws is not on PATH/);
@@ -235,7 +239,7 @@ test("errors land on the ERROR plate: expired AWS creds, aws missing, a cluster 
   rmSync(join(only, "pulumi"));
   const noPulumi = rig({ env: { PATH: only } });
   try {
-    const refused = await noPulumi.app.connectRun(ORIGIN, { cluster: "cloudspider-medium" });
+    const refused = await noPulumi.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", confirmKubeconfig: true });
     assert.match(refused.error, /viewer role output/);
     assert.match(refused.hint, /not on the PATH/);
   } finally {
@@ -259,7 +263,7 @@ test("errors land on the ERROR plate: expired AWS creds, aws missing, a cluster 
     assert.equal(status.state, "error");
     assert.match(status.hint, /rename-context/);
     assert.match(status.hint, /points at https:\/\/work\.example, not cloudspider-medium/);
-    const refused = await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium" });
+    const refused = await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", confirmKubeconfig: true });
     assert.match(refused.error, /already exists/);
     assert.ok(!existsSync(`${r.kubeconfigFile}.cloudspider.bak`), "nothing was written");
   } finally {
