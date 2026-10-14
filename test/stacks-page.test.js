@@ -26,6 +26,8 @@ test("a STACKS redraw keeps the danger fold open and the takedown plan mounted",
   assert.match(body, /nukeBoxes\.get\(cluster\)/);
   assert.match(body, /open: dangerOpen/);
   assert.match(body, /addEventListener\("toggle"/);
+});
+
 test("STACKS is a full page in every layout and says it is reading while the cards load", async () => {
   const css = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
   const pip = css.slice(css.indexOf("  #pip {"), css.indexOf("}", css.indexOf("  #pip {")));
