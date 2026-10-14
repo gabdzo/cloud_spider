@@ -11,7 +11,6 @@ test("nukeClusters names the real cluster (fake shop-east), never cloudspider-up
 
 test("STACKS overview is a full page and TEAR EVERYTHING DOWN sits folded at the bottom", async () => {
   const css = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
-  assert.match(css, /#pip\.ov-mode\s*\{[^}]*inset:/);
   const js = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
   const body = js.slice(js.indexOf("function drawOverview("), js.indexOf("let inventoryView = null"));
   assert.match(body, /el\("details", \{ className: "ov-danger"/);
@@ -27,4 +26,14 @@ test("a STACKS redraw keeps the danger fold open and the takedown plan mounted",
   assert.match(body, /nukeBoxes\.get\(cluster\)/);
   assert.match(body, /open: dangerOpen/);
   assert.match(body, /addEventListener\("toggle"/);
+});
+
+test("STACKS is a full page in every layout and says it is reading while the cards load", async () => {
+  const css = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
+  const pip = css.slice(css.indexOf("  #pip {"), css.indexOf("}", css.indexOf("  #pip {")));
+  assert.match(pip, /inset: 10px 12px/);
+  assert.doesNotMatch(pip, /min\(400px/);
+  const js = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  const toggle = js.slice(js.indexOf("async function toggleUpgrade("), js.indexOf("async function toggleUpgrade(") + 900);
+  assert.ok(toggle.indexOf("READING THE STACKS") > -1 && toggle.indexOf("READING THE STACKS") < toggle.indexOf('fetch("/api/upgrades")'), "placeholder before the slow fetch");
 });
