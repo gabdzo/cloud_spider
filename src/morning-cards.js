@@ -5,6 +5,10 @@ import { HEALTH_KINDS } from "./kube-health.js";
 
 const MAX = 34;
 const cut = (s) => (s.length > MAX ? `${s.slice(0, MAX - 1).trimEnd()}…` : s);
+// log lines carry terminal colour codes ("\u001b[90m", or "[90m" once the
+// escape byte is lost); strip them and keep a row readable
+const ANSI = /(\u001b)?\[[0-9;]*m/g;
+export const tidy = (text, max = 160) => { const s = String(text || "").replace(ANSI, "").replace(/\s+/g, " ").trim(); return s.length > max ? `${s.slice(0, max - 1)}…` : s; };
 const firstClause = (text) => String(text || "").replace(/\s+/g, " ").trim().split(/(?<=[.;])\s/)[0].replace(/[.;]$/, "");
 
 export function shortLine(name, line = {}, { logs = null } = {}) {
@@ -46,7 +50,7 @@ export function cardDetail(name, line = {}, { logs = null, label = "" } = {}) {
   if (name === "logs") {
     for (const s of logs?.services || []) {
       const who = s.namespace ? `${s.namespace}/${s.service}` : s.service;
-      for (const g of (s.groups || []).slice(0, 5)) rows.push({ time: g.firstSeen ?? g.lastSeen ?? null, who, text: `${g.new ? "NEW · " : g.spike ? "SPIKE · " : ""}${g.message} ×${g.count}` });
+      for (const g of (s.groups || []).slice(0, 5)) rows.push({ time: g.firstSeen ?? g.lastSeen ?? null, who, text: `${g.new ? "NEW · " : g.spike ? "SPIKE · " : ""}${tidy(g.message)} ×${g.count}` });
       for (const r of s.restartPods || []) rows.push({ time: r.time ?? null, who: s.namespace ? `${s.namespace}/${r.pod}` : r.pod, text: `${r.count} restart${r.count === 1 ? "" : "s"}${r.reason ? ` · ${r.reason}` : ""}` });
     }
     if (!rows.length) rows.push({ time: line.time ?? null, who: "", text: line.text || "" });

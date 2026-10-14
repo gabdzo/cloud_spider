@@ -63,3 +63,10 @@ test("the server serves morning-cards.js to the page", async () => {
   assert.match(css, /"morning-cards\.js",/);
   assert.match(css, /"kube-health\.js",/, "its import");
 });
+
+test("log rows drop terminal colour codes and stay short", () => {
+  const raw = { source: "bundle", services: [{ service: "controller", namespace: "kyverno", total: 2, restarts: 0, groups: [{ message: "\u001b[90m2026-10-14T00:01:42Z\u001b[0m [32mINF[0m " + "x".repeat(400), count: 2, firstSeen: t }], restartPods: [] }] };
+  const row = cardDetail("logs", { status: "warn", text: "2 errors" }, { logs: raw }).rows[0];
+  assert.doesNotMatch(row.text, /\[\d+m|\u001b/);
+  assert.ok(row.text.length < 180, String(row.text.length));
+});
