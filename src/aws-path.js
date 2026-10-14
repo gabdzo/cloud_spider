@@ -505,6 +505,8 @@ export function nodeFrom(raw) {
     vpcId: raw.VpcId || "",
     subnetId: raw.SubnetId || "",
     privateIp: raw.PrivateIpAddress || "",
+    instanceType: raw.InstanceType || "",
+    zone: raw.Placement?.AvailabilityZone || "",
     groupIds: (raw.SecurityGroups || []).map((group) => group.GroupId).filter(Boolean),
     name: tags.find((tag) => tag.key === "Name" && tag.value)?.value || "",
     tags,

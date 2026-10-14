@@ -57,7 +57,81 @@ export function layoutDiagram(diagram, columns, maxWidth = 0) {
 const SHIFTED = Object.fromEntries(Object.entries(COLUMN).map(([kind, col]) => [kind, Math.max(0, col - 1)]));
 export function layoutPath(diagram, maxWidth = 0) {
   const head = (diagram?.nodes || []).some((node) => node.kind === "internet");
-  return layoutDiagram(diagram, head ? COLUMN : SHIFTED, maxWidth);
+  const columns = head ? COLUMN : SHIFTED;
+  // Peering paths keep the compact cards; load balancer paths get hop cards.
+  if (!(diagram?.nodes || []).some((node) => node.facts)) return layoutDiagram(diagram, columns, maxWidth);
+  return layoutCards(diagram, columns, maxWidth);
+}
+
+// Hop cards (path-card.js): tall enough for type, name, port and detail,
+// never narrower than CARD_MIN. When the columns do not fit the window
+// side by side they wrap into bands (4 + 4 at 1024 and 1280), and the wire
+// from the last column of a band runs down to the first of the next.
+export const CARD_W = 290;
+export const CARD_MIN = 168;
+export const CARD_H = 86;
+// A sibling that is not on the drawn path (the default rule beside rule 1,
+// a listener that goes elsewhere) gets a two-line card: it is context.
+export const ASIDE_H = 46;
+const CARD_GAP = 30;
+const BAND_GAP = 24;
+const CARD_PAD = 14;
+const CARD_ROW_GAP = 8;
+export function layoutCards(diagram, columns, maxWidth = 0) {
+  const columnOf = (kind) => columns[kind] ?? 0;
+  const grouped = new Map();
+  for (const node of diagram?.nodes || []) {
+    const col = columnOf(node.kind);
+    if (!grouped.has(col)) grouped.set(col, []);
+    grouped.get(col).push(node);
+  }
+  const cols = (grouped.size ? Math.max(...grouped.keys()) : 0) + 1;
+  const room = maxWidth || Infinity;
+  const fit = Math.max(1, Math.floor((room - CARD_PAD * 2 + CARD_GAP) / (CARD_MIN + CARD_GAP)));
+  const bands = Math.ceil(cols / Math.min(fit, cols));
+  const per = Math.ceil(cols / bands);
+  const colW = Math.max(CARD_MIN, Math.min(CARD_W, Number.isFinite(room) ? Math.floor((room - CARD_PAD * 2 - (per - 1) * CARD_GAP) / per) : CARD_W));
+  const leads = new Set((diagram?.edges || []).map((edge) => edge.from));
+  const isAside = (node, list) => list.length > 1 && (node.kind === "rule" || node.kind === "listener") && !leads.has(node.id);
+  const heightOf = (node, list) => (isAside(node, list) ? ASIDE_H : CARD_H);
+  const columnHeight = (list) => list.reduce((sum, node) => sum + heightOf(node, list), 0) + (list.length - 1) * CARD_ROW_GAP;
+  // Cards on the path first, asides under them.
+  for (const [col, list] of grouped) grouped.set(col, [...list].sort((a, b) => Number(isAside(a, list)) - Number(isAside(b, list))));
+  const bandH = Array.from({ length: bands }, (_, b) => Math.max(CARD_H, ...[...grouped].filter(([col]) => Math.floor(col / per) === b).map(([, list]) => columnHeight(list))));
+  const bandTop = [];
+  let y = CARD_PAD;
+  for (const h of bandH) {
+    bandTop.push(y);
+    y += h + BAND_GAP;
+  }
+  const nodes = [];
+  for (const [col, list] of grouped) {
+    const band = Math.floor(col / per);
+    const slot = col % per;
+    let top = bandTop[band];
+    for (const node of list) {
+      const h = heightOf(node, list);
+      nodes.push({ ...node, band, aside: h === ASIDE_H, x: CARD_PAD + slot * (colW + CARD_GAP), y: top, w: colW, h });
+      top += h + CARD_ROW_GAP;
+    }
+  }
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const edges = (diagram?.edges || [])
+    .map((edge) => {
+      const a = byId.get(edge.from);
+      const b = byId.get(edge.to);
+      if (!a || !b) return null;
+      const out = { ...edge, x1: a.x + a.w, y1: a.y + a.h / 2, x2: b.x, y2: b.y + b.h / 2 };
+      if (b.band > a.band) {
+        // Down the gutter between bands: right of a, along, left of b.
+        const below = bandTop[b.band] - BAND_GAP / 2;
+        return { ...out, wrap: { right: out.x1 + CARD_GAP / 2, left: Math.max(4, out.x2 - CARD_GAP / 2 + 6), y: below } };
+      }
+      return out;
+    })
+    .filter(Boolean);
+  const width = CARD_PAD * 2 + per * colW + (per - 1) * CARD_GAP;
+  return { nodes, edges, cards: true, contentWidth: width, contentHeight: y - BAND_GAP + CARD_PAD };
 }
 
 function fitColumns(cols, maxWidth) {
