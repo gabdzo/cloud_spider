@@ -4073,7 +4073,9 @@ function iconImg(name) {
 // DEPLOYED / NOT DEPLOYED from the stack's state (GET /api/upgrade/resources,
 // pulumi stack export: read-only). Filled once per panel open.
 let stackStates = {};
-let pipCurrentCluster = ""; // GET /api/upgrades currentCluster
+let pipCurrentCluster = "";
+let dangerOpen = false; // the DANGER ZONE fold stays as the user left it
+const nukeBoxes = new Map(); // cluster → its mounted TEAR EVERYTHING DOWN box // GET /api/upgrades currentCluster
 let stackStatesAt = 0;
 const STATE_CHIP = {
   deployed: ["DEPLOYED", "up", (s) => `its state holds ${s.count} resource${s.count === 1 ? "" : "s"}`],
@@ -4257,12 +4259,19 @@ function drawOverview(own, groups, order) {
     runs: stackRuns,
   });
   if (clusters.length) {
-    const fold = el("details", { className: "ov-danger" }, el("summary", { textContent: `DANGER ZONE · TEAR A CLUSTER DOWN (${clusters.join(", ")})` }));
+    const fold = el("details", { className: "ov-danger", open: dangerOpen }, el("summary", { textContent: `DANGER ZONE · TEAR A CLUSTER DOWN (${clusters.join(", ")})` }));
     const strip = el("div", { className: "ov-nukes", role: "group", ariaLabel: "tear a cluster down with every stack on it" });
+    fold.addEventListener("toggle", () => { dangerOpen = fold.open; });
+    // the same box per cluster across redraws (state polls redraw the page),
+    // so an open plan and a half-typed name survive
     for (const cluster of clusters) {
-      const box = el("div", { className: "scale-row ov-nuke" });
+      let box = nukeBoxes.get(cluster);
+      if (!box) {
+        box = el("div", { className: "scale-row ov-nuke" });
+        nukeBoxes.set(cluster, box);
+        mountTakedown(box, () => ({ cluster, sample }), { onStarted: () => { nukeBoxes.delete(cluster); openCard = "eks"; markHistory(); syncUrl(); drawPipForm(); refreshUpgrade(true); } });
+      }
       strip.append(box);
-      mountTakedown(box, () => ({ cluster, sample }), { onStarted: () => { openCard = "eks"; markHistory(); syncUrl(); drawPipForm(); refreshUpgrade(true); } });
     }
     fold.append(strip);
     return fold; // the caller puts it last, under add-ons and Terraform

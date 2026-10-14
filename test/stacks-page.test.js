@@ -19,3 +19,12 @@ test("STACKS overview is a full page and TEAR EVERYTHING DOWN sits folded at the
   assert.doesNotMatch(body, /cloudspider-up/);
   assert.match(js, /finally \{\n    if \(danger\) pipEl\.append\(danger\);/, "danger fold is appended last, after add-ons and Terraform");
 });
+
+test("a STACKS redraw keeps the danger fold open and the takedown plan mounted", async () => {
+  const js = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  const body = js.slice(js.indexOf("function drawOverview("), js.indexOf("let inventoryView = null"));
+  assert.match(js, /const nukeBoxes = new Map\(\)/, "one takedown box per cluster, kept across redraws");
+  assert.match(body, /nukeBoxes\.get\(cluster\)/);
+  assert.match(body, /open: dangerOpen/);
+  assert.match(body, /addEventListener\("toggle"/);
+});
