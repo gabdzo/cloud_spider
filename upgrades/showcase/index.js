@@ -5,7 +5,7 @@ import { eksProvider } from "../eks-kube.js";
 import { ship } from "../netpol.js";
 import { inheritTags, stackTags } from "../tags.js";
 import { assertStackConfig } from "../schema/stacks.js";
-import { BOUTIQUE, IMAGES, NLB_SERVICE, PRODUCTS, ingressFor } from "./plan.js";
+import { BOUTIQUE, IMAGES, NLB_SERVICE, PRODUCTS, directIngressFor, ingressFor } from "./plan.js";
 
 // The demo "prod" cluster's four products (plan.js). Stack showcase-<cluster>.
 // Needs, on the cluster: the lbc, cert-manager and kyverno add-on stacks and
@@ -87,6 +87,10 @@ app(mealie.ns, mealie.service, { image: IMAGES.mealie, port: mealie.port, cpu: m
 // ALB 1 (shared, IngressGroup "showcase": 3 host rules) and ALB 2 (Boutique).
 const ingresses = PRODUCTS.map((p) => new k8s.networking.v1.Ingress(`${p.id}-ingress`, ingressFor(p, { domain, certificateArn: cfg.certificateArn || "", wafAclArn: cfg.wafAclArn || "" }), inNs(p.ns, p.id === "wiki" ? [wikidb] : [])));
 
+// Per-app ports on the shared ALB, only without a certificate.
+const direct = !cfg.certificateArn? PRODUCTS.map((p) => [p, directIngressFor(p)]).filter(([, spec]) => spec) : [];
+const directIngresses = direct.map(([p, spec]) => new k8s.networking.v1.Ingress(`${p.id}-direct`, spec, inNs(p.ns, [ingresses[1]])));
+export const directLinks = directIngresses.map((ing, i) => ing.status.loadBalancer.ingress[0].hostname.apply((h) => `http://${h}:${direct[i][0].directPort}/`));
 export const hosts = PRODUCTS.filter((p) => p.host).map((p) => `${p.host}.${domain}`);
 export const sharedAlb = ingresses[1].status.loadBalancer.ingress[0].hostname;
 export const boutiqueAlb = ingresses[0].status.loadBalancer.ingress[0].hostname;

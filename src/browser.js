@@ -6,7 +6,7 @@ import { ago, driftHint, inventoryRows, overviewStatus, pickLayout, rowMatches }
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, focusLists, paint } from "./draw.js";
-import { FILTER_AT, filterRoutes, groupRoutes, ruleCount } from "./alb-routes.js";
+import { FILTER_AT, exposedText, filterRoutes, groupRoutes, ruleCount } from "./alb-routes.js";
 import { lbExposure, routeProduct } from "./alb-exposure.js";
 import { hasDock } from "./arch-layout.js";
 import { mapTargets, stepTarget, targetLine } from "./map-focus.js";
@@ -396,6 +396,12 @@ async function probeReach(urls) {
     if (!seen) continue;
     reachSeen.set(url, seen);
     for (const lamp of document.querySelectorAll(".reach-lamp")) if (lamp.dataset.url === url) paintLamp(lamp, seen);
+    for (const lamp of document.querySelectorAll(".shared-lamp")) paintShared(lamp);
+  }
+  // EXPOSURE's REACH reads these probes: redraw an open dock once they land.
+  if (urls.length && dockOpen.size && mode === "map") {
+    docksKey = "";
+    placeAlbDocks(placedMap());
   }
 }
 // The public endpoints a stack made: public load balancers on the map tagged
@@ -2404,7 +2410,7 @@ function probeRoutes(id) {
   clearInterval(routeTimers.get(id));
   routeTimers.delete(id);
   if (sample || !dockOpen.has(id)) return;
-  const urls = () => [...new Set((albRoutes.get(id)?.body?.routes || []).filter((r) => r.probe && r.url).map((r) => r.url))].slice(0, 12);
+  const urls = () => [...new Set((albRoutes.get(id)?.body?.routes || []).filter((r) => r.probe && (r.probeUrl || r.url)).map((r) => r.probeUrl || r.url))].slice(0, 12);
   probeReach(urls());
   routeTimers.set(id, setInterval(() => (dockOpen.has(id) ? probeReach(urls()) : probeRoutes(id)), 60_000));
 }
@@ -2422,7 +2428,9 @@ function routeList(id, list) {
     for (const r of group.rows) {
       const li = vel("li", `alr-route ${r.source}`);
       const where = vel("span", "alr-where");
-      where.append(vel("code", "alr-path", r.path), vel("span", "alr-svc", r.service ? `→ ${r.service}` : ""));
+      // Host-routed rules: the host is the route (a shared ALB's rules all say "/*").
+      const shown = `${r.host ? r.host : ""}${r.port && r.port !== 80 && r.port !== 443 ? `:${r.port}` : ""}${r.path}`;
+      where.append(vel("code", "alr-path", shown), vel("span", "alr-svc", r.service ? `→ ${r.service}` : ""));
       const tags = vel("span", "alr-tags");
       if (r.methods?.length) tags.append(vel("span", "alr-methods", r.methods.join(" ")));
       if (r.source !== "openapi") tags.append(vel("span", "alr-app", routeProduct(r)));
@@ -2430,12 +2438,25 @@ function routeList(id, list) {
       else if (r.note) tags.append(vel("span", "alr-note", r.note));
       where.append(tags);
       let lamp;
-      if (r.probe && r.url) lamp = reachLamp(r.url);
-      else {
+      const probe = r.probeUrl || r.url;
+      if (r.probe && probe) {
+        lamp = reachLamp(probe);
+        if (r.host && probe.includes("#host=")) lamp.title = `GET the ALB with Host: ${r.host}`;
+      } else {
         lamp = vel("span", "reach-lamp skip", "—");
-        lamp.title = r.host ? `answers on ${r.host}: the reach probe only GETs the ALB's own name` : "nothing to probe";
+        lamp.title = "nothing to probe";
       }
-      li.append(where, lamp, r.url ? openLink(r.url, "↗") : vel("span"));
+      let go = vel("span");
+      if (r.url) {
+        go = openLink(r.url, "↗");
+        if (r.via) go.title = `${r.host} has no DNS: opens the same app on ${r.via}`;
+      } else if (r.curl) {
+        go = vel("button", "cmd alr-curl", "CURL");
+        go.type = "button";
+        go.title = `${r.host} has no DNS from here. Copy: ${r.curl}`;
+        go.addEventListener("click", () => navigator.clipboard?.writeText(r.curl).then(() => { go.textContent = "COPIED"; }).catch(() => {}));
+      }
+      li.append(where, lamp, go);
       ul.append(li);
     }
     box.append(ul);
@@ -2504,7 +2525,10 @@ function albDock(alb) {
     probeRoutes(alb.id);
     albDocksEl.querySelector(`[data-focus="routes:${CSS.escape(alb.id)}"]`)?.focus();
   });
-  if (alb.url) bar.append(role, grade, reachLamp(alb.url), openLink(alb.url), toggle);
+  // A shared ALB's own name only hits the default rule (404 by design): its
+  // apps answer per host, so the bar shows how many of them answer instead.
+  if (alb.url && exp.role === "shared") bar.append(role, grade, sharedLamp(list), toggle);
+  else if (alb.url) bar.append(role, grade, reachLamp(alb.url), openLink(alb.url), toggle);
   else bar.append(role, grade, vel("span", "reach-lamp skip", alb.lbType === "network" ? "TCP" : "—"), toggle);
   dock.append(bar);
   if (open) {
@@ -2538,12 +2562,24 @@ function albDock(alb) {
   return dock;
 }
 
+function sharedLamp(list) {
+  const lamp = vel("span", "reach-lamp shared-lamp");
+  lamp._rows = list.filter((r) => r.probe && r.host && r.source !== "openapi");
+  paintShared(lamp);
+  return lamp;
+}
+function paintShared(lamp) {
+  const rows = lamp._rows || [];
+  const seen = rows.map((r) => reachSeen.get(r.probeUrl || r.url)).filter(Boolean);
+  lamp.textContent = seen.length ? `${seen.filter((x) => x.ok).length}/${rows.length} apps up` : `${rows.length} apps`;
+  if (seen.length) lamp.dataset.state = seen.every((x) => x.ok) && seen.length === rows.length ? "ok" : "fail";
+  lamp.title = "each app GET with its own Host header (the ALB's bare name only reaches the default rule)";
+}
+
 function exposedLine(eks, albs) {
   const mine = albs.filter((alb) => alb.cluster && alb.cluster === eks.name);
   if (!mine.length) return null;
-  const count = mine.reduce((n, alb) => n + ruleCount(albRoutes.get(alb.id)?.body?.routes || []), 0);
-  const via = mine.length === 1 ? mine[0].ingress || mine[0].name : `${mine.length} ALBs`;
-  const b = vel("button", "alb-exposed", `exposed: ${count} route${count === 1 ? "" : "s"} via ${via} ▸`);
+  const b = vel("button", "alb-exposed", exposedText(mine, (id) => albRoutes.get(id)?.body));
   b.type = "button";
   b.dataset.focus = `exposed:${eks.id}`;
   b.title = "show the load balancer on the map";

@@ -17,10 +17,37 @@ export function openPath(path) {
   return out.startsWith("/") ? out || "/" : `/${out}`;
 }
 
-export function routeUrl(alb, host, path) {
-  const scheme = String(alb?.url || "").startsWith("https:") ? "https" : "http";
+export function routeUrl(alb, host, path, port = 0) {
+  const scheme = port ? (port === 443 ? "https" : "http") : String(alb?.url || "").startsWith("https:") ? "https" : "http";
   const name = host && !host.includes("*") ? host : alb?.dns || "";
-  return name ? `${scheme}://${name}${openPath(path)}` : "";
+  const p = port && port !== 80 && port !== 443 ? `:${port}` : "";
+  return name ? `${scheme}://${name}${p}${openPath(path)}` : "";
+}
+
+// Where the reach probe GETs a route: always the ALB's own name (the only
+// host the allowlist accepts); a host-routed rule carries its Host header in
+// the fragment ("#host=kuma.example.com"), which fetch never sends.
+export function probeUrl(alb, host, path, port = 0) {
+  const base = routeUrl(alb, "", path, port);
+  if (!base) return "";
+  return host && lower(host) !== lower(alb?.dns) && !host.includes("*") ? `${base}#host=${host}` : base;
+}
+
+// A shell line that reaches a host-routed rule without DNS for the host.
+export function curlFor(alb, host, path, port = 0) {
+  const base = routeUrl(alb, "", path, port);
+  return host && base && lower(host) !== lower(alb?.dns) ? `curl -H 'Host: ${host}' ${base}` : "";
+}
+
+// alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 8081}]' → [8081].
+export function listenPorts(ing) {
+  const raw = meta(ing).annotations?.["alb.ingress.kubernetes.io/listen-ports"];
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw).flatMap((o) => Object.values(o || {})).map(Number).filter((n) => n > 0 && n < 65536);
+  } catch {
+    return [];
+  }
 }
 
 // Probed only where the reach allowlist allows it: the ALB's own DNS name.
@@ -28,8 +55,20 @@ export function routeUrl(alb, host, path) {
 // different rule: no lamp there.
 const probeable = (alb, host) => !host || lower(host) === lower(alb?.dns);
 
-function row(alb, { host = "", path = "/", service = "", source, note = "", methods = [] }) {
-  return { host: host || "", path: path || "/", service, source, note, methods, url: routeUrl(alb, host, path), probe: probeable(alb, host) };
+function row(alb, { host = "", path = "/", service = "", source, note = "", methods = [], port = 0 }) {
+  const named = Boolean(host) && !host.includes("*") && lower(host) !== lower(alb?.dns);
+  return { host: host || "", path: path || "/", port: port || 0, service, source, note, methods, url: routeUrl(alb, host, path, port), probe: probeable(alb, host) || named, probeUrl: probeUrl(alb, host, path, port), curl: curlFor(alb, host, path, port) };
+}
+
+// Host-routed rows whose host has no DNS (demo hosts like *.example.com):
+// the browser cannot open them, so the link is the same service's rule on
+// the ALB's own name (a per-app listener port), or none; the curl line stays.
+export function linkRoutes(routes = [], resolves = () => true) {
+  return routes.map((r) => {
+    if (!r.host || r.host.includes("*") || !r.curl || resolves(r.host)) return r;
+    const alt = routes.find((o) => o !== r && !o.host && o.service === r.service && o.source !== "openapi" && o.url);
+    return { ...r, url: alt ? alt.url : "", resolves: false, via: alt ? alt.url : "" };
+  });
 }
 
 // The Ingresses this ALB was made for: its address is the ALB, or the LBC's
@@ -56,10 +95,12 @@ export function ingressRoutes(alb, ingresses = []) {
   const out = [];
   for (const ing of ingressesFor(alb, ingresses)) {
     const ns = meta(ing).namespace || "default";
+    const ports = listenPorts(ing);
+    const port = ports.length === 1 ? ports[0] : 0;
     for (const rule of ing.spec?.rules || []) {
       for (const p of rule.http?.paths || []) {
         const path = p.path || "/";
-        out.push(row(alb, { host: rule.host || "", path: p.pathType === "Prefix" && path !== "/" ? `${path.replace(/\/+$/, "")}/*` : path === "/" && p.pathType !== "Exact" ? "/*" : path, service: backendText(ns, p.backend), source: "ingress", note: `${ns}/${meta(ing).name}` }));
+        out.push(row(alb, { host: rule.host || "", path: p.pathType === "Prefix" && path !== "/" ? `${path.replace(/\/+$/, "")}/*` : path === "/" && p.pathType !== "Exact" ? "/*" : path, service: backendText(ns, p.backend), source: "ingress", note: `${ns}/${meta(ing).name}${port && port !== 80 && port !== 443 ? ` · :${port}` : ""}`, port }));
       }
     }
     if (ing.spec?.defaultBackend) out.push(row(alb, { path: "/*", service: backendText(ns, ing.spec.defaultBackend), source: "ingress", note: `${ns}/${meta(ing).name} · default` }));
@@ -121,7 +162,7 @@ export function rootRoute(routes = []) {
 function dedupe(rows) {
   const seen = new Set();
   return rows.filter((r) => {
-    const key = `${r.host}|${r.path}|${r.service}`;
+    const key = `${r.host}|${r.port || 0}|${r.path}|${r.service}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -151,3 +192,14 @@ export function filterRoutes(routes = [], query = "") {
 
 // The count shown folded ("▸ N routes") and on the EKS card: rule rows only.
 export const ruleCount = (routes = []) => routes.filter((r) => r.source !== "openapi").length;
+
+// The EKS card line: rule rows over all its balancers ("…" while some are
+// still loading), "via 2 ALBs + 1 NLB".
+export function exposedText(albs, bodies) {
+  const loaded = albs.filter((alb) => bodies(alb.id));
+  const count = loaded.reduce((n, alb) => n + ruleCount(bodies(alb.id).routes || []), 0);
+  const kinds = albs.reduce((m, a) => ((m[a.lbType === "network" ? "NLB" : "ALB"] = (m[a.lbType === "network" ? "NLB" : "ALB"] || 0) + 1), m), {});
+  const via = albs.length === 1 ? albs[0].ingress || albs[0].name : Object.entries(kinds).map(([k, n]) => `${n} ${k}${n === 1 ? "" : "s"}`).join(" + ");
+  return `exposed: ${loaded.length < albs.length ? "… " : ""}${count} route${count === 1 ? "" : "s"} via ${via} ▸`;
+}
+

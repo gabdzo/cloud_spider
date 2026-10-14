@@ -58,3 +58,15 @@ test("x86 node types get the x86 AMI, Graviton the ARM one", async () => {
   assert.equal(amiTypeFor("m7g.large"), "AL2023_ARM_64_STANDARD");
   assert.equal(amiTypeFor("t4g.small"), "AL2023_ARM_64_STANDARD");
 });
+
+test("each shared app also gets its own HTTP port on the same shared ALB (browser links without a domain)", async () => {
+  const { PRODUCTS: P, directIngressFor: d } = await import("../upgrades/showcase/plan.js");
+  const specs = P.map(d).filter(Boolean);
+  assert.deepEqual(specs.map((s) => [s.metadata.name, s.metadata.annotations["alb.ingress.kubernetes.io/group.name"], s.metadata.annotations["alb.ingress.kubernetes.io/listen-ports"]]), [
+    ["kuma-direct", "showcase", '[{"HTTP":8081}]'],
+    ["wiki-direct", "showcase", '[{"HTTP":8082}]'],
+    ["mealie-direct", "showcase", '[{"HTTP":8083}]'],
+  ]);
+  assert.ok(specs.every((s) => !s.spec.rules[0].host));
+  assert.equal(d(P.find((p) => p.id === "boutique")), null);
+});

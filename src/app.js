@@ -1,6 +1,6 @@
 import { originAllowed } from "./origin.js";
-import { createReach, fetchOpenApi, reachAllowed } from "./reach.js";
-import { ingressRoutes, listenerRoutes, openApiRoutes, rootRoute } from "./alb-routes.js";
+import { createReach, fetchOpenApi, reachAllowed, resolveHost } from "./reach.js";
+import { ingressRoutes, linkRoutes, listenerRoutes, openApiRoutes, rootRoute } from "./alb-routes.js";
 import { lbExposure, listenerFacts } from "./alb-exposure.js";
 import { isInstanceId } from "./ids.js";
 import { report } from "./report.js";
@@ -851,7 +851,12 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     async reach(url) {
       const allowed = reachAllowed(url, place?.fixtures || []);
       if (!allowed) return { ok: false, status: 0, error: "only a public load balancer on the map can be probed" };
-      return reachProbe(allowed.url);
+      if (allowed.host) {
+        // Only a host this ALB's own rules route (read by ALB ROUTES).
+        const known = (routeCache.get(allowed.lb.id)?.value?.routes || []).some((r) => String(r.host).toLowerCase() === allowed.host);
+        if (!known) return { ok: false, status: 0, url, error: "that host is not one of this load balancer's rules" };
+      }
+      return { ...(await reachProbe(allowed.url, allowed.host)), url };
     },
     // ALB ROUTES: the Ingress rules behind a public ALB on the map (read
     // through the kube context), else its listener rules; plus PostgREST's
@@ -897,7 +902,9 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         if (!cached || cached.doc !== doc) openApiCache.set(base.url, { doc, at: now() });
         api = openApiRoutes(alb, doc, base);
       }
-      const all = [...routes, ...api];
+      const hosts = [...new Set(routes.map((r) => r.host).filter((h) => h && !h.includes("*")))];
+      const resolved = new Map(await Promise.all(hosts.map(async (h) => [h, await resolveHost(h)])));
+      const all = linkRoutes([...routes, ...api], (h) => resolved.get(h) !== false);
       const value = { id, from, openapi: api.length > 0, routes: all, notes, lb, exposure: lbExposure({ ...alb, ...lb }, all) };
       routeCache.set(id, { value, at: now() });
       return value;

@@ -14,7 +14,7 @@ test("Ingress rules become host + path → service:port rows, only for this ALB'
     { metadata: { namespace: "other", name: "elsewhere" }, spec: { rules: [{ http: { paths: [{ path: "/", backend: { service: { name: "x", port: { number: 80 } } } }] } }] }, status: { loadBalancer: { ingress: [{ hostname: "another.elb.amazonaws.com" }] } } },
   ];
   const rows = ingressRoutes(alb, ingresses);
-  assert.deepEqual(rows.map((r) => [r.host, r.path, r.service, r.probe]), [["", "/*", "shop/shopapi:3000", true], ["api.example.com", "/v1/*", "shop/shopapi:http", false]]);
+  assert.deepEqual(rows.map((r) => [r.host, r.path, r.service, r.probe]), [["", "/*", "shop/shopapi:3000", true], ["api.example.com", "/v1/*", "shop/shopapi:http", true]]);
   assert.equal(rows[0].url, "http://k8s-shop.elb.amazonaws.com/");
   assert.equal(rows[1].url, "http://api.example.com/v1");
   // Matched by the LBC stack tag too (no address yet), and by IngressGroup name.

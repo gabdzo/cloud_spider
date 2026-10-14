@@ -35,9 +35,9 @@ export const BOUTIQUE = [
 // Requests per product (the tests add them up against the two nodes).
 export const PRODUCTS = [
   { id: "boutique", ns: "boutique", title: "Online Boutique", alb: "boutique", host: "", service: "frontend", port: 80 },
-  { id: "kuma", ns: "uptime-kuma", title: "Uptime Kuma", alb: "showcase", host: "kuma", service: "uptime-kuma", port: 3001, cpu: "50m", memory: "256Mi", storage: "1Gi" },
-  { id: "wiki", ns: "wiki", title: "Wiki.js", alb: "showcase", host: "wiki", service: "wiki", port: 3000, cpu: "50m", memory: "256Mi", db: { name: "wikidb", storage: "2Gi", cpu: "50m", memory: "256Mi" } },
-  { id: "mealie", ns: "mealie", title: "Mealie", alb: "showcase", host: "mealie", service: "mealie", port: 9000, cpu: "50m", memory: "512Mi", storage: "1Gi" },
+  { id: "kuma", ns: "uptime-kuma", title: "Uptime Kuma", alb: "showcase", host: "kuma", directPort: 8081, service: "uptime-kuma", port: 3001, cpu: "50m", memory: "256Mi", storage: "1Gi" },
+  { id: "wiki", ns: "wiki", title: "Wiki.js", alb: "showcase", host: "wiki", directPort: 8082, service: "wiki", port: 3000, cpu: "50m", memory: "256Mi", db: { name: "wikidb", storage: "2Gi", cpu: "50m", memory: "256Mi" } },
+  { id: "mealie", ns: "mealie", title: "Mealie", alb: "showcase", host: "mealie", directPort: 8083, service: "mealie", port: 9000, cpu: "50m", memory: "512Mi", storage: "1Gi" },
 ];
 
 export const SHARED_GROUP = "showcase";
@@ -74,6 +74,20 @@ export function ingressFor(product, { domain, certificateArn = "", wafAclArn = "
   return {
     metadata: { name: product.id, namespace: product.ns, annotations: albAnnotations({ group: shared ? SHARED_GROUP : "", order, certificateArn, wafAclArn }) },
     spec: { ingressClassName: "alb", rules: [rule] },
+  };
+}
+
+// Without a real domain the host rules only answer to curl -H Host. Each
+// shared app also gets its own listener port on the same ALB (no extra ALB):
+// http://<alb>:8081/ opens Kuma in a browser. Plain HTTP on odd ports, which
+// the PORTS exposure check reports.
+export function directIngressFor(product) {
+  if (product.alb !== SHARED_GROUP || !product.directPort) return null;
+  const order = 10 + PRODUCTS.filter((p) => p.alb === SHARED_GROUP).indexOf(product);
+  const a = { ...albAnnotations({ group: SHARED_GROUP, order }), "alb.ingress.kubernetes.io/listen-ports": JSON.stringify([{ HTTP: product.directPort }]) };
+  return {
+    metadata: { name: `${product.id}-direct`, namespace: product.ns, annotations: a },
+    spec: { ingressClassName: "alb", rules: [{ http: { paths: [{ path: "/", pathType: "Prefix", backend: { service: { name: product.service, port: { number: product.port } } } }] } }] },
   };
 }
 
