@@ -1,7 +1,7 @@
 import { cidrContains } from "./cidr.js";
 import { isInstanceId } from "./ids.js";
 
-const DEPTH = { internet: -1, lb: 0, listener: 1, rule: 2, tg: 3, target: 4, node: 5, cluster: 6 };
+const DEPTH = { internet: -1, lb: 0, listener: 1, rule: 2, tg: 3, answer: 3, target: 4, node: 5, cluster: 6 };
 const CONTROLLER_STACK = ["service.k8s.aws/stack", "ingress.k8s.aws/resource", "ingress.k8s.aws/stack"];
 
 export function diagnose(graph, lbArn, { ruleArn = null } = {}) {
@@ -49,7 +49,19 @@ export function diagnose(graph, lbArn, { ruleArn = null } = {}) {
       add(ruleNode(rule));
       link(listener.arn, rule.arn);
       for (const action of rule.actions) {
+        const answer = answerNode(rule, action, listener);
+        if (answer) {
+          add(answer);
+          link(rule.arn, answer.id, answer.status === "ok" ? "ok" : answer.status);
+          continue;
+        }
         if (action.type !== "forward") continue;
+        const total = (action.weights || []).reduce((n, w) => n + (w.weight || 0), 0);
+        const share = (arn) => {
+          if ((action.weights || []).length < 2 || !total) return null;
+          const w = action.weights.find((item) => item.arn === arn);
+          return w ? Math.round((w.weight / total) * 100) : null;
+        };
         for (const tgArn of action.targetGroupArns) {
           const tg = graph.targetGroups.find((item) => item.arn === tgArn);
           if (!tg) {
@@ -64,7 +76,9 @@ export function diagnose(graph, lbArn, { ruleArn = null } = {}) {
             link(rule.arn, tgArn, "broken");
             continue;
           }
-          link(rule.arn, tg.arn);
+          const pct = share(tg.arn);
+          if (pct == null) link(rule.arn, tg.arn);
+          else edges.push({ from: rule.arn, to: tg.arn, status: "ok", sentence: `${pct}% of the requests ${ruleName(rule)} matches go to ${tg.name}.`, weight: pct });
           if (add(targetGroupNode(graph, tg))) addTargets(graph, lb, tg, add, link);
         }
       }
@@ -458,6 +472,49 @@ function listenerNode(listener, rules) {
   };
 }
 
+// What a rule does, in a few words, and the conditions beyond host/path.
+export function actionSummary(action, listener = {}) {
+  if (!action) return { kind: "none", text: "does nothing" };
+  if (action.type === "redirect") {
+    const code = String(action.statusCode || "").replace("HTTP_", "") || "302";
+    const where = [action.redirectProtocol && action.redirectProtocol !== "#{protocol}" ? action.redirectProtocol : "", action.redirectHost && action.redirectHost !== "#{host}" ? action.redirectHost : "", action.redirectPort && action.redirectPort !== "#{port}" ? `:${action.redirectPort}` : "", action.redirectPath && action.redirectPath !== "/#{path}" ? action.redirectPath : ""].filter(Boolean).join(" ");
+    return { kind: "redirect", code, text: `${code} → ${where || "same URL"}` };
+  }
+  if (action.type === "fixed-response") return { kind: "fixed", code: String(action.statusCode || ""), text: `answers ${action.statusCode || "?"}${action.contentType ? ` ${action.contentType}` : ""}` };
+  if (action.type === "forward") {
+    const weights = (action.weights || []).filter(() => (action.weights || []).length > 1);
+    if (weights.length) {
+      const total = weights.reduce((n, w) => n + (w.weight || 0), 0) || 1;
+      return { kind: "weighted", text: `weighted ${weights.map((w) => `${Math.round((w.weight / total) * 100)}%`).join(" / ")}` };
+    }
+    return { kind: "forward", text: "forward → target group" };
+  }
+  return { kind: action.type || "none", text: action.type || "does nothing" };
+}
+
+export function conditionWords(rule) {
+  return [
+    ...(rule.headers || []).map((h) => `header ${h.name}: ${h.values.join("|")}`),
+    ...(rule.queries || []).map((q) => `query ${q.key ? `${q.key}=` : ""}${q.value}`),
+    ...((rule.methods || []).length ? [`method ${rule.methods.join("|")}`] : []),
+    ...((rule.sources || []).length ? [`source ${rule.sources.join(",")}`] : []),
+  ];
+}
+
+// Redirect and fixed-response rules end at the ALB: one card says what the
+// client gets back, in the target-group column.
+function answerNode(rule, action, listener) {
+  const summary = actionSummary(action, listener);
+  if (summary.kind === "redirect") {
+    return { id: `${rule.arn}|answer`, kind: "answer", label: summary.text, caption: "redirect", facts: { answer: "redirect", code: summary.code, text: summary.text, query: action.redirectQuery || "" }, status: "ok", sentence: `${ruleName(rule)} answers ${summary.code}: the ALB sends the client to ${summary.text.split("→ ")[1]}. No target is reached on this request.` };
+  }
+  if (summary.kind === "fixed") {
+    const code = Number(summary.code);
+    return { id: `${rule.arn}|answer`, kind: "answer", label: `${summary.code}`, caption: "fixed response", facts: { answer: "fixed", code: summary.code, contentType: action.contentType || "", body: action.messageBody || "" }, status: code >= 500 ? "hang" : "ok", sentence: `${ruleName(rule)} answers ${summary.code} itself${action.messageBody ? `: "${action.messageBody}"` : ""}. No target is reached.${code >= 500 ? " Callers see an error here; if that is on purpose (maintenance), it is fine." : ""}` };
+  }
+  return null;
+}
+
 function ruleNode(rule) {
   const match = [...rule.hosts, ...rule.paths].join(" ") || "everything else";
   const node = {
@@ -465,7 +522,7 @@ function ruleNode(rule) {
     kind: "rule",
     label: rule.isDefault ? "default" : `rule ${rule.priority}`,
     caption: match,
-    facts: { hosts: rule.hosts, paths: rule.paths, isDefault: Boolean(rule.isDefault), priority: rule.priority, action: rule.actions[0] ? actionWords(rule.actions[0], "", "") : "" },
+    facts: { hosts: rule.hosts, paths: rule.paths, isDefault: Boolean(rule.isDefault), priority: rule.priority, action: rule.actions[0] ? actionWords(rule.actions[0], "", "") : "", actionKind: actionSummary(rule.actions[0]).kind, actionText: actionSummary(rule.actions[0]).text, conditions: conditionWords(rule) },
     status: "ok",
     sentence: `${ruleName(rule)} matches ${match} and ${actionWords(rule.actions[0], "", "")}.`,
   };
@@ -626,7 +683,9 @@ function findingsOf(nodes, edges) {
         sentence: edge.sentence,
       })),
     ...nodes
-      .filter((node) => node.status !== "ok")
+      // A fixed 503 the rule was written to send (maintenance) is shown amber
+      // on its card, but it is not a finding.
+      .filter((node) => node.status !== "ok" && !node.facts?.answer)
       .map((node) => ({
         status: node.status,
         nodeId: node.id,

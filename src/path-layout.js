@@ -9,7 +9,7 @@ const ROW_GAP = 14;
 const PAD = 24;
 // Peering paths (peer-path.js) have no INTERNET head: pods, the route out,
 // the link, the route back, NACLs, security groups, the target.
-const COLUMN = { internet: 0, lb: 1, listener: 2, rule: 3, tg: 4, target: 5, node: 6, cluster: 7, pods: 1, rtb: 2, pcx: 3, tgw: 3, return: 4, nacl: 5, sg: 6, db: 7 };
+const COLUMN = { internet: 0, lb: 1, listener: 2, rule: 3, tg: 4, answer: 4, target: 5, node: 6, cluster: 7, pods: 1, rtb: 2, pcx: 3, tgw: 3, return: 4, nacl: 5, sg: 6, db: 7 };
 
 export function layoutDiagram(diagram, columns, maxWidth = 0) {
   const columnOf = (kind) => columns[kind] ?? 0;
