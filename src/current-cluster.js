@@ -15,7 +15,7 @@ export function pickCurrentCluster({ selectedContext = "", eksStacks = [], legac
   const live = (eksStacks || []).filter((s) => Number(s.resourceCount) > 0);
   const nameOf = (s) => (s.name === "upgrade" ? legacyName : String(s.name).replace(/^eks-/, ""));
   const want = contextCluster(selectedContext);
-  if (want && NAME.test(want) && (eksStacks || []).some((s) => nameOf(s) === want || s.name === `eks-${want}`)) return want;
+  if (want && NAME.test(want) && live.some((s) => nameOf(s) === want || s.name === `eks-${want}`)) return want;
   for (const s of live) {
     const name = nameOf(s);
     if (name && NAME.test(name)) return name;
