@@ -5432,7 +5432,10 @@ async function refreshLive(force = false) {
   liveState.set(cluster, live);
   const card = pipEl.querySelector(".card.open");
   if (card && (first || force) && !live?.error) {
-    for (const name of ["instanceType", "nodeCount"]) {
+    // Every field the stack saved (vpcCidr, maxPods, logs...), not only the
+    // node group's: PREVIEW and RUN then start from what the stack runs.
+    for (const name of Object.keys(live?.values || {})) {
+      if (name === "clusterName") continue;
       const value = live?.values?.[name];
       const field = card.querySelector(`[name="${name}"]`);
       if (!value || !field || field.value === value) continue;

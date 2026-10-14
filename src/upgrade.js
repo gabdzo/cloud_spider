@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
-import { homedir, hostname as osHostname } from "node:os";
+import { homedir, hostname as osHostname, tmpdir } from "node:os";
 import { judgeLock, lockRefusal, parseLocks, pendingOps, processNameOf, staleNote } from "./pulumi-locks.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -507,6 +507,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
   let job = null;
   let notice = null;
   const jobs = new Map();
+  const replaceSeen = new Map();
   const notices = new Map();
   const dirGates = new Map();
   let campCache = null;
@@ -789,6 +790,15 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       // a card value an up would refuse (maxPods 50 on a t4g.small) must
       // never block removing what is already there. pulumi destroy works
       // from the state; it does not run the program.
+      // An existing stack: its saved config wins over the card's defaults.
+      let saved = {};
+      if (verb !== "destroy") {
+        const first = checkParams(spec, params);
+        if (!first.error) {
+          saved = stackConfig(spec, cwd, undefined, stackFor(spec, first.values, legacyName));
+          if (Object.keys(saved).length) params = keepSaved(spec, params, saved);
+        }
+      }
       const checked = verb === "destroy" ? destroyValues(spec, params) : checkParams(spec, params);
       if (checked.error) return refuse({ module, action: verb, error: checked.error });
       if (spec.id === "observe" && verb !== "destroy") {
@@ -799,7 +809,21 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       if (spec.localState) mkdirSync(join(env.HOME || homedir(), ".cloudspider", `pulumi-${spec.id}`), { recursive: true });
       const stack = stackFor(spec, checked.values, legacyName);
       const directory = join(cwd, spec.dir);
-      const steps = upgradeSteps(spec, stack, verb, checked.values, { policyPack: pack });
+      if (verb === "up" && spec.id === "eks" && saved.vpcCidr && checked.values.vpcCidr !== saved.vpcCidr) {
+        return refuse({ module: spec.id, action: verb, stack, error: `vpcCidr ${checked.values.vpcCidr} is not the stack's ${saved.vpcCidr}: a new range REPLACES the VPC and its subnets (the whole cluster). Set vpcCidr back to ${saved.vpcCidr}.` });
+      }
+      if (verb === "up") {
+        const seen = (replaceSeen.get(stack) || []).filter((name) => !(name === "node group" && params?.replaceNodeGroup));
+        if (seen.length) return refuse({ module: spec.id, action: verb, stack, error: `RUN blocked: the last PREVIEW of ${stack} would REPLACE the ${seen.join(", ")}. Change the card back until PREVIEW shows no replace, then RUN.` });
+      }
+      let configFile = "";
+      if (verb === "preview") {
+        const dir = mkdtempSync(join(tmpdir(), "cloudspider-preview-"));
+        configFile = join(dir, `Pulumi.${stack}.yaml`);
+        const own = join(cwd, spec.dir, `Pulumi.${stack}.yaml`);
+        try { if (existsSync(own)) copyFileSync(own, configFile); } catch { /* a new stack: pulumi starts the copy */ }
+      }
+      const steps = upgradeSteps(spec, stack, verb, checked.values, { policyPack: pack, configFile });
       const packNote = verb === "preview" && !pack ? noteSteps([{ text: "policy pack not loaded: run npm ci in upgrades/policy-pack to check this preview against it" }]) : [];
       const command = rerunCommand(directory, steps);
       const no = (error) => refuse({ module: spec.id, action: verb, stack, error, command });
@@ -822,7 +846,7 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
         directory,
         where: spec.dir,
         command,
-        onDone,
+        onDone: verb === "preview" ? (result) => { previewDone(stack); return onDone?.(result); } : onDone,
         steps: [...noteSteps(notes), ...packNote, ...preflightSteps(spec, verb, checked.values), ...steps.map((args) => ({ args, text: `pulumi ${args.join(" ")}` })), ...afterSteps(spec, verb, checked.values)],
       });
     },
@@ -1047,6 +1071,18 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
     });
   }
 
+  // A PREVIEW that would replace the VPC, subnets or node group: a loud line
+  // in its log, and RUN on that stack refuses until a clean PREVIEW.
+  function previewDone(stack) {
+    const mine = job && job.stack === stack ? job : null;
+    const found = dangerousReplaces(mine?.lines || []);
+    if (!found.length) { replaceSeen.delete(stack); return; }
+    replaceSeen.set(stack, found);
+    const line = `⚠ DANGER: this change would REPLACE the ${found.join(", ")} of ${stack}. RUN is blocked until PREVIEW shows no replace.`;
+    mine.lines.push(line);
+    mine.danger = found;
+    mine.logHandle?.append(line);
+  }
   function startJob({ module, action, stack, directory, where, command, steps, onDone, locks = [stack], cluster = "", isCluster = false }) {
     if (stopping) return refuse({ module, action, stack, error: "the server is shutting down (Ctrl-C); start Cloud Spider again to run this", command });
     runs += 1;
@@ -1120,11 +1156,11 @@ function noteSteps(notes = [], prefix = "") {
 // secret is an object and stays out. The card starts from these, so RUN
 // with the defaults never quietly undoes a choice (Shop API expose=alb
 // back to none would delete its ALB).
-export function stackConfig(spec, cwd = root, read = (file) => readFileSync(file, "utf8")) {
-  if (!spec?.dir || !spec?.stack || !spec?.project || /[*{]/.test(spec.stack)) return {};
+export function stackConfig(spec, cwd = root, read = (file) => readFileSync(file, "utf8"), stack = spec?.stack) {
+  if (!spec?.dir || !stack || !spec?.project || /[*{]/.test(stack)) return {};
   let doc;
   try {
-    doc = parseYaml(read(join(cwd, spec.dir, `Pulumi.${spec.stack}.yaml`)));
+    doc = parseYaml(read(join(cwd, spec.dir, `Pulumi.${stack}.yaml`)));
   } catch {
     return {};
   }
@@ -1136,6 +1172,33 @@ export function stackConfig(spec, cwd = root, read = (file) => readFileSync(file
   return out;
 }
 
+// An existing stack keeps what it was made with: a card value that is only
+// the parameter's default never replaces a value the stack's config saved
+// (the card did not load it, or nobody touched the field). A value the user
+// changed away from the default is kept as typed.
+export function keepSaved(spec, input = {}, saved = {}) {
+  const out = { ...input };
+  for (const parameter of spec?.parameters || []) {
+    const has = saved[parameter.name];
+    if (has == null || has === "") continue;
+    const given = input[parameter.name];
+    if (given == null || given === "" || String(given) === String(parameter.default)) out[parameter.name] = has;
+  }
+  return out;
+}
+
+// What a pulumi diff would replace that takes the cluster's network or its
+// nodes with it. Lines as pulumi prints them: "+-aws:ec2/vpc:Vpc: (replace)".
+const DANGER = [["vpc", /aws:ec2\/vpc:Vpc\b/], ["subnet", /aws:ec2\/subnet:Subnet\b/], ["node group", /aws:eks\/nodeGroup:NodeGroup\b/]];
+export function dangerousReplaces(lines = []) {
+  const found = new Set();
+  for (const line of lines.flatMap((chunk) => String(chunk).split("\n"))) {
+    if (!/^\s*\+-/.test(line) || !/\(replace\)/.test(line)) continue;
+    for (const [name, re] of DANGER) if (re.test(line)) found.add(name);
+  }
+  return [...found];
+}
+
 // The CrossGuard pack (upgrades/policy-pack) when its deps are installed:
 // PREVIEW reports its findings (mandatory ones fail the preview), RUN does not
 // load it (the preview already said). "" when missing: PREVIEW says so.
@@ -1144,15 +1207,17 @@ export function defaultPolicyPack(base = root) {
   return existsSync(join(dir, "node_modules", "@pulumi", "policy")) ? dir : "";
 }
 
-export function upgradeSteps(spec, stack, verb, values, { policyPack = "" } = {}) {
+export function upgradeSteps(spec, stack, verb, values, { policyPack = "", configFile = "" } = {}) {
   const steps = [["stack", "select", stack, "--create", "--non-interactive"]];
+  // PREVIEW on a scratch copy of the config: it never changes Pulumi.<stack>.yaml.
+  const cf = verb === "preview" && configFile ? ["--config-file", configFile] : [];
   if (verb !== "destroy") {
     steps.push(["install"]);
     if (spec.id === "eks") {
       // A new cluster stack has no committed Pulumi.<stack>.yaml: pin the
       // region and the account like Pulumi.upgrade.yaml does.
-      steps.push(["config", "set", "--stack", stack, "--non-interactive", "aws:region", "eu-north-1"]);
-      steps.push(["config", "set", "--stack", stack, "--non-interactive", "--path", "aws:allowedAccountIds[0]", "550536272523"]);
+      steps.push(["config", "set", "--stack", stack, "--non-interactive", ...cf, "aws:region", "eu-north-1"]);
+      steps.push(["config", "set", "--stack", stack, "--non-interactive", ...cf, "--path", "aws:allowedAccountIds[0]", "550536272523"]);
     }
     steps.push(
       ...Object.entries(values).map(([key, value]) => [
@@ -1161,6 +1226,7 @@ export function upgradeSteps(spec, stack, verb, values, { policyPack = "" } = {}
         "--stack",
         stack,
         "--non-interactive",
+        ...cf,
         `${spec.project}:${key}`,
         value,
       ]),
@@ -1171,7 +1237,7 @@ export function upgradeSteps(spec, stack, verb, values, { policyPack = "" } = {}
   // first (no cloud call), then destroys. A hand-run destroy stays refused.
   if (verb === "destroy" && DATA_PROJECTS.includes(spec.project)) steps.push(["state", "unprotect", "--all", "--yes", "--non-interactive", "--stack", stack]);
   // preview changes nothing: it shows what up would do.
-  steps.push(verb === "preview" ? ["preview", "--non-interactive", "--diff", ...(policyPack ? ["--policy-pack", policyPack] : []), "--stack", stack] : [verb, "--yes", "--non-interactive", "--stack", stack]);
+  steps.push(verb === "preview" ? ["preview", "--non-interactive", "--diff", ...cf, ...(policyPack ? ["--policy-pack", policyPack] : []), "--stack", stack] : [verb, "--yes", "--non-interactive", "--stack", stack]);
   return steps;
 }
 
