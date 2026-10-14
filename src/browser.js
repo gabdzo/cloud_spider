@@ -4142,7 +4142,8 @@ function layoutToggle() {
   }
   return box;
 }
-function runLine(run) {
+function runLine(run, deployed = false) {
+  if (!run && deployed) return el("span", { className: "ov-run outside", textContent: "DEPLOYED OUTSIDE THE APP", title: "the stack holds resources, but no PREVIEW / RUN from this app is in audit.jsonl (made with the pulumi CLI or another checkout)" });
   if (!run) return el("span", { className: "ov-run none", textContent: "NO RUN LOGGED", title: "no PREVIEW / RUN / TAKE IT DOWN in audit.jsonl for this stack" });
   const cls = run.result === "ok" ? "ok" : run.result === "failed" ? "bad" : "warn";
   const when = new Date(run.at).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
@@ -4162,7 +4163,7 @@ function overviewTile(spec) {
   tile.append(
     el("span", { className: "ov-top" }, iconImg(CARD_ICON[spec.id] || "stack"), el("b", { className: "ov-name", textContent: spec.title }), el("span", { className: `ov-stat ${cls}`, textContent: status === "deployed" ? `${word} · ${st.count}` : word }), el("span", { className: "ov-go", ariaHidden: "true", textContent: "OPEN ›" })),
     el("span", { className: "ov-res", textContent: top || (status === "deployed" ? "" : "nothing created") }),
-    el("span", { className: "ov-foot" }, runLine(run), where ? el("span", { className: "ov-where", textContent: where }) : ""),
+    el("span", { className: "ov-foot" }, runLine(run, status === "deployed"), where ? el("span", { className: "ov-where", textContent: where }) : ""),
   );
   if (hint) tile.append(el("span", { className: "ov-drift", textContent: `⚠ ${hint}` }));
   tile.addEventListener("click", () => {
@@ -4238,7 +4239,7 @@ function drawOverview(own, groups, order) {
   // TEAR EVERYTHING DOWN per cluster (takedown-view.js): plan, typed name, run.
   const eksSpec = own.find((spec) => spec.id === "eks");
   const clusters = [...new Set([
-    ...(eksSpec && overviewStatus(stackStates.eks, stackRuns.eks) === "deployed" ? [eksSpec.current?.clusterName || stackRuns.eks?.cluster || "cloudspider-up"] : []),
+    ...(eksSpec && overviewStatus(stackStates.eks, stackRuns.eks) === "deployed" ? [eksSpec.current?.clusterName || stackRuns.eks?.cluster || fallbackCluster()] : []),
     ...Object.values(stackRuns).filter((r) => r?.cluster && r.result !== "failed").map((r) => r.cluster),
   ])].filter((c) => /^[a-z][a-z0-9-]{1,27}$/.test(c));
   if (clusters.length && !inventoryView) {
@@ -4312,7 +4313,7 @@ function drawInventory(all) {
       el("span", { className: "inv-cat", textContent: row.category }),
       where ? el("span", { className: "inv-where", textContent: where }) : "",
       el("span", { className: "inv-stack", textContent: row.stack, title: "Pulumi stack" }),
-      runLine(row.run),
+      runLine(row.run, row.kind === "stack" && stackStates[row.id]?.state === "deployed"),
       row.status === "deployed" ? el("span", { className: "inv-cnt", textContent: `${row.count} RES` }) : "",
       el("span", { className: "ov-go", ariaHidden: "true", textContent: "OPEN ›" }));
     head.addEventListener("click", () => openInventoryRow(row));
@@ -4528,7 +4529,7 @@ function bundleRows(spec, preset = {}) {
     const runButton = el("button", { type: "button", className: "cmd", textContent: "run bundle", disabled: true, title: "PLAN first: then this runs every step in order (preview, up), stopping at the first failure" });
     const ask = () => {
       const params = { ...pipParams(), ...preset };
-      return { bundle: bundle.id, cluster: params.clusterName || "cloudspider-up", params: Object.fromEntries(Object.entries(params).filter(([key]) => ["expose"].includes(key))) };
+      return { bundle: bundle.id, cluster: params.clusterName || fallbackCluster(), params: Object.fromEntries(Object.entries(params).filter(([key]) => ["expose"].includes(key))) };
     };
     planButton.addEventListener("click", async () => {
       plan.textContent = "planning…";
@@ -4547,7 +4548,7 @@ function bundleRows(spec, preset = {}) {
         return;
       }
       const last = got.module || "";
-      const cluster = runButton.dataset.cluster || "cloudspider-up";
+      const cluster = runButton.dataset.cluster || fallbackCluster();
       if (last && last !== spec.id) {
         if (!pipModules.find((item) => item.id === last)?.addon) pipKept[last] = { ...(pipKept[last] || {}), clusterName: cluster };
         openCard = pipModules.find((item) => item.id === last)?.addon ? `${last}@${cluster}` : last;
@@ -4597,12 +4598,12 @@ function cardBody(spec, preset = {}) {
     // SCALE DOWN / SCALE UP (eks-scale-view.js): chip, buttons, warning, dialog.
     const scaleBox = el("div", { id: "pip-scale", className: "scale-row", role: "group", ariaLabel: "scale the cluster down or up" });
     body.append(scaleBox);
-    const scale = mountScale(scaleBox, () => ({ cluster: pipParams().clusterName || spec.current?.clusterName || "cloudspider-up", sample }));
+    const scale = mountScale(scaleBox, () => ({ cluster: pipParams().clusterName || spec.current?.clusterName || fallbackCluster(), sample }));
     queueMicrotask(() => scale.refresh());
     // TAKE DOWN CLUSTER (takedown-view.js): plan, typed name, run in this pane.
     const downBox = el("div", { id: "pip-takedown", className: "scale-row", role: "group", ariaLabel: "take the cluster down with every stack on it" });
     body.append(downBox);
-    mountTakedown(downBox, () => ({ cluster: pipParams().clusterName || spec.current?.clusterName || "cloudspider-up", sample }), { onStarted: (out) => { paintUpgrade(out); refreshUpgrade(true); } });
+    mountTakedown(downBox, () => ({ cluster: pipParams().clusterName || spec.current?.clusterName || fallbackCluster(), sample }), { onStarted: (out) => { paintUpgrade(out); refreshUpgrade(true); } });
   }
   if (spec.id === "eks") body.append(connectRow("pip-connect"), el("div", { id: "pip-live", className: "live-line", hidden: true }, el("span", { className: "live-what" }), el("em", { className: "field-note live-warn" })));
   if (spec.id === "camp") {
@@ -4967,6 +4968,10 @@ function openSpec() {
   return pipModules.find((item) => item.id === openModule()) || null;
 }
 
+// The cluster the server found (selected context or live EKS stack); "" none.
+let pipCluster = "";
+const LEGACY_NAME = "cloudspider-up";
+const fallbackCluster = () => pipCluster || LEGACY_NAME;
 function pipParams() {
   const params = {};
   const card = pipEl.querySelector(".card.open");
@@ -5775,6 +5780,7 @@ async function toggleUpgrade() {
   if (!pipModules.length) {
     const body = await fetch("/api/upgrades").then((response) => response.json()).catch(() => ({}));
     pipModules = body.modules || [];
+    pipCluster = body.currentCluster || "";
     pipTerraform = body.terraform || [];
   }
   drawPipForm();

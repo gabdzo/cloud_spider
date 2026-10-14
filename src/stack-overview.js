@@ -44,7 +44,7 @@ export function overviewStatus(state, run) {
 // A drift hint, honest about what it knows: not a pulumi refresh, only
 // what the state time and the last run say.
 export function driftHint(state, run) {
-  if (!run) return state?.state === "deployed" ? "NO RUN LOGGED HERE: CHECK WITH PREVIEW" : "";
+  if (!run) return state?.state === "deployed" ? "DEPLOYED OUTSIDE THE APP: NO RUN LOGGED HERE" : "";
   if (run.result === "failed" && run.action === "stack.up") return "LAST RUN FAILED: STATE MAY BE HALF-APPLIED";
   if (run.result === "failed" && run.action === "stack.destroy") return "TAKE IT DOWN FAILED: SOME RESOURCES MAY REMAIN";
   if (run.action === "stack.preview" && run.result === "failed") return "LAST PREVIEW FAILED";

@@ -162,7 +162,7 @@ test("observe pulls stacks in (its bundle is a Pulumi stack); k8s-only + observe
     settings: { modules: modulesView(mods) },
     upgrade: { list: () => UPGRADES, run: async (b) => { ran.push(b.module); return { ok: true }; }, refuse: ({ error }) => ({ error }) },
   });
-  assert.deepEqual(app.upgrades().map((c) => c.id), ["observe"]);
+  assert.deepEqual((await app.upgrades()).map((c) => c.id), ["observe"]);
   const no = await app.upgradeRun("http://127.0.0.1:9241", { module: "eks", action: "preview", params: {} });
   assert.match(no.error, /builds AWS resources and the aws module is off/);
   assert.deepEqual(ran, []);

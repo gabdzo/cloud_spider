@@ -1,3 +1,5 @@
+import { LEGACY_CLUSTER } from "./upgrade-rules.js";
+import { pickCurrentCluster } from "./current-cluster.js";
 import { originAllowed } from "./origin.js";
 import { createReach, fetchOpenApi, reachAllowed, resolveHost } from "./reach.js";
 import { ingressRoutes, linkRoutes, listenerRoutes, openApiRoutes, rootRoute } from "./alb-routes.js";
@@ -87,6 +89,9 @@ const WAIT_MS = Number(process.env.CLOUDSPIDER_WAIT_MS) || 20_000;
 
 export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, hideContexts = [], reach = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL, auditFile = "" }) {
   let stackResourcesReader = null;
+  let currentCache = null;
+  // No cluster typed: the current one (last read), then the legacy name.
+  const defaultCluster = () => currentCache?.name || LEGACY_CLUSTER;
   // The modules view main.js hands over (settings.modules): aws off = k8s-only.
   const awsOffHere = () => settings?.modules?.modules?.find((m) => m.id === "aws")?.on === false;
   const stdout = [];
@@ -586,7 +591,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   async function stackNeeds(module, params = {}) {
     const spec = UPGRADES.find((item) => item.id === module);
     if (!spec) return { error: "no such stack", needs: [], refusal: "" };
-    const cluster = String(params.clusterName || "cloudspider-up");
+    const cluster = String(params.clusterName || LEGACY_CLUSTER);
     const needs = needsOf(spec, params);
     if (!needs.length) return { module, cluster, needs: [], refusal: "" };
     const states = needStates(needs, await needProbes(needs, cluster, params));
@@ -927,9 +932,33 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       if (sample) return { runs: sampleLastRuns(), sample: true };
       return { runs: auditFile ? await readLastRuns(auditFile) : {} };
     },
-    upgrades() {
-      const cards = upgrade?.list?.() || [];
-      return awsOffHere() ? cards.filter(kubeCard) : cards;
+    // The cluster the cards mean (src/current-cluster.js), kept 30 s.
+    async currentCluster({ fresh = false } = {}) {
+      if (!fresh && currentCache && clock() - currentCache.at < 30_000) return currentCache.name;
+      const eksStacks = upgrade?.eksStacks ? await upgrade.eksStacks().catch(() => []) : [];
+      const legacyName = upgrade?.legacyCluster ? await upgrade.legacyCluster().catch(() => "") : "";
+      const name = pickCurrentCluster({ selectedContext: settings?.kube?.context || "", eksStacks, legacyName });
+      currentCache = { at: clock(), name };
+      return name;
+    },
+    // The cards for the current cluster: each per-cluster card names that
+    // cluster's stack (found by name) and starts from its saved config.
+    async upgrades() {
+      let cards = upgrade?.list?.() || [];
+      if (awsOffHere()) cards = cards.filter(kubeCard);
+      const cluster = await this.currentCluster().catch(() => "");
+      if (!cluster) return cards;
+      const legacyName = upgrade?.legacyCluster ? await upgrade.legacyCluster().catch(() => "") : "";
+      const found = upgrade?.discoverStacks ? await upgrade.discoverStacks(cluster).catch(() => ({ stacks: [] })) : { stacks: [] };
+      const stackOf = new Map((found.stacks || []).map((item) => [item.id, item.stack]));
+      return cards.map((card) => {
+        const perCluster = card.id === "eks" || card.addon || card.needs?.includes("eks") || card.id === "observe";
+        if (!perCluster) return card;
+        const stack = card.id === "eks" ? (cluster === legacyName ? card.stack : `eks-${cluster}`) : stackOf.get(card.id) || (card.addon ? `${card.stack}-${cluster}` : card.stack);
+        const saved = upgrade?.stackConfigOf ? upgrade.stackConfigOf(card.id, stack) || {} : {};
+        const hasCluster = (card.parameters || []).some((p) => p.name === "clusterName");
+        return { ...card, stack, cluster, current: { ...(stack === card.stack ? card.current : {}), ...saved, ...(hasCluster ? { clusterName: cluster } : {}) } };
+      });
     },
     // Terraform stacks: listed with their commands; state is read-only.
     terraformStacks() {
@@ -984,7 +1013,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       if (module === "eks") {
         try {
           cluster = eks?.describeCluster
-            ? await eks.describeCluster(history.name || values.clusterName || "cloudspider-up")
+            ? await eks.describeCluster(history.name || values.clusterName || defaultCluster())
             : { error: "the cluster did not answer" };
         } catch (error) {
           cluster = { error: error?.message || "the cluster did not answer" };
@@ -1159,7 +1188,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       if (!originAllowed(requestOrigin, pageOrigin)) return { error: "nothing ran", hint: "Open Cloud Spider at the address npm start printed." };
       const bundle = bundleById(String(body.bundle || ""));
       if (!bundle) return { error: "no such bundle", hint: "" };
-      const cluster = String(body.cluster || body.params?.clusterName || "cloudspider-up");
+      const cluster = String(body.cluster || body.params?.clusterName || defaultCluster());
       if (!validCluster(cluster)) return { error: "not a cluster name", hint: "" };
       const params = { ...(body.params || {}), clusterName: cluster };
       const steps = bundleSteps(bundle, params);
@@ -1336,7 +1365,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         // what it needs (Karpenter before the Pod Identity agent).
         if (addonById(body.module) && body.action === "up" && addons?.view) {
           const view = await addons.view({ fresh: true }).catch(() => null);
-          const cluster = body.params?.clusterName || "cloudspider-up";
+          const cluster = body.params?.clusterName || defaultCluster();
           // Free pod slots from the shared kube read, when it is this cluster.
           const snap = primary ? await readContext(primary, 30_000).catch(() => null) : null;
           const same = snap && !snap.error && (snap.clusterName === cluster || String(snap.clusterName || "").endsWith(`/${cluster}`));
@@ -1349,7 +1378,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         if (body.module === "eks" && body.action === "up" && !body.replaceNodeGroup && this.upgradeLive) {
           // Bounded: a pulumi that hangs must not hang RUN (no answer: no check).
           const live = await Promise.race([
-            this.upgradeLive("eks", { clusterName: body.params?.clusterName || "cloudspider-up" }).catch(() => null),
+            this.upgradeLive("eks", { clusterName: body.params?.clusterName || defaultCluster() }).catch(() => null),
             new Promise((done) => setTimeout(done, LIVE_MS, null).unref?.()),
           ]);
           const change = nodeGroupChange({ instanceType: live?.values?.instanceType, maxPods: live?.values?.maxPods, capacityType: live?.values?.capacityType, nodeGroup: live?.nodeGroup || live?.outputs?.nodeGroup }, body.params || {});
@@ -1359,7 +1388,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         // the program checks it too). No live answer: no check here.
         if (body.module === "eks" && ["up", "preview"].includes(body.action) && eks?.describeCluster) {
           const described = await Promise.race([
-            eks.describeCluster(String(body.params?.clusterName || "cloudspider-up")).catch(() => null),
+            eks.describeCluster(String(body.params?.clusterName || defaultCluster())).catch(() => null),
             new Promise((done) => setTimeout(done, LIVE_MS, null).unref?.()),
           ]);
           const live = described?.found ? String(described.version || "") : "";
@@ -1390,7 +1419,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         let params = body.params || {};
         let notes = [];
         if (body.module === "scaling-demo" && ["up", "preview"].includes(body.action)) {
-          const demo = await scalingDemoCheck(String(params.clusterName || "cloudspider-up"), params);
+          const demo = await scalingDemoCheck(String(params.clusterName || defaultCluster()), params);
           params = demo.params;
           notes = demo.notes;
         }
@@ -1399,7 +1428,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         // or say which pod it will preempt. No kube read: no check.
         const dsSpec = UPGRADES.find((item) => item.id === body.module);
         if (dsSpec?.daemonSets?.length && ["up", "preview"].includes(body.action)) {
-          const on = String(params.clusterName || "cloudspider-up");
+          const on = String(params.clusterName || defaultCluster());
           const snap = await clusterSnapshot(on);
           if (snap && !snap.error && snap.nodes?.length && !Array.isArray(snap.scope)) {
             for (const ds of dsSpec.daemonSets) {
@@ -1412,7 +1441,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         // An EKS add-on this stack made before the EKS stack owned them is
         // never deleted by its take it down (docs/design/stack-dependencies.md).
         if (body.action === "destroy" && HELD_BY[body.module] && eks?.describeAddon) {
-          const on = String(params.clusterName || "cloudspider-up");
+          const on = String(params.clusterName || defaultCluster());
           const answers = {};
           for (const name of HELD_BY[body.module]) answers[name] = await eks.describeAddon(on, name).catch(() => null);
           const held = destroyRefusal(body.module, on, answers);
@@ -1420,9 +1449,9 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         }
         if (body.module === "eks" && body.action === "destroy") {
           const typed = String(params.confirmName || "").trim();
-          const target = String(params.clusterName || "cloudspider-up");
+          const target = String(params.clusterName || defaultCluster());
           if (/\sanyway$/i.test(typed)) params = { ...params, confirmName: typed.replace(/\s+anyway$/i, "") };
-          else if (validCluster(target) && [target, target === (legacyName || "cloudspider-up") ? "upgrade" : `eks-${target}`].includes(typed)) {
+          else if (validCluster(target) && [target, target === (legacyName || LEGACY_CLUSTER) ? "upgrade" : `eks-${target}`].includes(typed)) {
             const still = await stacksOn(target);
             if (still.length) return no(`${target} still has stacks on it: ${still.join(", ")}. Use TEAR EVERYTHING DOWN on this card (it removes them in order, then the cluster), take them down on their cards, or type "${target} anyway"`);
           }
@@ -1439,12 +1468,12 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
           notes,
           onDone: withAddons.length
             ? (done) => afterCreate(cluster, withAddons, done)
-            : autoConnectOn && connector && body.module === "eks" && validCluster(cluster || "cloudspider-up") && ["up", "destroy"].includes(body.action)
-              ? (done) => (body.action === "up" ? autoConnectAfter : autoDisconnectAfter)(cluster || "cloudspider-up", done)
+            : autoConnectOn && connector && body.module === "eks" && validCluster(cluster || defaultCluster()) && ["up", "destroy"].includes(body.action)
+              ? (done) => (body.action === "up" ? autoConnectAfter : autoDisconnectAfter)(cluster || defaultCluster(), done)
               : undefined,
         });
         const waitIn = UPGRADES.find((item) => item.id === body.module)?.namespaces;
-        if (waitIn && body.action === "up" && started?.running) watchWaiting(started.stack, String(params.clusterName || "cloudspider-up"), waitIn);
+        if (waitIn && body.action === "up" && started?.running) watchWaiting(started.stack, String(params.clusterName || defaultCluster()), waitIn);
         if (withAddons.length && !started?.error && validCluster(cluster)) bundleQueue.set(cluster, { items: withAddons, stage: "cluster", text: `after the cluster: CONNECT, then ${withAddons.length} add-on${withAddons.length === 1 ? "" : "s"}` });
         return started?.error && !started.hint ? { ...started, ...runHint(started.error) } : started;
       } catch (failure) {

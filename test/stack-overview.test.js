@@ -35,7 +35,7 @@ test("overviewStatus: a failed RUN is FAILED, a failed PREVIEW is not", () => {
 
 test("driftHint says only what the state and the last run know", () => {
   assert.match(driftHint({ state: "deployed" }, { action: "stack.up", result: "failed" }), /HALF-APPLIED/);
-  assert.match(driftHint({ state: "deployed" }, null), /PREVIEW/);
+  assert.match(driftHint({ state: "deployed" }, null), /DEPLOYED OUTSIDE THE APP/);
   assert.equal(driftHint({ state: "missing" }, null), "");
   assert.equal(driftHint({ state: "deployed" }, { action: "stack.up", result: "ok" }), "");
 });
