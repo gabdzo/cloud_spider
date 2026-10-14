@@ -2,6 +2,7 @@ import { samplePreview } from "./stack-sample.js";
 import { mountScale } from "./eks-scale-view.js";
 import { mountTakedown } from "./takedown-view.js";
 import { CATEGORIES, stackCategory } from "./stack-resources.js";
+import { shortLine, cardDetail } from "./morning-cards.js";
 import { ago, driftHint, inventoryRows, nukeClusters, overviewStatus, pickLayout, rowMatches } from "./stack-overview.js";
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
@@ -609,6 +610,7 @@ function renderMorning() {
   const key = JSON.stringify([report.hurting, report.changed, report.idle, report.logs, pods, morningFolded]);
   if (key === morningShown) return;
   morningShown = key;
+  morningReport = report;
   const order = kubeOnly ? ["logs"] : ["hurting", "changed", "idle", "logs"];
   // One PODS line per kube context (kube-health.js), after the three.
   const podLines = pods.map((line, index) => {
@@ -657,8 +659,9 @@ function renderMorning() {
       when.textContent = hhmm24(line.time);
       text.append(when);
     }
-    text.append(line.text || "");
-    li.title = `${line.time ? `${hhmm24(line.time)} ` : ""}${line.text || ""}`;
+    // one short line on the card; the whole story is in its popup
+    text.append(shortLine(name, line, { logs: logNight }));
+    li.title = `${line.time ? `${hhmm24(line.time)} ` : ""}${line.text || ""} (click for details)`;
     li.dataset.focus = line.focus || "";
     li.setAttribute("aria-label", `${li.querySelector("b").textContent}: ${li.title}`);
   }
@@ -5942,20 +5945,19 @@ radioEl.addEventListener("keydown", (event) => {
 // it names something on the map, open that thing's plate. A PODS card opens
 // Cluster.
 function pressMorning(li) {
-  const open = li.getAttribute("aria-expanded") !== "true";
-  li.setAttribute("aria-expanded", String(open));
-  if (!open) return;
-  if (li.id === "m-logs") {
-    logErrorsView.open();
-    return;
-  }
-  if (li.id.startsWith("m-pods-")) {
-    markHistory();
-    if (mode !== "cluster") enterCluster();
-    return;
-  }
-  const id = li.dataset.focus;
-  if (!id || mode !== "map" || !place) return;
+  // A card opens its popup, nothing else: no plate, no STOP/START Y/N.
+  openMorningCard(li.id.startsWith("m-pods-") ? li.id : li.id.replace(/^m-/, ""), li);
+}
+
+// ---- MORNING POPUP (morning-cards.js): the whole story of one card ----
+const morningModal = document.querySelector("#m-modal");
+let morningReport = null;
+let morningOpener = null;
+function closeMorningCard() {
+  if (morningModal.open) morningModal.close();
+}
+function morningShowOnMap(id) {
+  if (mode !== "map") return;
   const placed = placedMap();
   const building = buildingAt(placed, 0, 0, id);
   const fixture = building ? null : fixtureAt(placed, 0, 0, id);
@@ -5966,6 +5968,50 @@ function pressMorning(li) {
   mapFocusKey = `${building ? "building" : "fixture"}:${id}`;
   mapSay.textContent = `${ui.selection?.name || id} plate is open. Escape closes it.`;
 }
+function openMorningCard(name, li) {
+  const line = morningReport?.[name] || { status: "unknown", text: "not checked." };
+  const label = li?.querySelector("b")?.textContent || "";
+  const d = cardDetail(name, line, { logs: logNight, label: label.replace(/^PODS · /, "") });
+  morningOpener = li || null;
+  const head = vel("header", `mm-head ${d.status}`);
+  const close = vel("button", "cmd mm-close", "✕ CLOSE");
+  close.type = "button";
+  close.addEventListener("click", closeMorningCard);
+  head.append(vel("b", "", d.title), vel("span", "mm-sum", d.summary), close);
+  const list = vel("ul", "mm-rows");
+  for (const row of d.rows) {
+    const item = vel("li", "mm-row");
+    const when = vel("time", "", row.time ? hhmm24(row.time) : "");
+    if (row.time) when.dateTime = new Date(row.time).toISOString();
+    item.append(when, vel("b", "", row.who || ""), vel("span", "", row.text));
+    list.append(item);
+  }
+  const acts = vel("div", "mm-actions");
+  for (const a of d.actions) {
+    const btn = vel("button", "cmd", a.label);
+    btn.type = "button";
+    btn.addEventListener("click", () => {
+      closeMorningCard();
+      if (a.kind === "map") morningShowOnMap(a.focus);
+      else if (a.kind === "investigate") logErrorsView.open();
+      else if (a.kind === "cluster") { markHistory(); if (mode !== "cluster") enterCluster(); }
+    });
+    acts.append(btn);
+  }
+  morningModal.replaceChildren(head, list, acts);
+  morningModal.showModal();
+  close.focus();
+}
+morningModal.addEventListener("click", (event) => { if (event.target === morningModal) closeMorningCard(); });
+// Esc closes the popup only: the page's other Escape handlers (plates,
+// STACKS, panels) do not see it.
+window.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !morningModal.open) return;
+  event.stopImmediatePropagation();
+  event.preventDefault();
+  closeMorningCard();
+}, true);
+morningModal.addEventListener("close", () => { morningOpener?.focus?.(); morningOpener = null; });
 
 morningEl.addEventListener("click", (event) => {
   const li = event.target.closest(".m-line");

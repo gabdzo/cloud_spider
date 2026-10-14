@@ -161,5 +161,5 @@ export function morningLine(sum) {
     .sort((a, b) => HEALTH_KINDS[a[0]].rank - HEALTH_KINDS[b[0]].rank)
     .map(([kind, n]) => `${n} ${HEALTH_KINDS[kind].short}`)
     .join(", ");
-  return { status: sum.lamp === "fail" ? "fail" : "warn", text: `${sum.label} · ${scope}: ${counts}. Worst: ${sum.worst.map((w) => w.line).join("; ")}.`, time: sum.at };
+  return { status: sum.lamp === "fail" ? "fail" : "warn", text: `${sum.label} · ${scope}: ${counts}. Worst: ${sum.worst.map((w) => w.line).join("; ")}.`, time: sum.at, label: sum.label, counts: { ...sum.counts }, worst: sum.worst.map(({ ns, name, kind, detail }) => ({ ns, name, kind, detail: detail || "" })) };
 }
