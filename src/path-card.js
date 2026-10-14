@@ -58,6 +58,8 @@ function ruleMatch(facts) {
   return [hosts.length ? `host ${hosts.join(",")}` : "", paths.length ? `path ${paths.join(",")}` : ""].filter(Boolean).join(" · ");
 }
 
+const ACTION_GLYPH = { redirect: "redirect", fixed: "fixed", weighted: "weighted" };
+
 export function cardOf(node) {
   const f = node?.facts || {};
   const status = LIGHT[node?.status] ? node.status : "unknown";
@@ -75,7 +77,9 @@ export function cardOf(node) {
       const paths = f.paths || [];
       const name = hosts[0] || paths.join(" ") || "anything else";
       const detail = hosts.length ? (paths.length ? `path ${paths.join(",")}` : "any path") : paths.length ? "any host" : "no condition";
-      return { ...base, type: f.isDefault ? "RULE · default" : `RULE · #${f.priority ?? "?"}`, name, full: ruleMatch(f), port: ruleAction(f.action), detail };
+      const conditions = f.conditions || [];
+      const kind = { redirect: " · REDIRECT", fixed: " · FIXED", weighted: " · WEIGHTED" }[f.actionKind] || "";
+      return { ...base, type: `${f.isDefault ? "RULE · default" : `RULE · #${f.priority ?? "?"}`}${kind}`, glyph: ACTION_GLYPH[f.actionKind] || "", name, full: [ruleMatch(f), ...conditions].join(" · "), port: f.actionText && f.actionKind !== "forward" ? f.actionText : ruleAction(f.action), detail: conditions.length ? `if ${conditions.join(" · ")}` : detail };
     }
     case "tg": {
       const total = f.total ?? 0;
@@ -87,6 +91,9 @@ export function cardOf(node) {
       return { ...base, type: "NODE · EC2", name: node.label, full: [node.label, f.id].filter(Boolean).join(" · "), port: f.ip || f.id || "", detail: [f.instanceType, f.zone, f.state === "running" ? "" : f.state].filter(Boolean).join(" · ") };
     case "cluster":
       return { ...base, type: "CLUSTER · EKS", name: node.label, port: "", detail: f.version ? `v${f.version} · ${String(f.status || "").toLowerCase()}` : "not read" };
+    case "answer":
+      if (f.answer === "redirect") return { ...base, type: `REDIRECT · ${f.code}`, glyph: "redirect", name: String(node.label).split("→ ")[1] || node.label, port: `client follows → ${f.code}`, detail: f.query ? `query ${f.query}` : "no target is reached" };
+      return { ...base, type: `FIXED RESPONSE · ${f.code}`, glyph: "fixed", name: f.body ? `"${f.body}"` : `${f.code}`, full: f.body || String(f.code), port: `${f.code}${f.contentType ? ` ${f.contentType}` : ""}`, detail: "the ALB answers itself" };
     default:
       return base;
   }

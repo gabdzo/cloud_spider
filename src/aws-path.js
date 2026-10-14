@@ -387,6 +387,12 @@ export function actionFrom(raw) {
     redirectPort: raw.RedirectConfig?.Port || "",
     redirectProtocol: raw.RedirectConfig?.Protocol || "",
     statusCode: raw.RedirectConfig?.StatusCode || raw.FixedResponseConfig?.StatusCode || "",
+    // Weighted forward: every group with its weight (0 kept: it is drawn dim).
+    weights: (weighted || []).map((item) => ({ arn: item.TargetGroupArn, weight: item.Weight ?? 1 })),
+    redirectPath: raw.RedirectConfig?.Path || "",
+    redirectQuery: raw.RedirectConfig?.Query || "",
+    contentType: raw.FixedResponseConfig?.ContentType || "",
+    messageBody: raw.FixedResponseConfig?.MessageBody || "",
   };
 }
 
@@ -402,6 +408,10 @@ export function ruleFrom(raw, listenerArn) {
     isDefault: Boolean(raw.IsDefault),
     hosts: values("host-header", "HostHeaderConfig"),
     paths: values("path-pattern", "PathPatternConfig"),
+    headers: (raw.Conditions || []).filter((c) => c.Field === "http-header").map((c) => ({ name: c.HttpHeaderConfig?.HttpHeaderName || "", values: c.HttpHeaderConfig?.Values || [] })),
+    queries: (raw.Conditions || []).filter((c) => c.Field === "query-string").flatMap((c) => (c.QueryStringConfig?.Values || []).map((v) => ({ key: v.Key || "", value: v.Value || "" }))),
+    methods: values("http-request-method", "HttpRequestMethodConfig"),
+    sources: values("source-ip", "SourceIpConfig"),
     others: (raw.Conditions || []).filter(
       (condition) => condition.Field !== "host-header" && condition.Field !== "path-pattern",
     ).length,
