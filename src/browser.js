@@ -3554,9 +3554,11 @@ function openFixture(fixture) {
 }
 
 // A resource's plate, then its last log lines: click or Enter.
-async function openBuilding(hit) {
+// ask: false (a morning line) opens the plate only, no STOP/START Y/N armed.
+async function openBuilding(hit, { ask = true } = {}) {
   const raw = place?.instances.find((item) => item.id === hit.id) || hit;
   clickBuilding(ui, raw, region, place ? blastLine(place, raw.id) : "");
+  if (!ask) ui.confirmation = null;
   setFacts(ui, plateFacts(raw.id));
   renderChrome();
   draw();
@@ -5805,6 +5807,7 @@ async function toggleUpgrade() {
   renderChrome();
   if (!pipOpen) return;
   if (!pipModules.length) {
+    pipEl.replaceChildren(el("p", { className: "quiet pip-reading", textContent: "READING THE STACKS… (pulumi, can take a few seconds)" }));
     const body = await fetch("/api/upgrades").then((response) => response.json()).catch(() => ({}));
     pipModules = body.modules || [];
     pipCluster = body.currentCluster || "";
@@ -5952,7 +5955,7 @@ function pressMorning(li) {
   const placed = placedMap();
   const building = buildingAt(placed, 0, 0, id);
   const fixture = building ? null : fixtureAt(placed, 0, 0, id);
-  if (building) openBuilding(building);
+  if (building) openBuilding(building, { ask: false });
   else if (fixture) openFixture(fixture);
   else return;
   scrollMapTo(building || fixture);

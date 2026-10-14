@@ -852,7 +852,7 @@ const page = `<!doctype html>
   .m-head small { color: var(--pip-mid); font-size: 10px; }
   .m-head output { color: var(--pip-dim-text); font-size: 10px; margin-top: 3px; letter-spacing: 0.06em; }
   /* One row of cards, however many lines the report has (three, or four with PODS). */
-  .m-lines { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px 10px; }
+  .m-lines { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 6px 10px; }
   .m-line {
     position: relative;
     display: grid;
@@ -872,8 +872,7 @@ const page = `<!doctype html>
   .m-line .m-text {
     grid-column: 1 / -1; grid-row: 2;
     min-width: 0; font-size: 12px; line-height: 1.3; color: var(--world-text);
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-    overflow-wrap: anywhere;
+    display: block; overflow-wrap: anywhere; /* the full text, wrapped */
   }
   .m-line .m-text time { color: var(--pip-mid); margin-right: 6px; }
   /* A card is a button: it opens to its full sentence (and its subject's plate). */
@@ -903,7 +902,8 @@ const page = `<!doctype html>
   #morning.folded .m-lines { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); }
   #morning.folded .m-line:not(.lead) { display: none; }
   #morning.folded .m-line { grid-template-rows: auto; grid-template-columns: 16px auto minmax(0, 1fr); padding-top: 3px; padding-bottom: 3px; }
-  #morning.folded .m-text { grid-column: 3; grid-row: 1; -webkit-line-clamp: 1; }
+  #morning.folded .m-text { grid-column: 3; grid-row: 1; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; -webkit-line-clamp: 1; }
+  #morning.folded .m-line[aria-expanded="true"] .m-text { display: block; }
   @media (min-width: 1600px) {
     #sunrise { width: 96px; height: 54px; }
     .m-line .m-text { font-size: 13px; }
@@ -917,7 +917,7 @@ const page = `<!doctype html>
     .m-head small, .m-head output { display: none; }
     .m-lines { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; }
     .m-line { grid-template-rows: auto; padding-top: 3px; padding-bottom: 3px; }
-    .m-line .m-text { grid-column: 3; grid-row: 1; -webkit-line-clamp: 1; }
+    .m-line .m-text { grid-column: 3; grid-row: 1; }
     .m-line b { min-width: 0; }
   }
   @media (max-width: 820px) {
@@ -2131,8 +2131,8 @@ const page = `<!doctype html>
   #map-view button.cmd[aria-pressed="true"]::before, #map-view button.cmd[aria-pressed="true"]::after { color: var(--pip-ink); }
   #map-view select { min-height: 24px; padding: 0 4px; font-size: 11px; max-width: 120px; }
   #pip {
-    position: absolute; top: 10px; left: 12px; z-index: 4; margin: 0;
-    width: min(400px, calc(100% - 24px)); max-height: calc(100% - 20px); overflow: auto;
+    /* a full page over the map in every layout (overview and combined) */
+    position: absolute; inset: 10px 12px; z-index: 4; margin: 0; overflow: auto;
     padding: 0 0 8px; font-size: 13px; color: var(--pip-bright);
     /* opaque: a see-through panel lets the map's labels read through the cards */
     background: rgb(2, 10, 5); border: 2px solid var(--pip-mid);
@@ -2529,7 +2529,6 @@ const page = `<!doctype html>
   #pip .nuke-ico .nuke-fg { fill: #1a0602; }
   #pip .scale-dialog h3 .nuke-ico { vertical-align: -5px; margin-right: 4px; }
   /* STACKS overview: a full page over the map, not a narrow drawer */
-  #pip.ov-mode { inset: 10px 12px; width: auto; max-height: none; }
   #pip .ov-danger { margin: 18px 8px 6px; border-top: 1px dashed var(--pip-dark); padding-top: 6px; }
   #pip .ov-danger > summary { cursor: pointer; color: var(--pip-dim-text); font-size: 11px; letter-spacing: 0.1em; }
   #pip .ov-danger[open] > summary { color: var(--status-broken); }
