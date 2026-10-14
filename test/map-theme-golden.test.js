@@ -20,15 +20,17 @@ const { PRO_GLYPHS, glyphKey } = await import("../src/map-pro-icons.js");
 // left edge so the vault number badge no longer covers it.
 // Changed on purpose (ALB rules showcase): the SAMPLE map gains the demo
 // showcase balancers (dedicated Boutique ALB, shared demo-apps ALB, an NLB).
+// Changed on purpose (map dock overlap): wrapped public ALB lines leave room
+// for the dock under a line and the PUBLIC badge over the next.
 const PIP_GOLDEN = {
-  w1440: ["c173cc2adcd776e1", { width: 1440 }],
-  w760: ["ffb18305b0519b5b", { width: 760, animTime: 1234 }],
+  w1440: ["4444f56ad18f16f3", { width: 1440 }],
+  w760: ["5bcb8a71cafd8ccf", { width: 760, animTime: 1234 }],
   // Changed on purpose (#pro-map-2): side-by-side VPCs leave a chip row
   // above the first row so peering chips clear the ARCH / BY TAG switch.
-  w1920flow: ["8b377488fe988d56", { width: 1920, flow: true, animTime: 5000 }],
+  w1920flow: ["fada389f05894a51", { width: 1920, flow: true, animTime: 5000 }],
   tag: ["d3ac33f6eb8e83a2", { width: 1440, view: "tag" }],
-  selBuilding: ["a3557029a41fab7d", { width: 1440, select: "building" }],
-  selFixture: ["169b8feca36d723e", { width: 1440, select: "fixture" }],
+  selBuilding: ["5003f4acfbf9eb9d", { width: 1440, select: "building" }],
+  selFixture: ["2a1dbf572d856211", { width: 1440, select: "fixture" }],
 };
 
 function render(opts, theme) {
