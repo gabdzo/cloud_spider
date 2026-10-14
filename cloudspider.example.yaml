@@ -23,7 +23,7 @@ aws:
 kube:
   context: cloudspider-viewer          # env CLOUDSPIDER_KUBE_CONTEXT: used when no contexts are listed
   contextsFile: cloudspider.contexts.yaml  # env CLOUDSPIDER_KUBE_CONTEXTS_FILE: the file CONNECT writes
-  autoConnect: true                    # env CLOUDSPIDER_KUBE_AUTO_CONNECT: CONNECT after an EKS RUN on Stacks, DISCONNECT after TAKE IT DOWN
+  autoConnect: false                   # env CLOUDSPIDER_KUBE_AUTO_CONNECT: after an EKS RUN, list an existing viewer context (a new one needs CONNECT, which asks first); DISCONNECT after TAKE IT DOWN
   writeContexts: []                    # env CLOUDSPIDER_KUBE_WRITE_CONTEXTS: contexts where the network debug pod may be created (none by default)
   hideContexts: []                     # env CLOUDSPIDER_KUBE_HIDE_CONTEXTS: contexts the CONTEXT switcher never shows (a deleted cluster's leftover); the kubeconfig is not changed
   # Contexts and namespace allowlists. Listed here first; entries of the

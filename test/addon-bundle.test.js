@@ -188,7 +188,7 @@ test("INSTALL SELECTED stops at the first failure with the ERROR plate; too few 
 test("with add-ons: the create run, then CONNECT, then the bundle, one after the other", async () => {
   const r = rig({ connected: false, free: 8 });
   try {
-    const started = await r.app.upgradeRun(ORIGIN, { module: "eks", action: "up", params: { clusterName: "cloudspider-medium", instanceType: "t4g.medium", nodeCount: 1 }, withAddons: ["pod-identity", "kyverno", "bogus"] });
+    const started = await r.app.upgradeRun(ORIGIN, { module: "eks", action: "up", params: { clusterName: "cloudspider-medium", instanceType: "t4g.medium", nodeCount: 1 }, withAddons: ["pod-identity", "kyverno", "bogus"], confirmKubeconfig: true });
     assert.equal(started.running, true, started.error);
     assert.equal((await r.app.bundleStatus("cloudspider-medium")).queued.stage, "cluster");
     const done = await until(r.upgrade, (st) => st.action === "add-ons" && !st.running, 30_000);

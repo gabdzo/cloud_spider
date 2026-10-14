@@ -88,20 +88,22 @@ async function until(check, what) {
 const idle = (r) => !r.upgrade.running().length;
 const notes = (r) => r.app.kubeHealth().radio.map((row) => row.text);
 
-test("an EKS RUN connects the cluster by itself; TAKE IT DOWN disconnects it", async () => {
+test("an EKS RUN never writes the kubeconfig by itself: it waits for CONNECT (which asks); TAKE IT DOWN disconnects it", async () => {
   const r = rig();
   try {
     const before = parse(readFileSync(r.kubeconfigFile, "utf8"));
+    const raw = readFileSync(r.kubeconfigFile, "utf8");
     const up = await r.app.upgradeRun(ORIGIN, { module: "eks", action: "up", params: MEDIUM });
     assert.equal(up.running, true);
     assert.equal(up.stack, "eks-cloudspider-medium");
-    await until(() => r.app.contextNames().includes("cloudspider-medium-viewer") && idle(r), "the auto CONNECT");
-    await until(() => notes(r).some((text) => /connected by itself/.test(text)), "the radio note");
+    await until(() => notes(r).some((text) => /waits for you/.test(text)) && idle(r), "the 'waits for you' note");
+    assert.equal(readFileSync(r.kubeconfigFile, "utf8"), raw, "the kubeconfig is untouched after the RUN");
+    await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", confirmKubeconfig: true });
+    await until(() => r.app.contextNames().includes("cloudspider-medium-viewer") && idle(r), "CONNECT after the yes");
     const config = parse(readFileSync(r.kubeconfigFile, "utf8"));
     assert.equal(config["current-context"], "work-ctx", "the current context is unchanged");
     assert.deepEqual(config.contexts.find((c) => c.name === "work-ctx"), before.contexts[0]);
     assert.deepEqual(parse(readFileSync(r.contextsFile, "utf8")).contexts.map((c) => c.context), ["work-ctx", "cloudspider-medium-viewer"]);
-    assert.match(notes(r)[0], /EKS cloudspider-medium connected by itself after its RUN: CONNECTED as cloudspider-medium-viewer \(current context unchanged\)/);
     // The CONNECT run is in the cluster stack's run log.
     const log = await r.app.upgradeLog("eks", MEDIUM);
     assert.match(log.text, /aws eks update-kubeconfig --region eu-north-1 --name cloudspider-medium/);
@@ -140,7 +142,9 @@ test("no current context before CONNECT: none after it either", async () => {
   const r = rig({ current: "" });
   try {
     await r.app.upgradeRun(ORIGIN, { module: "eks", action: "up", params: MEDIUM });
-    await until(() => r.app.contextNames().includes("cloudspider-medium-viewer") && idle(r), "the auto CONNECT");
+    await until(() => idle(r), "the run");
+    await r.app.connectRun(ORIGIN, { cluster: "cloudspider-medium", confirmKubeconfig: true });
+    await until(() => r.app.contextNames().includes("cloudspider-medium-viewer") && idle(r), "CONNECT");
     assert.equal(parse(readFileSync(r.kubeconfigFile, "utf8"))["current-context"], undefined);
   } finally {
     r.cleanup();

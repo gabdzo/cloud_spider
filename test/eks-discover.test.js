@@ -99,7 +99,7 @@ test("a cluster made outside Stacks with no context: NOT CONNECTED with the way 
     assert.match(st.hint, /made outside Stacks/);
     assert.match(st.hint, /aws eks update-kubeconfig --region eu-north-1 --name hand-made --alias hand-made/);
     const kc = readFileSync(r.kubeconfigFile, "utf8");
-    const run = await r.app.connectRun(ORIGIN, { cluster: "hand-made", action: "connect" });
+    const run = await r.app.connectRun(ORIGIN, { cluster: "hand-made", action: "connect", confirmKubeconfig: true });
     assert.ok(run.error, "CONNECT has no viewer role to use");
     assert.equal(readFileSync(r.kubeconfigFile, "utf8"), kc);
   } finally {
