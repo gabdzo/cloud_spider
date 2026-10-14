@@ -123,6 +123,7 @@ export const SCHEMA = {
       url: { type: "string", pattern: /^(https?:\/\/[^\s]+)?$/, default: "", env: "CLOUDSPIDER_LOKI_URL", doc: "Loki's HTTP API (LOG ERRORS in the morning report), e.g. http://127.0.0.1:3100 through a port-forward; the observe bundle will fill this in" },
       tenant: { type: "string", default: "", env: "CLOUDSPIDER_LOKI_TENANT", doc: "X-Scope-OrgID for a multi-tenant Loki (empty: none)" },
       selector: { type: "string", default: "", doc: "LogQL stream selector (empty: {namespace=~\".+\"})" },
+      timeoutSeconds: { type: "integer", default: 20, min: 5, max: 120, env: "CLOUDSPIDER_LOKI_TIMEOUT", doc: "how long LOG ERRORS waits for one Loki query (the observe bundle's Loki through the API server too); longer is reported as slow" },
     },
     window: {
       start: { type: "string", pattern: /^([01]\d|2[0-3]):[0-5]\d$/, default: "22:00", doc: "the night window LOG ERRORS reports on, local time" },

@@ -310,19 +310,19 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     return pending;
   }
 
-  async function getPath(path, { text = false, keepLine = null } = {}) {
+  async function getPath(path, { text = false, keepLine = null, timeout = 0 } = {}) {
     const t = await resolveTarget();
     if (t.error) return { error: t.error, unset: true };
     const tok = await token(t);
     if (tok.error) return { error: tok.error };
-    let res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}) });
+    let res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}), ...(timeout ? { timeout } : {}) });
     // 429: the API server's flow control said "later" (it does right after
     // an add-on install floods it). Try again twice before calling the read
     // failed, so one busy second does not turn a control UNKNOWN.
     for (const ms of RETRY_429_MS) {
       if (res.status !== 429) break;
       await wait(ms);
-      res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}) });
+      res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}), ...(timeout ? { timeout } : {}) });
     }
     if (res.error) return { error: res.error };
     if (res.status === 401) {
@@ -371,6 +371,11 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     async read(name, ...args) {
       if (!Object.hasOwn(PATHS, name) || typeof PATHS[name] !== "function") return { error: `no such read: ${String(name).slice(0, 60)}` };
       return getPath(PATHS[name](...args));
+    },
+    // A read that may take longer than the default 8 s (a Loki query_range).
+    async readTimed(name, timeoutMs, ...args) {
+      if (!Object.hasOwn(PATHS, name) || typeof PATHS[name] !== "function") return { error: `no such read: ${String(name).slice(0, 60)}` };
+      return getPath(PATHS[name](...args), { timeout: Math.max(1000, Number(timeoutMs) || TIMEOUT_MS) });
     },
     // The same, answered as text (Prometheus metrics): { text } | ...
     async readText(name, ...args) {
