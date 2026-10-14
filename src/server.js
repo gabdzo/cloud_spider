@@ -2357,6 +2357,7 @@ const page = `<!doctype html>
   #pip .nodebill-head img { image-rendering: pixelated; }
   #pip .nodebill-head b { margin-left: auto; font-weight: normal; color: var(--pip-bright); letter-spacing: 0.02em; }
   #pip input[readonly] { color: var(--pip-dim-text); border-style: dashed; }
+  body.stacks-page #morning, body.stacks-page #radio-panel { display: none !important; }
   /* STACKS: a full page over the map (inset on the first #pip rule), with
      sections, chevrons, status chips, depth. No width here: a later width
      turned it back into a narrow drawer in the combined layout. */

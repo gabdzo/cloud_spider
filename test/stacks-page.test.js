@@ -45,3 +45,10 @@ test("no later #pip rule narrows STACKS back to a drawer or docks the map beside
   for (const body of rules) assert.doesNotMatch(body, /(^|;|\s)width\s*:/, `a #pip rule sets a width: ${body.slice(0, 80)}`);
   assert.doesNotMatch(css, /> #pip:not\(\[hidden\]\)\) > #map \{ margin-left/, "the map is not pushed aside for a docked drawer");
 });
+
+test("while STACKS is open the morning strip and the radio panel step aside", async () => {
+  const js = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  assert.match(js, /document\.body\.classList\.toggle\("stacks-page", pipOpen\)/);
+  const css = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
+  assert.match(css, /body\.stacks-page #morning, body\.stacks-page #radio-panel \{ display: none/);
+});
