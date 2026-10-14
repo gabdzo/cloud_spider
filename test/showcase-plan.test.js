@@ -70,3 +70,23 @@ test("each shared app also gets its own HTTP port on the same shared ALB (browse
   assert.ok(specs.every((s) => !s.spec.rules[0].host));
   assert.equal(d(P.find((p) => p.id === "boutique")), null);
 });
+
+test("showcase-routes: path, redirect, fixed-response, header canary and weighted forward on the shared ALB", async () => {
+  const { routesIngress, canaryService, CANARY_SERVICE } = await import("../upgrades/showcase/plan.js");
+  const ing = routesIngress();
+  const a = ing.metadata.annotations;
+  assert.equal(a["alb.ingress.kubernetes.io/group.name"], SHARED_GROUP);
+  assert.equal(a["alb.ingress.kubernetes.io/listen-ports"], '[{"HTTP":80}]');
+  assert.equal(JSON.parse(a["alb.ingress.kubernetes.io/actions.redirect-old"]).redirectConfig.statusCode, "HTTP_301");
+  assert.equal(JSON.parse(a["alb.ingress.kubernetes.io/actions.maintenance"]).fixedResponseConfig.statusCode, "503");
+  const w = JSON.parse(a["alb.ingress.kubernetes.io/actions.canary-weighted"]).forwardConfig.targetGroups;
+  assert.deepEqual(w.map((t) => t.weight), [90, 10]);
+  assert.equal(JSON.parse(a["alb.ingress.kubernetes.io/conditions.canary-header"])[0].httpHeaderConfig.httpHeaderName, "X-Canary");
+  const paths = ing.spec.rules[0].http.paths;
+  assert.equal(ing.spec.rules[0].host, undefined);
+  // the header canary comes before the weighted rule on the same path
+  assert.ok(paths.findIndex((p) => p.backend.service.name === "canary-header") < paths.findIndex((p) => p.backend.service.name === "canary-weighted"));
+  for (const p of paths) if (p.backend.service.port.name) assert.ok(a[`alb.ingress.kubernetes.io/actions.${p.backend.service.name}`]);
+  assert.equal(ing.metadata.namespace, canaryService().metadata.namespace);
+  assert.equal(canaryService().metadata.name, CANARY_SERVICE);
+});
