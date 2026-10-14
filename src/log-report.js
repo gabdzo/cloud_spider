@@ -57,9 +57,10 @@ export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights 
     return "";
   }
 
+  const lokiMs = () => (Number(logs?.loki?.timeoutSeconds) || 20) * 1000;
   async function readWindow(source, window) {
-    if (source === "bundle") return readBundleLoki({ kube, window });
-    if (source === "loki") return readLoki({ url: logs.loki.url, tenant: logs.loki.tenant, selector: logs.loki.selector || undefined, window, fetch });
+    if (source === "bundle") return readBundleLoki({ kube, window, timeoutMs: lokiMs() });
+    if (source === "loki") return readLoki({ url: logs.loki.url, tenant: logs.loki.tenant, selector: logs.loki.selector || undefined, window, fetch, timeoutMs: lokiMs() });
     return readInsights({ insights: await insights(), groups: logs.cloudwatch.logGroups, window });
   }
 

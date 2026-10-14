@@ -36,7 +36,9 @@ export function lokiEntries(body) {
 }
 
 // One window from Loki, paged forward (Loki caps a response at `limit`).
-export async function readLoki({ url, tenant = "", window, selector, fetch = globalThis.fetch, limit = 5000, maxPages = 10, timeoutMs = 15_000 }) {
+export const LOKI_TIMEOUT_MS = 20_000;
+const slow = (ms) => `Loki is slow: no answer in ${Math.round(ms / 1000)} s (logs.loki.timeoutSeconds)`;
+export async function readLoki({ url, tenant = "", window, selector, fetch = globalThis.fetch, limit = 5000, maxPages = 10, timeoutMs = LOKI_TIMEOUT_MS }) {
   if (!url) return { error: "logs.loki.url is not set" };
   const base = String(url).replace(/\/+$/, "");
   const headers = tenant ? { "X-Scope-OrgID": tenant } : {};
@@ -48,10 +50,12 @@ export async function readLoki({ url, tenant = "", window, selector, fetch = glo
     let body;
     try {
       const res = await fetch(`${base}/loki/api/v1/query_range?${q}`, { headers, signal: AbortSignal.timeout(timeoutMs) });
-      if (res.status !== 200) return { error: `Loki answered ${res.status}`, entries };
+      if (res.status === 408) return { error: slow(res.slowMs || timeoutMs), slow: true, entries };
+      if (res.status !== 200) return { error: res.detail ? `Loki did not answer: ${res.detail}` : `Loki answered ${res.status}`, entries };
       body = await res.json();
     } catch (error) {
-      return { error: `Loki did not answer (${error.name === "TimeoutError" ? "timeout" : error.code || error.message})`, entries };
+      if (error.name === "TimeoutError") return { error: slow(timeoutMs), slow: true, entries };
+      return { error: `Loki did not answer (${error.code || error.message})`, entries };
     }
     const got = lokiEntries(body);
     entries.push(...got);
@@ -66,16 +70,19 @@ export async function readLoki({ url, tenant = "", window, selector, fetch = glo
 // the OTLP labels (k8s_namespace_name, service_name, k8s_pod_name); the
 // Events stream (service_name="k8s-events") has no namespace and stays out.
 export const BUNDLE_SELECTOR = '{k8s_namespace_name=~".+"}';
-export function kubeLokiFetch(kube) {
+// A kube client timeout is status 408 (slow), not a made-up 502; any other
+// failure carries the kube error as its detail.
+export function kubeLokiFetch(kube, timeoutMs = LOKI_TIMEOUT_MS) {
   return async (url) => {
     const qs = String(url).slice(String(url).indexOf("?") + 1);
-    const got = await kube.read("observeLokiQuery", qs);
+    const got = kube.readTimed ? await kube.readTimed("observeLokiQuery", timeoutMs, qs) : await kube.read("observeLokiQuery", qs);
     if (got.json) return { status: 200, json: async () => got.json };
-    return { status: got.missing ? 404 : got.forbidden ? 403 : 502, json: async () => ({}) };
+    if (/no answer in|timed? ?out|ETIMEDOUT/i.test(got.error || "")) return { status: 408, slowMs: timeoutMs, json: async () => ({}) };
+    return { status: got.missing ? 404 : got.forbidden ? 403 : 502, detail: got.error || "", json: async () => ({}) };
   };
 }
-export function readBundleLoki({ kube, window }) {
-  return readLoki({ url: "kube://cloudspider-observe/loki", window, selector: BUNDLE_SELECTOR, fetch: kubeLokiFetch(kube) });
+export function readBundleLoki({ kube, window, timeoutMs = LOKI_TIMEOUT_MS }) {
+  return readLoki({ url: "kube://cloudspider-observe/loki", window, selector: BUNDLE_SELECTOR, fetch: kubeLokiFetch(kube, timeoutMs), timeoutMs: timeoutMs + 1000 });
 }
 
 // CloudWatch Logs Insights over the cluster's container log groups (the
