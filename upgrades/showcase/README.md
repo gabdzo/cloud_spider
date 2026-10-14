@@ -17,6 +17,7 @@ Set with `pulumi config set <key> <value>` or the STACKS card. Validated before 
 
 ## Outputs
 
+- `directLinks`
 - `hosts`
 - `sharedAlb`
 - `boutiqueAlb`
