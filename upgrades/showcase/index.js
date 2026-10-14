@@ -5,7 +5,7 @@ import { eksProvider } from "../eks-kube.js";
 import { ship } from "../netpol.js";
 import { inheritTags, stackTags } from "../tags.js";
 import { assertStackConfig } from "../schema/stacks.js";
-import { BOUTIQUE, IMAGES, NLB_SERVICE, PRODUCTS, directIngressFor, ingressFor } from "./plan.js";
+import { BOUTIQUE, IMAGES, NLB_SERVICE, PRODUCTS, canaryService, directIngressFor, ingressFor, routesIngress } from "./plan.js";
 
 // The demo "prod" cluster's four products (plan.js). Stack showcase-<cluster>.
 // Needs, on the cluster: the lbc, cert-manager and kyverno add-on stacks and
@@ -91,6 +91,10 @@ const ingresses = PRODUCTS.map((p) => new k8s.networking.v1.Ingress(`${p.id}-ing
 const direct = !cfg.certificateArn? PRODUCTS.map((p) => [p, directIngressFor(p)]).filter(([, spec]) => spec) : [];
 const directIngresses = direct.map(([p, spec]) => new k8s.networking.v1.Ingress(`${p.id}-direct`, spec, inNs(p.ns, [ingresses[1]])));
 export const directLinks = directIngresses.map((ing, i) => ing.status.loadBalancer.ingress[0].hostname.apply((h) => `http://${h}:${direct[i][0].directPort}/`));
+// Demo rules on the shared ALB's :80: path, redirect, fixed-response, header
+// canary and a weighted forward (plan.js routesIngress). Rules are free.
+const canary = new k8s.core.v1.Service("uptime-kuma-canary", canaryService(), inNs(kuma.ns));
+new k8s.networking.v1.Ingress("showcase-routes", routesIngress(), inNs(kuma.ns, [ingresses[1], canary]));
 export const hosts = PRODUCTS.filter((p) => p.host).map((p) => `${p.host}.${domain}`);
 export const sharedAlb = ingresses[1].status.loadBalancer.ingress[0].hostname;
 export const boutiqueAlb = ingresses[0].status.loadBalancer.ingress[0].hostname;

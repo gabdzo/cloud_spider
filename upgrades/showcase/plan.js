@@ -148,3 +148,50 @@ export function costEstimate({ nodes = 2, albs = 2, nlbs = 1, ebsGb = 2 * 20 + 1
   const hour = rows.reduce((n, [, v]) => n + v, 0);
   return { rows, hour, day: hour * 24 };
 }
+
+// Extra listener rules on the shared ALB's HTTP :80 (free: rules, not ALBs),
+// so SNIFF has every kind of action to show. No host condition: they answer
+// on http://<shared alb>/<path> from a browser. All in uptime-kuma's
+// namespace (an Ingress backend must live in its own namespace):
+//   /status*      path rule      -> Kuma (its public status pages)
+//   /old*         redirect 301   -> /status
+//   /maintenance  fixed-response 503 text/plain
+//   /canary* + header X-Canary: 1 -> kuma-canary (100%)
+//   /canary*      weighted forward 90 kuma / 10 kuma-canary
+// kuma-canary is a second Service on the same Kuma pod (one more target
+// group, no new pods): the canary is about the ALB's routing, not the app.
+export const CANARY_SERVICE = "uptime-kuma-canary";
+export function routesIngress() {
+  const kuma = PRODUCTS.find((p) => p.id === "kuma");
+  const port = { number: kuma.port };
+  const fwd = (name) => ({ type: "forward", forwardConfig: { targetGroups: [{ serviceName: name, servicePort: kuma.port }] } });
+  const actions = {
+    "redirect-old": { type: "redirect", redirectConfig: { path: "/status", statusCode: "HTTP_301" } },
+    "maintenance": { type: "fixed-response", fixedResponseConfig: { contentType: "text/plain", statusCode: "503", messageBody: "showcase is in maintenance (cloud spider demo rule)" } },
+    "canary-header": fwd(CANARY_SERVICE),
+    "canary-weighted": { type: "forward", forwardConfig: { targetGroups: [{ serviceName: kuma.service, servicePort: kuma.port, weight: 90 }, { serviceName: CANARY_SERVICE, servicePort: kuma.port, weight: 10 }] } },
+  };
+  const a = { ...albAnnotations({ group: SHARED_GROUP, order: 20 }) };
+  for (const [name, action] of Object.entries(actions)) a[`alb.ingress.kubernetes.io/actions.${name}`] = JSON.stringify(action);
+  a["alb.ingress.kubernetes.io/conditions.canary-header"] = JSON.stringify([{ field: "http-header", httpHeaderConfig: { httpHeaderName: "X-Canary", values: ["1"] } }]);
+  const use = (name) => ({ service: { name, port: { name: "use-annotation" } } });
+  const path = (p, backend, pathType = "Prefix") => ({ path: p, pathType, backend });
+  return {
+    metadata: { name: "showcase-routes", namespace: kuma.ns, annotations: a },
+    spec: {
+      ingressClassName: "alb",
+      rules: [{ http: { paths: [
+        path("/maintenance", use("maintenance"), "Exact"),
+        path("/old", use("redirect-old")),
+        path("/canary", use("canary-header")),
+        path("/canary", use("canary-weighted")),
+        path("/status", { service: { name: kuma.service, port } }),
+      ] } }],
+    },
+  };
+}
+
+export function canaryService() {
+  const kuma = PRODUCTS.find((p) => p.id === "kuma");
+  return { metadata: { name: CANARY_SERVICE, namespace: kuma.ns, labels: { app: kuma.service, track: "canary" } }, spec: { selector: { app: kuma.service }, ports: [{ name: "tcp", port: kuma.port, targetPort: kuma.port }] } };
+}
