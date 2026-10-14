@@ -55,6 +55,8 @@ export const FILES = new Set([
   "diagnose-view.js",
   "stack-resources.js",
   "stack-overview.js",
+  "morning-cards.js",
+  "kube-health.js",
   "peering.js",
   "arch-layout.js",
   "radio.js",
@@ -852,7 +854,7 @@ const page = `<!doctype html>
   .m-head small { color: var(--pip-mid); font-size: 10px; }
   .m-head output { color: var(--pip-dim-text); font-size: 10px; margin-top: 3px; letter-spacing: 0.06em; }
   /* One row of cards, however many lines the report has (three, or four with PODS). */
-  .m-lines { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 6px 10px; }
+  .m-lines { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 10px; }
   .m-line {
     position: relative;
     display: grid;
@@ -872,13 +874,13 @@ const page = `<!doctype html>
   .m-line .m-text {
     grid-column: 1 / -1; grid-row: 2;
     min-width: 0; font-size: 12px; line-height: 1.3; color: var(--world-text);
-    display: block; overflow-wrap: anywhere; /* the full text, wrapped */
+    /* one short line (morning-cards.js); the full story is in the popup */
+    display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .m-line .m-text time { color: var(--pip-mid); margin-right: 6px; }
   /* A card is a button: it opens to its full sentence (and its subject's plate). */
   .m-line { cursor: pointer; }
   .m-line:focus-visible { outline: 2px solid var(--pip-hot); outline-offset: 1px; }
-  .m-line[aria-expanded="true"] .m-text { -webkit-line-clamp: unset; display: block; }
   .m-led { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; background: var(--m-tone); box-shadow: 0 0 0 1px #000, 0 0 8px var(--m-tone); }
   .m-line.ok { --m-tone: var(--pip-bright); }
   .m-line.fail { --m-tone: var(--status-broken); background: linear-gradient(180deg, rgba(255, 90, 60, 0.12), rgba(0, 0, 0, 0.35)); }
@@ -887,6 +889,20 @@ const page = `<!doctype html>
   .m-line.unknown { --m-tone: var(--pip-dim); }
   .m-line.unknown .m-text { color: var(--world-muted); }
   .m-line.unknown .m-led { background: transparent; box-shadow: 0 0 0 1px var(--pip-dim); }
+  /* MORNING POPUP: one card's whole story (morning-cards.js) */
+  #m-modal { width: min(720px, calc(100vw - 40px)); max-height: min(560px, calc(100vh - 60px)); padding: 0; overflow: auto; color: var(--world-text); background: rgb(2, 10, 5); border: 2px solid var(--pip-mid); box-shadow: 0 0 24px rgba(20, 255, 106, 0.25); font-size: 13px; }
+  #m-modal::backdrop { background: rgba(0, 0, 0, 0.6); }
+  #m-modal .mm-head { position: sticky; top: 0; display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: start; padding: 8px 10px; background: rgb(6, 22, 12); border-bottom: 1px solid var(--pip-dark); }
+  #m-modal .mm-head b { letter-spacing: 0.16em; color: var(--pip-bright); }
+  #m-modal .mm-head.fail b { color: var(--status-broken); }
+  #m-modal .mm-head.warn b { color: var(--world-amber); }
+  #m-modal .mm-sum { color: var(--world-text); line-height: 1.35; }
+  #m-modal .mm-rows { list-style: none; margin: 0; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; }
+  #m-modal .mm-row { display: grid; grid-template-columns: 44px minmax(90px, 220px) 1fr; gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--pip-dark); line-height: 1.35; overflow-wrap: anywhere; }
+  #m-modal .mm-row time { color: var(--pip-mid); }
+  #m-modal .mm-row b { color: var(--pip-bright); font-weight: normal; }
+  #m-modal .mm-actions { display: flex; gap: 8px; padding: 8px 10px 10px; }
+  #m-modal .mm-actions:empty { display: none; }
   .m-fold {
     align-self: start;
     width: 22px; height: 22px; padding: 0;
@@ -903,7 +919,6 @@ const page = `<!doctype html>
   #morning.folded .m-line:not(.lead) { display: none; }
   #morning.folded .m-line { grid-template-rows: auto; grid-template-columns: 16px auto minmax(0, 1fr); padding-top: 3px; padding-bottom: 3px; }
   #morning.folded .m-text { grid-column: 3; grid-row: 1; display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; -webkit-line-clamp: 1; }
-  #morning.folded .m-line[aria-expanded="true"] .m-text { display: block; }
   @media (min-width: 1600px) {
     #sunrise { width: 96px; height: 54px; }
     .m-line .m-text { font-size: 13px; }
@@ -3364,6 +3379,7 @@ const page = `<!doctype html>
     <button id="ask-this" class="cmd" type="button" data-icon="terminal" hidden>ASK ABOUT THIS</button>
   </div>
   <p id="error" hidden></p>
+  <dialog id="m-modal" aria-label="morning report details"></dialog>
   <section id="morning" aria-label="morning report" hidden>
     <canvas id="sunrise" width="64" height="36" aria-hidden="true"></canvas>
     <div class="m-head"><b>MORNING</b><small>REPORT</small><output id="morning-when"></output></div>
