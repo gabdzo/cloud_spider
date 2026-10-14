@@ -2,6 +2,7 @@ import { FONT_PX } from "./layout.js";
 import { campfireFrame } from "./pixel-art.js";
 import { icon } from "./sprites/icons.js";
 import { INK, STATUS, inkFont, rgba, syncCanvasTheme } from "./theme.js";
+import { cardOf, lightWord } from "./path-card.js";
 import { brackets, canMakeLayer, clip, clipMiddle, crtBackdrop, dprOf, drawSprite, newLayer, pipPanel } from "./draw-kit.js";
 
 // Fonts and text colours follow the theme (syncCanvasTheme at each paint).
@@ -119,6 +120,16 @@ export function paintDiagram(ctx, { placed, selectedId, animTime, width, height,
 function curve(ctx, edge) {
   ctx.beginPath();
   ctx.moveTo(edge.x1, edge.y1);
+  if (edge.wrap) {
+    // A wire that wraps to the next band: out, down the gutter, back in.
+    const { right, left, y } = edge.wrap;
+    ctx.lineTo(right, edge.y1);
+    ctx.lineTo(right, y);
+    ctx.lineTo(left, y);
+    ctx.lineTo(left, edge.y2);
+    ctx.lineTo(edge.x2, edge.y2);
+    return;
+  }
   const pull = Math.max(8, Math.min(28, (edge.x2 - edge.x1) / 2));
   ctx.bezierCurveTo(edge.x1 + pull, edge.y1, edge.x2 - pull, edge.y2, edge.x2, edge.y2);
 }
@@ -154,8 +165,8 @@ function drawEdge(ctx, edge, animTime, reducedMotion, phase) {
 
   if (edge.status === "broken") {
     // A red break mark halfway along.
-    const mx = (edge.x1 + edge.x2) / 2;
-    const my = (edge.y1 + edge.y2) / 2;
+    const mx = edge.wrap ? (edge.wrap.right + edge.wrap.left) / 2 : (edge.x1 + edge.x2) / 2;
+    const my = edge.wrap ? edge.wrap.y : (edge.y1 + edge.y2) / 2;
     ctx.fillStyle = INK.ink;
     ctx.fillRect(mx - 7, my - 7, 14, 14);
     ctx.fillStyle = color;
@@ -183,8 +194,8 @@ function drawProEdge(ctx, edge, color, animTime, reducedMotion) {
   ctx.stroke();
   ctx.setLineDash([]);
   if (edge.status === "broken") {
-    const mx = (edge.x1 + edge.x2) / 2;
-    const my = (edge.y1 + edge.y2) / 2;
+    const mx = edge.wrap ? (edge.wrap.right + edge.wrap.left) / 2 : (edge.x1 + edge.x2) / 2;
+    const my = edge.wrap ? edge.wrap.y : (edge.y1 + edge.y2) / 2;
     proDot(ctx, mx, my, INK.screen, 8);
     proDot(ctx, mx, my, color, 6);
     ctx.strokeStyle = INK.screen;
@@ -224,6 +235,7 @@ function drawProNode(ctx, node, selected, glyph) {
 }
 
 function drawNode(ctx, node, selected, glyph, phase) {
+  if (node.facts) return drawCard(ctx, node, selected, glyph, phase);
   if (PRO) return drawProNode(ctx, node, selected, glyph);
   const color = STATUS[node.status] || muted();
   pipPanel(ctx, node.x, node.y, node.w, node.h, { accent: selected ? INK.hot : color, alpha: 0.94 });
@@ -260,6 +272,73 @@ function drawNode(ctx, node, selected, glyph, phase) {
     ctx.fillStyle = color;
     ctx.fillRect(node.x + node.w - 14, node.y + 8, 6, 6);
   }
+}
+
+// A hop card (path-card.js), four lines:
+//   [icon] TYPE ··························· (light)
+//   name (bright, the biggest text)
+//   HTTP :80 → :8080
+//   detail (rule host/path, 2/2 healthy, m7i-flex.large · eu-north-1a)
+// Text that still does not fit is middle-clipped; the hover has it whole.
+function fitText(ctx, value, max) {
+  const text = String(value || "");
+  const width = (t) => ctx.measureText?.(t)?.width ?? t.length * 7;
+  if (width(text) <= max) return text;
+  let n = text.length;
+  while (n > 4 && width(clipMiddle(text, n)) > max) n -= 1;
+  return clipMiddle(text, n);
+}
+
+export function drawLight(ctx, x, y, status, phase = 0) {
+  const color = STATUS[status] || STATUS.unknown;
+  // A lamp: dark rim, the colour, a hot centre; failing lamps pulse.
+  const on = status !== "broken" || phase % 2 === 0;
+  ctx.fillStyle = INK.ink;
+  ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = on ? color : rgba(color, 0.45);
+  ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+  if (on && status !== "unknown") {
+    ctx.fillStyle = rgba(color, 0.25);
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = rgba(INK.bright, 0.7);
+    ctx.fillRect(x - 2, y - 2, 2, 2);
+  }
+}
+
+function drawCard(ctx, node, selected, glyph, phase) {
+  const card = cardOf(node);
+  const color = STATUS[card.light] || muted();
+  if (PRO) proCard(ctx, node.x, node.y, node.w, node.h, { color, selected });
+  else {
+    pipPanel(ctx, node.x, node.y, node.w, node.h, { accent: selected ? INK.hot : color, alpha: 0.94 });
+    ctx.fillStyle = color;
+    ctx.fillRect(node.x + 4, node.y + 6, 3, node.h - 12);
+    if (selected) {
+      ctx.fillStyle = rgba(INK.bright, 0.1);
+      ctx.fillRect(node.x + 2, node.y + 2, node.w - 4, node.h - 4);
+      brackets(ctx, node.x - 6, node.y - 6, node.w + 12, node.h + 12, INK.hot, 10, 2);
+    }
+  }
+  const left = node.x + 14;
+  const room = node.w - 26;
+  // Row 1: icon, TYPE, lamp.
+  ctx.fillStyle = rgba(INK.bright, 0.08);
+  ctx.fillRect(left - 2, node.y + 8, 20, 20);
+  drawSprite(ctx, glyph, left, node.y + 10, 1);
+  ctx.font = SMALL;
+  ctx.fillStyle = INK.bright;
+  ctx.fillText(fitText(ctx, card.type, room - 52), left + 26, node.y + 23);
+  drawLight(ctx, node.x + node.w - 16, node.y + 18, card.light, phase);
+  // Row 2: the name.
+  ctx.font = FONT;
+  ctx.fillStyle = text();
+  ctx.fillText(fitText(ctx, card.name, room), left, node.y + 47);
+  // Row 3: protocol and port; row 4: the detail.
+  ctx.font = SMALL;
+  ctx.fillStyle = INK.bright;
+  if (card.port) ctx.fillText(fitText(ctx, card.port, room), left, node.y + 66);
+  ctx.fillStyle = muted();
+  ctx.fillText(fitText(ctx, card.detail, room), left, node.y + (card.port ? 83 : 66));
 }
 
 // Where the diagnosis panel for a node goes on a canvas of this size. The
@@ -353,5 +432,9 @@ export function drawPanHint(ctx, view) {
 // Hover text for a path node: the full name and caption the card clipped.
 export function nodeTitle(node) {
   if (!node) return "";
+  if (node.facts) {
+    const card = cardOf(node);
+    return [`${card.type}: ${card.full}`, card.port, card.detail, `● ${lightWord(card.light)}: ${card.reason}`].filter(Boolean).join("\n");
+  }
   return [node.label, [String(node.kind || "").toUpperCase(), node.caption].filter(Boolean).join(" · "), node.sentence].filter(Boolean).join("\n");
 }

@@ -21,7 +21,7 @@ export function diagnose(graph, lbArn, { ruleArn = null } = {}) {
   // Internet-facing: the path starts at the internet (anyone), through the
   // IGW to the load balancer; a subnet without that route breaks the first wire.
   if (lb.scheme === "internet-facing") {
-    add({ id: `internet:${lb.arn}`, kind: "internet", label: "INTERNET", caption: "anyone · 0.0.0.0/0 · via IGW", status: "ok", sentence: `${lb.name} is internet-facing: anyone can reach http://${lb.dns}/`, symptom: false });
+    add({ id: `internet:${lb.arn}`, kind: "internet", label: "INTERNET", caption: "anyone · 0.0.0.0/0 · via IGW", facts: {}, status: "ok", sentence: `${lb.name} is internet-facing: anyone can reach http://${lb.dns}/`, symptom: false });
   }
   const head = lbNode(graph, lb);
   add(head);
@@ -353,6 +353,7 @@ function lbNode(graph, lb) {
     kind: "lb",
     label: lb.name,
     caption: `${lb.type} ${lb.scheme}`,
+    facts: { lbType: lb.type, scheme: lb.scheme, dns: lb.dns, ports: graph.listeners.filter((item) => item.lbArn === lb.arn).map((item) => `${item.protocol} :${item.port}`) },
     status: "ok",
     sentence: lb.dns,
     symptom: false,
@@ -439,7 +440,7 @@ function actionWords(action, fallbackProtocol, fallbackPort) {
 function listenerNode(listener, rules) {
   const actions = rules.flatMap((rule) => rule.actions);
   const label = `${listener.protocol} ${listener.port}`;
-  const base = { id: listener.arn, kind: "listener", label, status: "ok", sentence: "" };
+  const base = { id: listener.arn, kind: "listener", label, facts: { protocol: listener.protocol, port: listener.port, rules: rules.length }, status: "ok", sentence: "" };
   if (actions.some((action) => action.type === "forward" && action.targetGroupArns.length)) {
     return { ...base, caption: `${rules.length} ${rules.length === 1 ? "rule" : "rules"}`, sentence: `${label} forwards to target groups.` };
   }
@@ -464,6 +465,7 @@ function ruleNode(rule) {
     kind: "rule",
     label: rule.isDefault ? "default" : `rule ${rule.priority}`,
     caption: match,
+    facts: { hosts: rule.hosts, paths: rule.paths, isDefault: Boolean(rule.isDefault), priority: rule.priority, action: rule.actions[0]?.type || "" },
     status: "ok",
     sentence: `${ruleName(rule)} matches ${match} and ${actionWords(rule.actions[0], "", "")}.`,
   };
@@ -493,6 +495,7 @@ function targetGroupNode(graph, tg) {
     kind: "tg",
     label: tg.name,
     caption: service ? `k8s ${service}` : `${tg.protocol} ${tg.port} ${tg.targetType}`,
+    facts: { protocol: tg.protocol, port: tg.port, targetType: tg.targetType, service, healthy: health.filter((item) => item.state === "healthy").length, total: health.length, healthPath: tg.healthPath || "" },
     status: "ok",
     sentence: `${tg.name} sends ${tg.protocol} ${tg.port} to ${health.length} ${health.length === 1 ? "target" : "targets"}.`,
   };
@@ -532,7 +535,7 @@ function addTargets(graph, lb, tg, add, link) {
     const groupIds = iface ? iface.groupIds : instance?.groupIds || [];
     const targetIp = tg.targetType === "ip" ? item.id : instance?.privateIp || "";
     const verdict = healthVerdict(item, tg);
-    add({ id, kind: "target", label: `${item.id}:${item.port}`, caption: item.state, status: verdict.status, sentence: verdict.sentence });
+    add({ id, kind: "target", label: `${item.id}:${item.port}`, caption: item.state, facts: { ip: item.id, port: item.port, state: item.state, zone: item.zone || "", targetType: tg.targetType }, status: verdict.status, sentence: verdict.sentence });
 
     const reach = reachTarget(graph, lb, tg, groupIds, item.port, targetIp);
     if (reach.status === "broken" && verdict.status === "ok") {
@@ -555,6 +558,7 @@ function addTargets(graph, lb, tg, add, link) {
       kind: "node",
       label: who,
       caption: instance.state,
+      facts: { id: instance.id, state: instance.state, instanceType: instance.instanceType || "", zone: instance.zone || "", ip: instance.privateIp || "" },
       status: instance.state === "running" ? "ok" : "broken",
       sentence: `${who} is ${instance.state}`,
     });
@@ -588,13 +592,14 @@ function clusterNode(graph, name) {
   const cluster = graph.clusters.find((item) => item.name === name);
   if (!cluster) {
     const note = (graph.notes || []).find((item) => item.startsWith("EKS:")) || "";
-    return { id, kind: "cluster", label: name, caption: "EKS", status: "unknown", sentence: `${name} was not read. ${note}`.trim() };
+    return { id, kind: "cluster", label: name, caption: "EKS", facts: {}, status: "unknown", sentence: `${name} was not read. ${note}`.trim() };
   }
   const base = {
     id,
     kind: "cluster",
     label: name,
     caption: `EKS ${cluster.version} ${cluster.status}`,
+    facts: { version: cluster.version, status: cluster.status, nodegroups: cluster.nodegroups.length },
     status: "ok",
     sentence: `${name} is ${cluster.status}`,
   };

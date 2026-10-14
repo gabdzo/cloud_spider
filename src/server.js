@@ -65,6 +65,7 @@ export const FILES = new Set([
   "report.js",
   "path-layout.js",
   "path-draw.js",
+  "path-card.js",
   "scene.js",
   "cluster.js",
   "kube-diagram.js",
