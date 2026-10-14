@@ -14,3 +14,14 @@ test("wrapped public ALB lines leave room for docks and badges", () => {
   assert.ok(lines.length > 1, "the ALBs wrap");
   for (let i = 1; i < lines.length; i++) assert.ok(lines[i] - (lines[i - 1] + placed[0].h) >= DOCK_ROOM + BADGE_ROOM, `line ${i} gap ${lines[i] - (lines[i - 1] + placed[0].h)}`);
 });
+
+test("a dock is never wider than its card and wraps onto a second line instead", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const js = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  assert.match(js, /dock\.style\.maxWidth = `\$\{alb\.w\}px`/);
+  const css = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
+  const bar = css.slice(css.indexOf("  .alr-bar {"), css.indexOf("}", css.indexOf("  .alr-bar {")));
+  assert.match(bar, /flex-wrap: wrap/);
+  assert.doesNotMatch(bar, /white-space: nowrap|[^-]height: 22px/);
+  assert.ok(DOCK_ROOM >= 48, "room for a two-line dock");
+});

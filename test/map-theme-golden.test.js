@@ -23,14 +23,14 @@ const { PRO_GLYPHS, glyphKey } = await import("../src/map-pro-icons.js");
 // Changed on purpose (map dock overlap): wrapped public ALB lines leave room
 // for the dock under a line and the PUBLIC badge over the next.
 const PIP_GOLDEN = {
-  w1440: ["4444f56ad18f16f3", { width: 1440 }],
-  w760: ["5bcb8a71cafd8ccf", { width: 760, animTime: 1234 }],
+  w1440: ["56b2cb5226ffa717", { width: 1440 }],
+  w760: ["314069899cda667b", { width: 760, animTime: 1234 }],
   // Changed on purpose (#pro-map-2): side-by-side VPCs leave a chip row
   // above the first row so peering chips clear the ARCH / BY TAG switch.
-  w1920flow: ["fada389f05894a51", { width: 1920, flow: true, animTime: 5000 }],
+  w1920flow: ["44f1689aad9f27e1", { width: 1920, flow: true, animTime: 5000 }],
   tag: ["d3ac33f6eb8e83a2", { width: 1440, view: "tag" }],
-  selBuilding: ["5003f4acfbf9eb9d", { width: 1440, select: "building" }],
-  selFixture: ["2a1dbf572d856211", { width: 1440, select: "fixture" }],
+  selBuilding: ["ae257833d5839d00", { width: 1440, select: "building" }],
+  selFixture: ["6fd22d6a73256e56", { width: 1440, select: "fixture" }],
 };
 
 function render(opts, theme) {

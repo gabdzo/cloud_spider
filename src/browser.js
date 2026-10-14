@@ -2506,6 +2506,8 @@ function albDock(alb) {
   dock.style.left = `${alb.x}px`;
   dock.style.top = `${alb.y + alb.h + 4}px`;
   dock.style.minWidth = `${alb.w}px`;
+  // never wider than its card (it covered the next card's dock): it wraps
+  dock.style.maxWidth = `${alb.w}px`;
   const bar = vel("div", "alr-bar");
   bar.title = alb.url ? `${alb.url}\nGET from this machine every 30 s` : `${alb.dns}\nTCP/TLS: not probed over HTTP`;
   const exp = dockExposure(alb, state?.body);

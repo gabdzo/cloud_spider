@@ -240,7 +240,7 @@ function rowOfCards(items, x, y, room, wrapGap = 0) {
 
 // Room under the edge row for a public ALB's dock (browser.js): the reach
 // lamp, OPEN ↗ and the folded ROUTES, hung under its card, not over subnets.
-export const DOCK_ROOM = 28;
+export const DOCK_ROOM = 50; // a dock may wrap onto two lines (it is no wider than its card)
 export const hasDock = (item) => item?.kind === "alb" && item.public === true && Boolean(item.url || (item.lbType === "network" && item.dns));
 
 // ---- edges ----

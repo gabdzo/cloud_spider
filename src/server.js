@@ -2059,7 +2059,7 @@ const page = `<!doctype html>
   #alb-docks { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 3; }
   .alb-dock { position: absolute; min-width: 0; font-size: 11px; letter-spacing: 0.04em; }
   .alr-bar {
-    display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 4px 0 6px; white-space: nowrap;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-height: 22px; padding: 1px 4px 1px 6px;
     color: var(--pip-mid); background: linear-gradient(180deg, #2a1f08, var(--pip-ink));
     border: 1px solid var(--world-amber); border-top: 0; box-shadow: 0 3px 8px rgba(0, 0, 0, 0.55), inset 0 -1px 0 rgba(255, 204, 51, 0.25);
   }
