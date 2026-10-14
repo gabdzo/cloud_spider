@@ -4,7 +4,7 @@ Semantic versions per module: major = an input removed/renamed or a change that 
 
 ## 1.1.0 (2026-10-14)
 
-- Demo listener rules on the shared ALB's HTTP :80 (Ingress `showcase-routes`, no host condition): `/status*` path rule to Kuma, `/old*` 301 redirect to `/status`, `/maintenance` fixed-response 503, `/canary*` with header `X-Canary: 1` to a canary target group, and `/canary*` weighted forward 90/10. New Service `uptime-kuma-canary` (same Kuma pod, one more target group). Rules and target groups are free; nothing is replaced.
+- Demo listener rules on the shared ALB's HTTP :80 (Ingress `showcase-routes`, no host condition): `/dashboard*` path rule to Kuma, `/old*` 301 redirect to `/dashboard`, `/maintenance` fixed-response 503, `/canary*` with header `X-Canary: 1` to a canary target group, and `/canary*` weighted forward 90/10. New Service `uptime-kuma-canary` (same Kuma pod, one more target group). Rules and target groups are free; nothing is replaced.
 
 ## 1.0.2 (2026-10-14)
 

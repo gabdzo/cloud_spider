@@ -153,8 +153,8 @@ export function costEstimate({ nodes = 2, albs = 2, nlbs = 1, ebsGb = 2 * 20 + 1
 // so SNIFF has every kind of action to show. No host condition: they answer
 // on http://<shared alb>/<path> from a browser. All in uptime-kuma's
 // namespace (an Ingress backend must live in its own namespace):
-//   /status*      path rule      -> Kuma (its public status pages)
-//   /old*         redirect 301   -> /status
+//   /dashboard*   path rule      -> Kuma (its dashboard; /status 404s without a status page)
+//   /old*         redirect 301   -> /dashboard
 //   /maintenance  fixed-response 503 text/plain
 //   /canary* + header X-Canary: 1 -> kuma-canary (100%)
 //   /canary*      weighted forward 90 kuma / 10 kuma-canary
@@ -166,7 +166,7 @@ export function routesIngress() {
   const port = { number: kuma.port };
   const fwd = (name) => ({ type: "forward", forwardConfig: { targetGroups: [{ serviceName: name, servicePort: kuma.port }] } });
   const actions = {
-    "redirect-old": { type: "redirect", redirectConfig: { path: "/status", statusCode: "HTTP_301" } },
+    "redirect-old": { type: "redirect", redirectConfig: { path: "/dashboard", statusCode: "HTTP_301" } },
     "maintenance": { type: "fixed-response", fixedResponseConfig: { contentType: "text/plain", statusCode: "503", messageBody: "showcase is in maintenance (cloud spider demo rule)" } },
     "canary-header": fwd(CANARY_SERVICE),
     "canary-weighted": { type: "forward", forwardConfig: { targetGroups: [{ serviceName: kuma.service, servicePort: kuma.port, weight: 90 }, { serviceName: CANARY_SERVICE, servicePort: kuma.port, weight: 10 }] } },
@@ -185,7 +185,7 @@ export function routesIngress() {
         path("/old", use("redirect-old")),
         path("/canary", use("canary-header")),
         path("/canary", use("canary-weighted")),
-        path("/status", { service: { name: kuma.service, port } }),
+        path("/dashboard", { service: { name: kuma.service, port } }),
       ] } }],
     },
   };
