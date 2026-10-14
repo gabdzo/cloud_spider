@@ -243,10 +243,11 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   function connectSteps(cluster, st, current = "") {
     const alias = viewerAlias(cluster);
     const steps = [];
-    steps.push({ text: `back up ${connector.kubeconfigPath()} to ${connector.backupPath()}`, fn: () => connector.backupKubeconfig() });
     if (st.context) {
       steps.push({ text: `context ${st.context} already reads ${cluster} with its viewer role: nothing to write`, fn: async () => ({ skipped: true, lines: ["CONNECTED already; the kubeconfig is not touched"] }) });
     } else {
+      // Only this branch writes the kubeconfig: back it up first.
+      steps.push({ text: `back up ${connector.kubeconfigPath()} to ${connector.backupPath()}`, fn: () => connector.backupKubeconfig() });
       steps.push({ cmd: "aws", args: connectCommand({ cluster, roleArn: st.roleArn }), text: `aws ${connectCommand({ cluster, roleArn: st.roleArn }).join(" ")}` });
       // update-kubeconfig switches the current context; put it back (or
       // unset it again when there was none).
@@ -389,6 +390,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       if (after?.state === "connected") connectNote("ok", `EKS ${cluster} connected by itself after its RUN: ${after.text} (current context unchanged)`);
       else connectNote("fail", `EKS ${cluster}: auto CONNECT ${run?.state === "done" ? `ended ${after?.text || "not connected"}` : `failed: ${run?.error || "see its log"}`} · press CONNECT on Stacks › EKS`);
     } }).catch((failure) => ({ error: failure?.message || "did not start" }));
+    if (started?.needsConfirm) { connectNote("warn", `EKS ${cluster} is up. CONNECT would write ${st.alias || `${cluster}-viewer`} to your kubeconfig, so it waits for you: press CONNECT on Stacks › EKS`); return; }
     if (started?.error) connectNote("warn", `EKS ${cluster}: auto CONNECT did not start (${started.error}) · press CONNECT on Stacks › EKS`);
   }
   // After TAKE IT DOWN: CONNECT's own context goes (kubeconfig and list);
@@ -1126,6 +1128,11 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         if (["no-cluster", "outside", "error"].includes(st.state)) return no(st.state === "outside" ? `${cluster} was made outside Stacks: no viewer role to CONNECT with` : st.text, st.hint);
         const kc = await connector.readKubeconfig();
         const current = String(kc.config?.["current-context"] || "");
+        // Writing the kubeconfig needs an explicit yes (the page asks).
+        if (!st.context && body.confirmKubeconfig !== true) {
+          const path = st.kubeconfig || kc.path || connector.kubeconfigPath();
+          return { needsConfirm: true, cluster, confirm: `CONNECT writes kube context ${st.alias || `${cluster}-viewer`} (read-only viewer role) to ${path} with aws eks update-kubeconfig, after a backup to ${connector.backupPath()}. Your current context${current ? ` (${current})` : ""} is put back. Continue?` };
+        }
         const steps = connectSteps(cluster, st, current);
         const command = st.context ? "" : `aws ${connectCommand({ cluster, roleArn: st.roleArn }).join(" ")}${current ? ` && kubectl config use-context ${current}` : ""}`;
         return upgrade.runSteps({ module: "eks", action: "connect", stack, steps, command, where: st.kubeconfig, onDone: typeof body.onDone === "function" ? body.onDone : undefined });

@@ -5480,11 +5480,18 @@ async function refreshConnect(force = false) {
 async function startConnect(cluster, action = "connect") {
   if (sample) return;
   if (action === "disconnect" && !window.confirm(`Remove kube context ${cluster}-viewer from ~/.kube/config and from Cloud Spider? (a backup is kept)`)) return;
-  const body = await upgradeJson("/api/kube/connect", {
+  const post = (extra = {}) => upgradeJson("/api/kube/connect", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ cluster, action }),
+    body: JSON.stringify({ cluster, action, ...extra }),
   });
+  let body = await post();
+  // CONNECT that writes the kubeconfig: the server says exactly what, and
+  // nothing happens without this yes.
+  if (body.needsConfirm) {
+    if (!window.confirm(body.confirm)) return;
+    body = await post({ confirmKubeconfig: true });
+  }
   const doing = { connect: "connecting", disconnect: "disconnecting", adopt: "checking the existing context of" }[action] || action;
   const line = body.error ? { status: "fail", text: `${action === "adopt" ? "use it" : action} ${cluster}: ${body.error}` } : { status: "ok", text: `${doing} ${cluster}` };
   if (noteSpider(line.text, line.status)) renderRadioPanel();
