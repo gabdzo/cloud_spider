@@ -2682,6 +2682,8 @@ const page = `<!doctype html>
   .term-input { flex: 1; min-width: 0; min-height: 30px; caret-color: var(--pip-hot); }
   #ask-this { flex: none; min-height: 26px; padding: 0 8px; font-size: 11px; letter-spacing: 0.08em; display: inline-flex; align-items: center; gap: 6px; }
   #ask-this[hidden] { display: none; }
+  #path-flow { flex: none; min-height: 26px; padding: 0 8px; font-size: 13px; letter-spacing: 0.04em; }
+  #path-flow[hidden] { display: none; }
   @media (prefers-reduced-motion: reduce) { .term-cursor, .term-light[data-state="running"] { animation: none; } }
   @media (max-width: 900px) { #term { top: 6px; right: 6px; bottom: 6px; width: calc(100% - 12px); } }
   #status.issue { color: var(--status-broken); text-shadow: 0 0 6px rgba(255, 90, 54, 0.4); }
@@ -3377,6 +3379,7 @@ const page = `<!doctype html>
       <button id="yes" class="cmd" type="button" data-icon="stop" hidden>put it down</button>
       <button id="no" class="cmd" type="button" hidden>leave it</button>
     </span>
+    <button id="path-flow" class="cmd" type="button" hidden title="SNIFF layout: left to right or top to bottom">↔ / ↕</button>
     <button id="ask-this" class="cmd" type="button" data-icon="terminal" hidden>ASK ABOUT THIS</button>
   </div>
   <p id="error" hidden></p>

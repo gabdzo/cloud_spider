@@ -137,6 +137,11 @@ function drawWeight(ctx, edge) {
 function curve(ctx, edge) {
   ctx.beginPath();
   ctx.moveTo(edge.x1, edge.y1);
+  if (edge.vertical) {
+    const pull = Math.max(6, Math.min(20, (edge.y2 - edge.y1) / 2));
+    ctx.bezierCurveTo(edge.x1, edge.y1 + pull, edge.x2, edge.y2 - pull, edge.x2, edge.y2);
+    return;
+  }
   if (edge.wrap) {
     // A wire that wraps to the next band: out, down the gutter, back in.
     const { right, left, y } = edge.wrap;
@@ -335,6 +340,17 @@ function drawCard(ctx, node, selected, glyph, phase) {
       ctx.fillRect(node.x + 2, node.y + 2, node.w - 4, node.h - 4);
       brackets(ctx, node.x - 6, node.y - 6, node.w + 12, node.h + 12, INK.hot, 10, 2);
     }
+  }
+  if (node.matched) {
+    // The rule the request matched (↕ layout): a hot frame and a tag.
+    brackets(ctx, node.x - 4, node.y - 4, node.w + 8, node.h + 8, INK.hot, 8, 2);
+    ctx.font = SMALL;
+    const tag = PRO ? "matched" : "MATCHED";
+    const tw = Math.ceil(ctx.measureText?.(tag)?.width ?? tag.length * 7) + 10;
+    ctx.fillStyle = INK.hot;
+    ctx.fillRect(node.x + node.w - tw - 30, node.y - 7, tw, 14);
+    ctx.fillStyle = INK.ink;
+    ctx.fillText(tag, node.x + node.w - tw - 25, node.y + 4);
   }
   const left = node.x + 14;
   const room = node.w - 26;

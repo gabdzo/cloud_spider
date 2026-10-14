@@ -247,6 +247,10 @@ const tabVaults = document.querySelector("#tab-vaults");
 const vaultPageEl = document.querySelector("#vault-page");
 const askTab = document.querySelector("#ask");
 const askThis = document.querySelector("#ask-this");
+// SNIFF layout: "h" left to right (default; reads best at 1024x800, where the
+// map is wide and short) or "v" top to bottom. Kept per browser.
+const pathFlowButton = document.querySelector("#path-flow");
+let pathFlow = (() => { try { return localStorage.getItem("cs.sniffFlow") === "v" ? "v" : "h"; } catch { return "h"; } })();
 const termEl = document.querySelector("#term");
 let termReady = false;
 
@@ -889,7 +893,7 @@ function sizeCanvas(contentWidth, contentHeight) {
 
 function placedPath() {
   return pathData?.diagram
-    ? layoutPath(pathData.diagram, map.clientWidth || 0)
+    ? layoutPath(pathData.diagram, map.clientWidth || 0, { vertical: pathFlow === "v" })
     : { nodes: [], edges: [], contentWidth: 0, contentHeight: 0 };
 }
 
@@ -3939,7 +3943,21 @@ function askThisQuestion() {
   return "";
 }
 
+function renderPathFlow() {
+  if (!pathFlowButton) return;
+  pathFlowButton.hidden = mode !== "path";
+  pathFlowButton.textContent = pathFlow === "v" ? "↕ TOP-DOWN" : "↔ LEFT-RIGHT";
+  pathFlowButton.setAttribute("aria-pressed", String(pathFlow === "v"));
+}
+pathFlowButton?.addEventListener("click", () => {
+  pathFlow = pathFlow === "v" ? "h" : "v";
+  try { localStorage.setItem("cs.sniffFlow", pathFlow); } catch {}
+  renderPathFlow();
+  draw();
+});
+
 function renderAskThis() {
+  renderPathFlow();
   const question = askThisQuestion();
   askThis.hidden = !question;
   if (question) askThis.title = question;
