@@ -3646,7 +3646,9 @@ async function route(app, req, res) {
   if (req.method === "GET" && url.pathname === "/api/upgrades") {
     // A card whose module is off (the observe bundle) is not offered.
     const on = (id) => !enabled || enabled.includes(stackModule(id));
-    send(res, 200, { modules: (app.upgrades() || []).filter((m) => on(m.id)), terraform: app.terraformStacks ? app.terraformStacks() : [] });
+    const cards = (await app.upgrades()) || [];
+    const currentCluster = app.currentCluster ? await app.currentCluster().catch(() => "") : "";
+    send(res, 200, { modules: cards.filter((m) => on(m.id)), currentCluster, terraform: app.terraformStacks ? app.terraformStacks() : [] });
     return;
   }
 
@@ -3656,7 +3658,9 @@ async function route(app, req, res) {
     if (!app.stackResources) return send(res, 200, { state: "error", error: "not available", groups: [] });
     const ids = (url.searchParams.get("ids") || "").split(",").filter(Boolean).slice(0, 40);
     if (ids.length) {
-      const all = await Promise.all(ids.map((id) => app.stackResources(id, { sample: opts.sample }).catch(() => ({ id, state: "error" }))));
+      // Each card's stack for the current cluster (pgcluster-<cluster>, ...).
+      const stackOf = opts.sample || !app.upgrades ? new Map() : new Map(((await app.upgrades().catch(() => [])) || []).map((c) => [c.id, c.stack]));
+      const all = await Promise.all(ids.map((id) => app.stackResources(id, { sample: opts.sample, ...(stackOf.get(id) ? { stack: stackOf.get(id) } : {}) }).catch(() => ({ id, state: "error" }))));
       return send(res, 200, { states: Object.fromEntries(all.map((r) => [r.id, { state: r.state, count: r.count || 0, updated: r.updated || 0, error: r.error || "", stack: r.stack || "", top: (r.groups || []).slice(0, 3).map((g) => ({ label: g.label, service: g.service, count: g.count })) }])) });
     }
     send(res, 200, await app.stackResources(url.searchParams.get("id") || "", opts));

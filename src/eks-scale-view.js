@@ -26,7 +26,7 @@ export function scaleRowHtml({ cluster, status }) {
     + `<div class="scale-btns"><button type="button" class="cmd" data-scale="down"${down || off ? " disabled" : ""} title="stop paying for nodes; keeps the control plane, data and state">scale down</button>`
     + `<button type="button" class="cmd" data-scale="up"${down && !off ? "" : " disabled"} title="restore the saved node sizes">scale up</button></div>`
     + `<em class="scale-warn">${esc(SCALE_WARNING)}</em>`
-    + (off ? `<em class="scale-warn">Needs a kube.writeContexts entry for ${esc(cluster)} in cloudspider.yaml.</em>` : "");
+    + (off ? `<em class="scale-warn">Scaling ${esc(cluster || "this cluster")} needs a write context: add <code>kube.writeContexts: [${esc(cluster ? `${cluster}-admin` : "<context>")}]</code> to cloudspider.yaml (the viewer cannot scale).</em>` : "");
 }
 
 export function scaleDialogHtml(plan, { workloads = false } = {}) {

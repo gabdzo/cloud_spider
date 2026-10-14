@@ -903,6 +903,20 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
       }
       return errors.length ? { error: errors.join("; "), stacks: found } : { stacks: found };
     },
+    // The EKS card folder's stacks with their resource counts (pulumi stack
+    // ls --json, no cloud call): which clusters are up (current-cluster.js).
+    async eksStacks() {
+      const spec = UPGRADES.find((item) => item.id === "eks");
+      const out = await capture(run, join(cwd, spec.dir), childEnvFor(env), ["stack", "ls", "--json"]);
+      if (out.error) return [];
+      try { return JSON.parse(out.text || "[]").map((item) => ({ name: item.name, resourceCount: Number(item.resourceCount) || 0 })); } catch { return []; }
+    },
+    // A card's saved parameters for one exact stack (Pulumi.<stack>.yaml).
+    stackConfigOf(module, stack) {
+      const spec = UPGRADES.find((item) => item.id === module);
+      if (!spec || !STACK_NAME.test(String(stack || ""))) return {};
+      return stackConfig(spec, cwd, undefined, stack);
+    },
     // How many resources a stack's state holds (pulumi stack export; no
     // cloud call) and, for a stack that is not per cluster, which cluster
     // its config names. { stack, count, cluster, missing, error }.
