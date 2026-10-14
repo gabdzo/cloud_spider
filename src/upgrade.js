@@ -16,6 +16,7 @@ import { validateEks } from "../upgrades/schema/eks.js";
 import { DATA_PROJECTS, validateStack } from "../upgrades/schema/stacks.js";
 
 
+const STACK_NAME = /^[a-z0-9][a-z0-9-]{0,99}$/;
 export function childEnvFor(env) {
   return {
     ...env,
@@ -854,15 +855,53 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
     // CLUSTER (src/cluster-takedown.js): the same steps run() would use
     // (unprotect for data stacks, destroy, pgcluster's volume sweep),
     // each with its own folder. No confirm here: the caller has its own.
+    // params.stack: a stack found by discoverStacks (its exact name).
     destroyPlan(module, params = {}, legacyName) {
       const spec = UPGRADES.find((item) => item.id === module);
       if (!spec) return { error: `no such stack card ${module}` };
-      const checked = destroyValues(spec, params);
+      const { stack: named = "", ...rest } = params || {};
+      if (named && !STACK_NAME.test(String(named))) return { error: `${named} is not a stack name` };
+      const checked = destroyValues(spec, rest);
       if (checked.error) return { error: checked.error };
-      const stack = stackFor(spec, checked.values, legacyName);
+      const stack = named ? String(named) : stackFor(spec, checked.values, legacyName);
       const directory = join(cwd, spec.dir);
       const steps = upgradeSteps(spec, stack, "destroy", checked.values).map((args) => ({ args, cwd: directory, text: `pulumi ${args.join(" ")}` }));
       return { module: spec.id, stack, directory, where: spec.dir, steps: [...steps, ...afterSteps(spec, "destroy", checked.values)] };
+    },
+    // Every stack of a cluster, found by name in each card folder's
+    // `pulumi stack ls`: <card stack>-<cluster> (eks-, add-ons, pgcluster-,
+    // shopapi-, observe-<cluster>[-admin|-viewer], ...), plus a card's bare
+    // legacy stack when it holds resources and its config names this cluster.
+    // [{ id, stack, addon, count }] without the EKS stack itself.
+    async discoverStacks(cluster) {
+      if (!STACK_NAME.test(String(cluster || ""))) return { error: `${cluster} is not a cluster name` };
+      const listed = new Map();
+      const found = [];
+      const errors = [];
+      for (const spec of UPGRADES) {
+        if (spec.id === "eks" || !spec.dir || !spec.stack) continue;
+        const directory = join(cwd, spec.dir);
+        if (!existsSync(join(directory, "Pulumi.yaml"))) continue;
+        if (!listed.has(directory)) {
+          const out = await capture(run, directory, childEnvFor(env), ["stack", "ls", "--json"]);
+          let names = [];
+          if (out.error) errors.push(`pulumi stack ls in ${spec.dir}: ${String(out.error).split("\n")[0]}`);
+          else try { names = JSON.parse(out.text || "[]").map((item) => item.name); } catch { errors.push(`pulumi stack ls in ${spec.dir} was not JSON`); }
+          listed.set(directory, names);
+        }
+        const names = listed.get(directory);
+        const own = spec.id === "observe" ? new RegExp(`^observe-${cluster}(-admin|-viewer)?$`) : new RegExp(`^${spec.stack}-${cluster}$`);
+        for (const name of names.filter((n) => own.test(n))) {
+          const got = await this.stackCount(spec.id, { clusterName: cluster, stack: name });
+          if (got.error) errors.push(got.error); else found.push({ id: spec.id, stack: name, addon: Boolean(spec.addon), count: got.count });
+        }
+        if (!spec.addon && names.includes(spec.stack)) {
+          const got = await this.stackCount(spec.id, { clusterName: cluster, stack: spec.stack });
+          if (got.error) errors.push(got.error);
+          else if (got.count ? got.cluster === cluster : cluster === LEGACY_CLUSTER) found.push({ id: spec.id, stack: spec.stack, addon: false, count: got.count });
+        }
+      }
+      return errors.length ? { error: errors.join("; "), stacks: found } : { stacks: found };
     },
     // How many resources a stack's state holds (pulumi stack export; no
     // cloud call) and, for a stack that is not per cluster, which cluster
@@ -870,9 +909,11 @@ export function createUpgrade({ run: spawnChild = spawn, kill = (pid, signal) =>
     async stackCount(module, values = {}, legacyName) {
       const spec = UPGRADES.find((item) => item.id === module);
       if (!spec) return { error: `no such stack card ${module}` };
-      const checked = destroyValues(spec, values);
+      const { stack: named = "", ...rest } = values || {};
+      if (named && !STACK_NAME.test(String(named))) return { error: `${named} is not a stack name` };
+      const checked = destroyValues(spec, rest);
       if (checked.error) return { error: checked.error };
-      const stack = stackFor(spec, checked.values, legacyName);
+      const stack = named ? String(named) : stackFor(spec, checked.values, legacyName);
       const directory = join(cwd, spec.dir);
       const out = await capture(run, directory, childEnvFor(env), ["stack", "export", "--stack", stack]);
       if (out.error) {

@@ -1256,7 +1256,13 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       const eksCount = await upgrade.stackCount("eks", { clusterName: cluster }, legacyName);
       const stacks = [];
       const errors = eksCount.error ? [eksCount.error] : [];
-      for (const spec of UPGRADES.filter((item) => item.id !== "eks" && item.needs?.includes("eks"))) {
+      // Found by name (<stack>-<cluster>), so stacks made outside the app
+      // and observe-<cluster> are planned too.
+      if (upgrade.discoverStacks) {
+        const found = await upgrade.discoverStacks(cluster);
+        if (found.error) errors.push(found.error);
+        stacks.push(...(found.stacks || []));
+      } else for (const spec of UPGRADES.filter((item) => item.id !== "eks" && item.needs?.includes("eks"))) {
         const got = await upgrade.stackCount(spec.id, { clusterName: cluster }, legacyName);
         if (got.error) { errors.push(got.error); continue; }
         if (!spec.addon && got.count && got.cluster !== cluster) continue;
