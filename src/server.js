@@ -2357,14 +2357,13 @@ const page = `<!doctype html>
   #pip .nodebill-head img { image-rendering: pixelated; }
   #pip .nodebill-head b { margin-left: auto; font-weight: normal; color: var(--pip-bright); letter-spacing: 0.02em; }
   #pip input[readonly] { color: var(--pip-dim-text); border-style: dashed; }
-  /* STACKS v2: docked beside the map (the map moves over, nothing is covered),
-     sections, chevrons, status chips, depth. */
-  #pip { --pip-w: clamp(380px, 31vw, 580px); width: min(var(--pip-w), calc(100% - 24px)); padding-bottom: 10px;
+  body.stacks-page #morning, body.stacks-page #radio-panel { display: none !important; }
+  /* STACKS: a full page over the map (inset on the first #pip rule), with
+     sections, chevrons, status chips, depth. No width here: a later width
+     turned it back into a narrow drawer in the combined layout. */
+  #pip { padding-bottom: 10px;
     background: linear-gradient(180deg, rgb(6, 22, 12) 0%, rgb(2, 10, 5) 120px, rgb(2, 10, 5) 100%);
     box-shadow: 0 0 0 1px var(--pip-ink), 0 0 22px rgba(20, 255, 106, 0.24), inset 0 0 40px rgba(20, 255, 106, 0.05); }
-  .mapwrap:has(> #pip:not([hidden])) > #map { margin-left: calc(min(var(--pip-w-doc, clamp(380px, 31vw, 580px)), calc(100% - 24px)) + 20px); }
-  #pip:has(.runpane:not([hidden])) { --pip-w: clamp(460px, 40vw, 680px); }
-  .mapwrap:has(> #pip .runpane:not([hidden])) > #map { --pip-w-doc: clamp(460px, 40vw, 680px); }
   #pip .ptitle { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px;
     background: linear-gradient(180deg, var(--pip-bright), var(--pip-mid)); box-shadow: 0 2px 0 var(--pip-ink), 0 4px 10px rgba(0, 0, 0, 0.6); }
   #pip .ptitle .pcount { margin-left: auto; font-size: 9px; letter-spacing: 0.16em; opacity: 0.8; }

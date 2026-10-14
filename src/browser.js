@@ -479,6 +479,8 @@ function renderChromeParts() {
   clusterButton.setAttribute("aria-pressed", String(!covered && mode === "cluster"));
   tabRadio.setAttribute("aria-pressed", String(!radioPanel.hidden));
   upgradeButton.setAttribute("aria-pressed", String(pipOpen));
+  // STACKS is a page: the morning strip and the radio step aside while it is open
+  document.body.classList.toggle("stacks-page", pipOpen);
   acct.textContent = sample ? "SAMPLE" : "LIVE";
   const stats = mode === "path" ? pathStats(pathData?.diagram) : mode === "cluster" ? pathStats(clusterData?.diagram) : mapStats(place);
   renderStats(statsEl, stats);
