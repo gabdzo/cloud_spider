@@ -37,3 +37,11 @@ test("STACKS is a full page in every layout and says it is reading while the car
   const toggle = js.slice(js.indexOf("async function toggleUpgrade("), js.indexOf("async function toggleUpgrade(") + 900);
   assert.ok(toggle.indexOf("READING THE STACKS") > -1 && toggle.indexOf("READING THE STACKS") < toggle.indexOf('fetch("/api/upgrades")'), "placeholder before the slow fetch");
 });
+
+test("no later #pip rule narrows STACKS back to a drawer or docks the map beside it", async () => {
+  const css = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
+  const rules = [...css.matchAll(/(^|\n)\s*#pip(:has\([^)]*\))?\s*\{([^}]*)\}/g)].map((m) => m[3]);
+  assert.ok(rules.length >= 2);
+  for (const body of rules) assert.doesNotMatch(body, /(^|;|\s)width\s*:/, `a #pip rule sets a width: ${body.slice(0, 80)}`);
+  assert.doesNotMatch(css, /> #pip:not\(\[hidden\]\)\) > #map \{ margin-left/, "the map is not pushed aside for a docked drawer");
+});
