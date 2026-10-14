@@ -64,3 +64,11 @@ test("the action icons exist and differ", () => {
   for (const n of names) assert.ok(icon(n));
   assert.notEqual(icon("redirect"), icon("fixed"));
 });
+
+test("a listener focused on a fixed-response rule is not 'forwards nothing'", () => {
+  const g = graph([actionFrom({ Type: "fixed-response", FixedResponseConfig: { StatusCode: "503" } })]);
+  const out = diagnose(g, "lb", { ruleArn: "r1" });
+  const listener = out.nodes.find((n) => n.kind === "listener");
+  assert.equal(listener.status, "ok");
+  assert.ok(!out.findings.length, JSON.stringify(out.findings));
+});

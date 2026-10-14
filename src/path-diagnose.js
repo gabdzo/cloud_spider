@@ -464,6 +464,8 @@ function listenerNode(listener, rules) {
     return { ...base, caption: words, sentence: `${label} ${words}.` };
   }
   const fixed = actions.find((action) => action.type === "fixed-response");
+  // A listener whose (focused) rule answers itself on purpose is fine.
+  if (fixed && rules.some((rule) => !rule.isDefault)) return { ...base, caption: `answers ${fixed.statusCode} itself`, sentence: `${label} answers ${fixed.statusCode} itself on this rule.` };
   return {
     ...base,
     caption: fixed ? `answers ${fixed.statusCode} itself` : "forwards nothing",

@@ -55,9 +55,10 @@ export function layoutDiagram(diagram, columns, maxWidth = 0) {
 // Without an INTERNET head (an internal load balancer) every column moves
 // one left, so the diagram starts at the balancer.
 const SHIFTED = Object.fromEntries(Object.entries(COLUMN).map(([kind, col]) => [kind, Math.max(0, col - 1)]));
-export function layoutPath(diagram, maxWidth = 0) {
+export function layoutPath(diagram, maxWidth = 0, { vertical = false } = {}) {
   const head = (diagram?.nodes || []).some((node) => node.kind === "internet");
   const columns = head ? COLUMN : SHIFTED;
+  if (vertical && (diagram?.nodes || []).some((node) => node.facts)) return layoutVertical(diagram, columns, maxWidth);
   // Peering paths keep the compact cards; load balancer paths get hop cards.
   if (!(diagram?.nodes || []).some((node) => node.facts)) return layoutDiagram(diagram, columns, maxWidth);
   return layoutCards(diagram, columns, maxWidth);
@@ -132,6 +133,64 @@ export function layoutCards(diagram, columns, maxWidth = 0) {
     .filter(Boolean);
   const width = CARD_PAD * 2 + per * colW + (per - 1) * CARD_GAP;
   return { nodes, edges, cards: true, contentWidth: width, contentHeight: y - BAND_GAP + CARD_PAD };
+}
+
+// Top to bottom (the ↕ toggle): Internet on top, one level per hop down to
+// the cluster. The hop on the path sits in the spine (left); siblings at the
+// same level (other rules, other listeners) branch to its right as short
+// aside cards, wrapping to more lines when the window is narrow. The rule
+// that matched is marked so the drawer can highlight it.
+const V_GAP = 22;
+export function layoutVertical(diagram, columns, maxWidth = 0) {
+  const columnOf = (kind) => columns[kind] ?? 0;
+  const leads = new Set((diagram?.edges || []).map((edge) => edge.from));
+  const levels = new Map();
+  for (const node of diagram?.nodes || []) {
+    const level = columnOf(node.kind);
+    if (!levels.has(level)) levels.set(level, []);
+    levels.get(level).push(node);
+  }
+  const room = maxWidth || 1280;
+  const spineW = Math.max(CARD_MIN, Math.min(CARD_W, Math.floor(room * 0.3)));
+  const sideW = CARD_MIN;
+  const sideX0 = CARD_PAD + spineW + CARD_GAP;
+  const perLine = Math.max(1, Math.floor((room - sideX0 - CARD_PAD + CARD_GAP / 2) / (sideW + CARD_GAP / 2)));
+  const nodes = [];
+  let y = CARD_PAD;
+  let right = CARD_PAD + spineW;
+  for (const level of [...levels.keys()].sort((a, b) => a - b)) {
+    const list = levels.get(level);
+    const many = list.length > 1;
+    // Spine: every node of the level that leads on (a fan-out, e.g. two TGs
+    // of a weighted forward, stacks in the spine); the rest go sideways.
+    const spine = list.filter((node) => !many || leads.has(node.id) || !["rule", "listener"].includes(node.kind));
+    const side = list.filter((node) => !spine.includes(node));
+    const top = y;
+    for (const node of spine) {
+      nodes.push({ ...node, level, x: CARD_PAD, y, w: spineW, h: CARD_H, matched: many && node.kind === "rule" });
+      y += CARD_H + CARD_ROW_GAP;
+    }
+    side.forEach((node, i) => {
+      const x = sideX0 + (i % perLine) * (sideW + CARD_GAP / 2);
+      const sy = top + Math.floor(i / perLine) * (ASIDE_H + CARD_ROW_GAP);
+      nodes.push({ ...node, level, aside: true, x, y: sy, w: sideW, h: ASIDE_H });
+      right = Math.max(right, x + sideW);
+      y = Math.max(y, sy + ASIDE_H + CARD_ROW_GAP);
+    });
+    y += V_GAP - CARD_ROW_GAP;
+  }
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const edges = (diagram?.edges || [])
+    .map((edge) => {
+      const a = byId.get(edge.from);
+      const b = byId.get(edge.to);
+      if (!a || !b) return null;
+      // Sideways siblings hang off the parent's right edge; the spine runs down.
+      if (b.aside) return { ...edge, x1: a.x + a.w, y1: a.y + Math.min(a.h / 2, 22), x2: b.x, y2: b.y + b.h / 2 };
+      return { ...edge, vertical: true, x1: a.x + Math.min(40, a.w / 4), y1: a.y + a.h, x2: b.x + Math.min(40, b.w / 4), y2: b.y };
+    })
+    .filter(Boolean);
+  return { nodes, edges, cards: true, vertical: true, contentWidth: right + CARD_PAD, contentHeight: y - V_GAP + CARD_PAD };
 }
 
 function fitColumns(cols, maxWidth) {
