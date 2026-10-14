@@ -90,6 +90,8 @@ const WAIT_MS = Number(process.env.CLOUDSPIDER_WAIT_MS) || 20_000;
 export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, hideContexts = [], reach = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL, auditFile = "" }) {
   let stackResourcesReader = null;
   let currentCache = null;
+  let lookupCache = null;
+  let lookupPending = null;
   // No cluster typed: the current one (last read), then the legacy name.
   const defaultCluster = () => currentCache?.name || LEGACY_CLUSTER;
   // The modules view main.js hands over (settings.modules): aws off = k8s-only.
@@ -935,24 +937,36 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       if (sample) return { runs: sampleLastRuns(), sample: true };
       return { runs: auditFile ? await readLastRuns(auditFile) : {} };
     },
-    // The cluster the cards mean (src/current-cluster.js), kept 30 s.
+    // The cluster the cards mean (src/current-cluster.js) and its stacks,
+    // looked up with pulumi (slow: seconds per folder on an S3 backend).
+    // Kept 30 s; once stale the old answer is served at once and refreshed
+    // in the background, so GET /api/upgrades never waits on pulumi twice.
+    async stackLookup({ fresh = false } = {}) {
+      const load = async () => {
+        const eksStacks = upgrade?.eksStacks ? await upgrade.eksStacks().catch(() => []) : [];
+        const legacyName = upgrade?.legacyCluster ? await upgrade.legacyCluster().catch(() => "") : "";
+        const name = pickCurrentCluster({ selectedContext: settings?.kube?.context || "", eksStacks, legacyName });
+        const found = name && upgrade?.discoverStacks ? await upgrade.discoverStacks(name).catch(() => ({ stacks: [] })) : { stacks: [] };
+        return { at: clock(), name, legacyName, found };
+      };
+      const refresh = () => {
+        lookupPending ||= load().then((got) => { lookupCache = got; currentCache = { at: got.at, name: got.name }; return got; }).finally(() => { lookupPending = null; });
+        return lookupPending;
+      };
+      if (fresh || !lookupCache) return refresh();
+      if (clock() - lookupCache.at >= 30_000) refresh().catch(() => {});
+      return lookupCache;
+    },
     async currentCluster({ fresh = false } = {}) {
-      if (!fresh && currentCache && clock() - currentCache.at < 30_000) return currentCache.name;
-      const eksStacks = upgrade?.eksStacks ? await upgrade.eksStacks().catch(() => []) : [];
-      const legacyName = upgrade?.legacyCluster ? await upgrade.legacyCluster().catch(() => "") : "";
-      const name = pickCurrentCluster({ selectedContext: settings?.kube?.context || "", eksStacks, legacyName });
-      currentCache = { at: clock(), name };
-      return name;
+      return (await this.stackLookup({ fresh })).name;
     },
     // The cards for the current cluster: each per-cluster card names that
     // cluster's stack (found by name) and starts from its saved config.
     async upgrades() {
       let cards = upgrade?.list?.() || [];
       if (awsOffHere()) cards = cards.filter(kubeCard);
-      const cluster = await this.currentCluster().catch(() => "");
+      const { name: cluster, legacyName, found } = await this.stackLookup().catch(() => ({ name: "" }));
       if (!cluster) return cards;
-      const legacyName = upgrade?.legacyCluster ? await upgrade.legacyCluster().catch(() => "") : "";
-      const found = upgrade?.discoverStacks ? await upgrade.discoverStacks(cluster).catch(() => ({ stacks: [] })) : { stacks: [] };
       const stackOf = new Map((found.stacks || []).map((item) => [item.id, item.stack]));
       return cards.map((card) => {
         const perCluster = card.id === "eks" || card.addon || card.needs?.includes("eks") || card.id === "observe";

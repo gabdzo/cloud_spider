@@ -274,6 +274,8 @@ if (pulumiLine) process.stdout.write(pulumiLine);
 let server;
 try {
   server = await listen(app, port, host);
+  // warm the stack lookup (pulumi, seconds) so the first STACKS open is not empty
+  app.stackLookup?.().catch(() => {});
 } catch (error) {
   const failure = listenExit(error, port);
   process.stdout.write(`${failure.line}\n`);
