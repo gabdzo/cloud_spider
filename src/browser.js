@@ -2,7 +2,7 @@ import { samplePreview } from "./stack-sample.js";
 import { mountScale } from "./eks-scale-view.js";
 import { mountTakedown } from "./takedown-view.js";
 import { CATEGORIES, stackCategory } from "./stack-resources.js";
-import { ago, driftHint, inventoryRows, overviewStatus, pickLayout, rowMatches } from "./stack-overview.js";
+import { ago, driftHint, inventoryRows, nukeClusters, overviewStatus, pickLayout, rowMatches } from "./stack-overview.js";
 import { ROW_LIMIT, accountLine, blastLine, foldAt, layout, newestFail, tagKeys } from "./layout.js";
 import { createLayoutCache, flipSampleState } from "./layout-cache.js";
 import { buildingAt, fixtureAt, focusLists, paint } from "./draw.js";
@@ -4073,6 +4073,7 @@ function iconImg(name) {
 // DEPLOYED / NOT DEPLOYED from the stack's state (GET /api/upgrade/resources,
 // pulumi stack export: read-only). Filled once per panel open.
 let stackStates = {};
+let pipCurrentCluster = ""; // GET /api/upgrades currentCluster
 let stackStatesAt = 0;
 const STATE_CHIP = {
   deployed: ["DEPLOYED", "up", (s) => `its state holds ${s.count} resource${s.count === 1 ? "" : "s"}`],
@@ -4236,21 +4237,6 @@ function drawOverview(own, groups, order) {
   pipEl.append(el("div", { className: "ov-sum" },
     kBtn("deployed", "up", "DEPLOYED"), kBtn("down", "down", "NOT DEPLOYED"), kBtn("failed", "fail", "FAILED"),
     el("span", { className: "ov-tip", textContent: inventoryView ? "CLICK A STACK TO OPEN IT" : sample ? "SAMPLE DATA · CLICK A COUNT OR A STACK" : "CLICK A COUNT FOR THE LIST · A STACK FOR ITS RESOURCES" })));
-  // TEAR EVERYTHING DOWN per cluster (takedown-view.js): plan, typed name, run.
-  const eksSpec = own.find((spec) => spec.id === "eks");
-  const clusters = [...new Set([
-    ...(eksSpec && overviewStatus(stackStates.eks, stackRuns.eks) === "deployed" ? [eksSpec.current?.clusterName || stackRuns.eks?.cluster || fallbackCluster()] : []),
-    ...Object.values(stackRuns).filter((r) => r?.cluster && r.result !== "failed").map((r) => r.cluster),
-  ])].filter((c) => /^[a-z][a-z0-9-]{1,27}$/.test(c));
-  if (clusters.length && !inventoryView) {
-    const strip = el("div", { className: "ov-nukes", role: "group", ariaLabel: "tear a cluster down with every stack on it" });
-    for (const cluster of clusters) {
-      const box = el("div", { className: "scale-row ov-nuke" });
-      strip.append(box);
-      mountTakedown(box, () => ({ cluster, sample }), { onStarted: () => { openCard = "eks"; markHistory(); syncUrl(); drawPipForm(); refreshUpgrade(true); } });
-    }
-    pipEl.append(strip);
-  }
   if (inventoryView) return drawInventory(rows);
   for (const { id, icon, label, list } of [...groups.values()].sort((a, b) => order(a.id) - order(b.id))) {
     pipEl.append(sectionHead(id, icon, label, "", list));
@@ -4261,6 +4247,27 @@ function drawOverview(own, groups, order) {
     const picked = list.find((spec) => spec.id === overviewPick);
     if (picked) pipEl.append(overviewDetail(picked));
   }
+  // TEAR EVERYTHING DOWN per cluster (takedown-view.js): plan, typed name,
+  // run. Folded at the bottom: findable, not the first thing on the page.
+  const eksSpec = own.find((spec) => spec.id === "eks");
+  const clusters = nukeClusters({
+    eksDeployed: Boolean(eksSpec) && overviewStatus(stackStates.eks, stackRuns.eks) === "deployed",
+    eksCluster: eksSpec?.current?.clusterName || stackRuns.eks?.cluster || "",
+    current: pipCurrentCluster,
+    runs: stackRuns,
+  });
+  if (clusters.length) {
+    const fold = el("details", { className: "ov-danger" }, el("summary", { textContent: `DANGER ZONE · TEAR A CLUSTER DOWN (${clusters.join(", ")})` }));
+    const strip = el("div", { className: "ov-nukes", role: "group", ariaLabel: "tear a cluster down with every stack on it" });
+    for (const cluster of clusters) {
+      const box = el("div", { className: "scale-row ov-nuke" });
+      strip.append(box);
+      mountTakedown(box, () => ({ cluster, sample }), { onStarted: () => { openCard = "eks"; markHistory(); syncUrl(); drawPipForm(); refreshUpgrade(true); } });
+    }
+    fold.append(strip);
+    return fold; // the caller puts it last, under add-ons and Terraform
+  }
+  return null;
 }
 
 // DEPLOYED INVENTORY (a click on a DEPLOYED / NOT DEPLOYED / FAILED count):
@@ -4888,7 +4895,8 @@ function drawPipForm() {
   const order = (id) => { const i = CATEGORIES.findIndex((c) => c[0] === id); return i < 0 ? 99 : i; };
   const runConsole = consoleSpec();
   if (runConsole) return drawRunConsole(runConsole, title);
-  if (overview) drawOverview(own, groups, order);
+  const danger = overview ? drawOverview(own, groups, order) : null;
+  try {
   // the inventory lists the add-on stacks itself
   if (overview && inventoryView) return;
   else for (const { id, icon, label, list } of [...groups.values()].sort((a, b) => order(a.id) - order(b.id))) {
@@ -4928,6 +4936,9 @@ function drawPipForm() {
       card.append(body);
     }
     pipEl.append(card);
+  }
+  } finally {
+    if (danger) pipEl.append(danger);
   }
 }
 
@@ -5789,6 +5800,7 @@ async function toggleUpgrade() {
     pipModules = body.modules || [];
     pipCluster = body.currentCluster || "";
     pipTerraform = body.terraform || [];
+    pipCurrentCluster = body.currentCluster || "";
   }
   drawPipForm();
   refreshUpgrade(true);

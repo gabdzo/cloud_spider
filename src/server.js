@@ -2528,6 +2528,11 @@ const page = `<!doctype html>
   #pip .nuke-ico .nuke-bg { fill: #ffb000; }
   #pip .nuke-ico .nuke-fg { fill: #1a0602; }
   #pip .scale-dialog h3 .nuke-ico { vertical-align: -5px; margin-right: 4px; }
+  /* STACKS overview: a full page over the map, not a narrow drawer */
+  #pip.ov-mode { inset: 10px 12px; width: auto; max-height: none; }
+  #pip .ov-danger { margin: 18px 8px 6px; border-top: 1px dashed var(--pip-dark); padding-top: 6px; }
+  #pip .ov-danger > summary { cursor: pointer; color: var(--pip-dim-text); font-size: 11px; letter-spacing: 0.1em; }
+  #pip .ov-danger[open] > summary { color: var(--status-broken); }
   #pip .ov-nukes { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
   :root[data-theme="pro"] #pip .nuke-btn { color: #fff; background: linear-gradient(#dc2626, #991b1b); border: 1px solid #f59e0b; border-radius: 6px; text-shadow: none; box-shadow: 0 0 10px rgba(245, 158, 11, 0.45); font-family: var(--font-ui); }
   :root[data-theme="pro"] #pip .nuke-btn:hover:not(:disabled) { box-shadow: 0 0 16px rgba(239, 68, 68, 0.7); }
