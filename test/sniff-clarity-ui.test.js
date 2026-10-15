@@ -16,6 +16,6 @@ test("DEBUG starts folded and opens when a probe starts", () => {
 test("SNIFF's status line carries the verdict, coloured by tone, notes on hover", () => {
   const browser = src("browser.js");
   assert.match(browser, /import \{ pathVerdict \} from "\.\/path-card\.js";/);
-  assert.match(browser, /const verdict = pathVerdict\(body\.diagram\);/);
+  assert.match(browser, /const verdict = pathVerdict\(body\.diagram, sample \? null : pathProbe\);/);
   assert.match(src("server.js"), /#status\[data-tone="broken"\]/);
 });
