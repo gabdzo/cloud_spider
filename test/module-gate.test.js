@@ -20,7 +20,7 @@ test("pageFor stamps the enabled modules and hides the rest by CSS", () => {
   assert.equal(gateStyle(MODULE_IDS), '<style id="module-gate"></style>');
   // Every static entry point carries its module.
   for (const id of ["tab-map", "path", "cluster", "tab-vaults", "tab-radio", "upgrade", "learn-key", "score-key", "ask", "spend", "m-hurting", "m-changed", "m-idle", "m-logs", "k9s-btn", "kube-tabs", "radio-panel"]) {
-    assert.match(html, new RegExp(`id="${id}"[^>]*data-module="`), id);
+    assert.match(html, new RegExp(`id="${id}"[^>]*data-module(-any)?="`), id);
   }
 });
 
@@ -80,7 +80,8 @@ async function audit(page, base, off) {
     for (const n of document.querySelectorAll("header button, header a, nav button, #kube-tabs button")) {
       if (!seen(n)) continue;
       const text = n.textContent.trim().toUpperCase();
-      for (const id of off) if (words[id] && new RegExp(words[id]).test(text)) bad.push(`${id}: button "${text}"`);
+      // The MAP tab stays while the cluster map is on (k8s-only: the map is the cluster).
+      for (const id of off) if (words[id] && new RegExp(words[id]).test(text) && !(id === "map" && !off.includes("kubemap"))) bad.push(`${id}: button "${text}"`);
       const need = needs[n.dataset.screen];
       if (need && off.includes(need)) bad.push(`${need}: sub-tab ${n.dataset.screen}`);
     }
@@ -134,4 +135,11 @@ test("no visible element or shortcut of a module that is off", { skip: !CHROME |
 test("resolveModules honours enable/disable on a profile", () => {
   const m = resolveModules({ modules: { profile: "full", enable: ["observe"], disable: ["map"] } });
   assert.ok(m.has("observe") && !m.has("map"));
+});
+
+test("the MAP tab hides only when both the AWS map and the cluster map are off", async () => {
+  const { gateStyle } = await import("../src/modules.js");
+  assert.doesNotMatch(gateStyle(["kubemap", "kubernetes"]), /data-module-any/);
+  assert.doesNotMatch(gateStyle(["map", "aws"]), /data-module-any/);
+  assert.match(gateStyle(["kubernetes"]), /\[data-module-any="map kubemap"\]/);
 });

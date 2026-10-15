@@ -6,6 +6,7 @@
 export const MODULES = [
   { id: "aws", label: "AWS", needs: [], doc: "AWS credentials and clients (the base every AWS surface needs)" },
   { id: "map", label: "Map", needs: ["aws"], doc: "the account map: VPCs, fixtures, stop/start" },
+  { id: "kubemap", label: "Cluster map", needs: ["kubernetes"], doc: "the MAP's cluster layer: namespaces, workloads, entry points and NetworkPolicies; on its own (k8s-only) the MAP is the cluster, with AWS it sits inside its subnets" },
   { id: "network", label: "Network", needs: [], doc: "SNIFF/Network: a request's path and DEBUG; FROM INSIDE (the debug pod) needs only a kube write context, the AWS readers only the aws module" },
   { id: "cost", label: "Cost", needs: ["aws"], doc: "CAPS: Cost Explorer, month to date" },
   { id: "radio", label: "Activity", needs: ["aws"], doc: "RADIO: recent CloudTrail calls" },
@@ -25,7 +26,7 @@ export const MODULE_IDS = ALL;
 
 export const PROFILES = {
   full: ALL.filter((id) => id !== "observe"),
-  "k8s-only": ["network", "kubernetes", "graph", "timeline", "score", "learn", "ask"],
+  "k8s-only": ["kubemap", "network", "kubernetes", "graph", "timeline", "score", "learn", "ask"],
   "aws-only": ["aws", "map", "network", "cost", "radio", "stacks", "vaults", "score", "learn", "ask"],
 };
 
@@ -90,7 +91,7 @@ export function scorePacks(packs, mods) {
 const ROUTES = [
   ["/api/view", "map"], ["/api/region", "map"], ["/api/start", "map"], ["/api/stop", "map"],
   ["/api/metrics", "map"], ["/api/logs", "map"], ["/api/reach", "map"], ["/api/alb-routes", "map"],
-  ["/api/map/kube", "map"],
+  ["/api/map/kube", "kubemap"],
   ["/api/path", "network"], ["/api/netdebug", "network"],
   ["/api/cost", "cost"],
   ["/api/upgrade", "stacks"], ["/api/stacks", "stacks"], ["/api/terraform", "stacks"],
@@ -152,7 +153,11 @@ export { configModule, stackModule } from "./module-keys.js";
 // The page as the server sends it: <html data-modules="…"> and one CSS rule
 // per module that is off, so an element tagged data-module="x" (any token)
 // is not drawn at all, before any script runs.
+// data-module-any="a b": shown while any of them is on (the MAP tab: the
+// AWS map or the cluster map).
+export const ANY_GROUPS = [["map", "kubemap"]];
 export function gateStyle(enabled = MODULE_IDS) {
   const off = MODULE_IDS.filter((id) => !enabled.includes(id));
-  return off.length ? `<style id="module-gate">${off.map((id) => `[data-module~="${id}"]`).join(",")}{display:none!important}</style>` : `<style id="module-gate"></style>`;
+  const sel = [...off.map((id) => `[data-module~="${id}"]`), ...ANY_GROUPS.filter((g) => g.every((id) => off.includes(id))).map((g) => `[data-module-any="${g.join(" ")}"]`)];
+  return sel.length ? `<style id="module-gate">${sel.join(",")}{display:none!important}</style>` : `<style id="module-gate"></style>`;
 }

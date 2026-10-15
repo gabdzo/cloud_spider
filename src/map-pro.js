@@ -784,6 +784,22 @@ function subnetLabel(ctx, plot) {
 const TONE = { ok: C.ok, hang: C.warn, broken: C.err, unknown: C.off };
 
 function compoundGround(ctx, placed) {
+  for (const e of placed?.kubeOnly?.entries || []) {
+    const tone = e.status === "broken" ? C.err : C.warn;
+    round(ctx, e.x + 0.5, e.y + 0.5, e.w - 1, e.h - 1, 4);
+    ctx.fillStyle = rgba(tone, 0.08);
+    ctx.fill();
+    ctx.strokeStyle = tone;
+    ctx.stroke();
+    ctx.font = ui(9.5, 600);
+    ctx.fillStyle = tone;
+    ctx.fillText(clip(ctx, e.text, e.w - 10), e.x + 6, e.y + e.h - 5);
+  }
+  for (const l of placed?.kubeOnly?.labels || []) {
+    ctx.font = ui(9.5, 600);
+    ctx.fillStyle = C.text3;
+    ctx.fillText(l.text, l.x + 2, l.y);
+  }
   for (const c of compoundsOf(placed)) {
     round(ctx, c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1, 10);
     ctx.fillStyle = rgba(C.eks, 0.05);

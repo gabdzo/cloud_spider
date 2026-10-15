@@ -1234,6 +1234,7 @@ function allBuildings(placed) {
     buildings.push(...settlement.outsiders);
   }
   buildings.push(...(placed.orphans?.items || []));
+  buildings.push(...(placed.kubeOnly?.buildings || []));
   return buildings;
 }
 

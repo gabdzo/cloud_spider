@@ -83,6 +83,7 @@ function stallLabel(ctx, s) {
 // opts: { animTime, reducedMotion, hover: hit id or lod key, selected }
 export function drawCompoundTop(ctx, placed, { animTime = 0, reducedMotion = false, hover = null, selected = null, kube = () => null } = {}) {
   const frame = reducedMotion ? 0 : Math.floor(animTime / 420) % 2;
+  drawEntryStrip(ctx, placed, hover);
   for (const c of compoundsOf(placed)) {
     // Header: cluster plate, summary, LOD switch.
     ctx.font = font(11);
@@ -155,4 +156,33 @@ function policyBadgeChip(ctx, b, lit) {
     ctx.fillStyle = STATUS.hang;
   }
   ctx.fillText(b.text, b.x + 5, b.y + b.h - 3);
+}
+
+// k8s-only: the ways in, above the cluster (map-kube.js layoutKubeOnly).
+function drawEntryStrip(ctx, placed, hover) {
+  const strip = placed?.kubeOnly;
+  if (!strip) return;
+  ctx.font = font(9);
+  for (const l of strip.labels || []) {
+    labelBacking(ctx, l.text, l.x + 2, l.y, 9);
+    ctx.fillStyle = PIP.mid;
+    ctx.fillText(l.text, l.x + 2, l.y);
+  }
+  for (const e of strip.entries || []) {
+    const bad = e.status === "broken";
+    const tone = bad ? STATUS.broken : STATUS.hang;
+    ctx.fillStyle = rgba(PIP.ink, 0.85);
+    ctx.fillRect(e.x, e.y, e.w, e.h);
+    ctx.strokeStyle = tone;
+    ctx.lineWidth = hover === e.id ? 2 : 1;
+    ctx.strokeRect(e.x + 0.5, e.y + 0.5, e.w - 1, e.h - 1);
+    ctx.lineWidth = 1;
+    const kw = ctx.measureText(e.kindText).width + 6;
+    ctx.fillStyle = tone;
+    ctx.fillRect(e.x + 2, e.y + 2, kw, e.h - 4);
+    ctx.fillStyle = PIP.ink;
+    ctx.fillText(e.kindText, e.x + 5, e.y + e.h - 5);
+    ctx.fillStyle = tone;
+    ctx.fillText(clip(e.text.slice(e.kindText.length + 1), Math.floor((e.w - kw - 8) / 5.4)), e.x + kw + 6, e.y + e.h - 5);
+  }
 }

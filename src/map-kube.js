@@ -58,6 +58,7 @@ export function kubeModel(diagram, name = "") {
     apps,
     pods: apps.reduce((sum, a) => sum + a.pods.length, 0),
     netpol: diagram?.netpol || null,
+    entries: entriesOf(diagram),
     namespaces: [...new Set(apps.map((a) => a.ns))].sort((a, b) => Number(SYSTEM.test(a)) - Number(SYSTEM.test(b)) || a.localeCompare(b)),
   };
 }
@@ -118,7 +119,7 @@ function nsSummary(apps) {
 // One compound, laid out from (0, 0); placeYard moves it into the yard.
 // nodeShacks: the subnet's node buildings (faces). apps: assignApps' list
 // for this subnet. room: the width the yard can give.
-export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice, room }) {
+export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice, room, fill = false }) {
   const netpol = model?.netpol?.ns || null;
   const inner = Math.max(CELL.w, room - 2 * MK.PAD);
   const items = { buildings: [], stalls: [], figures: [], ns: [], lod: [], badges: [] };
@@ -171,7 +172,7 @@ export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice
       y += rowH + MK.GAP;
     }
   }
-  const w = Math.min(room, Math.max(right + MK.PAD, 384));
+  const w = fill ? room : Math.min(room, Math.max(right + MK.PAD, 384));
   // Badges sit at the compound's right edge; the ns line stops before them.
   for (const bd of items.badges) {
     bd.x = w - MK.PAD - bd.w;
@@ -205,7 +206,7 @@ export function moveCompound(compound, x, y) {
 
 // Every compound on a laid-out map.
 export function compoundsOf(placed) {
-  const out = [];
+  const out = [...(placed?.kubeOnly?.compounds || [])];
   for (const settlement of placed?.settlements || []) for (const plot of settlement.plots || []) if (plot.compound) out.push(plot.compound);
   return out;
 }
@@ -221,6 +222,8 @@ export function kubeChip(compound) {
 // What is under the pointer: the KUBE chip, a LOD button, a pod, an app, or the compound.
 export function compoundHit(placed, x, y) {
   const inside = (item) => x >= item.x && x < item.x + item.w && y >= item.y && y < item.y + item.h;
+  const entry = (placed?.kubeOnly?.entries || []).find(inside);
+  if (entry) return { ...entry };
   for (const compound of compoundsOf(placed)) {
     if (!inside(compound)) continue;
     const lod = compound.lod.find(inside);
@@ -242,6 +245,7 @@ export function compoundHit(placed, x, y) {
 export function compoundHover(hit) {
   if (!hit) return "";
   if (hit.type === "netpol") return badgeHover(hit);
+  if (hit.type === "entry") return `${hit.kindText} ${hit.ns}/${hit.label}${hit.caption ? ` · ${hit.caption}` : ""}${hit.targets?.length ? ` → svc ${hit.targets.join(", ")}` : ""}${hit.status === "broken" ? " · no ready pods behind it" : ""} · click: open in the Cluster view`;
   if (hit.type === "lod") return `detail ${hit.value === "auto" ? "AUTO" : hit.value}: ${LOD_TEXT[hit.value]}`;
   if (hit.type === "pod") return `${hit.ns}/${hit.label}${hit.caption ? ` · ${hit.caption}` : ""} · click: deep-inspect in the Cluster view`;
   if (hit.type === "app") return `${hit.kind} ${hit.ns}/${hit.label}${hit.count ? ` · ${hit.count} ready` : ""}${hit.services.length ? ` · svc ${hit.services.join(", ")}` : ""} · click: open in the Cluster view`;
@@ -275,4 +279,67 @@ export function badgeHover(hit) {
   const head = hit.badge === "deny" ? `${hit.ns}: default deny${dirs ? ` (${dirs})` : ""}` : `${hit.ns}: ${hit.uncovered} workload${hit.uncovered === 1 ? "" : "s"} with no NetworkPolicy`;
   const names = hit.policies.slice(0, 6).join(", ") + (hit.policies.length > 6 ? ` +${hit.policies.length - 6}` : "");
   return `${head} · ${names}`;
+}
+
+// Ways in from outside the cluster: Ingresses (and the Services they
+// route to), LoadBalancer and NodePort Services. With AWS the ALB/NLB
+// fixtures on the map are the way in; without it this strip is.
+export function entriesOf(diagram) {
+  const nodes = diagram?.nodes || [];
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const out = [];
+  for (const n of nodes.filter((x) => x.kind === "ingress")) {
+    const targets = (diagram.edges || []).filter((e) => e.from === n.id && byId.get(e.to)?.kind === "service").map((e) => byId.get(e.to));
+    out.push({ id: n.id, kind: "ingress", kindText: "INGRESS", ns: n.ns, label: n.label, caption: n.caption && n.caption !== "ingress" ? n.caption : "", targets: targets.map((t) => t.label), status: targets.some((t) => t.status === "broken") ? "broken" : "ok" });
+  }
+  for (const n of nodes.filter((x) => x.kind === "service" && /^(LoadBalancer|NodePort)$/.test(x.svc?.type || ""))) {
+    const lb = n.svc.type === "LoadBalancer";
+    const ports = (n.svc.ports || []).map((p) => (lb ? `:${p.port}` : `:${p.nodePort || p.port}`)).join(" ");
+    out.push({ id: n.id, kind: lb ? "lb" : "nodeport", kindText: lb ? "LB SVC" : "NODEPORT", ns: n.ns, label: n.label, caption: ports, targets: [], status: n.status === "broken" ? "broken" : "ok" });
+  }
+  return out.sort((a, b) => Number(b.status === "broken") - Number(a.status === "broken") || a.ns.localeCompare(b.ns) || a.label.localeCompare(b.label));
+}
+
+export const ENTRY = { H: 18, GAP: 6, HEAD: 18, CHAR: 5.6 };
+
+// The whole MAP when there is no AWS: per cluster an entry strip, then the
+// compound (nodes as buildings, namespaces with their workloads). The
+// shape is a layout()'s (settlements empty) plus kubeOnly, so draw.js,
+// map-pro.js and the hit tests read it unchanged.
+export function layoutKubeOnly(models, { room = 960, choice = () => "auto", x0 = 8, y0 = 8 } = {}) {
+  const compounds = [];
+  const buildings = [];
+  const entries = [];
+  const labels = [];
+  let y = y0;
+  let right = 0;
+  for (const [cluster, model] of models || []) {
+    const items = model.entries || [];
+    if (items.length) {
+      labels.push({ text: `ENTRY POINTS · ${items.length}`, x: x0, y: y + 12 });
+      y += ENTRY.HEAD;
+      let x = x0;
+      for (const item of items) {
+        const text = `${item.kindText} ${item.ns}/${item.label}${item.caption ? ` ${item.caption}` : ""}`;
+        const w = Math.min(room, Math.round(14 + text.length * ENTRY.CHAR));
+        if (x > x0 && x + w > x0 + room) {
+          x = x0;
+          y += ENTRY.H + ENTRY.GAP;
+        }
+        entries.push({ ...item, type: "entry", cluster, text, x, y, w, h: ENTRY.H });
+        x += w + ENTRY.GAP;
+        right = Math.max(right, x);
+      }
+      y += ENTRY.H + ENTRY.GAP * 2;
+    }
+    const level = levelOf(choice(cluster), model, room);
+    const nodeShacks = model.nodes.map((n) => ({ id: n.id, kind: "node", label: n.label, name: n.name, caption: n.ready === false ? "NotReady" : "Ready", state: n.ready === false ? "stopped" : n.ready ? "running" : "pending" }));
+    const raw = layoutCompound({ cluster, model, nodeShacks, apps: model.apps, level, choice: choice(cluster), room, fill: true });
+    const c = moveCompound(raw, x0, y);
+    compounds.push(c);
+    buildings.push(...c.buildings);
+    right = Math.max(right, c.x + c.w);
+    y = c.y + c.h + 16;
+  }
+  return { settlements: [], orphans: { items: [], label: "" }, zones: [], camp: null, vaults: null, regionEdges: [], hubs: [], badges: [], contentWidth: right + x0, contentHeight: y, kubeOnly: { compounds, buildings, entries, labels } };
 }

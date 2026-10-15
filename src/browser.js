@@ -76,7 +76,7 @@ import { drawSprite } from "./draw-kit.js";
 import { sloBlock, sloFacts } from "./slo-view.js";
 import { renderSpend } from "./spend-view.js";
 import { createSettings, readHidden, visibleModules } from "./settings-view.js";
-import { KUBE_MAP_KEY, compoundHit, compoundHover, kubeModel, readKubeChoices } from "./map-kube.js";
+import { KUBE_MAP_KEY, compoundHit, compoundHover, kubeModel, layoutKubeOnly, readKubeChoices } from "./map-kube.js";
 import { mountWhere } from "./where.js";
 
 const ui = createUi();
@@ -537,6 +537,10 @@ const serverModules = document.documentElement.dataset.modules;
 let modulesVisible = serverModules ? serverModules.split(" ").filter(Boolean) : null;
 function moduleOn(id) {
   return !modulesVisible || modulesVisible.includes(id);
+}
+// The MAP without AWS (k8s-only): the cluster itself is the map.
+function kubeMapOnly() {
+  return !moduleOn("map") && moduleOn("kubemap");
 }
 const vaultTemplatesButton = document.querySelector("#vault-templates-btn");
 const vaultTemplates = document.querySelector("#vault-templates");
@@ -1301,7 +1305,14 @@ function mapTitle(placed, x, y) {
   return vpc ? String(vpc.label || vpc.id || "").replace(/ {2,}/g, " · ") : "";
 }
 
+let kubeOnlyMemo = { key: "", placed: null };
 function placedMap() {
+  if (kubeMapOnly()) {
+    const room = Math.max(320, (map.clientWidth || 960) - 16);
+    const key = `${room}|${mapKube.sig}|${JSON.stringify(mapKube.choices)}|${mapKube.policies ? 1 : 0}`;
+    if (kubeOnlyMemo.key !== key) kubeOnlyMemo = { key, placed: layoutKubeOnly(mapKube.models, { room, choice: (cluster) => mapKube.choices[cluster] || "auto" }) };
+    return kubeOnlyMemo.placed;
+  }
   const width = map.clientWidth || 0;
   const rowLimit = width ? Math.min(ROW_LIMIT, width) : ROW_LIMIT;
   // At >=1600px the VPCs flow side by side across the whole map; below
@@ -2673,7 +2684,7 @@ function draw() {
   
   wantVaults();
   // Layout is cached per place; flipSampleState invalidates it on mutation.
-  const placed = place || vaultsData.vaults.length
+  const placed = kubeMapOnly() || place || vaultsData.vaults.length
     ? placedMap()
     : {
         settlements: [],
@@ -6632,7 +6643,7 @@ settingsApi = createSettings({
 });
 // Modules (modules.js): the tab or key of a module that is off at the server
 // or hidden in this browser is not offered. Cost is the CAPS gauge.
-const MODULE_UI = { map: "#tab-map", network: "#path", kubernetes: "#cluster, #k9s-btn", vaults: "#tab-vaults", radio: "#tab-radio", stacks: "#upgrade", learn: "#learn-key", score: "#score-key", ask: "#ask" };
+const MODULE_UI = { network: "#path", kubernetes: "#cluster, #k9s-btn", vaults: "#tab-vaults", radio: "#tab-radio", stacks: "#upgrade", learn: "#learn-key", score: "#score-key", ask: "#ask" };
 function settingsStorage() {
   try {
     return window.localStorage;
@@ -6645,6 +6656,7 @@ function applyModules(visible) {
   for (const [id, sel] of Object.entries(MODULE_UI)) {
     for (const node of document.querySelectorAll(sel)) node.hidden = !visible.includes(id);
   }
+  tabMap.hidden = !visible.includes("map") && !visible.includes("kubemap");
   if (!visible.includes("cost")) document.querySelector("#spend").hidden = true;
   const regionLabel = document.querySelector("#region")?.closest("label");
   if (regionLabel) regionLabel.hidden = !visible.includes("aws");
@@ -6660,7 +6672,7 @@ fetch("/api/config")
       const visible = visibleModules(body.modules.enabled, readHidden(settingsStorage()));
       applyModules(visible);
       // No map: a bare URL opens on the first view that is on.
-      if (!visible.includes("map") && !location.hash) {
+      if (!visible.includes("map") && !visible.includes("kubemap") && !location.hash) {
         const first = ["cluster", "path", "vaults"].find((v) => visible.includes({ cluster: "kubernetes", path: "network", vaults: "vaults" }[v]));
         if (first) history.replaceState(null, "", `${location.pathname}${location.search}#${first}`);
       }
