@@ -46,7 +46,7 @@ import { createLinkCache } from "./aws-path.js";
 import { createMetricsCache, sampleMetrics, SLO_PERIOD, SLO_TTL, SLO_WINDOW, sloSpecs } from "./metrics.js";
 import { idleCandidates, morningReport, nextIdleStreak } from "./layout.js";
 import { createHealthWatch, morningLine, stuckPending } from "./kube-health.js";
-import { DEFAULT_POLL_MS, scopeText } from "./kube-contexts.js";
+import { DEFAULT_POLL_MS, DENIED, primaryContext, scopeText } from "./kube-contexts.js";
 import { createStackResources } from "./stack-resources.js";
 import { readLastRuns, sampleLastRuns } from "./stack-overview.js";
 import { createStackReader } from "./vault-stacks.js";
@@ -92,7 +92,7 @@ const NEEDS_MS = 40_000;
 // How often a running stack's pods are checked for what they wait on.
 const WAIT_MS = Number(process.env.CLOUDSPIDER_WAIT_MS) || 20_000;
 
-export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, hideContexts = [], reach = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL, auditFile = "", pathProber = null }) {
+export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost, upgrade, terraform, learn, eks, vaults, agent, kube, kubeContexts, telemetry, addons, sloLedger, logGroup, pageOrigin, clock, write, connector, loadKubeContexts, settings = null, hideContexts = [], reach = null, autoConnect = undefined, regionsAllow = [], costTtl = COST_TTL, auditFile = "", pathProber = null, preferContext = "" }) {
   let stackResourcesReader = null;
   let currentCache = null;
   let lookupCache = null;
@@ -181,18 +181,31 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   // snapshot cache, and feeds the cluster SLOs (within its namespaces). The
   // first is the primary one (`kube`), the only one behind the map,
   // TELEMETRY and OPS.
-  const contexts = (kubeContexts?.length ? kubeContexts : kube ? [{ name: kube.context, label: kube.context, namespaces: kube.scope || "*", pollMs: DEFAULT_POLL_MS, kube }] : []).map((ctx, index) => ({ ...ctx, primary: index === 0 }));
-  let primary = contexts[0] || null;
-  if (primary && !kube) kube = primary.kube;
+  const contexts = (kubeContexts?.length ? kubeContexts : kube ? [{ name: kube.context, label: kube.context, namespaces: kube.scope || "*", pollMs: DEFAULT_POLL_MS, kube }] : []).map((ctx) => ({ ...ctx }));
+  const kubeCaches = new Map();
+  // kube.context when it was set in cloudspider.yaml (or by env), else ""
+  const preferred = String(preferContext || "");
+  const deniedCtx = (name) => DENIED.test(String(kubeCaches?.get(name)?.snap?.error || ""));
+  let primary = null;
+  // One resolver (kube-contexts.js primaryContext) for every reader.
+  function pickPrimary() {
+    const at = primaryContext(contexts, { preferred, denied: deniedCtx });
+    contexts.forEach((ctx, index) => { ctx.primary = index === at; });
+    const next = at >= 0 ? contexts[at] : null;
+    primary = next;
+    return primary;
+  }
+  pickPrimary();
+  if (primary && (!kube || primary.name !== contexts[0]?.name)) kube = primary.kube;
   // Hot reload (cloudspider.contexts.yaml changed, or CONNECT added one):
   // contexts that stay keep their client, cache and health; new ones join,
-  // gone ones leave. The first stays the primary one.
+  // gone ones leave. The primary is resolved again.
   function setContexts(next = []) {
     const keep = new Map(contexts.map((ctx) => [ctx.name, ctx]));
-    const list = next.filter((ctx) => ctx?.name && ctx.kube).map((ctx, index) => {
+    const list = next.filter((ctx) => ctx?.name && ctx.kube).map((ctx) => {
       const old = keep.get(ctx.name);
       const same = old && JSON.stringify(old.namespaces) === JSON.stringify(ctx.namespaces) && old.pollMs === ctx.pollMs;
-      return same ? { ...old, label: ctx.label, primary: index === 0 } : { ...ctx, primary: index === 0 };
+      return same ? { ...old, label: ctx.label } : { ...ctx };
     });
     if (!list.length) return contextNames();
     for (const ctx of contexts) {
@@ -202,13 +215,11 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       }
     }
     contexts.splice(0, contexts.length, ...list);
-    if (primary?.name !== contexts[0].name) {
-      primary = contexts[0];
-      kube = primary.kube;
-      kubeCaches.delete(primary.name);
-    } else {
-      primary = contexts[0];
-    }
+    const before = primary?.name;
+    primary = null;
+    pickPrimary();
+    if (primary) kube = primary.kube;
+    if (primary && before !== primary.name) kubeCaches.delete(primary.name);
     return contextNames();
   }
   function contextNames() {
@@ -220,7 +231,6 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     if (got.error && !got.contexts?.length) return { error: got.error };
     return { names: setContexts(got.contexts || []), source: got.source || "", errors: got.errors || [] };
   }
-  const kubeCaches = new Map();
   const kubeFlights = new Map();
   const polledAt = new Map();
   const health = createHealthWatch({ clock: now });
@@ -363,6 +373,12 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
           kubeCaches.set(ctx.name, { at: now(), snap });
           polledAt.set(ctx.name, now());
           health.take(ctx, snap);
+          // A primary that answers AccessDenied (dead cluster) gives way to
+          // the next listed context, unless kube.context named it.
+          if (ctx.primary && !preferred && snap?.error && DENIED.test(String(snap.error))) {
+            pickPrimary();
+            if (primary) kube = primary.kube;
+          }
           return snap;
         })
         .finally(() => {
@@ -481,7 +497,10 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     return { ctx, scope: Array.isArray(ctx.namespaces) ? ctx.namespaces : "*", snap, events, eventNote, at: kubeCaches.get(ctx.name)?.at || now() };
   }
   async function readKube(maxAge) {
-    return readContext(primary, maxAge);
+    const was = primary;
+    const snap = await readContext(primary, maxAge);
+    // readContext moved the primary off a context that answers AccessDenied.
+    return was !== primary && primary ? readContext(primary, maxAge) : snap;
   }
   // Is each context's cluster still there (kube-reach.js)? Cached, cheap,
   // never waited on: GONE / UNREACHABLE dim the switcher's button.
@@ -489,7 +508,8 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   const hiddenByConfig = new Set((hideContexts || []).map(String));
   function contextList() {
     return contexts.map((ctx) => {
-      const r = reacher.get(ctx);
+      const got = reacher.get(ctx);
+      const r = got.state !== "gone" && deniedCtx(ctx.name) ? { state: "gone", text: "the cluster answers AccessDenied to this identity" } : got;
       return { ...health.summary(ctx), primary: ctx.primary, poll: ctx.pollMs, reach: r.state, reachText: r.text || "", ...(hiddenByConfig.has(ctx.name) ? { hidden: "config" } : {}) };
     });
   }
@@ -1615,8 +1635,11 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       const ctx = contextFor(context) || primary;
       // aws module off (modules.js): the primary context is read like any
       // other, straight from Kubernetes, with no EKS lookup first.
-      const view = ctx && (!ctx.primary || path?.off) ? await contextView(ctx) : await this.primaryClusterView();
-      return contexts.length > 1 ? { ...view, context: ctx?.name || "", contexts: contextList() } : view;
+      let view = ctx && (!ctx.primary || path?.off) ? await contextView(ctx) : await this.primaryClusterView();
+      // The asked-for primary was dead and another one took over: show that.
+      if (!context && ctx && ctx !== primary && primary) view = path?.off ? await contextView(primary) : await this.primaryClusterView();
+      const shown = !context && ctx !== primary ? primary : ctx;
+      return contexts.length > 1 ? { ...view, context: shown?.name || "", contexts: contextList() } : view;
     },
     // The health watch (kube-health.js): each context read at its own
     // interval (default 60 s) through the shared snapshot cache. main.js

@@ -1,8 +1,10 @@
 # Copy to cloudspider.contexts.yaml (gitignored) and edit. Cloud Spider only
 # ever sends GET requests, with the credentials of each kubeconfig context.
 #
-# The first context is the primary one: the map compound, TELEMETRY, OPS and
-# the cluster SLOs read it. Every context gets its own entry in the Cluster
+# The primary context is kube.context from cloudspider.yaml when it is set
+# and listed here, else the first context (one that answers AccessDenied is
+# shown GONE and skipped): the map compound, the Cluster view, TELEMETRY, OPS,
+# the cluster SLOs, topology, SNIFF and DIAGNOSE read it. Every context gets its own entry in the Cluster
 # view's context switcher, a health watch (CrashLoopBackOff, image pulls,
 # OOMKilled, rising restarts, Pending > 5 min, failed Jobs, unready
 # Deployments) on the radio, and a line on the morning report.
