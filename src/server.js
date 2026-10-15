@@ -2686,6 +2686,8 @@ const page = `<!doctype html>
   #path-flow[hidden] { display: none; }
   @media (prefers-reduced-motion: reduce) { .term-cursor, .term-light[data-state="running"] { animation: none; } }
   @media (max-width: 900px) { #term { top: 6px; right: 6px; bottom: 6px; width: calc(100% - 12px); } }
+  #status[data-tone="hang"] { color: var(--status-hang); }
+  #status[data-tone="broken"] { color: var(--status-broken); font-weight: bold; }
   #status.issue { color: var(--status-broken); text-shadow: 0 0 6px rgba(255, 90, 54, 0.4); }
   /* Phosphor scrollbars: the path is wider than a narrow window, so the bar must read as part of the screen. */
   #map, #radio { scrollbar-width: thin; scrollbar-color: var(--pip-dim) var(--pip-ink); }

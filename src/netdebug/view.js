@@ -238,7 +238,8 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   let run = null;
   let filter = "all";
   let polling = 0;
-  let open = true;
+  // Starts as a slim bar so the map gets the screen; RUN (or ▴) opens it.
+  let open = false;
   let shown = false;
   // The ALB 503 walkthrough: open, and the VERIFY re-checks left.
   let why = false;
@@ -349,6 +350,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     return { target: field.value.trim(), namespace: nsSel.value, node: nodeIn.value.trim(), asLabels, http: httpIn.checked, tls: tlsIn.checked, rawTrace: rawIn.checked, sample: sample() === true, ...extra };
   };
   const planInside = async () => {
+    open = true;
     if (!field.value.trim()) return field.focus();
     runBtn.disabled = true;
     const out = await fetchJson("/api/netdebug/pod/plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(podBody()) }).catch((err) => ({ error: err?.message || "the server did not answer" }));
@@ -363,6 +365,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     draw();
   };
   const startInside = async (confirm) => {
+    open = true;
     runBtn.disabled = true;
     run = { target: { input: field.value.trim() }, steps: [{ text: "starting the debug pod", state: "running" }] };
     confirmPlan = null;
@@ -405,6 +408,7 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   }
 
   const start = async ({ keepWhy = false } = {}) => {
+    open = true;
     if (!keepWhy) {
       why = false;
       rechecks = 0;
