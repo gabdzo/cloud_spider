@@ -28,6 +28,7 @@ import {
   switchRegion,
 } from "./ui.js";
 import { layoutDiagram, layoutPath, nodeAt } from "./path-layout.js";
+import { pathVerdict } from "./path-card.js";
 import { drawPanHint, nodeTitle, paintDiagram, paintPath, sentenceRect } from "./path-draw.js";
 import { CLUSTER_COLUMNS } from "./cluster.js";
 import { KUBE_COLUMNS } from "./kube-diagram.js";
@@ -465,6 +466,10 @@ function renderChromeParts() {
   const who = names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0];
   // Two sentences, not run together ("sample, not the account demo/…").
   statusEl.textContent = names.length ? `${ui.status ? `${ui.status.replace(/[.!?:]?\s*$/, ".")} ` : ""}${who} ${names.length > 1 ? "are" : "is"} in trouble` : ui.status;
+  if (mode !== "path") {
+    delete statusEl.dataset.tone;
+    statusEl.removeAttribute("title");
+  }
   const words = `${statusEl.textContent} ${!errorEl.hidden ? errorEl.textContent : ""}`;
   statusEl.classList.toggle("issue", hasTrouble() || /did not|cannot|fail|denied|broken|trouble/i.test(words));
   renderRadioPanel();
@@ -2820,9 +2825,14 @@ function leaveSample() {
   scoreApi?.refresh();
 }
 
+// SNIFF's status line is the verdict; the longer notes go on its hover.
 function pathStatus(body) {
   const words = [body.hostNote, body.headline].filter(Boolean).join(" ");
-  return sample ? `sample, not the account. ${words}` : words;
+  const verdict = pathVerdict(body.diagram);
+  statusEl.title = words;
+  statusEl.dataset.tone = verdict.text ? verdict.tone : "";
+  const line = verdict.text || words;
+  return sample ? `sample, not the account. ${line}` : line;
 }
 
 function syncLoadBalancers(list, selected) {
