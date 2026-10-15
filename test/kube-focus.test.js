@@ -115,3 +115,16 @@ test("bottom bar follows scope and mode", async () => {
   assert.deepEqual(scopeStats(base, issues, { view: "all", scope: "all", namespaces: ["shop"] }).cells[0], "SCOPE ALL · shop");
   assert.equal(scopeStats(base, issues, { view: "issues" }, true).cells[1], base.cells[0], "a search shows all: no SHOWN");
 });
+
+test("serviceDetail: selector, ports, ready endpoints and the pods behind it", async () => {
+  const { serviceDetail } = await import("../src/kube-focus.js");
+  const d = cluster();
+  const got = serviceDetail(d, "svc:shop/api");
+  assert.equal(got.type, "ClusterIP");
+  assert.deepEqual(got.selector, ["app=api"]);
+  assert.deepEqual(got.ports, ["80→80/TCP"]);
+  assert.deepEqual(got.pods.map((p) => [p.name, p.status]), [["api-6b7c8d9f5-aaaaa", "broken"], ["api-6b7c8d9f5-bbbbb", "ok"]], "failing pods first");
+  assert.equal(got.ready, 1);
+  assert.equal(got.readFrom, "pods");
+  assert.equal(serviceDetail(d, "nope"), null);
+});
