@@ -2748,16 +2748,20 @@ function drawCluster() {
 // The Pip-Boy STAT screen (pipboy-view.js): over the MAP, on a toggle.
 const pipBoyButton = /** @type {HTMLButtonElement} */ (document.querySelector("#map-pipboy"));
 const pipBoyEl = /** @type {HTMLElement} */ (document.querySelector("#pipboy"));
-let pipBoyOn = readPref(PIP_ON_KEY, "0") === "1";
+// k8s-only: the Pip-Boy wall IS the map (HUT MAP brings the drawn one back);
+// with AWS it is a toggle over the AWS map.
+const pipBoyKey = kubeMapOnly() ? `${PIP_ON_KEY}.k8s` : PIP_ON_KEY;
+let pipBoyOn = readPref(pipBoyKey, kubeMapOnly() ? "1" : "0") === "1";
 const pipBoy = mountPip(pipBoyEl, {
   load: () => fetch(sample ? "/api/cluster-sample" : `/api/cluster${clusterContext ? `?context=${encodeURIComponent(clusterContext)}` : ""}`).then((r) => r.json()),
   model: pipModel,
   onClose: () => setPipBoy(false),
+  openTopology: (ns) => openInCluster({ type: "entry", id: `ns:${ns}`, ns }),
   store: (() => { try { return window.localStorage; } catch { return null; } })(),
 });
 function setPipBoy(on) {
   pipBoyOn = on;
-  try { window.localStorage.setItem(PIP_ON_KEY, on ? "1" : "0"); } catch { /* this page only */ }
+  try { window.localStorage.setItem(pipBoyKey, on ? "1" : "0"); } catch { /* this page only */ }
   syncPipBoy();
 }
 function syncPipBoy() {

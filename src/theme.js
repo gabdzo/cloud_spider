@@ -334,5 +334,23 @@ export function cssVars() {
   lines.push(`--font: ${FONT_STACK};`);
   lines.push(`--font-ui: ${FONT_STACK};`, `--font-mono: ${FONT_STACK};`, ...roleLines(ROLES.pip));
   const pro = [...roleLines(ROLES.pro), ...Object.entries(proRemap()).map(([name, value]) => `--${name}: ${value};`), `--font: ${FONT_UI};`, `--font-ui: ${FONT_UI};`, `--font-mono: ${FONT_MONO};`, "--pip-dim-text: color-mix(in srgb, var(--pip-mid) 40%, var(--pip-dim));"];
-  return `:root { ${lines.join(" ")} }\n  :root[data-theme="pro"] { ${pro.join(" ")} }`;
+  const amber = lines.map((line) => line.replace(/#[0-9a-fA-F]{6}\b/g, toAmber).replace(/rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/g, (all, r, g, b, a) => { const hex = toAmber(`#${[r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")}`); return rgba(hex, a); })).filter((line, i) => line !== lines[i]);
+  return `:root { ${lines.join(" ")} }\n  :root[data-theme="pro"] { ${pro.join(" ")} }\n  :root[data-tint="amber"]:not([data-theme="pro"]) { ${amber.join(" ")} }`;
+}
+
+// The Pip-Boy 3000 amber tint (data-tint="amber" on :root): every green of
+// the chrome turned amber with its lightness kept; reds, greys and the
+// canvas pixel world are untouched.
+export function toAmber(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  if (d < 0.04) return hex;
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  const hue = (h * 60 + 360) % 360;
+  if (hue < 70 || hue > 175) return hex;
+  const sat = d / (1 - Math.abs(2 * l - 1));
+  const c = (1 - Math.abs(2 * l - 1)) * sat, H = 38 / 60, x = c * (1 - Math.abs((H % 2) - 1)), m = l - c / 2;
+  const [rr, gg, bb] = [c + m, x + m, m];
+  return `#${[rr, gg, bb].map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0")).join("")}`;
 }

@@ -75,7 +75,21 @@ export function pipModel(body) {
   list.sort((a, b) => rank[a.state] - rank[b.state] || Number(a.system) - Number(b.system) || a.health - b.health || a.name.localeCompare(b.name));
   const kn = nodes.filter((n) => n.kind === "node");
   const pods = nodes.filter((n) => n.kind === "pod");
+  // Cross-namespace allow lines (netpol-model edges), one per ns pair.
+  /** @type {Map<string, { from: string, to: string, ports: string[], policies: string[] }>} */
+  const links = new Map();
+  for (const e of body?.diagram?.netpol?.edges || []) {
+    const a = e.from?.ns || "", b = e.to?.ns || "";
+    if (!a || !b || a === b || !names.has(a) || !names.has(b)) continue;
+    const key = `${a}>${b}`;
+    const link = links.get(key) || { from: a, to: b, ports: [], policies: [] };
+    for (const p of e.ports || []) if (!link.ports.includes(p)) link.ports.push(p);
+    for (const p of e.policies || [e.policy]) if (p && !link.policies.includes(p)) link.policies.push(p);
+    links.set(key, link);
+  }
   return {
+    links: [...links.values()],
+    entries: list.flatMap((n) => n.entries.map((e) => ({ ...e, ns: n.name }))),
     cluster: nodes.find((n) => n.kind === "control-plane")?.label || body?.context || "",
     context: body?.context || "",
     namespaces: list,

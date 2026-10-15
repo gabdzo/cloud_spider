@@ -3407,6 +3407,31 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #kube-graph .gv-dot.d-live { background: var(--ok); }
   :root[data-theme="pro"] #kube-graph .gv-dot.d-err { background: var(--err); }
   :root[data-theme="pro"] #kube-graph .gv-empty { border-left-color: var(--border-strong); color: var(--text-2); }
+
+  /* Compact chrome (Gabriel, Pip-Boy pass): a shorter header, and the
+     breadcrumb, prompt and morning report on one slim row. */
+  header { padding: 3px 12px 4px; gap: 6px 12px; }
+  .porthole { width: 40px; height: 40px; }
+  .plate { padding: 3px 10px 3px 4px; }
+  h1 { font-size: 17px; }
+  .plate small { font-size: 8px; margin-top: 2px; }
+  .tabs { padding: 4px 8px 5px; gap: 7px; }
+  .tab { min-height: 28px; }
+  .key { gap: 2px; }
+  .key .cap { width: 36px; height: 26px; }
+  header .knobs { display: none; }
+  header .gauges { flex: 0 1 auto; }
+  header .readout { padding: 3px 8px; gap: 8px; font-size: 11px; }
+  header .console { padding: 3px 8px; gap: 8px; }
+  header .tab { padding: 0 9px 0 8px; }
+  .topstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 3px 8px 3px 0; border-bottom: 2px solid var(--pip-dark); }
+  .topstrip > #where:not([hidden]) { margin: 0 0 0 12px; flex: 0 0 auto; }
+  .topstrip > .terminal { flex: 1 1 260px; margin: 0; padding: 2px 8px; border-bottom: 0; }
+  .topstrip > .terminal:has(> #lb:not([hidden])), .topstrip > .terminal:has(> #host:not([hidden])) { flex-basis: 100%; }
+  .topstrip > #morning:not([hidden]) { flex: 3 1 520px; margin: 0; padding: 2px 8px; border: 1px solid var(--pip-dark); border-radius: 4px; }
+  .topstrip > #morning #sunrise { width: 36px; height: 20px; }
+  .topstrip > #morning .m-head small, .topstrip > #morning #morning-when { display: none; }
+  .topstrip > #morning .m-line { padding-top: 1px; padding-bottom: 1px; }
 </style>
 </head>
 <body>
@@ -3450,6 +3475,7 @@ const page = `<!doctype html>
   <div class="knobs" aria-hidden="true"><i class="knob"></i><i class="knob small"></i><i class="power"></i></div>
 </header>
 <main class="screen">
+  <div class="topstrip">
   <p id="where" aria-live="polite" hidden></p>
   <div class="terminal">
     <span class="line"><span class="prompt">&gt;</span><span id="status"></span><input id="kube-search" type="search" aria-label="search the cluster" placeholder="search: name, ns:team, crash, pending, app=web   ( / )" autocomplete="off" spellcheck="false" hidden><output id="kube-search-count" aria-live="polite" hidden></output><span id="kube-groupby" title="Group by: the namespace, or a label; resources without it go to 'unlabeled'. System namespaces stay as they are." hidden><b>GROUP BY</b><select id="kube-groupby-sel" aria-label="group lanes by"></select><input id="kube-groupby-custom" type="text" aria-label="custom label key" placeholder="label key, e.g. team" autocomplete="off" spellcheck="false" hidden></span><span id="kube-focus" role="group" aria-label="what TOPOLOGY shows" hidden><button id="kf-issues" class="kf-btn" type="button" aria-pressed="true" title="only what needs a look, and what it hangs off; healthy pods fold into counts">ISSUES <i id="kf-count">0</i></button><button id="kf-list" class="kf-btn" type="button" aria-expanded="false" aria-controls="kube-issues" title="the list of issues, with INVESTIGATE">LIST</button><button id="kf-all" class="kf-btn" type="button" aria-pressed="false" title="everything in scope">ALL</button><select id="kf-scope" aria-label="scope: all, apps or add-ons"></select><button id="kf-ns" class="kf-btn" type="button" aria-expanded="false" aria-controls="kf-ns-pop" title="pick namespaces">NS: ALL</button></span></span>
@@ -3464,8 +3490,6 @@ const page = `<!doctype html>
     <button id="path-probe" class="cmd" type="button" hidden title="Send the one real request again (GET from this machine to this path's ALB; no cookies; answers are cached ~30 s)" aria-label="re-probe">↻</button>
     <button id="ask-this" class="cmd" type="button" data-icon="terminal" hidden>ASK ABOUT THIS</button>
   </div>
-  <p id="error" hidden></p>
-  <dialog id="m-modal" aria-label="morning report details"></dialog>
   <section id="morning" aria-label="morning report" hidden>
     <canvas id="sunrise" width="64" height="36" aria-hidden="true"></canvas>
     <div class="m-head"><b>MORNING</b><small>REPORT</small><output id="morning-when"></output></div>
@@ -3477,6 +3501,10 @@ const page = `<!doctype html>
     </ul>
     <button id="morning-fold" class="m-fold" type="button" aria-expanded="true" aria-controls="morning" title="fold the morning report">&#9650;</button>
   </section>
+  </div>
+  <p id="error" hidden></p>
+  <dialog id="m-modal" aria-label="morning report details"></dialog>
+
   <div class="body">
     <div class="mapwrap">
       <section id="log-errors" aria-label="log errors, last night" hidden data-module="kubernetes"></section>
