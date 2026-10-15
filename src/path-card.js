@@ -60,7 +60,26 @@ function ruleMatch(facts) {
 
 const ACTION_GLYPH = { redirect: "redirect", fixed: "fixed", weighted: "weighted" };
 
+// Where each hop's facts come from (the hover says it, so a reader can check
+// the same thing by hand).
+export const SOURCE = {
+  internet: "ec2 DescribeRouteTables (0.0.0.0/0 via igw-) + scheme",
+  lb: "elbv2 DescribeLoadBalancers + CloudWatch ELB 5xx (15 min)",
+  listener: "elbv2 DescribeListeners",
+  rule: "elbv2 DescribeRules",
+  answer: "elbv2 DescribeRules (rule action)",
+  tg: "elbv2 DescribeTargetGroups + DescribeTargetHealth",
+  target: "elbv2 DescribeTargetHealth + security groups (ec2 DescribeSecurityGroups)",
+  node: "ec2 DescribeInstances",
+  cluster: "eks DescribeCluster + DescribeNodegroup (health issues)",
+};
+
 export function cardOf(node) {
+  const card = cardBody(node);
+  return { ...card, source: SOURCE[node?.kind] || "" };
+}
+
+function cardBody(node) {
   const f = node?.facts || {};
   const status = LIGHT[node?.status] ? node.status : "unknown";
   const base = { type: String(node?.kind || "").toUpperCase(), name: node?.label || "", full: node?.label || "", port: "", detail: node?.caption || "", light: status, reason: node?.sentence || LIGHT[status] };
@@ -83,7 +102,7 @@ export function cardOf(node) {
     }
     case "tg": {
       const total = f.total ?? 0;
-      return { ...base, type: "TARGET GROUP", name: serviceName(f.service) || shortName(node.label), full: [node.label, f.service].filter(Boolean).join(" · "), port: `${f.protocol || ""} → :${f.port ?? "?"}`.trim(), detail: `${f.healthy ?? 0}/${total} healthy${f.targetType ? ` · ${f.targetType}` : ""}` };
+      return { ...base, type: f.share != null ? `TARGET GROUP · ${f.share}%` : "TARGET GROUP", name: serviceName(f.service) || shortName(node.label), full: [node.label, f.service].filter(Boolean).join(" · "), port: `${f.protocol || ""} → :${f.port ?? "?"}`.trim(), detail: `${f.healthy ?? 0}/${total} healthy${f.targetType ? ` · ${f.targetType}` : ""}` };
     }
     case "target":
       return { ...base, type: f.targetType === "instance" ? "TARGET INSTANCE" : "TARGET POD IP", name: f.ip || node.label, port: `→ :${f.port ?? "?"}`, detail: [f.state, f.zone].filter(Boolean).join(" · ") };
@@ -92,7 +111,10 @@ export function cardOf(node) {
     case "cluster":
       return { ...base, type: "CLUSTER · EKS", name: node.label, port: "", detail: f.version ? `v${f.version} · ${String(f.status || "").toLowerCase()}` : "not read" };
     case "answer":
-      if (f.answer === "redirect") return { ...base, type: `REDIRECT · ${f.code}`, glyph: "redirect", name: String(node.label).split("→ ")[1] || node.label, port: `client follows → ${f.code}`, detail: f.query ? `query ${f.query}` : "no target is reached" };
+      if (f.answer === "redirect") {
+        const to = f.to || {};
+        return { ...base, type: `REDIRECT · ${f.code}`, glyph: "redirect", name: to.path || String(node.label).split("→ ")[1] || node.label, port: to.protocol ? `${to.protocol} :${to.port}${to.sameHost ? "" : ` ${to.host}`}` : `→ ${f.code}`, detail: f.query ? `query ${f.query}` : "client follows; no target hit" };
+      }
       return { ...base, type: `FIXED RESPONSE · ${f.code}`, glyph: "fixed", name: f.body ? `"${f.body}"` : `${f.code}`, full: f.body || String(f.code), port: `${f.code}${f.contentType ? ` ${f.contentType}` : ""}`, detail: "the ALB answers itself" };
     default:
       return base;
@@ -101,4 +123,31 @@ export function cardOf(node) {
 
 export function lightWord(status) {
   return LIGHT[status] || "unknown";
+}
+
+// One line that answers "does this path work?": the first failing hop (in
+// path order) or, when nothing fails, where the request ends up. Intended
+// answers (a redirect, a maintenance 503) say what they answer instead.
+const RANK = { broken: 3, hang: 2 };
+export function pathVerdict(diagram) {
+  const nodes = diagram?.nodes || [];
+  if (!nodes.length) return { tone: "unknown", text: "" };
+  const short = (text) => String(text || "").split(/(?<=\.)\s/)[0].replace(/\.$/, "");
+  const bad = nodes.filter((node) => node.kind !== "answer" && RANK[node.status]).sort((a, b) => RANK[b.status] - RANK[a.status])[0];
+  const from = nodes[0].kind === "internet" ? "Internet" : cardOf(nodes[0]).name;
+  if (bad) {
+    const card = cardOf(bad);
+    return { tone: bad.status, text: `${bad.status === "broken" ? "✕" : "!"} ${from} → ${card.type.split(" ·")[0]} ${card.name}: ${short(card.reason)}` };
+  }
+  const answer = nodes.find((node) => node.kind === "answer");
+  if (answer) {
+    const card = cardOf(answer);
+    const hang = answer.status === "hang";
+    return { tone: hang ? "hang" : "ok", text: `${hang ? "!" : "✓"} ${from} → ${card.type}: the ALB answers ${answer.facts?.answer === "redirect" ? `→ ${card.name}` : "itself"}, no target is reached${hang ? " (fine if on purpose)" : ""}` };
+  }
+  const end = [...nodes].reverse().find((node) => node.kind === "tg") || nodes[nodes.length - 1];
+  const targets = nodes.filter((node) => node.kind === "target");
+  const ok = targets.filter((node) => node.status === "ok").length;
+  const unknown = nodes.some((node) => node.status === "unknown");
+  return { tone: unknown ? "unknown" : "ok", text: `${unknown ? "?" : "✓"} ${from} → ${cardOf(end).name}: ${unknown ? "nothing failed, some hops unchecked" : "OK"}${targets.length ? ` · ${ok}/${targets.length} targets healthy` : ""}` };
 }

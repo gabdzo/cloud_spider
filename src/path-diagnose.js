@@ -46,7 +46,7 @@ export function diagnose(graph, lbArn, { ruleArn = null } = {}) {
     add(listenerNode(listener, rules));
     link(lb.arn, listener.arn);
     for (const rule of rules) {
-      add(ruleNode(rule));
+      add(ruleNode(rule, listener));
       link(listener.arn, rule.arn);
       for (const action of rule.actions) {
         const answer = answerNode(rule, action, listener);
@@ -80,6 +80,10 @@ export function diagnose(graph, lbArn, { ruleArn = null } = {}) {
           if (pct == null) link(rule.arn, tg.arn);
           else edges.push({ from: rule.arn, to: tg.arn, status: "ok", sentence: `${pct}% of the requests ${ruleName(rule)} matches go to ${tg.name}.`, weight: pct });
           if (add(targetGroupNode(graph, tg))) addTargets(graph, lb, tg, add, link);
+          if (pct != null) {
+            const tgNode = nodes.find((node) => node.id === tg.arn);
+            if (tgNode) tgNode.facts = { ...tgNode.facts, share: pct };
+          }
         }
       }
     }
@@ -441,11 +445,28 @@ function ruleName(rule) {
   return rule.isDefault ? "the default rule" : `rule ${rule.priority}`;
 }
 
+// ALB redirect placeholders (#{protocol}, #{host}, #{port}, #{path},
+// #{query}) mean "keep what the request had": resolve them to the listener's
+// own values so a card never shows the raw template.
+export function resolveRedirect(action, listener = {}) {
+  const keep = (value, token) => !value || value === token;
+  const protocol = keep(action.redirectProtocol, "#{protocol}") ? listener.protocol || "" : action.redirectProtocol;
+  const port = keep(action.redirectPort, "#{port}") ? String(listener.port ?? "") : String(action.redirectPort);
+  const sameHost = keep(action.redirectHost, "#{host}");
+  const rawPath = action.redirectPath || "/#{path}";
+  const samePath = rawPath === "/#{path}";
+  const path = samePath ? "same path" : rawPath.replace(/#\{path\}/g, "…");
+  const query = !action.redirectQuery || action.redirectQuery === "#{query}" ? "" : action.redirectQuery;
+  const hop = protocol || port ? `${protocol} :${port}`.trim() : "";
+  const where = [hop, sameHost ? "" : action.redirectHost, path].filter(Boolean).join(" ");
+  return { protocol, port, host: sameHost ? "same host" : action.redirectHost, path, query, sameHost, samePath, where };
+}
+
 function actionWords(action, fallbackProtocol, fallbackPort) {
   if (!action) return "does nothing";
   if (action.type === "forward") return "forwards";
   if (action.type === "redirect") {
-    return `redirects to ${action.redirectProtocol || fallbackProtocol}:${action.redirectPort || fallbackPort}`;
+    return `redirects to ${resolveRedirect(action, { protocol: fallbackProtocol, port: fallbackPort }).where}`;
   }
   if (action.type === "fixed-response") return `answers ${action.statusCode} itself`;
   return action.type;
@@ -479,8 +500,10 @@ export function actionSummary(action, listener = {}) {
   if (!action) return { kind: "none", text: "does nothing" };
   if (action.type === "redirect") {
     const code = String(action.statusCode || "").replace("HTTP_", "") || "302";
-    const where = [action.redirectProtocol && action.redirectProtocol !== "#{protocol}" ? action.redirectProtocol : "", action.redirectHost && action.redirectHost !== "#{host}" ? action.redirectHost : "", action.redirectPort && action.redirectPort !== "#{port}" ? `:${action.redirectPort}` : "", action.redirectPath && action.redirectPath !== "/#{path}" ? action.redirectPath : ""].filter(Boolean).join(" ");
-    return { kind: "redirect", code, text: `${code} → ${where || "same URL"}` };
+    const r = resolveRedirect(action, listener);
+    // Same protocol and port: the path is the news ("301 → /dashboard").
+    const same = r.sameHost && (r.protocol === (listener.protocol || "")) && r.port === String(listener.port ?? "");
+    return { kind: "redirect", code, text: `${code} → ${same ? r.path : r.where}`, redirect: r };
   }
   if (action.type === "fixed-response") return { kind: "fixed", code: String(action.statusCode || ""), text: `answers ${action.statusCode || "?"}${action.contentType ? ` ${action.contentType}` : ""}` };
   if (action.type === "forward") {
@@ -508,7 +531,7 @@ export function conditionWords(rule) {
 function answerNode(rule, action, listener) {
   const summary = actionSummary(action, listener);
   if (summary.kind === "redirect") {
-    return { id: `${rule.arn}|answer`, kind: "answer", label: summary.text, caption: "redirect", facts: { answer: "redirect", code: summary.code, text: summary.text, query: action.redirectQuery || "" }, status: "ok", sentence: `${ruleName(rule)} answers ${summary.code}: the ALB sends the client to ${summary.text.split("→ ")[1]}. No target is reached on this request.` };
+    return { id: `${rule.arn}|answer`, kind: "answer", label: summary.text, caption: "redirect", facts: { answer: "redirect", code: summary.code, text: summary.text, query: summary.redirect.query, to: summary.redirect }, status: "ok", sentence: `${ruleName(rule)} answers ${summary.code}: the ALB sends the client to ${summary.text.split("→ ")[1]}. No target is reached on this request.` };
   }
   if (summary.kind === "fixed") {
     const code = Number(summary.code);
@@ -517,14 +540,14 @@ function answerNode(rule, action, listener) {
   return null;
 }
 
-function ruleNode(rule) {
+function ruleNode(rule, listener = {}) {
   const match = [...rule.hosts, ...rule.paths].join(" ") || "everything else";
   const node = {
     id: rule.arn,
     kind: "rule",
     label: rule.isDefault ? "default" : `rule ${rule.priority}`,
     caption: match,
-    facts: { hosts: rule.hosts, paths: rule.paths, isDefault: Boolean(rule.isDefault), priority: rule.priority, action: rule.actions[0] ? actionWords(rule.actions[0], "", "") : "", actionKind: actionSummary(rule.actions[0]).kind, actionText: actionSummary(rule.actions[0]).text, conditions: conditionWords(rule) },
+    facts: { hosts: rule.hosts, paths: rule.paths, isDefault: Boolean(rule.isDefault), priority: rule.priority, action: rule.actions[0] ? actionWords(rule.actions[0], "", "") : "", actionKind: actionSummary(rule.actions[0], listener).kind, actionText: actionSummary(rule.actions[0], listener).text, conditions: conditionWords(rule) },
     status: "ok",
     sentence: `${ruleName(rule)} matches ${match} and ${actionWords(rule.actions[0], "", "")}.`,
   };

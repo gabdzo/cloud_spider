@@ -111,27 +111,10 @@ export function paintDiagram(ctx, { placed, selectedId, animTime, width, height,
   }
   const phase = reducedMotion ? 0 : Math.floor((animTime || 0) / 180) % 4;
   for (const edge of placed.edges) drawEdge(ctx, edge, animTime, reducedMotion, phase);
-  for (const edge of placed.edges) if (edge.weight != null) drawWeight(ctx, edge);
   ctx.setLineDash([]);
   for (const node of placed.nodes) drawNode(ctx, node, node.id === selectedId, iconOf ? iconOf(node) : icon(node.kind), phase);
   const selected = placed.nodes.find((node) => node.id === selectedId);
   if (selected?.sentence) drawSentence(ctx, selected, width, height);
-}
-
-// A weighted forward: the share rides on its wire ("90%").
-function drawWeight(ctx, edge) {
-  const label = `${edge.weight}%`;
-  const mx = edge.wrap ? edge.wrap.right : (edge.x1 + edge.x2) / 2;
-  const my = edge.wrap ? (edge.y1 + edge.wrap.y) / 2 : (edge.y1 + edge.y2) / 2;
-  ctx.font = SMALL;
-  const w = Math.ceil(ctx.measureText?.(label)?.width ?? label.length * 7) + 8;
-  ctx.fillStyle = INK.ink;
-  ctx.fillRect(mx - w / 2, my - 8, w, 16);
-  ctx.strokeStyle = INK.bright;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(mx - w / 2 + 0.5, my - 7.5, w - 1, 15);
-  ctx.fillStyle = INK.bright;
-  ctx.fillText(label, mx - w / 2 + 4, my + 4);
 }
 
 function curve(ctx, edge) {
@@ -477,7 +460,7 @@ export function nodeTitle(node) {
   if (!node) return "";
   if (node.facts) {
     const card = cardOf(node);
-    return [`${card.type}: ${card.full}`, card.port, card.detail, `● ${lightWord(card.light)}: ${card.reason}`].filter(Boolean).join("\n");
+    return [`${card.type}: ${card.full}`, card.port, card.detail, `● ${lightWord(card.light)}: ${card.reason}`, card.source ? `source: ${card.source}` : ""].filter(Boolean).join("\n");
   }
   return [node.label, [String(node.kind || "").toUpperCase(), node.caption].filter(Boolean).join(" · "), node.sentence].filter(Boolean).join("\n");
 }

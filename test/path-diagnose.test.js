@@ -33,7 +33,7 @@ test("the whole load balancer puts the empty target group before the deeper brea
   );
   const listener80 = result.nodes.find((node) => node.id === "sample-listener-80");
   assert.equal(listener80.status, "ok");
-  assert.match(listener80.caption, /redirects to HTTPS:443/);
+  assert.match(listener80.caption, /redirects to HTTPS :443 same path/);
   const lb = result.nodes.find((node) => node.id === LB);
   assert.equal(lb.status, "hang");
   assert.match(lb.sentence, /^12 requests timed out at k8s-demo-api in the last 15 minutes/);
