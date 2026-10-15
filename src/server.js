@@ -3443,12 +3443,13 @@ const page = `<!doctype html>
   /* GREEN / AMBER phosphor for the whole app (theme.js data-tint): the CSS
      follows the remapped vars; canvases and pixel icons drawn in the green
      ramp are turned amber with a hue shift (alerts stay distinct). */
+  @media (min-width: 1200px) { header { flex-wrap: nowrap; } }
   #tint-key { font-size: 10px; letter-spacing: 0.08em; width: auto; padding: 0 6px; }
   :root[data-tint="amber"] #tint-key { color: var(--pip-bright); }
-  :root[data-tint="amber"]:not([data-theme="pro"]) canvas,
+  :root[data-tint="amber"]:not([data-theme="pro"]) canvas:not(#place),
   :root[data-tint="amber"]:not([data-theme="pro"]) img.px,
   :root[data-tint="amber"]:not([data-theme="pro"]) .cap,
-  :root[data-tint="amber"]:not([data-theme="pro"]) [data-icon]::before { filter: hue-rotate(-100deg) saturate(1.15); }
+  :root[data-tint="amber"]:not([data-theme="pro"]) [data-icon]::before { filter: sepia(1) saturate(2.6) hue-rotate(-8deg) brightness(1.05); }
   :root[data-tint="amber"]:not([data-theme="pro"]) #pipboy canvas { filter: none; }
 </style>
 </head>

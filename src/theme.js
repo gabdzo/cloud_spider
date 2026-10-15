@@ -231,8 +231,11 @@ export const INK = { ...PIP_INK };
 export function canvasPro() {
   return typeof document !== "undefined" && document.documentElement?.dataset?.theme === "pro";
 }
+let AMBER_INK = null;
 export function syncCanvasTheme(pro = canvasPro()) {
-  Object.assign(INK, pro ? PRO_INK : PIP_INK);
+  const amber = !pro && typeof document !== "undefined" && document.documentElement?.dataset?.tint === "amber";
+  if (amber && !AMBER_INK) AMBER_INK = Object.fromEntries(Object.entries(PIP_INK).map(([k, v]) => [k, typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? toAmber(v) : v]));
+  Object.assign(INK, pro ? PRO_INK : amber ? AMBER_INK : PIP_INK);
   return pro;
 }
 export function inkFont(px, pro = canvasPro()) {
