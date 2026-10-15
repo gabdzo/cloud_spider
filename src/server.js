@@ -85,6 +85,7 @@ export const FILES = new Set([
   "graph-group.js",
   "graph-layers.js", "svc-endpoints.js",
   "kube-group.js",
+  "kube-focus.js",
   "log-errors-view.js",
   "kube-empty.js",
   "slo.js",
@@ -797,6 +798,36 @@ const page = `<!doctype html>
   #kube-groupby b { font-weight: normal; font-size: 10px; letter-spacing: 0.16em; color: var(--pip-dim-text); white-space: nowrap; }
   #kube-groupby :is(select, input) { font: inherit; font-size: 12px; padding: 3px 6px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
   #kube-groupby input { width: 140px; }
+  #kube-groupby select { max-width: 150px; }
+  /* TOPOLOGY focus (kube-focus.js): ISSUES / ALL, scope, namespaces. */
+  #kube-focus { flex: none; display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; }
+  #kube-focus[hidden], #kube-healthy[hidden], #kube-issues[hidden], #kf-ns-pop[hidden] { display: none; }
+  #kube-focus .kf-btn, #kube-focus select { font: inherit; font-size: 11px; letter-spacing: 0.08em; padding: 3px 7px; color: var(--pip-mid); background: var(--pip-ink); border: 1px solid var(--pip-dim); cursor: pointer; white-space: nowrap; }
+  #kube-focus .kf-btn[aria-pressed="true"], #kube-focus .kf-btn[aria-expanded="true"] { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); }
+  #kube-focus .kf-btn:focus-visible, #kube-focus select:focus-visible { outline: 1px solid var(--pip-hot); }
+  #kube-focus i { font-style: normal; padding: 0 4px; margin-left: 2px; background: var(--status-broken); color: #000; }
+  #kube-focus i.zero { background: transparent; color: inherit; }
+  #kube-healthy { position: absolute; z-index: 2; left: 50%; top: 170px; transform: translateX(-50%); width: min(520px, calc(100% - 48px)); padding: 18px 20px; border: 1px solid var(--pip-dim); background: var(--pip-screen); color: var(--pip-mid); font-size: 12px; text-align: center; }
+  #kube-healthy h3 { margin: 0 0 6px; font-size: 18px; letter-spacing: 0.08em; color: var(--pip-bright); }
+  #kube-healthy p { margin: 0 0 12px; overflow-wrap: anywhere; }
+  #kube-healthy button, #kube-issues button, #kf-ns-pop button { font: inherit; font-size: 11px; letter-spacing: 0.08em; padding: 4px 10px; color: var(--pip-ink); background: var(--pip-bright); border: 0; cursor: pointer; }
+  #kube-issues, #kf-ns-pop { position: fixed; z-index: 30; max-height: min(60vh, 520px); overflow: auto; padding: 8px; border: 1px solid var(--pip-bright); background: var(--pip-screen); color: var(--pip-mid); font-size: 12px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6); }
+  #kube-issues { width: min(560px, calc(100vw - 24px)); }
+  #kube-issues ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  #kube-issues li { display: grid; grid-template-columns: 10px 1fr auto; gap: 4px 8px; align-items: start; padding: 6px; border: 1px solid var(--pip-dim); }
+  #kube-issues .kd { width: 8px; height: 8px; margin-top: 4px; border-radius: 50%; background: var(--status-hang); }
+  #kube-issues .kd.broken { background: var(--status-broken); }
+  #kube-issues .kn { color: var(--pip-bright); overflow-wrap: anywhere; }
+  #kube-issues .kn b { font-weight: normal; font-size: 10px; letter-spacing: 0.1em; padding: 0 4px; margin-right: 6px; border: 1px solid var(--pip-dim); color: var(--pip-mid); }
+  #kube-issues .kr { grid-column: 2; color: var(--status-hang); overflow-wrap: anywhere; }
+  #kube-issues .kr.broken { color: var(--status-broken); }
+  #kube-issues .kx { grid-column: 2 / 4; color: var(--pip-dim-text); font-size: 11px; overflow-wrap: anywhere; }
+  #kube-issues li > button { grid-column: 3; grid-row: 1 / 3; align-self: center; }
+  #kube-issues .kh { margin: 0 0 6px; color: var(--pip-dim-text); font-size: 11px; letter-spacing: 0.1em; }
+  #kf-ns-pop { width: min(300px, calc(100vw - 24px)); }
+  #kf-ns-pop label { display: flex; gap: 6px; align-items: center; padding: 2px 0; cursor: pointer; overflow-wrap: anywhere; }
+  #kf-ns-pop label small { color: var(--pip-dim-text); }
+  #kf-ns-pop .kf-row { display: flex; gap: 6px; margin-top: 8px; }
   #kube-groupby input.bad { border-color: var(--status-broken); }
   #kube-groupby :is(select, input):focus { border-color: var(--pip-bright); box-shadow: 0 0 8px var(--glow-soft); }
   #confirm.caption { flex-basis: 100%; font-size: 11px; color: var(--pip-mid); opacity: 0.85; padding-left: 18px; }
@@ -3167,6 +3198,13 @@ const page = `<!doctype html>
   :root[data-theme="pro"] #kube-groupby :is(select, input) { color: var(--text); background: var(--raised); border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-ui); }
   :root[data-theme="pro"] #kube-groupby :is(select, input):focus { border-color: var(--accent); box-shadow: none; }
   :root[data-theme="pro"] #kube-groupby input.bad { border-color: var(--err); }
+  :root[data-theme="pro"] #kube-focus :is(.kf-btn, select) { color: var(--text-2); background: var(--raised); border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-ui); letter-spacing: 0.02em; }
+  :root[data-theme="pro"] #kube-focus .kf-btn:is([aria-pressed="true"], [aria-expanded="true"]) { color: #fff; background: var(--accent); border-color: var(--accent); }
+  :root[data-theme="pro"] #kube-focus i { border-radius: 4px; color: #fff; background: var(--err); }
+  :root[data-theme="pro"] :is(#kube-healthy, #kube-issues, #kf-ns-pop) { color: var(--text-2); background: var(--raised); border: 1px solid var(--border); border-radius: 8px; font-family: var(--font-ui); }
+  :root[data-theme="pro"] #kube-healthy h3, :root[data-theme="pro"] #kube-issues .kn { color: var(--text); }
+  :root[data-theme="pro"] :is(#kube-healthy, #kube-issues, #kf-ns-pop) button { color: #fff; background: var(--accent); border-radius: 6px; font-family: var(--font-ui); }
+  :root[data-theme="pro"] #kube-issues li { border: 1px solid var(--border); border-radius: 6px; }
   :root[data-theme="pro"] #kube-graph .gv-gblabel { color: var(--text-2); font-family: var(--font-ui); letter-spacing: 0.04em; font-weight: 500; }
   :root[data-theme="pro"] #kube-graph :is(.gv-gbsel, .gv-gbcustom) { color: var(--text); background: var(--raised); border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-ui); }
   :root[data-theme="pro"] #kube-graph :is(.gv-gbsel, .gv-gbcustom):focus { border-color: var(--accent); box-shadow: none; }
@@ -3375,7 +3413,7 @@ const page = `<!doctype html>
 <main class="screen">
   <p id="where" aria-live="polite" hidden></p>
   <div class="terminal">
-    <span class="line"><span class="prompt">&gt;</span><span id="status"></span><input id="kube-search" type="search" aria-label="search the cluster" placeholder="search: name, ns:team, crash, pending, app=web   ( / )" autocomplete="off" spellcheck="false" hidden><output id="kube-search-count" aria-live="polite" hidden></output><span id="kube-groupby" title="Group by: the namespace, or a label; resources without it go to 'unlabeled'. System namespaces stay as they are." hidden><b>GROUP BY</b><select id="kube-groupby-sel" aria-label="group lanes by"></select><input id="kube-groupby-custom" type="text" aria-label="custom label key" placeholder="label key, e.g. team" autocomplete="off" spellcheck="false" hidden></span></span>
+    <span class="line"><span class="prompt">&gt;</span><span id="status"></span><input id="kube-search" type="search" aria-label="search the cluster" placeholder="search: name, ns:team, crash, pending, app=web   ( / )" autocomplete="off" spellcheck="false" hidden><output id="kube-search-count" aria-live="polite" hidden></output><span id="kube-groupby" title="Group by: the namespace, or a label; resources without it go to 'unlabeled'. System namespaces stay as they are." hidden><b>GROUP BY</b><select id="kube-groupby-sel" aria-label="group lanes by"></select><input id="kube-groupby-custom" type="text" aria-label="custom label key" placeholder="label key, e.g. team" autocomplete="off" spellcheck="false" hidden></span><span id="kube-focus" role="group" aria-label="what TOPOLOGY shows" hidden><button id="kf-issues" class="kf-btn" type="button" aria-pressed="true" title="only what needs a look, and what it hangs off; healthy pods fold into counts">ISSUES <i id="kf-count">0</i></button><button id="kf-list" class="kf-btn" type="button" aria-expanded="false" aria-controls="kube-issues" title="the list of issues, with INVESTIGATE">LIST</button><button id="kf-all" class="kf-btn" type="button" aria-pressed="false" title="everything in scope">ALL</button><select id="kf-scope" aria-label="scope: all, apps or add-ons"></select><button id="kf-ns" class="kf-btn" type="button" aria-expanded="false" aria-controls="kf-ns-pop" title="pick namespaces">NS: ALL</button></span></span>
     <select id="lb" aria-label="load balancer" hidden></select>
     <input id="host" type="text" aria-label="URL or host" placeholder="paste a URL or host" hidden>
     <p id="confirm"></p>
@@ -3430,6 +3468,9 @@ const page = `<!doctype html>
       <section id="kube-tele" aria-label="cluster telemetry" hidden></section>
       <section id="kube-ops" aria-label="cluster add-ons" hidden></section>
       <section id="kube-empty" aria-label="no cluster connected" hidden></section>
+      <section id="kube-healthy" aria-live="polite" hidden></section>
+      <section id="kube-issues" aria-label="issues" hidden></section>
+      <section id="kf-ns-pop" aria-label="namespaces" hidden></section>
       <section id="kube-graph" aria-label="services graph (sample prototype)" tabindex="-1" hidden data-module="graph"></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
       <section id="k9s" aria-label="K9S window, read-only resource table" hidden data-module="kubernetes"></section>
