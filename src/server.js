@@ -3400,7 +3400,7 @@ const page = `<!doctype html>
     <div><h1 data-pro-label="Cloud Spider">CLOUD SPIDER</h1><small>SPIDER-TEC SURVEY UNIT 3000</small></div>
   </div>
   <nav class="tabs" aria-label="views">
-    <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true" data-module="map">Map</button>
+    <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true" data-module-any="map kubemap">Map</button>
     <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false" title="sniff: a request's path, and DEBUG for any URL" data-pro-title="network: a request's path, and DEBUG for any URL" data-module="network"><span data-pro-label="Network">Sniff</span></button>
     <button id="cluster" class="tab" type="button" data-icon="cluster" aria-pressed="false" data-module="kubernetes">Cluster</button>
     <button id="k9s-btn" class="tab" type="button" data-icon="terminal" aria-pressed="false" title="K9S: a read-only resource table for the connected cluster (:)" data-module="kubernetes">K9S</button>
