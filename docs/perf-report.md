@@ -1,38 +1,58 @@
-# Perf work (2026-10-15)
+# Perf work: before / after (2026-10-15)
 
-Gabriel's priority: stay lightweight and fast. TypeScript = `// @ts-check` +
-JSDoc + `tsc --noEmit` in CI, **no build step, no file converted to .ts, no
-runtime dependency**. Baseline: `docs/perf-baseline.md`. Numbers: fake
-cluster `acme-stg-7` on the box, and one warm app copy against demo-prod on
-Gabriel's Mac (load avg 12–47; short runs).
+Scope: stay light and fast. Types are `// @ts-check` + JSDoc + `tsc --noEmit`
+in CI. There is no build step, no `.ts` file and no new runtime dependency.
+The baseline and the tools are in `docs/perf-baseline.md` (`scripts/perf/`).
 
-## Before → after
+## Box: fake cluster `acme-stg-7` (12 ns × 4 apps, 80 ms per API call, k8s-only)
 
-| Metric | Before | After (this run) | PR |
-|---|---|---|---|
-| Page load bytes (fake, cold) | 1.78 MB, uncompressed, `no-store` | **534 KB** gzipped + ETag/304 | #412 |
-| DIAGNOSE wall time | kube then path graph (sum) | both in parallel (max) | #411 |
-| Morning logs (demo-prod) | **22.7 s** serial | graph+pods+Loki together; 1h fallback early for Loki | #414 |
-| Kube GETs at cold page load | dups 15–29, peak 30–42 | dups 2–16, **peak 12** | #413 |
-| /healthz + timeouts + unhandledRejection | none | added | #415 |
-| Type check in CI | none | `npm run typecheck` (`tsc --noEmit`), 6 modules opted in | #416 |
+| Metric | Before (eb4cdcf) | After (main 40787dd) |
+|---|---|---|
+| Bytes per cold page load | 1.78 MB (no compression, `no-store`) | **534 KB** |
+| HTML page | 338 KB | 59 KB gzipped |
+| /api/cluster | 104 KB | 6.7 KB gzipped |
+| Reload of an unchanged module | full 200 download | **304, empty body** (ETag) |
+| Kube GETs in flight at peak | 30–42 (no cap) | **12** (capped) |
+| Duplicate kube GETs in one cold load | 15–29 | 2–16: only sequential repeats are left |
+| DIAGNOSE (fake) | 0.17–0.20 s | 0.18–0.23 s: same; the kube side was already parallel |
+| Page load / network idle (warm run) | 0.20 s / 0.29 s | 0.36 s / 0.65 s* |
+| Main thread (warm run) | script 52 ms, task 309 ms | script 59 ms, task 422 ms* |
 
-## Merged / open
+\* The after runs were taken while the CI gate (the full test suite) was
+running on the same box, so they are noisy. Byte counts and call counts do
+not depend on load.
 
-- #410 baseline (tools + report) — **merged**
-- #411 DIAGNOSE parallel path graph
-- #412 gzip + ETag/304
-- #413 kube in-flight share + concurrency cap
-- #414 morning-logs parallel reads
-- #415 healthz / timeouts / process handlers
-- #416 typecheck (`@ts-check` + JSDoc)
+## Live on demo-prod (before only, Gabriel's Mac, load average 12–47)
 
-## Left for next run
+| Endpoint | Before | What changed |
+|---|---|---|
+| /api/morning/logs | 22.7 s, serial chain | graph index, pods and both Loki windows read together; the 1h fallback starts early (#414) |
+| DIAGNOSE | 8.3 s warm, up to ~35 s cold | the SNIFF path graph overlaps the kube reads (#411) |
+| /api/path | 8.8 s | not changed yet |
+| /api/addons | 4.2 s | shares in-flight GETs (#413) |
 
-- DIAGNOSE ~8 s live is mostly the path graph itself (AWS Describe*); cache /
-  SWR for it, and skip AWS when the Service has no Ingress.
-- Deduplicate page `/api/view` (×4) and `/api/alb-routes` (×4 same id).
-- Progressive map paint (stream fixtures).
-- Opt more modules into `@ts-check` (config.js, log-report.js need more JSDoc).
-- Live before/after of morning-logs and DIAGNOSE once #411+#414 are on the
-  demo-prod app copy (Mac is loaded: remeasure after a quiet restart).
+The live after numbers were not taken. The app copies on the Mac still run
+the old code, and restarting one on a loaded Mac was not worth the risk.
+Measure after the next `git pull` with
+`node scripts/perf/page-bench.mjs --url http://127.0.0.1:<port>/ --runs 1`.
+
+## Production basics (#415, #416)
+
+- `GET /healthz` reads neither AWS nor the cluster.
+- Server timeouts: headers 20 s, request 120 s, keep-alive 5 s.
+- `unhandledRejection` is logged instead of crashing. `uncaughtException`
+  is logged, then the normal graceful shutdown runs.
+- `npm run typecheck` runs in CI. Six core modules are opted in: kube,
+  kube-contexts, graph-build, shutdown, diagnose/collect and diagnose/rules.
+  It caught a duplicate `nsEvents` key in kube PATHS, which is now removed
+  with no change in behaviour.
+
+## Left
+
+- /api/path (8.8 s) and the AWS path graph: an SWR cache, and skipping AWS
+  when a Service has no Ingress.
+- Page duplicates: /api/view ×4 and /api/alb-routes per ALB.
+- Progressive map paint.
+- Opt more modules into `@ts-check` (config.js and log-report.js need JSDoc).
+- `test/shutdown.test.js` "force()" fails on the box on main as well. It is
+  environment-specific and not caused by this work.
