@@ -52,7 +52,14 @@ function policyLines(ctx, lines, only) {
     const lift = Math.min(60, 16 + Math.abs(l.x2 - l.x1) / 6);
     const mx = (l.x1 + l.x2) / 2;
     const my = Math.min(l.y1, l.y2) - lift;
-    ctx.strokeStyle = rgba(PIP.bright, only ? 0.95 : l.bundle ? 0.7 : 0.55);
+    // A dark underlay first: the line reads on the busy ground at rest.
+    ctx.strokeStyle = rgba(PIP.ink, 0.55);
+    ctx.lineWidth = only ? 4.5 : l.bundle ? Math.min(7, 3.5 + Math.log2(l.count)) : 3.5;
+    ctx.beginPath();
+    ctx.moveTo(l.x1, l.y1);
+    ctx.quadraticCurveTo(mx, my, l.x2, l.y2);
+    ctx.stroke();
+    ctx.strokeStyle = rgba(PIP.bright, only ? 1 : l.bundle ? 0.8 : 0.7);
     ctx.lineWidth = only ? 2.5 : l.bundle ? Math.min(5, 1.5 + Math.log2(l.count)) : 1.5;
     ctx.beginPath();
     ctx.moveTo(l.x1, l.y1);
