@@ -78,7 +78,9 @@ import { renderSpend } from "./spend-view.js";
 import { createSettings, readHidden, visibleModules } from "./settings-view.js";
 import { nsPanelModel } from "./map-ns-panel.js";
 import { pipModel } from "./pipboy-model.js";
-import { PIP_ON_KEY, mountPip } from "./pipboy-view.js";
+import { PIP_ON_KEY, mountPip, readTint, setTint } from "./pipboy-view.js";
+// GREEN / AMBER for the whole app, before anything paints.
+if (readTint() === "amber") document.documentElement.dataset.tint = "amber";
 import { KUBE_MAP_KEY, POLICIES_KEY, compoundHit, compoundHover, kubeModel, layoutKubeOnly, readKubeChoices, readPoliciesOn } from "./map-kube.js";
 import { mountWhere } from "./where.js";
 
@@ -2748,16 +2750,20 @@ function drawCluster() {
 // The Pip-Boy STAT screen (pipboy-view.js): over the MAP, on a toggle.
 const pipBoyButton = /** @type {HTMLButtonElement} */ (document.querySelector("#map-pipboy"));
 const pipBoyEl = /** @type {HTMLElement} */ (document.querySelector("#pipboy"));
-let pipBoyOn = readPref(PIP_ON_KEY, "0") === "1";
+// k8s-only: the Pip-Boy wall IS the map (HUT MAP brings the drawn one back);
+// with AWS it is a toggle over the AWS map.
+const pipBoyKey = kubeMapOnly() ? `${PIP_ON_KEY}.k8s` : PIP_ON_KEY;
+let pipBoyOn = readPref(pipBoyKey, kubeMapOnly() ? "1" : "0") === "1";
 const pipBoy = mountPip(pipBoyEl, {
   load: () => fetch(sample ? "/api/cluster-sample" : `/api/cluster${clusterContext ? `?context=${encodeURIComponent(clusterContext)}` : ""}`).then((r) => r.json()),
   model: pipModel,
   onClose: () => setPipBoy(false),
+  openTopology: (ns) => openInCluster({ type: "entry", id: `ns:${ns}`, ns }),
   store: (() => { try { return window.localStorage; } catch { return null; } })(),
 });
 function setPipBoy(on) {
   pipBoyOn = on;
-  try { window.localStorage.setItem(PIP_ON_KEY, on ? "1" : "0"); } catch { /* this page only */ }
+  try { window.localStorage.setItem(pipBoyKey, on ? "1" : "0"); } catch { /* this page only */ }
   syncPipBoy();
 }
 function syncPipBoy() {
@@ -2768,6 +2774,11 @@ function syncPipBoy() {
   else if (!show && !pipBoyEl.hidden) pipBoy.hide();
 }
 pipBoyButton.addEventListener("click", () => setPipBoy(true));
+const tintKey = /** @type {HTMLButtonElement|null} */ (document.querySelector("#tint-key"));
+const showTint = () => { if (!tintKey) return; const amber = readTint() === "amber"; tintKey.textContent = amber ? "GRN" : "AMB"; tintKey.setAttribute("aria-pressed", String(amber)); tintKey.title = amber ? "phosphor: back to green" : "phosphor: amber (Pip-Boy 3000), the whole app"; };
+tintKey?.addEventListener("click", () => { setTint(readTint() === "amber" ? "green" : "amber"); });
+window.addEventListener("cs-tint", () => { showTint(); draw(); });
+showTint();
 
 function draw() {
   syncPipBoy();

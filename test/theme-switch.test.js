@@ -15,7 +15,8 @@ test("both themes fill the same roles, and pro remaps only vars the Pip page def
   assert.deepEqual(THEME_NAMES, ["pip", "pro"]);
   assert.deepEqual(Object.keys(ROLES.pip).sort(), Object.keys(ROLES.pro).sort());
   const css = cssVars();
-  const [pipBlock, proBlock] = css.split(':root[data-theme="pro"]');
+  const [pipBlock, rest] = css.split(':root[data-theme="pro"]');
+  const proBlock = rest?.split(':root[data-tint="amber"]')[0];
   assert.ok(proBlock, "a pro block");
   const pip = varsIn(pipBlock);
   const pro = varsIn(proBlock);

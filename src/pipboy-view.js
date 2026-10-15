@@ -80,9 +80,59 @@ export const PIP_CSS = `
 #pipboy h4{color:var(--pb-fg);opacity:.85;border-bottom:1px solid var(--pb-dim)}
 #pipboy .pb-bar>span{background:color-mix(in srgb,var(--pb-fg) 18%,var(--pb-bg));font-weight:bold;letter-spacing:1px;padding:3px 12px}
 #pipboy .pb-bar .pb-alert{background:var(--pb-alert-bg)}
+
+#pipboy .pb-gridwrap{position:relative;flex:1;min-height:0;overflow:auto;padding:4px 2px}
+#pipboy .pb-entries{display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:center;margin:2px 0 46px;position:relative;z-index:1}
+#pipboy .pb-entry{border:1px solid var(--pb-fg);padding:2px 8px;font-size:12px;cursor:pointer;background:var(--pb-bg);box-shadow:0 0 8px var(--pb-glow);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pipboy .pb-entry.pb-alert{border-color:var(--pb-alert)}
+#pipboy .pb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:22px 18px;position:relative;z-index:1}
+#pipboy .pb-tile{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto auto auto;gap:2px 6px;align-items:center;text-align:left;padding:8px 10px 7px!important;border:2px solid color-mix(in srgb,var(--pb-fg) 45%,#000)!important;border-radius:10px;background:radial-gradient(ellipse at 50% 40%,color-mix(in srgb,var(--pb-fg) 12%,var(--pb-bg)),var(--pb-bg) 75%)!important;box-shadow:inset 0 0 18px rgba(0,0,0,.8),0 0 0 1px #000;position:relative;overflow:hidden;min-height:118px}
+#pipboy .pb-tile::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.3) 0 1px,transparent 1px 3px)}
+#pipboy .pb-tile .pb-tn{font-weight:bold;letter-spacing:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pipboy .pb-tile .pb-th{font-size:26px;font-weight:bold;line-height:1}
+#pipboy .pb-tile .pb-fig{grid-row:2/4;align-self:end}
+#pipboy .pb-tile .pb-tp{grid-column:2;font-size:11px;justify-self:end}
+#pipboy .pb-tile .pb-badge{grid-column:2;justify-self:end;margin:0}
+#pipboy .pb-tile .pb-ti{grid-column:1/-1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85}
+#pipboy .pb-tile.broken{border-color:var(--pb-alert)!important;box-shadow:inset 0 0 18px rgba(0,0,0,.8),0 0 10px var(--pb-alert)}
+#pipboy .pb-tile.broken .pb-th,#pipboy .pb-tile.hurting .pb-th{color:var(--pb-alert)}
+#pipboy .pb-tile.pb-sys{opacity:.6}
+#pipboy .pb-tile[aria-pressed=true],#pipboy .pb-tile:focus-visible{outline:2px solid var(--pb-fg);outline-offset:3px;box-shadow:0 0 16px var(--pb-glow)}
+#pipboy .pb-tile:hover{border-color:var(--pb-fg)!important}
+#pipboy .pb-links{position:absolute;left:0;top:0;pointer-events:none;z-index:2;overflow:visible}
+#pipboy .pb-links path{fill:none;stroke:var(--pb-fg);stroke-width:1.2;opacity:.13}
+#pipboy .pb-links circle{fill:var(--pb-fg);opacity:.2}
+#pipboy .pb-links .pb-l-pol{stroke-dasharray:6 5}
+#pipboy .pb-links .pb-l-in.bad{stroke:var(--pb-alert);opacity:.45}
+#pipboy .pb-links .hot{opacity:1;stroke-width:2.5;filter:drop-shadow(0 0 4px var(--pb-fg))}
+#pipboy .pb-links .pb-l-pol.hot{animation:pb-flow 1.6s linear infinite}
+#pipboy .pb-links .pb-l-in.bad.hot{filter:drop-shadow(0 0 4px var(--pb-alert))}
+#pipboy .pb-entry.hot{background:var(--pb-fg);color:var(--pb-bg);text-shadow:none}
+@keyframes pb-flow{to{stroke-dashoffset:-22}}
+@media (prefers-reduced-motion:reduce){#pipboy .pb-links .pb-l-pol{animation:none}}
+#pipboy .pb-legend{flex:0 0 auto!important;font-weight:normal!important;gap:6px!important;align-items:center;font-size:11px}
+#pipboy .pb-legend i{display:inline-block;width:18px;border-top:2px dashed var(--pb-fg)}
+#pipboy .pb-legend i.pb-k-in{border-top-style:solid;opacity:.6}
+#pipboy .pb-go{margin:8px 0 2px!important;display:flex;gap:8px}
+#pipboy .pb-go button{border:1px solid var(--pb-fg)!important;font-size:12px}
+#pipboy .pb-go button:hover{background:var(--pb-fg);color:var(--pb-bg);text-shadow:none}
+#pipboy .pb-pol{padding-left:1ch;margin:1px 0}
+#pipboy .pb-pol summary{cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--pb-fg)}
+#pipboy .pb-pol[open] summary{white-space:normal}
+#pipboy .pb-pol .pb-rule{padding-left:3ch;word-break:break-word}
 `;
 
 /** @typedef {import("./pipboy-model.js").PipNs} PipNs */
+
+/** "to ns kube-system · k8s-app=kube-dns | … → UDP 53, TCP 53" as "to kube-system · kube-dns :53 +1". */
+export function ruleShort(/** @type {string} */ rule) {
+  const [who, ports = ""] = rule.split(" → ");
+  const peers = who.replace(/kubernetes\.io\/metadata\.name=/g, "").replace(/\b(ns|app|k8s-app|app\.kubernetes\.io\/name)[= ]/g, "").split(" | ");
+  const nums = [...new Set((ports.match(/\d+/g) || []))];
+  const p = nums.length ? ` :${nums.slice(0, 2).join(",")}${nums.length > 2 ? "…" : ""}` : "";
+  const first = peers[0].length > 34 ? `${peers[0].slice(0, 33)}…` : peers[0];
+  return `${first}${peers.length > 1 ? ` +${peers.length - 1}` : ""}${p}`;
+}
 
 function list(title, /** @type {string[]} */ items, empty, wide = false) {
   return `<h4>${esc(title)}</h4>${items.length ? `<ul class="pb-items${wide ? " pb-wide" : ""}">${items.join("")}</ul>` : `<p class="pb-rule">${esc(empty)}</p>`}`;
@@ -96,27 +146,90 @@ export function detailHtml(ns, tab) {
   const sv = list("SERVICES", ns.services.map((s) => `<li class="${s.status === "ok" ? "" : "bad"}"><span>${esc(s.name)}</span><span class="pb-r">${esc(s.type)} ${esc(s.ports)}</span></li>`), "no services");
   const en = list("ENTRY POINTS", ns.entries.map((e) => `<li class="${e.status === "ok" ? "" : "bad"}" title="${esc(e.full)}"><span>${esc(e.host)}</span><span class="pb-r">${esc(e.kind)}${e.target ? ` → ${esc(e.target)}` : ""}</span></li>`), "no entry points: reachable inside the cluster only", true);
   const badge = ns.policy.badge.toUpperCase();
-  const np = `<h4>NETWORK POLICIES <span class="pb-badge ${ns.policy.badge}">${esc(badge)}</span></h4>${ns.policy.lines.length ? ns.policy.lines.map((p) => `<p class="pb-rule"><b>${p.deny ? "DENY" : "ALLOW"}</b> ${esc(p.name)} · selects ${esc(p.selects)}${p.rules.map((r) => `<br>&nbsp;&nbsp;${esc(r)}`).join("")}</p>`).join("") : `<p class="pb-rule">no NetworkPolicy: all traffic in and out is allowed</p>`}`;
-  if (tab === "pods") return head + issues + wl + sv;
-  if (tab === "net") return head + en + np;
-  return head + issues + wl + sv + en + np;
+  const np = `<h4>NETWORK POLICIES <span class="pb-badge ${ns.policy.badge}">${esc(badge)}</span></h4>${ns.policy.lines.length ? ns.policy.lines.map((p) => `<details class="pb-pol"><summary><b>${p.deny ? "DENY" : "ALLOW"}</b> ${esc(p.name)} · ${esc(p.rules.map(ruleShort).join("; ") || `selects ${p.selects}`)}</summary><p class="pb-rule">selects ${esc(p.selects)}${p.rules.map((r) => `<br>${esc(r)}`).join("")}</p></details>`).join("") : `<p class="pb-rule">no NetworkPolicy: all traffic in and out is allowed</p>`}`;
+  const go = `<p class="pb-go"><button data-topology="${esc(ns.name)}" title="Enter">▶ OPEN IN TOPOLOGY</button> <button data-grid title="Backspace">◄ ALL NAMESPACES</button></p>`;
+  if (tab === "pods") return head + go + issues + wl + sv;
+  if (tab === "net") return head + go + en + np;
+  return head + go + issues + wl + sv + en + np;
+}
+
+/** One namespace as a small Pip-Boy screen. @param {PipNs} n @param {boolean} sel */
+function tileHtml(n, sel) {
+  const top = n.issues[0] || (n.pods ? `all ${n.pods} pod${n.pods === 1 ? "" : "s"} ready` : "no pods");
+  return `<button class="pb-tile ${n.state}${n.system ? " pb-sys" : ""}" data-tile="${esc(n.name)}" aria-pressed="${sel}" title="${esc(n.name)}: ${esc(top)}"><span class="pb-tn">${esc(n.name)}</span><span class="pb-th">${n.health}</span>${figureSvg(n.state, 2)}<span class="pb-tp">PODS ${n.ready}/${n.pods}</span><span class="pb-badge ${n.policy.badge}">${esc(n.policy.badge.toUpperCase())}</span><span class="pb-ti${n.state === "healthy" ? "" : " pb-alert"}">${esc(top)}</span></button>`;
+}
+
+/** The cluster as a wall of small Pip-Boys, with entry points on top. */
+export function gridHtml(/** @type {any} */ model, /** @type {{ selected: string }} */ state) {
+  const entries = (model.entries || []).map((/** @type {any} */ e, /** @type {number} */ i) => `<span class="pb-entry${e.status === "ok" ? "" : " pb-alert"}" data-entry="${i}" data-entry-ns="${esc(e.ns)}" title="${esc(e.full)}">${esc(e.kind)} ${esc(e.host)}</span>`).join("");
+  return `<div class="pb-gridwrap"><div class="pb-entries">${entries || `<span class="pb-entry pb-sys">no entry points: in-cluster only</span>`}</div><div class="pb-grid">${model.namespaces.map((/** @type {PipNs} */ n) => tileHtml(n, n.name === state.selected)).join("")}</div><svg class="pb-links" aria-hidden="true"></svg></div>`;
+}
+
+/** Draws the glowing lines once the tiles are laid out. @param {HTMLElement} el @param {any} model */
+export function drawLinks(el, model, focusNs = "") {
+  const wrap = /** @type {HTMLElement|null} */ (el.querySelector(".pb-gridwrap"));
+  const svg = el.querySelector(".pb-links");
+  if (!wrap || !svg || !model) return;
+  const box = wrap.getBoundingClientRect();
+  const at = (/** @type {Element|null} */ node) => { if (!node) return null; const r = node.getBoundingClientRect(); return { x: r.left - box.left + r.width / 2, y: r.top - box.top + r.height / 2, top: r.top - box.top, bottom: r.bottom - box.top, h: r.height }; };
+  const tile = (/** @type {string} */ ns) => at(wrap.querySelector(`[data-tile="${CSS.escape(ns)}"]`));
+  const parts = [];
+  for (const link of model.links || []) {
+    const a = tile(link.from), b = tile(link.to);
+    if (!a || !b) continue;
+    const ax = a.x + (b.x > a.x ? 24 : -24), bx = b.x + (a.x > b.x ? 24 : -24);
+    const my = Math.min(a.top, b.top) - 34;
+    parts.push(`<path class="pb-l-pol" data-a="${esc(link.from)}" data-b="${esc(link.to)}" d="M${ax} ${a.top} C${ax} ${my} ${bx} ${my} ${bx} ${b.top}"><title>${esc(link.from)} → ${esc(link.to)} ${esc(link.ports.join(", "))} (${esc(link.policies.join(", "))})</title></path><circle class="pb-l-dot" data-a="${esc(link.from)}" data-b="${esc(link.to)}" r="3.5" cx="${bx}" cy="${b.top}"/>`);
+  }
+  wrap.querySelectorAll("[data-entry-ns]").forEach((chip) => {
+    const a = at(chip), b = tile(/** @type {HTMLElement} */ (chip).dataset.entryNs || "");
+    if (!a || !b) return;
+    const bad = chip.classList.contains("pb-alert");
+    parts.push(`<path class="pb-l-in${bad ? " bad" : ""}" data-a="${esc(/** @type {HTMLElement} */ (chip).dataset.entryNs || "")}" d="M${a.x} ${a.bottom} C${a.x} ${a.bottom + 40} ${b.x} ${b.top - 40} ${b.x} ${b.top}"/>`);
+  });
+  svg.setAttribute("width", String(wrap.scrollWidth));
+  svg.setAttribute("height", String(wrap.scrollHeight));
+  svg.innerHTML = parts.join("");
+  hotLinks(el, focusNs);
+}
+
+/** Brightens the lines of one namespace; the rest stay a faint web. */
+export function hotLinks(/** @type {HTMLElement} */ el, /** @type {string} */ ns) {
+  el.querySelectorAll(".pb-links [data-a]").forEach((p) => {
+    const hot = Boolean(ns) && (p.getAttribute("data-a") === ns || p.getAttribute("data-b") === ns);
+    p.classList.toggle("hot", hot);
+  });
+  el.querySelectorAll("[data-entry-ns]").forEach((c) => c.classList.toggle("hot", Boolean(ns) && /** @type {HTMLElement} */ (c).dataset.entryNs === ns));
 }
 
 /**
  * @param {ReturnType<typeof import("./pipboy-model.js").pipModel>|null} model
- * @param {{ selected: string, tab: string, theme: string, error?: string, loading?: boolean }} state
+ * @param {{ selected: string, tab: string, theme: string, view?: string, error?: string, loading?: boolean, hutMap?: boolean }} state
  */
 export function pipHtml(model, state) {
-  const tabs = ["stat", "pods", "net"].map((t) => `<button class="pb-tab" role="tab" data-tab="${t}" aria-selected="${state.tab === t}">${t.toUpperCase()}</button>`).join("");
-  const top = `<div class="pb-top" role="tablist">${tabs}<span class="pb-title">${esc(model?.cluster || "")}${model?.context ? ` · ${esc(model.context)}` : ""}<button class="pb-theme" data-theme-toggle title="switch phosphor colour">${state.theme === "amber" ? "AMBER" : "GREEN"}</button><button class="pb-close" data-close title="back to the map">✕ MAP</button></span></div>`;
+  const grid = state.view !== "one";
+  const tabs = grid ? `<button class="pb-tab" aria-selected="true">CLUSTER</button>` : ["stat", "pods", "net"].map((t) => `<button class="pb-tab" role="tab" data-tab="${t}" aria-selected="${state.tab === t}">${t.toUpperCase()}</button>`).join("");
+  const top = `<div class="pb-top" role="tablist">${tabs}<span class="pb-title">${esc(model?.cluster || "")}${model?.context ? ` · ${esc(model.context)}` : ""}<button class="pb-theme" data-theme-toggle title="switch phosphor colour">${state.theme === "amber" ? "AMBER" : "GREEN"}</button><button class="pb-close" data-close title="the old drawn map (huts)">HUT MAP</button></span></div>`;
   if (!model || !model.namespaces.length) return `${top}<p class="pb-empty">${esc(state.error || (state.loading ? "READING CLUSTER…" : "NO NAMESPACES VISIBLE TO THIS CONTEXT"))}</p>`;
-  const sel = model.namespaces.find((n) => n.name === state.selected) || model.namespaces[0];
-  const rows = model.namespaces.map((n) => `<li class="pb-row${n.state === "healthy" ? "" : " pb-bad"}${n.system ? " pb-sys" : ""}" role="option" data-ns="${esc(n.name)}" aria-selected="${n === sel}"><span class="pb-n">${esc(n.name)}</span><span class="pb-v">${n.health}</span></li>`).join("");
   const t = model.totals;
   const pct = t.pods ? Math.round((100 * t.ready) / t.pods) : 100;
-  const bar = `<div class="pb-bar"><span>HP · PODS ${t.ready}/${t.pods}<i class="pb-meter"><i style="width:${pct}%"></i></i></span><span>LEVEL · NODES ${t.nodesReady}/${t.nodes}</span><span class="${t.issues ? "pb-alert" : ""}">AP · ISSUES ${t.issues}</span></div>`;
+  const legend = grid ? `<span class="pb-legend"><i class="pb-k-pol"></i>policy allow <i class="pb-k-in"></i>entry → ns</span>` : "";
+  const bar = `<div class="pb-bar"><span>HP · PODS ${t.ready}/${t.pods}<i class="pb-meter"><i style="width:${pct}%"></i></i></span><span>LEVEL · NODES ${t.nodesReady}/${t.nodes}</span><span class="${t.issues ? "pb-alert" : ""}">AP · ISSUES ${t.issues}</span>${legend}</div>`;
+  if (grid) return `${top}${gridHtml(model, state)}${bar}`;
+  const sel = model.namespaces.find((n) => n.name === state.selected) || model.namespaces[0];
+  const rows = model.namespaces.map((n) => `<li class="pb-row${n.state === "healthy" ? "" : " pb-bad"}${n.system ? " pb-sys" : ""}" role="option" data-ns="${esc(n.name)}" aria-selected="${n === sel}"><span class="pb-n">${esc(n.name)}</span><span class="pb-v">${n.health}</span></li>`).join("");
   return `${top}<p class="pb-sub">${state.tab === "stat" ? "NAMESPACES · HEALTH" : state.tab === "pods" ? "WORKLOADS · SERVICES" : "ENTRY POINTS · POLICIES"}</p><div class="pb-main"><ul class="pb-list" role="listbox" tabindex="0" aria-label="namespaces">${rows}</ul><div class="pb-detail">${detailHtml(sel, state.tab)}</div></div>${bar}`;
 }
+
+/** The app-wide phosphor: <html data-tint>, kept per browser, announced. @param {"green"|"amber"} tint @param {Storage|null} [store] */
+export function setTint(tint, store = null) {
+  if (tint === "amber") document.documentElement.dataset.tint = "amber";
+  else delete document.documentElement.dataset.tint;
+  try { (store || window.localStorage).setItem(PIP_THEME_KEY, tint); } catch { /* this page only */ }
+  window.dispatchEvent(new CustomEvent("cs-tint", { detail: tint }));
+}
+/** @returns {"green"|"amber"} */
+export function readTint() { try { return window.localStorage.getItem(PIP_THEME_KEY) === "amber" ? "amber" : "green"; } catch { return "green"; } }
 
 /** @param {Storage|null} store @param {string} key @param {string} fallback */
 const pref = (store, key, fallback) => { try { return store?.getItem(key) || fallback; } catch { return fallback; } };
@@ -125,46 +238,83 @@ const keep = (store, key, value) => { try { store?.setItem(key, value); } catch 
 
 /**
  * The screen's controller: fetches /api/cluster, renders, keys and clicks.
+ * The amber tint is set on <html data-tint> so the whole app follows.
  * @param {HTMLElement} el
- * @param {{ load: () => Promise<any>, model: (body: any) => any, onClose: () => void, store?: Storage|null }} io
+ * @param {{ load: () => Promise<any>, model: (body: any) => any, onClose: () => void, openTopology?: (ns: string) => void, store?: Storage|null }} io
  */
 export function mountPip(el, io) {
   const store = io.store ?? null;
-  const state = { selected: pref(store, PIP_SEL_KEY, ""), tab: "stat", theme: pref(store, PIP_THEME_KEY, "green") === "amber" ? "amber" : "green", error: "", loading: true };
+  const state = { scrollSel: true, selected: pref(store, PIP_SEL_KEY, ""), tab: "stat", view: "grid", theme: pref(store, PIP_THEME_KEY, "green") === "amber" ? "amber" : "green", error: "", loading: true };
   /** @type {any} */
   let model = null;
   let timer = 0;
   if (!document.querySelector("#pipboy-css")) document.head.append(Object.assign(document.createElement("style"), { id: "pipboy-css", textContent: PIP_CSS }));
+  const tint = () => { if (state.theme === "amber") document.documentElement.dataset.tint = "amber"; else delete document.documentElement.dataset.tint; };
+  tint();
   const render = () => {
     el.dataset.theme = state.theme;
-    const listEl = el.querySelector(".pb-list");
-    const focused = document.activeElement === listEl;
+    el.dataset.view = state.view;
+    const hadFocus = el.contains(document.activeElement);
+    // A refresh must not jump: keep every scroller where it was.
+    const scrolls = [".pb-list", ".pb-detail", ".pb-gridwrap"].map((q) => [q, el.querySelector(q)?.scrollTop || 0]);
+    const own = el.scrollTop;
+    const open = [...el.querySelectorAll("details[open] summary")].map((d) => d.textContent);
     el.innerHTML = pipHtml(model, state);
-    const now = /** @type {HTMLElement|null} */ (el.querySelector(".pb-list"));
-    if (focused) now?.focus();
-    now?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" });
+    for (const [q, top] of scrolls) { const n = el.querySelector(/** @type {string} */ (q)); if (n && top) n.scrollTop = Number(top); }
+    el.scrollTop = own;
+    el.querySelectorAll("details summary").forEach((d) => { if (open.includes(d.textContent)) /** @type {HTMLDetailsElement} */ (d.parentElement).open = true; });
+    if (state.view === "grid") {
+      drawLinks(el, model, focusOf());
+      const sel = /** @type {HTMLElement|null} */ (el.querySelector(".pb-tile[aria-pressed=true]"));
+      if (hadFocus) (sel || /** @type {HTMLElement|null} */ (el.querySelector(".pb-tile")))?.focus();
+    } else {
+      const list = /** @type {HTMLElement|null} */ (el.querySelector(".pb-list"));
+      if (hadFocus) list?.focus();
+      if (state.scrollSel) list?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" });
+      state.scrollSel = false;
+    }
   };
   const pull = async () => {
     const body = await io.load().catch((e) => ({ error: e?.message || "the cluster did not answer" }));
-    model = body?.diagram ? io.model(body) : model;
-    state.error = body?.error && !body?.diagram ? String(body.error) : "";
+    const next = body?.diagram ? io.model(body) : model;
+    const error = body?.error && !body?.diagram ? String(body.error) : "";
+    const same = !state.loading && error === state.error && JSON.stringify(next) === JSON.stringify(model);
+    model = next;
+    state.error = error;
     state.loading = false;
-    if (!el.hidden) render();
+    if (!el.hidden && !same) render();
   };
-  const select = (/** @type {string} */ name) => { state.selected = name; keep(store, PIP_SEL_KEY, name); render(); };
+  const focusOf = () => (model?.namespaces?.some((/** @type {any} */ n) => n.name === state.selected) ? state.selected : model?.namespaces?.[0]?.name || "");
+  const select = (/** @type {string} */ name) => { state.selected = name; state.scrollSel = true; keep(store, PIP_SEL_KEY, name); render(); };
+  const zoom = (/** @type {string} */ name) => { state.view = "one"; select(name); };
+  const toGrid = () => { state.view = "grid"; render(); };
   el.addEventListener("click", (event) => {
     const t = /** @type {HTMLElement} */ (event.target);
+    const tileEl = /** @type {HTMLElement|null} */ (t.closest("[data-tile]"));
+    if (tileEl) return zoom(tileEl.dataset.tile || "");
+    const chip = /** @type {HTMLElement|null} */ (t.closest("[data-entry-ns]"));
+    if (chip) return zoom(chip.dataset.entryNs || "");
     const row = /** @type {HTMLElement|null} */ (t.closest("[data-ns]"));
     if (row) return select(row.dataset.ns || "");
     const tab = /** @type {HTMLElement|null} */ (t.closest("[data-tab]"));
     if (tab) { state.tab = tab.dataset.tab || "stat"; return render(); }
-    if (t.closest("[data-theme-toggle]")) { state.theme = state.theme === "amber" ? "green" : "amber"; keep(store, PIP_THEME_KEY, state.theme); return render(); }
+    const topo = /** @type {HTMLElement|null} */ (t.closest("[data-topology]"));
+    if (topo) return io.openTopology?.(topo.dataset.topology || "");
+    if (t.closest("[data-grid]")) return toGrid();
+    if (t.closest("[data-theme-toggle]")) { setTint(state.theme === "amber" ? "green" : "amber", store); return; }
     if (t.closest("[data-close]")) io.onClose();
   });
   el.addEventListener("keydown", (event) => {
     if (!model?.namespaces?.length) return;
     const names = model.namespaces.map((/** @type {any} */ n) => n.name);
     const at = Math.max(0, names.indexOf(state.selected));
+    if (state.view === "grid") {
+      const cols = Math.max(1, getComputedStyle(/** @type {Element} */ (el.querySelector(".pb-grid"))).gridTemplateColumns.split(" ").length);
+      const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols }[event.key];
+      if (step) { event.preventDefault(); select(names[Math.min(names.length - 1, Math.max(0, at + step))]); }
+      else if (event.key === "Enter") { event.preventDefault(); zoom(names[at]); }
+      return;
+    }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       select(names[(at + (event.key === "ArrowDown" ? 1 : names.length - 1)) % names.length]);
@@ -172,8 +322,18 @@ export function mountPip(el, io) {
       const tabs = ["stat", "pods", "net"];
       state.tab = tabs[(tabs.indexOf(state.tab) + (event.key === "ArrowRight" ? 1 : 2)) % 3];
       render();
-    } else if (event.key === "Escape") io.onClose();
+    } else if (event.key === "Enter" && !(/** @type {HTMLElement} */ (event.target)).closest("button,summary")) {
+      io.openTopology?.(names[at]);
+    } else if (event.key === "Escape" || event.key === "Backspace") { event.preventDefault(); toGrid(); }
   });
+  el.addEventListener("mouseover", (event) => {
+    if (state.view !== "grid") return;
+    const t = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (event.target).closest("[data-tile],[data-entry-ns]"));
+    hotLinks(el, t ? t.dataset.tile || t.dataset.entryNs || "" : focusOf());
+  });
+  window.addEventListener("cs-tint", (event) => { state.theme = /** @type {CustomEvent} */ (event).detail === "amber" ? "amber" : "green"; if (!el.hidden) render(); });
+  let resize = 0;
+  window.addEventListener("resize", () => { clearTimeout(resize); resize = Number(setTimeout(() => { if (!el.hidden && state.view === "grid") drawLinks(el, model, focusOf()); }, 120)); });
   return {
     show() {
       el.hidden = false;
@@ -181,7 +341,7 @@ export function mountPip(el, io) {
       pull();
       clearInterval(timer);
       timer = Number(setInterval(pull, 15000));
-      /** @type {HTMLElement|null} */ (el.querySelector(".pb-list"))?.focus();
+      /** @type {HTMLElement|null} */ (el.querySelector(".pb-tile,.pb-list"))?.focus();
     },
     hide() { el.hidden = true; clearInterval(timer); },
   };

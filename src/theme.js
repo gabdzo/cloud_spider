@@ -231,8 +231,11 @@ export const INK = { ...PIP_INK };
 export function canvasPro() {
   return typeof document !== "undefined" && document.documentElement?.dataset?.theme === "pro";
 }
+let AMBER_INK = null;
 export function syncCanvasTheme(pro = canvasPro()) {
-  Object.assign(INK, pro ? PRO_INK : PIP_INK);
+  const amber = !pro && typeof document !== "undefined" && document.documentElement?.dataset?.tint === "amber";
+  if (amber && !AMBER_INK) AMBER_INK = Object.fromEntries(Object.entries(PIP_INK).map(([k, v]) => [k, typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? toAmber(v) : v]));
+  Object.assign(INK, pro ? PRO_INK : amber ? AMBER_INK : PIP_INK);
   return pro;
 }
 export function inkFont(px, pro = canvasPro()) {
@@ -326,6 +329,7 @@ export function cssVars() {
   // the cluster screens' top: under the sub-tabs and CONTEXT (browser.js
   // layoutKubeBar measures and overrides it on the screen's host)
   lines.push("--kube-top: 50px;");
+  lines.push("--glow-rgb: 20, 255, 106;", "--ink-rgb: 4, 20, 10;");
   lines.push("--pip-dim-text: color-mix(in srgb, var(--pip-mid) 55%, var(--pip-dim));");
   lines.push(`--glow-bright: ${rgba(PIP.bright, 0.55)};`);
   lines.push(`--glow-soft: ${rgba(PIP.bright, 0.18)};`);
@@ -334,5 +338,23 @@ export function cssVars() {
   lines.push(`--font: ${FONT_STACK};`);
   lines.push(`--font-ui: ${FONT_STACK};`, `--font-mono: ${FONT_STACK};`, ...roleLines(ROLES.pip));
   const pro = [...roleLines(ROLES.pro), ...Object.entries(proRemap()).map(([name, value]) => `--${name}: ${value};`), `--font: ${FONT_UI};`, `--font-ui: ${FONT_UI};`, `--font-mono: ${FONT_MONO};`, "--pip-dim-text: color-mix(in srgb, var(--pip-mid) 40%, var(--pip-dim));"];
-  return `:root { ${lines.join(" ")} }\n  :root[data-theme="pro"] { ${pro.join(" ")} }`;
+  const amber = ["--glow-rgb: 255, 169, 20;", "--ink-rgb: 20, 14, 4;"].concat(lines.filter((l) => !/^--(glow|ink)-rgb/.test(l)).map((line) => line.replace(/#[0-9a-fA-F]{6}\b/g, toAmber).replace(/rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/g, (all, r, g, b, a) => { const hex = toAmber(`#${[r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")}`); return rgba(hex, a); }))).filter((line) => !lines.includes(line));
+  return `:root { ${lines.join(" ")} }\n  :root[data-theme="pro"] { ${pro.join(" ")} }\n  :root[data-tint="amber"]:not([data-theme="pro"]) { ${amber.join(" ")} }`;
+}
+
+// The Pip-Boy 3000 amber tint (data-tint="amber" on :root): every green of
+// the chrome turned amber with its lightness kept; reds, greys and the
+// canvas pixel world are untouched.
+export function toAmber(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  if (d < 0.04) return hex;
+  const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  const hue = (h * 60 + 360) % 360;
+  if (hue < 70 || hue > 175) return hex;
+  const sat = d / (1 - Math.abs(2 * l - 1));
+  const c = (1 - Math.abs(2 * l - 1)) * sat, H = 38 / 60, x = c * (1 - Math.abs((H % 2) - 1)), m = l - c / 2;
+  const [rr, gg, bb] = [c + m, x + m, m];
+  return `#${[rr, gg, bb].map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0")).join("")}`;
 }

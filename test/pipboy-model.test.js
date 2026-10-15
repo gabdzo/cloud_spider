@@ -45,3 +45,22 @@ test("ELB hosts come out short", () => {
 test("an empty payload is an empty screen", () => {
   assert.deepEqual(pipModel({}).namespaces, []);
 });
+
+test("cross-namespace policy links fold per pair", async () => {
+  const { pipModel: pm } = await import("../src/pipboy-model.js");
+  const b = structuredClone(body);
+  b.diagram.netpol.edges = [{ from: { ns: "ok" }, to: { ns: "shop" }, ports: ["TCP 80"], policies: ["p1"] }, { from: { ns: "ok" }, to: { ns: "shop" }, ports: ["TCP 81"], policies: ["p2"] }, { from: { ns: "shop" }, to: { ns: "shop" }, ports: [], policies: ["x"] }];
+  assert.deepEqual(pm(b).links, [{ from: "ok", to: "shop", ports: ["TCP 80", "TCP 81"], policies: ["p1", "p2"] }]);
+});
+
+test("long policy rules fold to one short line", async () => {
+  const { ruleShort } = await import("../src/pipboy-view.js");
+  assert.equal(ruleShort("to ns kubernetes.io/metadata.name=kube-system · k8s-app=kube-dns | ns kubernetes.io/metadata.name=openshift-dns → UDP 53, TCP 53, UDP 5353"), "to kube-system · kube-dns +1 :53,5353");
+});
+
+test("amber keeps reds and turns greens amber", async () => {
+  const { toAmber, cssVars } = await import("../src/theme.js");
+  assert.equal(toAmber("#ff4b3e"), "#ff4b3e");
+  assert.equal(toAmber("#3cff7a"), "#ffb83c");
+  assert.match(cssVars(), /:root\[data-tint="amber"\]/);
+});
