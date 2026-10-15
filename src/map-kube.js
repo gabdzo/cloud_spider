@@ -261,6 +261,7 @@ export function compoundHover(hit) {
   if (hit.type === "netpol") return badgeHover(hit);
   if (hit.type === "policies") return `NetworkPolicy lines: ${hit.on ? "ON" : "OFF"} · ${hit.count} allow line${hit.count === 1 ? "" : "s"}${hit.bundled ? " (bundled per namespace pair)" : ""} · click: ${hit.on ? "hide" : "show"}`;
   if (hit.type === "policy-source") return `${hit.label}: allowed by ${hit.policies.join(", ")} · ${hit.lines} line${hit.lines === 1 ? "" : "s"}`;
+  if (hit.type === "entry" && hit.kind === "more") return `${hit.rest.length} more entry points: ${hit.rest.join(" · ")} · click: all of them in the Cluster view`;
   if (hit.type === "entry") return `${hit.kindText} ${hit.ns}/${hit.label}${hit.caption ? ` · ${hit.caption}` : ""}${hit.targets?.length ? ` → svc ${hit.targets.join(", ")}` : ""}${hit.status === "broken" ? " · no ready pods behind it" : ""} · click: open in the Cluster view`;
   if (hit.type === "lod") return `detail ${hit.value === "auto" ? "AUTO" : hit.value}: ${LOD_TEXT[hit.value]}`;
   if (hit.type === "pod") return `${hit.ns}/${hit.label}${hit.caption ? ` · ${hit.caption}` : ""} · click: deep-inspect in the Cluster view`;
@@ -316,7 +317,55 @@ export function entriesOf(diagram) {
   return out.sort((a, b) => Number(b.status === "broken") - Number(a.status === "broken") || a.ns.localeCompare(b.ns) || a.label.localeCompare(b.label));
 }
 
-export const ENTRY = { H: 18, GAP: 6, HEAD: 18, CHAR: 5.6 };
+export const ENTRY = { H: 18, GAP: 6, HEAD: 18, CHAR: 5.6, MAX_W: 230, ROWS: 1 };
+
+// An entry's address, short: a domain stays as it is (clipped at the
+// chip); an AWS load balancer's generated DNS becomes its first label
+// clipped, plus "…elb".
+export function shortHost(caption) {
+  const text = String(caption || "").trim();
+  if (!text) return "";
+  return text.split(/\s+/).map((part) => {
+    const elb = /^([^.]+)\.(?:[^.]+\.)*elb(?:\.[^.]+)*\.amazonaws\.com$/i.exec(part);
+    if (!elb) return part;
+    const head = elb[1].replace(/-[0-9a-f]{8,}$/i, "");
+    return `${head.slice(0, 16)}…elb`;
+  }).join(" ");
+}
+
+// Entry chips on at most `rows` rows; what does not fit folds into one
+// "+N more" chip (its hover lists them), so the strip never grows into a wall.
+export function placeEntries(items, { room, x0, y, rows = ENTRY.ROWS, cluster }) {
+  const out = [];
+  let x = x0;
+  let row = 0;
+  const chips = items.map((item) => {
+    const host = shortHost(item.caption);
+    const text = `${item.kindText} ${item.ns}/${item.label}${host ? ` ${host}` : ""}`;
+    return { ...item, type: "entry", cluster, text, w: Math.min(ENTRY.MAX_W, room, Math.round(14 + text.length * ENTRY.CHAR)) };
+  });
+  const moreW = (n) => Math.round(14 + `+${n} more`.length * ENTRY.CHAR);
+  for (let i = 0; i < chips.length; i += 1) {
+    const chip = chips[i];
+    const left = chips.length - i - 1;
+    let fits = x === x0 || x + chip.w <= x0 + room;
+    if (!fits && row + 1 < rows) {
+      row += 1;
+      x = x0;
+      fits = true;
+    }
+    // Last row: keep room for the "+N more" chip unless this is the last one.
+    if (fits && row + 1 >= rows && left > 0 && x + chip.w + ENTRY.GAP + moreW(left) > x0 + room) fits = false;
+    if (!fits) {
+      const rest = chips.slice(i);
+      out.push({ type: "entry", id: `more:${cluster}`, kind: "more", kindText: "MORE", cluster, ns: "", label: "", status: rest.some((c) => c.status === "broken") ? "broken" : "ok", text: `MORE +${rest.length}`, rest: rest.map((c) => c.text), x, y: y + row * (ENTRY.H + ENTRY.GAP), w: moreW(rest.length), h: ENTRY.H });
+      break;
+    }
+    out.push({ ...chip, x, y: y + row * (ENTRY.H + ENTRY.GAP), h: ENTRY.H });
+    x += chip.w + ENTRY.GAP;
+  }
+  return { entries: out, bottom: y + (row + 1) * (ENTRY.H + ENTRY.GAP) };
+}
 
 // The whole MAP when there is no AWS: per cluster an entry strip, then the
 // compound (nodes as buildings, namespaces with their workloads). The
@@ -334,24 +383,18 @@ export function layoutKubeOnly(models, { room = 960, choice = () => "auto", x0 =
     if (items.length) {
       labels.push({ text: `ENTRY POINTS · ${items.length}`, x: x0, y: y + 12 });
       y += ENTRY.HEAD;
-      let x = x0;
-      for (const item of items) {
-        const text = `${item.kindText} ${item.ns}/${item.label}${item.caption ? ` ${item.caption}` : ""}`;
-        const w = Math.min(room, Math.round(14 + text.length * ENTRY.CHAR));
-        if (x > x0 && x + w > x0 + room) {
-          x = x0;
-          y += ENTRY.H + ENTRY.GAP;
-        }
-        entries.push({ ...item, type: "entry", cluster, text, x, y, w, h: ENTRY.H });
-        x += w + ENTRY.GAP;
-        right = Math.max(right, x);
-      }
-      y += ENTRY.H + ENTRY.GAP * 2;
+      const placedEntries = placeEntries(items, { room, x0, y, cluster });
+      entries.push(...placedEntries.entries);
+      for (const e of placedEntries.entries) right = Math.max(right, e.x + e.w + ENTRY.GAP);
+      y = placedEntries.bottom + ENTRY.GAP;
     }
-    const level = levelOf(choice(cluster), model, room);
+    // Without AWS the cluster is the whole map: AUTO never folds below
+    // the namespaces (level 1 would show nodes only); the page scrolls.
+    const picked = choice(cluster);
+    const level = picked === "1" || picked === "2" || picked === "3" ? Number(picked) : Math.max(2, autoLevel(model, room));
     const nodeShacks = model.nodes.map((n) => ({ id: n.id, kind: "node", label: n.label, name: n.name, caption: n.ready === false ? "NotReady" : "Ready", state: n.ready === false ? "stopped" : n.ready ? "running" : "pending" }));
     const raw = layoutCompound({ cluster, model, nodeShacks, apps: model.apps, level, choice: choice(cluster), room, fill: true, policies });
-    const c = moveCompound(raw, x0, y);
+    const c = { ...moveCompound(raw, x0, y), solid: true };
     compounds.push(c);
     buildings.push(...c.buildings);
     right = Math.max(right, c.x + c.w);
