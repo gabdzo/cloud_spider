@@ -35,7 +35,7 @@ import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
 import { GROUP_BY, cleanGroupBy } from "./graph-group.js";
 import { TOPOLOGY_GROUP_BY_KEY, groupDiagram, lanesForNamespaces } from "./kube-group.js";
-import { SCOPES, TOPOLOGY_FOCUS_KEY, cleanFocus, focusDiagram } from "./kube-focus.js";
+import { SCOPES, TOPOLOGY_FOCUS_KEY, cleanFocus, focusDiagram, scopeStats } from "./kube-focus.js";
 import { countText, matchOrder, searchKube } from "./kube-search.js";
 import { createK9s } from "./k9s.js";
 import { paintKube } from "./kube-draw.js";
@@ -247,6 +247,7 @@ function setTopologyFocus(patch) {
     // not kept
   }
   syncFocusBar();
+  renderChrome();
   draw();
 }
 let focusMemo = { diagram: null, key: "", out: null };
@@ -256,6 +257,15 @@ function focusedView() {
   const key = JSON.stringify(f);
   if (focusMemo.diagram !== diagram || focusMemo.key !== key) focusMemo = { diagram, key, out: focusDiagram(diagram, f) };
   return focusMemo.out;
+}
+// The bottom bar under TOPOLOGY: counts for the scope (All / Apps /
+// Add-ons / picked namespaces); in ISSUES, also how many cards are shown.
+let scopeMemo = { diagram: null, key: "", out: null };
+function topologyStats() {
+  const diagram = clusterData?.diagram;
+  const key = JSON.stringify({ scope: topologyFocus.scope, namespaces: topologyFocus.namespaces });
+  if (scopeMemo.diagram !== diagram || scopeMemo.key !== key) scopeMemo = { diagram, key, out: focusDiagram(diagram, { ...topologyFocus, view: "all" }).diagram };
+  return scopeStats(pathStats(scopeMemo.out), focusedView(), topologyFocus, currentSearch().active);
 }
 function topologyShown() {
   return mode === "cluster" && clusterData?.diagram?.layout === "kube" && (!clusterHasScreens() || clusterScreen === "topology") && !kubeEmpty.isShown();
@@ -727,7 +737,7 @@ function renderChromeParts() {
   // STACKS is a page: the morning strip and the radio step aside while it is open
   document.body.classList.toggle("stacks-page", pipOpen);
   acct.textContent = sample ? "SAMPLE" : "LIVE";
-  const stats = mode === "path" ? pathStats(pathData?.diagram) : mode === "cluster" ? pathStats(clusterData?.diagram) : mapStats(place);
+  const stats = mode === "path" ? pathStats(pathData?.diagram) : mode === "cluster" ? (topologyShown() ? topologyStats() : pathStats(clusterData?.diagram)) : mapStats(place);
   renderStats(statsEl, stats);
   // The picture is a canvas; give screen readers its one-line summary.
   const view = mode === "path" ? "request path" : mode === "cluster" ? "cluster" : "survey map";
@@ -3644,6 +3654,7 @@ kubeSearchEl.addEventListener("input", () => {
   searchCursor = -1;
   kubeSearchText.set(clusterData?.context || clusterContext, kubeSearchEl.value);
   syncSearchBar();
+  renderChrome();
   draw();
 });
 kubeSearchEl.addEventListener("keydown", (event) => {
