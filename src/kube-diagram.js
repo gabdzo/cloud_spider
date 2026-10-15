@@ -101,6 +101,109 @@ function ownerWorkload(pod, byKey) {
   return "";
 }
 
+// What a pod leans on, by name only (never a value): its PVCs (phase and
+// PV), ConfigMaps and Secrets (volumes, env, envFrom, projected), and the
+// NetworkPolicies whose podSelector picks it.
+export function podRefs(pod, claims = new Map(), policies = []) {
+  const ns = meta(pod).namespace;
+  const spec = pod?.spec || {};
+  const cms = new Set();
+  const secrets = new Set();
+  const pvcs = [];
+  for (const v of spec.volumes || []) {
+    if (v.configMap?.name) cms.add(v.configMap.name);
+    if (v.secret?.secretName) secrets.add(v.secret.secretName);
+    for (const src of v.projected?.sources || []) {
+      if (src.configMap?.name) cms.add(src.configMap.name);
+      if (src.secret?.name) secrets.add(src.secret.name);
+    }
+    if (v.persistentVolumeClaim?.claimName) {
+      const c = claims.get(`${ns}/${v.persistentVolumeClaim.claimName}`);
+      pvcs.push({ name: v.persistentVolumeClaim.claimName, phase: c ? c.status?.phase || "Unknown" : "", pv: c?.spec?.volumeName || "", pvPhase: c?.__pv?.status?.phase || "" });
+    }
+  }
+  for (const c of [...(spec.initContainers || []), ...(spec.containers || [])]) {
+    for (const e of c.envFrom || []) {
+      if (e.configMapRef?.name) cms.add(e.configMapRef.name);
+      if (e.secretRef?.name) secrets.add(e.secretRef.name);
+    }
+    for (const e of c.env || []) {
+      if (e.valueFrom?.configMapKeyRef?.name) cms.add(e.valueFrom.configMapKeyRef.name);
+      if (e.valueFrom?.secretKeyRef?.name) secrets.add(e.valueFrom.secretKeyRef.name);
+    }
+  }
+  const labels = meta(pod).labels || {};
+  const netpols = policies
+    .filter((p) => meta(p).namespace === ns && selects(p.spec?.podSelector, labels))
+    .map((p) => ({ name: meta(p).name, types: p.spec?.policyTypes || ["Ingress"] }));
+  const out = {};
+  if (pvcs.length) out.pvcs = pvcs;
+  if (cms.size) out.configMaps = [...cms].sort();
+  if (secrets.size) out.secrets = [...secrets].sort();
+  if (netpols.length) out.netpols = netpols;
+  return Object.keys(out).length ? out : undefined;
+}
+
+// A label selector (matchLabels + matchExpressions); {} selects every pod.
+export function selects(selector, labels = {}) {
+  if (!selector) return false;
+  const ml = Object.entries(selector.matchLabels || {}).every(([k, v]) => labels[k] === v);
+  const me = (selector.matchExpressions || []).every((x) => {
+    const has = Object.hasOwn(labels, x.key);
+    if (x.operator === "In") return has && (x.values || []).includes(labels[x.key]);
+    if (x.operator === "NotIn") return !has || !(x.values || []).includes(labels[x.key]);
+    if (x.operator === "Exists") return has;
+    if (x.operator === "DoesNotExist") return !has;
+    return false;
+  });
+  return ml && me;
+}
+
+const RESTART_ISSUE = 3;
+
+// Why a pod needs a look, in a few words, or "" when it does not. The
+// card's status (podState) is unchanged; this is what ISSUES shows on it.
+export function podIssue(pod, state = podState(pod), refs) {
+  const containers = pod?.status?.containerStatuses || [];
+  const oom = containers.find((c) => c.state?.terminated?.reason === "OOMKilled" || c.lastState?.terminated?.reason === "OOMKilled");
+  const restarts = state.restarts ? `${state.restarts} restart${state.restarts === 1 ? "" : "s"}` : "";
+  const pending = (refs?.pvcs || []).find((c) => c.phase && c.phase !== "Bound");
+  if (pending) return `PVC ${pending.name} ${pending.phase}`;
+  if (state.health === "broken" || state.health === "hang") {
+    const probed = (pod?.spec?.containers || []).some((c) => c.readinessProbe);
+    const why = state.word === "Pending" ? pendingWhy(pod) : state.word === "NotReady" && probed ? "readiness probe failing" : "";
+    return [state.word, why, oom && state.word !== "OOMKilled" ? "last: OOMKilled" : "", restarts].filter(Boolean).join(" · ");
+  }
+  if (state.health === "unknown") return "";
+  if (oom) return ["OOMKilled", restarts].filter(Boolean).join(" · ");
+  if (state.restarts >= RESTART_ISSUE) return restarts;
+  return "";
+}
+
+function pendingWhy(pod) {
+  const c = (pod?.status?.conditions || []).find((x) => x.type === "PodScheduled" && x.status === "False");
+  return c?.reason === "Unschedulable" ? "unschedulable" : "";
+}
+
+function sliceIndex(list) {
+  const out = new Map();
+  for (const sl of list || []) {
+    const svc = sl?.metadata?.labels?.["kubernetes.io/service-name"];
+    if (!svc) continue;
+    const k = `${meta(sl).namespace}/${svc}`;
+    const ready = (sl.endpoints || []).filter((e) => e.conditions?.ready !== false).length;
+    out.set(k, (out.get(k) || 0) + ready);
+  }
+  return out;
+}
+
+// Ready endpoints of a Service from its EndpointSlices; null when the
+// slices were not read (no answer: fall back to the workloads).
+function readyEndpoints(index, svc) {
+  if (!index) return null;
+  return index.get(key(svc)) || 0;
+}
+
 // Zone, capacity type and source (node group / Karpenter NodePool) from the
 // node's labels: the card's chips.
 function placeOf(item) {
@@ -124,6 +227,7 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
   // empty or not, each with what it could not read.
   const scoped = Array.isArray(snapshot.scope) ? new Set(snapshot.scope) : null;
   const access = snapshot.access || {};
+  const nsLabels = new Map((snapshot.namespaces || []).filter((n) => meta(n).labels).map((n) => [meta(n).name, meta(n).labels]));
 
   for (const ns of namespaces.sort((a, b) => Number(userNs(b)) - Number(userNs(a)) || a.localeCompare(b))) {
     const inside = pods.filter((p) => meta(p).namespace === ns);
@@ -140,6 +244,7 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       status: broken ? "broken" : blind.includes("pods") ? "hang" : "ok",
       system: !userNs(ns) && !scoped,
       noAccess: blind,
+      ...(nsLabels.get(ns) ? { nsLabels: nsLabels.get(ns) } : {}),
     });
     edges.push({ from: cpId, to: `ns:${ns}`, status: broken ? "broken" : "ok" });
   }
@@ -156,18 +261,40 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       nodes.push({ id, kind: "workload", label: meta(item).name, caption: `${kind.toLowerCase()} ${state.have}/${state.want} ready`, status: state.health, labels: item.spec?.template?.metadata?.labels || {}, ns: meta(item).namespace, workloadKind: kind, want: state.want, have: state.have });
     }
   }
+  // Jobs: only the failed ones get a card (a finished or running Job is
+  // noise in a topology); their pods hang under it.
+  for (const item of (snapshot.jobs || []).filter(inUserNs)) {
+    const id = `Job:${key(item)}`;
+    const failed = (item.status?.conditions || []).find((c) => c.type === "Failed" && c.status === "True");
+    if (!failed) continue;
+    byKey.set(id, item);
+    nodes.push({ id, kind: "workload", label: meta(item).name, caption: `job failed${failed.reason ? ` · ${failed.reason}` : ""}`, status: "broken", labels: item.spec?.template?.metadata?.labels || {}, ns: meta(item).namespace, workloadKind: "Job", want: item.spec?.completions ?? 1, have: item.status?.succeeded || 0, issue: `Job failed${failed.reason ? `: ${failed.reason}` : ""}${item.status?.failed ? ` (${item.status.failed} pod${item.status.failed === 1 ? "" : "s"} failed)` : ""}` });
+  }
+  for (const n of nodes) if (n.kind === "workload" && !n.issue && n.want > 0 && n.have < n.want) n.issue = `${n.have}/${n.want} ready`;
   const workloads = nodes.filter((n) => n.kind === "workload");
 
   // Services and ingresses.
   const services = (snapshot.services || []).filter(inUserNs).filter((s) => !(meta(s).namespace === "default" && meta(s).name === "kubernetes"));
   const serviceIds = new Map();
+  const slices = snapshot.endpointSlicesAll ? sliceIndex(snapshot.endpointSlicesAll) : null;
+  const backed = new Set();
+  for (const ing of (snapshot.ingresses || []).filter(inUserNs)) {
+    for (const rule of ing.spec?.rules || []) for (const path of rule.http?.paths || []) if (path.backend?.service?.name) backed.add(`${meta(ing).namespace}/${path.backend.service.name}`);
+    if (ing.spec?.defaultBackend?.service?.name) backed.add(`${meta(ing).namespace}/${ing.spec.defaultBackend.service.name}`);
+  }
   for (const svc of services) {
     const id = `svc:${key(svc)}`;
     serviceIds.set(key(svc), id);
     const targets = workloads.filter((w) => w.ns === meta(svc).namespace && subset(svc.spec?.selector, w.labels));
     const ports = (svc.spec?.ports || []).map((p) => p.port).join(",");
     const healthy = targets.some((t) => t.status === "ok");
-    nodes.push({ id, kind: "service", ns: meta(svc).namespace, labels: meta(svc).labels || {}, label: meta(svc).name, caption: `${svc.spec?.type || "ClusterIP"} :${ports}`, status: targets.length && !healthy ? "broken" : "ok" });
+    const ready = readyEndpoints(slices, svc);
+    const selects = Object.keys(svc.spec?.selector || {}).length > 0;
+    // A selector no pod matches and no Ingress uses (a CNPG "-ro" Service
+    // with no replicas) is idle, not failing.
+    const wanted = targets.length > 0 || pods.some((p) => meta(p).namespace === meta(svc).namespace && subset(svc.spec?.selector, meta(p).labels)) || backed.has(key(svc));
+    const noEndpoints = selects && wanted && (ready === 0 || (ready === null && targets.length > 0 && targets.every((t) => t.status === "broken")));
+    nodes.push({ id, kind: "service", ns: meta(svc).namespace, labels: meta(svc).labels || {}, label: meta(svc).name, caption: `${svc.spec?.type || "ClusterIP"} :${ports}`, status: (targets.length && !healthy) || noEndpoints ? "broken" : "ok", ...(ready !== null ? { endpoints: ready } : {}), ...(noEndpoints ? { issue: "no ready pods" } : {}) });
     for (const t of targets) edges.push({ from: id, to: t.id, status: t.status === "broken" ? "broken" : "ok" });
   }
   const ingresses = (snapshot.ingresses || []).filter(inUserNs);
@@ -192,6 +319,10 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
   for (const w of workloads) if (!hasIn(w.id)) edges.push({ from: `ns:${w.ns}`, to: w.id, status: w.status === "broken" ? "broken" : "ok" });
 
   // Pods and the nodes they run on.
+  const claims = new Map((snapshot.pvcs || []).map((c) => [key(c), c]));
+  const volumes = new Map((snapshot.pvs || []).map((v) => [meta(v).name, v]));
+  for (const c of claims.values()) c.__pv = volumes.get(c.spec?.volumeName || "");
+  const policies = snapshot.networkPolicies || [];
   const nodeIds = new Set();
   const knownNodes = new Map((snapshot.nodes || []).map((n) => [meta(n).name, n]));
   const nodeUsage = new Map((snapshot.nodeMetrics || []).map((m) => [meta(m).name, m.usage || {}]));
@@ -211,7 +342,11 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       labels: meta(pod).labels || {},
     });
     const owner = ownerWorkload(pod, byKey);
-    nodes[nodes.length - 1].owner = owner;
+    const podNode = nodes[nodes.length - 1];
+    podNode.owner = owner;
+    podNode.refs = podRefs(pod, claims, policies);
+    podNode.issue = podIssue(pod, state, podNode.refs);
+    if (pod.spec?.priorityClassName) podNode.priority = pod.spec.priorityClassName;
     if (owner) edges.push({ from: owner, to: id, status: state.health === "broken" ? "broken" : "ok" });
     else edges.push({ from: `ns:${meta(pod).namespace}`, to: id, status: state.health === "broken" ? "broken" : "ok" });
     const nodeName = pod.spec?.nodeName;
@@ -227,12 +362,15 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
     const running = pods.filter((p) => p.spec?.nodeName === nodeName && p.status?.phase === "Running").length;
     const load = nodeLoad(nodeUsage.get(nodeName), item?.status?.allocatable);
     const healthy = ready?.status === "True";
+    const pressure = (item?.status?.conditions || []).filter((c) => /Pressure$|NetworkUnavailable/.test(c.type) && c.status === "True").map((c) => c.type);
+    const nodeIssue = item ? (!healthy ? ["NotReady", ...pressure].join(" · ") : pressure.length ? pressure.join(" · ") : load.hot ? `hot: ${load.text}` : "") : "";
     nodes.push({
+      ...(nodeIssue ? { issue: nodeIssue } : {}),
       id: `node:${nodeName}`,
       kind: "node",
       label: nodeName.replace(/\.[a-z0-9-]+\.compute\.internal$/, ""),
       caption: [item ? (healthy ? "Ready" : "NotReady") : "node", load.text, type, `${running} pods`].filter(Boolean).join(" · "),
-      status: item ? (!healthy ? "broken" : load.hot ? "hang" : "ok") : "unknown",
+      status: item ? (!healthy ? "broken" : pressure.length || load.hot ? "hang" : "ok") : "unknown",
       host: { name: nodeName, type, pods: running, ready: item ? healthy : null, instanceId: (/\/((?:i-)?[0-9a-z-]+)$/.exec(item?.spec?.providerID || "") || [])[1] || "", load, ...placeOf(item) },
     });
   }
