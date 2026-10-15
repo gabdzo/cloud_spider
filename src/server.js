@@ -3703,6 +3703,7 @@ async function route(app, req, res) {
         lb: url.searchParams.get("lb") || "",
         host: url.searchParams.get("host") || "",
         context: url.searchParams.get("context") || "",
+        fresh: url.searchParams.get("fresh") === "1",
       }),
     );
     return;
