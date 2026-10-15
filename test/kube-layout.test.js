@@ -157,7 +157,10 @@ test("names: cards size to them, long pod names keep their unique tail", () => {
   const placed = layoutKube(diagram(), { width: 1280 });
   for (const n of placed.nodes.filter((x) => x.kind !== "node")) assert.ok(n.w >= n.label.length * 8.4 + 34, `${n.label} fits its card at 1280`);
   const pod = placed.nodes.find((n) => n.id === "pod:demo/api-5d8c7b9f4-k8zts");
-  assert.equal(hoverText({ type: "node", node: pod }), "demo/api-5d8c7b9f4-k8zts on ip-10-43-1-27.eu-north-1.compute.internal");
+  assert.equal(hoverText({ type: "node", node: pod }).split("\n")[0], "demo/api-5d8c7b9f4-k8zts on ip-10-43-1-27.eu-north-1.compute.internal");
+  assert.equal(hoverText({ type: "node", node: { kind: "service", ns: "uptime-kuma", label: "broken-backend", caption: "no ready pods" } }), "uptime-kuma/broken-backend\nno ready pods", "the full name, then the reason");
+  assert.equal(middle("broken-backend", 11), "broken-bac…", "a plain name is cut at the end");
+  assert.equal(middle("broken-backend-ddccd946d-r84cb", 18), "broken-backe…r84cb");
 });
 
 test("the browser lays the cluster out once per answer and only paints per frame", async () => {
