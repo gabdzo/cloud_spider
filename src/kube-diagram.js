@@ -379,6 +379,12 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
   // and the allow lines between workloads. Only when the read worked: an
   // unread list must not show every namespace as OPEN.
   const netpol = Array.isArray(snapshot.networkPolicies) ? netpolOf(snapshot, nodes, nsLabels) : null;
+  // The namespace lane says the same as the map's badge (one source).
+  if (netpol) for (const n of nodes) if (n.kind === "namespace") {
+    const s = netpol.ns[n.label];
+    n.policy = !s || s.badge === "open" ? "OPEN" : `${s.badge === "deny" ? "DENY" : "PARTIAL"} · ${s.policies.length}`;
+    n.caption = `${n.caption} · policies ${n.policy}`;
+  }
   // Labels stay for the search bar (kube-search.js, k=v), minus the
   // controllers' hash labels, at most 16 per card.
   for (const n of nodes) {

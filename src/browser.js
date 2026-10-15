@@ -1270,6 +1270,16 @@ function setKubeLevel(cluster, value) {
 // applied when the cluster's diagram arrives.
 function openInCluster(hit) {
   markHistory();
+  // TOPOLOGY is the namespace's detail: a tent or pod opens its namespace,
+  // everything in it (ALL), with that card focused.
+  if ((hit.type === "app" || hit.type === "pod" || hit.type === "entry") && hit.ns && /^[a-z0-9-]+$/.test(hit.ns)) {
+    topologyFocus = cleanFocus({ ...topologyFocus, namespaces: [hit.ns], view: "all" });
+    try {
+      window.localStorage.setItem(TOPOLOGY_FOCUS_KEY, JSON.stringify(topologyFocus));
+    } catch {
+      // not kept
+    }
+  }
   mapKube.focus = hit.type === "compound" ? null : { id: hit.id, type: hit.type, ns: hit.ns, app: hit.app || null };
   mapKube.hover = null;
   setClusterScreen("topology");
