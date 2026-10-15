@@ -31,3 +31,15 @@ test("the context switcher drops to its own row when it would cover the tabs", a
   assert.match(browser, /const below = leftSide && free < kubeCtxEl\.scrollWidth;/);
   assert.match(browser, /kubeCtxEl\.classList\.contains\("below"\)\) \? 88 : 52/);
 });
+
+test("long NetworkPolicy lists fold to +N; ISSUES says how many healthy are hidden, with a way to ALL", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  const m = /function shortList\(names, keep = 2\) \{\n  return (.*);\n\}/.exec(browser);
+  assert.ok(m, "shortList");
+  const shortList = new Function("names", "keep = 2", `return ${m[1]};`);
+  assert.equal(shortList(["a", "b", "c", "d", "e", "f", "g", "h", "i"]), "a, b +7");
+  assert.equal(shortList(["a", "b", "c"]), "a, b, c");
+  assert.match(browser, /healthy hidden · SHOW IN ALL/);
+  assert.match(browser, /no match in ISSUES · \$\{elsewhere\} healthy in ALL \(click\)/);
+});
