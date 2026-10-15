@@ -1329,11 +1329,22 @@ async function loadVaults() {
   vaultsLoading = true;
   try {
     const q = wasSample ? "?sample=1" : "";
-    const [body, addons, score] = await Promise.all([
-      fetch(`/api/vaults${q}`).then((response) => response.json()),
-      fetch(`/api/addons${q}`).then((response) => (response.ok ? response.json() : null)).catch(() => null),
-      wasSample ? null : fetch("/api/score?target=kubernetes").then((response) => (response.ok ? response.json() : null)).catch(() => null),
-    ]);
+    // Progressive: the vaults come from files and answer fast; add-ons and
+    // the score read the cluster (seconds). Paint the vaults as soon as they
+    // land, then fill in the add-on tree and the score when they arrive.
+    const addonsRead = fetch(`/api/addons${q}`).then((response) => (response.ok ? response.json() : null)).catch(() => null);
+    const scoreRead = wasSample ? Promise.resolve(null) : fetch("/api/score?target=kubernetes").then((response) => (response.ok ? response.json() : null)).catch(() => null);
+    const body = await fetch(`/api/vaults${q}`).then((response) => response.json());
+    if (ticket !== vaultsTicket || wasSample !== sample) return;
+    vaultsData = {
+      vaults: Array.isArray(body?.vaults) ? body.vaults : [],
+      note: body?.note || "",
+      templates: Array.isArray(body?.templates) ? body.templates : [],
+    };
+    vaultsShown = vaultSignature(vaultsData.vaults);
+    renderChrome();
+    draw();
+    const [addons, score] = await Promise.all([addonsRead, scoreRead]);
     if (ticket !== vaultsTicket || wasSample !== sample) return;
     vaultAddons = { tree: Array.isArray(addons?.tree) ? addons.tree : [], primary: addons?.detectedCluster || "" };
     try {
@@ -1342,11 +1353,6 @@ async function loadVaults() {
     } catch {
       vaultScore = null;
     }
-    vaultsData = {
-      vaults: Array.isArray(body?.vaults) ? body.vaults : [],
-      note: body?.note || "",
-      templates: Array.isArray(body?.templates) ? body.templates : [],
-    };
     vaultsFor = wasSample;
     vaultsAt = Date.now();
     vaultsShown = vaultSignature(vaultsData.vaults);
@@ -6488,7 +6494,15 @@ setInterval(() => {
   pullKubeHealth();
 }, 30_000);
 setTimeout(pullKubeHealth, 2500);
-setTimeout(pullMapKube, 1500);
+// The cluster layer on the map: as soon as the first /api/view answer has
+// painted (progressive), or at 1.5 s, whichever is first; once.
+let mapKubeKicked = false;
+function kickMapKube() {
+  if (mapKubeKicked) return;
+  mapKubeKicked = true;
+  pullMapKube();
+}
+setTimeout(kickMapKube, 1500);
 setTimeout(pullKubeRadio, 4000);
 
 window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", (e) => {
@@ -6560,6 +6574,7 @@ setInterval(() => {
 // (Overview plan R2/T2), then the server's six-hour cache. The two-second
 // pull itself never asks for it.
 pull().then(() => {
+  kickMapKube();
   if (place && !sample) queueSpend();
 });
 
