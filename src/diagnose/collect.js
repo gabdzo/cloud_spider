@@ -29,6 +29,7 @@ export async function collectLive(kube, { namespace, service, context = "", path
   const facts = { observed_at: now(), scope: { context, cluster: target?.clusterName || context || "cluster", namespace, service }, service: null, endpoints: null, pods: null, targetGroups: null, webhooks: null, certificates: null, edges: null, logs: null };
   if (target?.error) {
     cap("kubernetes-api", "unavailable", target.error, "core");
+    facts.blocker = unreachable(facts.scope, target.error);
     facts.capabilities = caps;
     return facts;
   }
@@ -44,7 +45,10 @@ export async function collectLive(kube, { namespace, service, context = "", path
   cap("kubernetes-api", svc.json || svc.missing ? "available" : statusOf(svc), svc.error && !svc.missing ? svc.error : "", "core");
   if (svc.json) {
     facts.service = { name: service, ns: namespace, selector: svc.json.spec?.selector || {}, ports: (svc.json.spec?.ports || []).map((p) => ({ port: p.port, targetPort: p.targetPort })), type: svc.json.spec?.type || "" };
-  } else if (svc.missing) facts.serviceMissing = true;
+  } else if (svc.missing) {
+    facts.serviceMissing = true;
+    facts.blocker = await notFound(read, facts.scope);
+  } else facts.blocker = svc.forbidden ? { kind: "forbidden", text: `Not allowed to read Services in ${namespace} on cluster ${facts.scope.cluster} (context ${context || "?"})` } : unreachable(facts.scope, svc.error);
 
   cap("endpointslices", statusOf(slices), slices.error || "");
   if (slices.json && facts.service) {
@@ -111,6 +115,39 @@ export async function collectLive(kube, { namespace, service, context = "", path
   facts.capabilities = caps;
   facts.elapsed_ms = Date.now() - t0;
   return facts;
+}
+
+// Why nothing could be diagnosed, said plainly (the panel shows it red
+// instead of "no rule fired").
+function unreachable({ cluster, context }, error = "") {
+  return { kind: "unreachable", text: `Can't reach cluster ${cluster}${context && context !== cluster ? ` (context ${context})` : ""}${error ? `: ${String(error).slice(0, 160)}` : ""}` };
+}
+
+async function notFound(read, { cluster, namespace, service }) {
+  const [nsList, svcList] = await Promise.all([read("namespaces"), read("nsServices", namespace)]);
+  const names = (res) => (res?.json?.items || []).map((i) => i.metadata?.name).filter(Boolean);
+  if (nsList?.json && !names(nsList).includes(namespace)) return { kind: "namespace", text: `Namespace ${namespace} not found on cluster ${cluster}`, suggest: closest(namespace, names(nsList)) };
+  return { kind: "service", text: `Service ${service} not found in namespace ${namespace} on cluster ${cluster}`, suggest: closest(service, names(svcList)) };
+}
+
+// The nearest name by edit distance, when it is near enough to be a typo.
+export function closest(word, names = []) {
+  const dist = (a, b) => {
+    let row = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const next = [i];
+      for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j] + 1, next[j - 1] + 1, row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      row = next;
+    }
+    return row[b.length];
+  };
+  let best = "";
+  let bestD = Infinity;
+  for (const n of names) {
+    const d = n.includes(word) || word.includes(n) ? Math.abs(n.length - word.length) : dist(word, n);
+    if (d < bestD) [best, bestD] = [n, d];
+  }
+  return best && bestD <= Math.max(2, Math.floor(word.length / 4)) ? best : "";
 }
 
 export function podFact(p) {

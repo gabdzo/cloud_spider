@@ -58,6 +58,9 @@ export const DX_CSS = `
   .dx-q li { color: var(--text2); }
   .dx-fix { margin: 8px 0; padding: 6px 8px; border: 1px dashed var(--accent); color: var(--text2); }
   .dx-none { color: var(--text2); }
+  .dx-verdict.v-blocked { color: var(--err); border-color: var(--err); }
+  .dx-blocker { color: var(--err); border: 1px solid var(--err); padding: 8px 10px; margin: 0; }
+  .dx-link { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
   .dx-side > * + h4, .dx-side section { margin-top: 10px; }
   .dx-caps { display: grid; grid-template-columns: 1fr; gap: 2px; }
   .dx-cap { display: flex; justify-content: space-between; gap: 8px; padding: 2px 6px; border-left: 3px solid var(--text3); background: var(--bg); }

@@ -24,6 +24,7 @@ export function investigation(facts, { mode = "live", id = "", startedAt = facts
     mode,
     scope: facts.scope,
     capabilities: caps,
+    ...(facts.blocker ? { blocker: facts.blocker } : {}),
     ...out,
     // what verify needs again: the same facts, minus logs (bounded)
     baseline: { edges: facts.edges || null },

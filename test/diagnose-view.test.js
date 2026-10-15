@@ -40,3 +40,12 @@ test("served and themed: the view is a served file, the CSS has no colour litera
   assert.ok(FILES.has("diagnose-view.js"));
   assert.ok(!/#[0-9a-f]{3,8}\b|rgba?\(/i.test(DX_CSS));
 });
+
+test("panel: a blocker is red and plain, with the 'did you mean' as a button, never 'no rule fired'", () => {
+  const rec = { ...investigation(fixtures.forbidden()), blocker: { kind: "namespace", text: "Namespace shop-prdo not found on cluster lab", suggest: "shop-prod" } };
+  const html = investigationHtml(rec);
+  assert.match(html, /class="dx-blocker"[^>]*>Namespace shop-prdo not found on cluster lab, did you mean <button[^>]*data-dx-suggest="shop-prod" data-dx-field="ns"/);
+  assert.match(html, /v-blocked">NOT FOUND/);
+  assert.doesNotMatch(html, /No rule fired/);
+  assert.match(investigationHtml({ ...rec, blocker: { kind: "unreachable", text: "Can't reach cluster lab" } }), /CAN'T REACH.*Can(&#39;|&#x27;|')t reach cluster lab\./s);
+});
