@@ -100,11 +100,14 @@ export const PIP_CSS = `
 #pipboy .pb-tile[aria-pressed=true],#pipboy .pb-tile:focus-visible{outline:2px solid var(--pb-fg);outline-offset:3px;box-shadow:0 0 16px var(--pb-glow)}
 #pipboy .pb-tile:hover{border-color:var(--pb-fg)!important}
 #pipboy .pb-links{position:absolute;left:0;top:0;pointer-events:none;z-index:2;overflow:visible}
-#pipboy .pb-links path{fill:none;stroke:var(--pb-fg);stroke-width:2;filter:drop-shadow(0 0 4px var(--pb-fg))}
-#pipboy .pb-links .pb-l-pol{stroke-width:2.5;stroke-dasharray:7 5;animation:pb-flow 1.6s linear infinite}
-#pipboy .pb-links .pb-l-in{opacity:.55;stroke-width:1.5}
-#pipboy .pb-links .pb-l-in.bad{stroke:var(--pb-alert);opacity:.9}
-#pipboy .pb-links circle{fill:var(--pb-fg)}
+#pipboy .pb-links path{fill:none;stroke:var(--pb-fg);stroke-width:1.2;opacity:.13}
+#pipboy .pb-links circle{fill:var(--pb-fg);opacity:.2}
+#pipboy .pb-links .pb-l-pol{stroke-dasharray:6 5}
+#pipboy .pb-links .pb-l-in.bad{stroke:var(--pb-alert);opacity:.45}
+#pipboy .pb-links .hot{opacity:1;stroke-width:2.5;filter:drop-shadow(0 0 4px var(--pb-fg))}
+#pipboy .pb-links .pb-l-pol.hot{animation:pb-flow 1.6s linear infinite}
+#pipboy .pb-links .pb-l-in.bad.hot{filter:drop-shadow(0 0 4px var(--pb-alert))}
+#pipboy .pb-entry.hot{background:var(--pb-fg);color:var(--pb-bg);text-shadow:none}
 @keyframes pb-flow{to{stroke-dashoffset:-22}}
 @media (prefers-reduced-motion:reduce){#pipboy .pb-links .pb-l-pol{animation:none}}
 #pipboy .pb-legend{flex:0 0 auto!important;font-weight:normal!important;gap:6px!important;align-items:center;font-size:11px}
@@ -163,7 +166,7 @@ export function gridHtml(/** @type {any} */ model, /** @type {{ selected: string
 }
 
 /** Draws the glowing lines once the tiles are laid out. @param {HTMLElement} el @param {any} model */
-export function drawLinks(el, model) {
+export function drawLinks(el, model, focusNs = "") {
   const wrap = /** @type {HTMLElement|null} */ (el.querySelector(".pb-gridwrap"));
   const svg = el.querySelector(".pb-links");
   if (!wrap || !svg || !model) return;
@@ -176,17 +179,27 @@ export function drawLinks(el, model) {
     if (!a || !b) continue;
     const ax = a.x + (b.x > a.x ? 24 : -24), bx = b.x + (a.x > b.x ? 24 : -24);
     const my = Math.min(a.top, b.top) - 34;
-    parts.push(`<path class="pb-l-pol" d="M${ax} ${a.top} C${ax} ${my} ${bx} ${my} ${bx} ${b.top}"><title>${esc(link.from)} → ${esc(link.to)} ${esc(link.ports.join(", "))} (${esc(link.policies.join(", "))})</title></path><circle class="pb-l-dot" r="3.5" cx="${bx}" cy="${b.top}"/>`);
+    parts.push(`<path class="pb-l-pol" data-a="${esc(link.from)}" data-b="${esc(link.to)}" d="M${ax} ${a.top} C${ax} ${my} ${bx} ${my} ${bx} ${b.top}"><title>${esc(link.from)} → ${esc(link.to)} ${esc(link.ports.join(", "))} (${esc(link.policies.join(", "))})</title></path><circle class="pb-l-dot" data-a="${esc(link.from)}" data-b="${esc(link.to)}" r="3.5" cx="${bx}" cy="${b.top}"/>`);
   }
   wrap.querySelectorAll("[data-entry-ns]").forEach((chip) => {
     const a = at(chip), b = tile(/** @type {HTMLElement} */ (chip).dataset.entryNs || "");
     if (!a || !b) return;
     const bad = chip.classList.contains("pb-alert");
-    parts.push(`<path class="pb-l-in${bad ? " bad" : ""}" d="M${a.x} ${a.bottom} C${a.x} ${a.bottom + 40} ${b.x} ${b.top - 40} ${b.x} ${b.top}"/>`);
+    parts.push(`<path class="pb-l-in${bad ? " bad" : ""}" data-a="${esc(/** @type {HTMLElement} */ (chip).dataset.entryNs || "")}" d="M${a.x} ${a.bottom} C${a.x} ${a.bottom + 40} ${b.x} ${b.top - 40} ${b.x} ${b.top}"/>`);
   });
   svg.setAttribute("width", String(wrap.scrollWidth));
   svg.setAttribute("height", String(wrap.scrollHeight));
   svg.innerHTML = parts.join("");
+  hotLinks(el, focusNs);
+}
+
+/** Brightens the lines of one namespace; the rest stay a faint web. */
+export function hotLinks(/** @type {HTMLElement} */ el, /** @type {string} */ ns) {
+  el.querySelectorAll(".pb-links [data-a]").forEach((p) => {
+    const hot = Boolean(ns) && (p.getAttribute("data-a") === ns || p.getAttribute("data-b") === ns);
+    p.classList.toggle("hot", hot);
+  });
+  el.querySelectorAll("[data-entry-ns]").forEach((c) => c.classList.toggle("hot", Boolean(ns) && /** @type {HTMLElement} */ (c).dataset.entryNs === ns));
 }
 
 /**
@@ -234,7 +247,7 @@ export function mountPip(el, io) {
     const hadFocus = el.contains(document.activeElement);
     el.innerHTML = pipHtml(model, state);
     if (state.view === "grid") {
-      drawLinks(el, model);
+      drawLinks(el, model, focusOf());
       const sel = /** @type {HTMLElement|null} */ (el.querySelector(".pb-tile[aria-pressed=true]"));
       if (hadFocus) (sel || /** @type {HTMLElement|null} */ (el.querySelector(".pb-tile")))?.focus();
     } else {
@@ -250,6 +263,7 @@ export function mountPip(el, io) {
     state.loading = false;
     if (!el.hidden) render();
   };
+  const focusOf = () => (model?.namespaces?.some((/** @type {any} */ n) => n.name === state.selected) ? state.selected : model?.namespaces?.[0]?.name || "");
   const select = (/** @type {string} */ name) => { state.selected = name; keep(store, PIP_SEL_KEY, name); render(); };
   const zoom = (/** @type {string} */ name) => { state.view = "one"; select(name); };
   const toGrid = () => { state.view = "grid"; render(); };
@@ -291,8 +305,13 @@ export function mountPip(el, io) {
       io.openTopology?.(names[at]);
     } else if (event.key === "Escape" || event.key === "Backspace") { event.preventDefault(); toGrid(); }
   });
+  el.addEventListener("mouseover", (event) => {
+    if (state.view !== "grid") return;
+    const t = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (event.target).closest("[data-tile],[data-entry-ns]"));
+    hotLinks(el, t ? t.dataset.tile || t.dataset.entryNs || "" : focusOf());
+  });
   let resize = 0;
-  window.addEventListener("resize", () => { clearTimeout(resize); resize = Number(setTimeout(() => { if (!el.hidden && state.view === "grid") drawLinks(el, model); }, 120)); });
+  window.addEventListener("resize", () => { clearTimeout(resize); resize = Number(setTimeout(() => { if (!el.hidden && state.view === "grid") drawLinks(el, model, focusOf()); }, 120)); });
   return {
     show() {
       el.hidden = false;

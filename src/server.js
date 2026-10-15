@@ -3424,6 +3424,13 @@ const page = `<!doctype html>
   header .readout { padding: 3px 8px; gap: 8px; font-size: 11px; }
   header .console { padding: 3px 8px; gap: 8px; }
   header .tab { padding: 0 9px 0 8px; }
+  @media (max-width: 1180px) {
+    .plate small, header .key .tag { display: none; }
+    h1 { font-size: 15px; letter-spacing: 0.12em; }
+    header .tabs { gap: 5px; }
+    header .tab { padding: 0 7px; }
+    header .switch { transform: scale(0.85); transform-origin: left center; margin-right: -14px; }
+  }
   .topstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 3px 8px 3px 0; border-bottom: 2px solid var(--pip-dark); }
   .topstrip > #where:not([hidden]) { margin: 0 0 0 12px; flex: 0 0 auto; }
   .topstrip > .terminal { flex: 1 1 260px; margin: 0; padding: 2px 8px; border-bottom: 0; }
