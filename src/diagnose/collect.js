@@ -1,3 +1,4 @@
+// @ts-check
 // Live evidence for one Service, read-only (docs/diagnose-brief.md §C).
 // Only GETs through the kube client (kube.js PATHS, which cannot write and
 // never reads Secrets) and, when given, the SNIFF path graph (AWS Describe*
@@ -20,6 +21,10 @@ const timed = (promise, ms, label) => {
 };
 const statusOf = (res) => (res.json || res.text != null ? "available" : res.forbidden ? "forbidden" : res.missing ? "not-installed" : "unavailable");
 
+/**
+ * @param {any} kube
+ * @param {{ namespace?: string, service?: string, context?: string, pathGraph?: null | (() => Promise<any>), now?: () => string, timeoutMs?: number }} opts
+ */
 export async function collectLive(kube, { namespace, service, context = "", pathGraph = null, now = () => new Date().toISOString(), timeoutMs = READ_TIMEOUT_MS } = {}) {
   const t0 = Date.now();
   const read = (name, ...args) => timed(kube.read(name, ...args), timeoutMs, name);
@@ -80,11 +85,11 @@ export async function collectLive(kube, { namespace, service, context = "", path
   cap("admission-webhooks", whStatus, vwh.error || mwh.error || "");
   if (vwh.json || mwh.json) {
     const backends = [...new Map(hooks.map((h) => [`${h.service.ns}/${h.service.name}`, h.service])).values()].slice(0, MAX_WEBHOOK_BACKENDS);
-    const ready = new Map(await Promise.all(backends.map(async (b) => {
+    const ready = new Map(/** @type {Array<[string, number | null]>} */ (await Promise.all(backends.map(async (b) => {
       const r = await read("endpointSlices", b.ns, b.name);
       if (!r.json) return [`${b.ns}/${b.name}`, null];
       return [`${b.ns}/${b.name}`, (r.json.items || []).flatMap((s) => s.endpoints || []).filter((e) => e.conditions?.ready !== false).length];
-    })));
+    }))));
     facts.webhooks = hooks.map((h) => ({ ...h, ready: ready.has(`${h.service.ns}/${h.service.name}`) ? ready.get(`${h.service.ns}/${h.service.name}`) : null }));
   }
 

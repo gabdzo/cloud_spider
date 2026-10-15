@@ -1,3 +1,4 @@
+// @ts-check
 // A tiny read-only Kubernetes client for the Cluster view. It reads one
 // kubeconfig context (CLOUDSPIDER_KUBE_CONTEXT, default cloudspider-viewer,
 // made by `aws eks update-kubeconfig --role-arn <viewer role> --alias
@@ -70,8 +71,6 @@ export const PATHS = {
   // Cluster add-ons (OPS screen, radio). A missing CRD answers 404: that
   // add-on is simply not installed.
   events: () => "/api/v1/events?limit=500",
-  // DIAGNOSE: one namespace's events (why a readiness probe fails)
-  nsEvents: (ns) => `/api/v1/namespaces/${checkName(ns)}/events?limit=500`,
   hpas: () => "/apis/autoscaling/v2/horizontalpodautoscalers",
   policyReports: () => "/apis/wgpolicyk8s.io/v1alpha2/policyreports",
   clusterPolicyReports: () => "/apis/wgpolicyk8s.io/v1alpha2/clusterpolicyreports",
@@ -275,6 +274,7 @@ export const SCOPED_READS = { pods: "nsPods", services: "nsServices", deployment
 // list, in which case only namespaced paths in those namespaces are read.
 export function createKube({ env = process.env, run = spawn, read = readFile, get = httpsGet, clock = Date.now, wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), context = "", namespaces = "*" } = {}) {
   const contextName = context || env.CLOUDSPIDER_KUBE_CONTEXT || DEFAULT_CONTEXT;
+  /** @type {string[] | "*"} */
   const scope = Array.isArray(namespaces) ? namespaces.map((ns) => checkName(ns)) : "*";
   const inScope = (ns) => scope === "*" || scope.includes(String(ns || ""));
   let target = null;
@@ -388,9 +388,9 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
   // A 403 or 404 on one list is a chip on that namespace, never a failure.
   async function scopedSnapshot(t) {
     const names = Object.keys(SCOPED_READS);
-    const jobs = scope.flatMap((ns) => names.map((name) => ({ ns, name, path: PATHS[SCOPED_READS[name]](ns) })));
+    const jobs = /** @type {string[]} */ (scope).flatMap((ns) => names.map((name) => ({ ns, name, path: PATHS[SCOPED_READS[name]](ns) })));
     const results = await Promise.all(jobs.map((job) => getPath(job.path)));
-    const out = { clusterName: t.clusterName, scope, notes: [], access: {}, namespaces: scope.map((ns) => ({ metadata: { name: ns } })), nodes: [], nodeMetrics: [] };
+    const out = { clusterName: t.clusterName, scope, notes: [], access: {}, namespaces: /** @type {string[]} */ (scope).map((ns) => ({ metadata: { name: ns } })), nodes: [], nodeMetrics: [] };
     for (const name of names) out[name] = [];
     const hard = results.filter((r) => r.error && !r.forbidden && !r.missing);
     if (hard.length === results.length) return { error: hard[0]?.error || "the cluster did not answer", clusterName: t.clusterName, scope };
@@ -574,7 +574,7 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
       const chain = [];
       for (const ref of pod.json?.metadata?.ownerReferences || []) {
         if (ref.kind === "ReplicaSet") {
-          const rs = await getPath(PATHS.replicaSet(ns, ref.name)).catch(() => ({}));
+          const rs = /** @type {{ json?: any }} */ (await getPath(PATHS.replicaSet(ns, ref.name)).catch(() => ({})));
           const up = rs.json?.metadata?.ownerReferences?.[0];
           if (up) chain.push(`${up.kind}/${up.name}`);
         }

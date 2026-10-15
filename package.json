@@ -14,7 +14,8 @@
     "test": "node --test test/*.test.js",
     "vaults:check": "node scripts/vaults-check.mjs",
     "vaults:new": "node scripts/vaults-new.mjs",
-    "validate-vaults": "node scripts/cloudspider.mjs validate-vaults"
+    "validate-vaults": "node scripts/cloudspider.mjs validate-vaults",
+    "typecheck": "tsc -p ."
   },
   "dependencies": {
     "@aws-sdk/client-acm": "^3.1149.0",
@@ -37,6 +38,8 @@
     "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "puppeteer-core": "^25.13.0"
+    "@types/node": "^22.20.5",
+    "puppeteer-core": "^25.13.0",
+    "typescript": "^5.9.3"
   }
 }

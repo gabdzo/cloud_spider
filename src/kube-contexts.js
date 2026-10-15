@@ -1,3 +1,4 @@
+// @ts-check
 // Which kube contexts the Cluster view reads, and in which namespaces.
 // Read from (first match wins):
 //   1. env CLOUDSPIDER_KUBE_CONTEXTS="ctxA:ns1,ns2;ctxB:*"
@@ -122,6 +123,7 @@ export async function loadContexts(options = {}) {
   return { ...got, contexts: got.contexts.map((ctx) => ({ ...ctx, origin: ctx.origin || origin })) };
 }
 
+/** @param {{ env?: NodeJS.ProcessEnv, read?: (file: string, enc: string) => Promise<string>, cwd?: string, configured?: any[], singleFrom?: string }} opts */
 async function readContexts({ env = process.env, read, cwd = process.cwd(), configured = [], singleFrom = "" } = {}) {
   if (String(env.CLOUDSPIDER_KUBE_CONTEXTS || "").trim()) {
     const got = parseContextsEnv(env.CLOUDSPIDER_KUBE_CONTEXTS);
