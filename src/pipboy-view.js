@@ -42,6 +42,7 @@ export const PIP_CSS = `
 #pipboy .pb-text{margin:0;color:var(--pb-fg);max-width:60ch}
 #pipboy h4{margin:10px 0 3px;font-size:12px;letter-spacing:2px;color:var(--pb-dim);border-bottom:1px solid var(--pb-dim);font-weight:normal}
 #pipboy .pb-items{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1px 16px}
+#pipboy .pb-items.pb-wide{grid-template-columns:1fr}
 #pipboy .pb-items li{display:flex;gap:8px;white-space:nowrap;overflow:hidden;min-width:0}
 #pipboy .pb-items li span:first-child{overflow:hidden;text-overflow:ellipsis}
 #pipboy .pb-items li .pb-r{margin-left:auto;color:var(--pb-dim)}
@@ -61,8 +62,8 @@ export const PIP_CSS = `
 
 /** @typedef {import("./pipboy-model.js").PipNs} PipNs */
 
-function list(title, /** @type {string[]} */ items, empty) {
-  return `<h4>${esc(title)}</h4>${items.length ? `<ul class="pb-items">${items.join("")}</ul>` : `<p class="pb-rule">${esc(empty)}</p>`}`;
+function list(title, /** @type {string[]} */ items, empty, wide = false) {
+  return `<h4>${esc(title)}</h4>${items.length ? `<ul class="pb-items${wide ? " pb-wide" : ""}">${items.join("")}</ul>` : `<p class="pb-rule">${esc(empty)}</p>`}`;
 }
 
 /** @param {PipNs} ns @param {string} tab */
@@ -71,7 +72,7 @@ export function detailHtml(ns, tab) {
   const wl = list("WORKLOADS", ns.workloads.map((w) => `<li class="${w.status === "ok" ? "" : "bad"}"><span>${esc(w.name)}</span><span class="pb-r">${esc(w.kind.toLowerCase())} ${w.have}/${w.want}</span></li>`), "no workloads");
   const issues = ns.issues.length ? `<h4>ISSUES</h4>${ns.issues.map((i) => `<p class="pb-rule pb-alert">✖ ${esc(i)}</p>`).join("")}` : "";
   const sv = list("SERVICES", ns.services.map((s) => `<li class="${s.status === "ok" ? "" : "bad"}"><span>${esc(s.name)}</span><span class="pb-r">${esc(s.type)} ${esc(s.ports)}</span></li>`), "no services");
-  const en = list("ENTRY POINTS", ns.entries.map((e) => `<li class="${e.status === "ok" ? "" : "bad"}" title="${esc(e.full)}"><span>${esc(e.host)}</span><span class="pb-r">${esc(e.kind)}${e.target ? ` → ${esc(e.target)}` : ""}</span></li>`), "no entry points: reachable inside the cluster only");
+  const en = list("ENTRY POINTS", ns.entries.map((e) => `<li class="${e.status === "ok" ? "" : "bad"}" title="${esc(e.full)}"><span>${esc(e.host)}</span><span class="pb-r">${esc(e.kind)}${e.target ? ` → ${esc(e.target)}` : ""}</span></li>`), "no entry points: reachable inside the cluster only", true);
   const badge = ns.policy.badge.toUpperCase();
   const np = `<h4>NETWORK POLICIES <span class="pb-badge ${ns.policy.badge}">${esc(badge)}</span></h4>${ns.policy.lines.length ? ns.policy.lines.map((p) => `<p class="pb-rule"><b>${p.deny ? "DENY" : "ALLOW"}</b> ${esc(p.name)} · selects ${esc(p.selects)}${p.rules.map((r) => `<br>&nbsp;&nbsp;${esc(r)}`).join("")}</p>`).join("") : `<p class="pb-rule">no NetworkPolicy: all traffic in and out is allowed</p>`}`;
   if (tab === "pods") return head + issues + wl + sv;
