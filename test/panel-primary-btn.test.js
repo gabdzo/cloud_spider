@@ -18,3 +18,14 @@ test("Service panel: pod rows never clip the pod name and the panel sits above t
   assert.match(server, /\.kp-body \.svc-pod > button\.svc-pod-btn \{[^}]*min-width: 0; max-width: 100%;/);
   assert.match(server, /#kube-panel \{ position: absolute; z-index: 6;/);
 });
+
+test("Topology lays out below the measured tabs + CONTEXT bar (--kube-top), not a fixed 52px", async () => {
+  const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  assert.match(browser, /getPropertyValue\("--kube-top"\)/);
+  assert.match(browser, /const top = Math\.max\(fallback, Number\.isFinite\(barTop\) \? barTop \+ 4 : 0\);/);
+});
+
+test("Scrolled topology is clipped under the tabs + CONTEXT bar, never drawn beneath it", async () => {
+  const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  assert.match(browser, /if \(map\.style\.clipPath !== clip\) map\.style\.clipPath = clip;/);
+});

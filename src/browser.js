@@ -2622,7 +2622,11 @@ function placedCluster() {
   if (clusterData?.diagram?.layout === "kube") {
     // Laid out once per answer, width and lane state; frames only paint.
     // A narrow window puts the context switcher under the tabs.
-    const top = !kubeCtxEl.hidden && ((map.clientWidth || 0) < 900 || kubeCtxEl.classList.contains("below")) ? 88 : 52;
+    // Start under the measured tabs + CONTEXT bar (--kube-top, set by
+    // layoutKubeBar), so the switcher never sits on a card.
+    const barTop = parseInt(kubeCtxEl.parentElement ? getComputedStyle(kubeCtxEl.parentElement).getPropertyValue("--kube-top") : "", 10);
+    const fallback = !kubeCtxEl.hidden && ((map.clientWidth || 0) < 900 || kubeCtxEl.classList.contains("below")) ? 88 : 52;
+    const top = Math.max(fallback, Number.isFinite(barTop) ? barTop + 4 : 0);
     const found = currentSearch();
     // A search opens the lanes and lists the folded workloads it found
     // pods in, without touching the saved lane state.
@@ -6721,6 +6725,10 @@ function layoutKubeBar() {
   const bottom = Math.max(t ? t.bottom : 0, c ? c.bottom : 0) - box.top;
   const top = `${Math.max(44, Math.round(bottom + 8))}px`;
   if (host.style.getPropertyValue("--kube-top") !== top) host.style.setProperty("--kube-top", top);
+  // Scrolled topology cards go out of view under the bar instead of
+  // sliding beneath the tabs and the CONTEXT switcher.
+  const clip = t || c ? `inset(${Math.max(0, Math.round(bottom + box.top - map.getBoundingClientRect().top + 4))}px 0 0 0)` : "";
+  if (map.style.clipPath !== clip) map.style.clipPath = clip;
 }
 {
   const kick = () => requestAnimationFrame(layoutKubeBar);
