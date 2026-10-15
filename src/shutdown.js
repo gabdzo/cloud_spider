@@ -1,3 +1,4 @@
+// @ts-check
 // Ctrl-C / SIGTERM with a stack running. Pulumi takes a lock on its stack
 // for up and destroy and releases it when it ends; killed mid-run it leaves
 // the lock (and an orphaned provider plugin) and the next RUN says "the
@@ -8,6 +9,9 @@
 // (SIGKILL to each pulumi's process group, its plugins with it); the lock
 // that leaves is cleared by the next RUN (src/pulumi-locks.js).
 // upgrade: { children() -> [{ pid, text, stack }], stop(), force() }.
+/**
+ * @param {{ upgrade?: any, write?: (text: string) => any, save?: () => Promise<any>, exit?: (code: number) => void, graceMs?: number, tickMs?: number, pollMs?: number }} [opts]
+ */
 export function createShutdown({ upgrade, write = (text) => process.stdout.write(text), save = async () => {}, exit = (code) => process.exit(code), graceMs = 60_000, tickMs = 10_000, pollMs = 250 } = {}) {
   let stopping = false;
   let finished = false;

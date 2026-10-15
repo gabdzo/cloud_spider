@@ -1,3 +1,4 @@
+// @ts-check
 // Deterministic Diagnose rules over normalized facts (collect.js / sample.js).
 // A rule either fires (a finding backed by evidence), stays quiet, or
 // cannot be evaluated because its evidence is missing; the last one is
@@ -51,6 +52,7 @@ export function evaluate(facts) {
   const findings = [];
   const hypotheses = [];
   const questions = [];
+  /** @type {Array<{ ref: string, kind: string, name: string, namespace?: string }>} */
   const resources = [{ ref: svcRef, kind: "Service", name: svcName, namespace: ns }];
   const relationships = [];
   const ev = (source, summary, normalized = {}, raw = null) => {

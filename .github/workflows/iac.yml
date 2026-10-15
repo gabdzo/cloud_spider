@@ -21,6 +21,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Type checks of the // @ts-check modules (JSDoc, no build step).
+      - run: npm run typecheck
       # pretest installs every stack's own deps (scripts/stack-deps.mjs).
       - run: npm test
   matrix-list:

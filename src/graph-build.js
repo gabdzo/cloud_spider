@@ -1,3 +1,4 @@
+// @ts-check
 // The SERVICES graph from a real cluster: Services, workloads, Ingress,
 // OpenShift Routes, NetworkPolicies, ownerReferences, CRDs and OLM
 // ClusterServiceVersions, turned into the scene graph-model.js draws (the
@@ -81,6 +82,10 @@ function endpointFields(svc, slices, chosen) {
   return { endpoints: e.list ? { ready: e.ready, notReady: e.notReady, list: e.list } : null, svcPorts: e.ports, flags: e.flags };
 }
 
+/**
+ * @param {any} [reads]
+ * @param {{ title?: string, namespaces?: string[] | "*", now?: number, windowMin?: number, withPodNodes?: boolean }} [opts]
+ */
 export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", now = Date.now(), windowMin = 30, withPodNodes = false } = {}) {
   const allow = (ns) => namespaces === "*" || namespaces.includes(ns);
   const list = (key) => (reads[key] || []).filter((o) => !nsOf(o) || allow(nsOf(o)));
@@ -357,7 +362,7 @@ export function buildGraph(reads = {}, { title = "cluster", namespaces = "*", no
     ...(podNodes ? { podNodes } : {}),
     id: "live",
     title,
-    note: [`live · read-only · ${flavour}`, namespaces === "*" ? "" : `namespaces: ${namespaces.join(", ")}`, ...(reads.notes || [])].filter(Boolean).join(" · "),
+    note: [`live · read-only · ${flavour}`, namespaces === "*" ? "" : `namespaces: ${/** @type {string[]} */ (namespaces).join(", ")}`, ...(reads.notes || [])].filter(Boolean).join(" · "),
     bands: [{ id: "edge", label: "EDGE" }, { id: "apps", label: "APPS" }, { id: "platform", label: "PLATFORM" }],
     groups,
     nodes: [...nodes.values()],

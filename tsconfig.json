@@ -1,0 +1,18 @@
+{
+  // Type checks without a build: plain JS stays what runs. Only files that
+  // start with // @ts-check are checked (checkJs off), so modules opt in one
+  // by one. `npm run typecheck` = tsc --noEmit, run in CI.
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.js", "scripts/**/*.mjs"]
+}
