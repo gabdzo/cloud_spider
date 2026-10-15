@@ -95,6 +95,9 @@ export const FILES = new Set([
   "map-kube.js",
   "netpol-model.js",
   "map-ns-panel.js",
+  "pipboy-model.js",
+  "pipboy-view.js",
+  "pipboy-sprites.js",
   "netdebug/kube-checks.js",
   "cidr.js",
   "map-kube-draw.js",
@@ -2207,6 +2210,7 @@ const page = `<!doctype html>
   .reach-lamp[data-state="ok"]::before { background: var(--status-ok); box-shadow: 0 0 6px var(--status-ok); }
   .reach-lamp[data-state="fail"]::before { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
   .reach-lamp[data-state="fail"] { color: var(--status-broken); }
+  #map-pipboy { position: absolute; z-index: 6; top: 8px; right: 8px; }
   #map-view { position: absolute; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 3px 6px; background: var(--pip-ink); border: 1px solid var(--pip-dark); box-shadow: 0 0 0 1px var(--pip-ink), 0 4px 10px var(--pip-ink); }
   #map-view button.cmd { white-space: nowrap; min-height: 24px; padding: 0 8px; font-size: 11px; letter-spacing: 0.12em; }
   #map-view button.cmd[aria-pressed="true"] { background: var(--pip-bright); color: var(--pip-ink); border-color: var(--pip-bright); text-shadow: none; }
@@ -3494,6 +3498,8 @@ const page = `<!doctype html>
         <button id="vault-templates-btn" class="cmd" type="button" aria-expanded="false" aria-controls="vault-templates" hidden data-module="vaults">TEMPLATES</button>
         <section id="vault-templates" aria-label="vault templates" hidden data-module="vaults"></section>
         <div id="vault-panels"></div>
+        <button id="map-pipboy" class="cmd" type="button" hidden title="the cluster as a Pip-Boy STAT screen: namespaces, health, workloads, entry points and NetworkPolicies">PIP-BOY</button>
+        <section id="pipboy" aria-label="cluster, Pip-Boy view" hidden></section>
       </div>
       <section id="vault-page" aria-label="vaults page" hidden></section>
       <nav id="kube-tabs" aria-label="cluster screens" hidden data-module="kubernetes"></nav>
