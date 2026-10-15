@@ -3415,7 +3415,7 @@ const page = `<!doctype html>
   <div class="terminal">
     <span class="line"><span class="prompt">&gt;</span><span id="status"></span><input id="kube-search" type="search" aria-label="search the cluster" placeholder="search: name, ns:team, crash, pending, app=web   ( / )" autocomplete="off" spellcheck="false" hidden><output id="kube-search-count" aria-live="polite" hidden></output><span id="kube-groupby" title="Group by: the namespace, or a label; resources without it go to 'unlabeled'. System namespaces stay as they are." hidden><b>GROUP BY</b><select id="kube-groupby-sel" aria-label="group lanes by"></select><input id="kube-groupby-custom" type="text" aria-label="custom label key" placeholder="label key, e.g. team" autocomplete="off" spellcheck="false" hidden></span><span id="kube-focus" role="group" aria-label="what TOPOLOGY shows" hidden><button id="kf-issues" class="kf-btn" type="button" aria-pressed="true" title="only what needs a look, and what it hangs off; healthy pods fold into counts">ISSUES <i id="kf-count">0</i></button><button id="kf-list" class="kf-btn" type="button" aria-expanded="false" aria-controls="kube-issues" title="the list of issues, with INVESTIGATE">LIST</button><button id="kf-all" class="kf-btn" type="button" aria-pressed="false" title="everything in scope">ALL</button><select id="kf-scope" aria-label="scope: all, apps or add-ons"></select><button id="kf-ns" class="kf-btn" type="button" aria-expanded="false" aria-controls="kf-ns-pop" title="pick namespaces">NS: ALL</button></span></span>
     <select id="lb" aria-label="load balancer" hidden></select>
-    <input id="host" type="text" aria-label="URL or host" placeholder="paste a URL or host" hidden>
+    <input id="host" type="text" aria-label="URL or host" placeholder="paste a URL, a host, or ns/service (in-cluster)" hidden>
     <p id="confirm"></p>
     <span class="choice">
       <button id="yes" class="cmd" type="button" data-icon="stop" hidden>put it down</button>
@@ -3685,6 +3685,7 @@ async function route(app, req, res) {
       await app.pathView({
         lb: url.searchParams.get("lb") || "",
         host: url.searchParams.get("host") || "",
+        context: url.searchParams.get("context") || "",
       }),
     );
     return;

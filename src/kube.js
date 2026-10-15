@@ -133,6 +133,7 @@ export const PATHS = {
   // AmazonEKSViewPolicy covers all but the CoreDNS metrics proxy.
   service: (ns, name) => `/api/v1/namespaces/${checkName(ns)}/services/${checkName(name)}`,
   endpointSlices: (ns, svc) => `/apis/discovery.k8s.io/v1/namespaces/${checkName(ns)}/endpointslices?labelSelector=${encodeURIComponent(`kubernetes.io/service-name=${checkName(svc)}`)}`,
+  configMap: (ns, name) => `/api/v1/namespaces/${checkName(ns)}/configmaps/${checkName(name)}`,
   nsEndpointSlices: (ns) => `/apis/discovery.k8s.io/v1/namespaces/${checkName(ns)}/endpointslices`,
   nsNetworkPolicies: (ns) => `/apis/networking.k8s.io/v1/namespaces/${checkName(ns)}/networkpolicies`,
   nsPdbs: (ns) => `/apis/policy/v1/namespaces/${checkName(ns)}/poddisruptionbudgets`,
