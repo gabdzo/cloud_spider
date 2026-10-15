@@ -33,6 +33,16 @@ const kubectl = (ns, rest) => `kubectl${ns ? ` -n ${ns}` : ""} ${rest}`;
 const selector = (sel = {}) => Object.entries(sel).map(([k, v]) => `${k}=${v}`).join(",");
 const ageS = (from, to) => (from ? Math.max(0, (Date.parse(to) - Date.parse(from)) / 1000) : null);
 
+// " Readiness probe GET :8080/healthz returns 404 (12 failures): …" from the
+// pod's last Unhealthy event, when there is one.
+function probeLine(pods) {
+  const p = pods.find((x) => x.probeFailure);
+  if (!p) return "";
+  const code = /statuscode:\s*(\d{3})/i.exec(p.probeFailure.message)?.[1];
+  const what = p.readinessProbe ? `Readiness probe ${p.readinessProbe}` : "Readiness probe";
+  return ` ${what} ${code ? `returns ${code}` : "fails"} (${p.probeFailure.count} failure${p.probeFailure.count === 1 ? "" : "s"}): ${p.probeFailure.message}`;
+}
+
 export function evaluate(facts) {
   const at = facts.observed_at;
   const { cluster, namespace: ns, service: svcName } = facts.scope || {};
@@ -84,7 +94,7 @@ export function evaluate(facts) {
     if (persistent.length) {
       find("K8S-001", {
         severity: persistent.length === facts.pods.length ? "high" : "medium", confidence: "high", status: "confirmed", resource_ref: svcRef, subject: "readiness", evidence_refs: [e],
-        summary: `${persistent.length} of ${facts.pods.length} pod(s) behind ${svcName} are Running but not Ready for ${READY_PERSIST_S}s or more: ${persistent.slice(0, 4).map((p) => p.name).join(", ")}. Running is not ready.`,
+        summary: `${persistent.length} of ${facts.pods.length} pod(s) behind ${svcName} are Running but not Ready for ${READY_PERSIST_S}s or more: ${persistent.slice(0, 4).map((p) => p.name).join(", ")}. Running is not ready.${probeLine(persistent)}`,
         next_steps: [{ text: "Why the readiness probe fails", command: kubectl(ns, `describe pod ${persistent[0].name}`) }, { text: "Recent logs", command: kubectl(ns, `logs ${persistent[0].name} --tail=50`) }],
       });
     } else if (unready.length) questions.push(`${unready.length} pod(s) are not ready but for less than ${READY_PERSIST_S}s (could be a rollout); look again shortly.`);

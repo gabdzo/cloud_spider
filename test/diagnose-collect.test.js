@@ -103,3 +103,21 @@ test("collectLive: a typo'd namespace / service / unreachable cluster is a plain
   const noCfg = investigation(await collectLive({ target: async () => ({ error: "no kubeconfig" }) }, { namespace: "a", service: "b", context: "gone-ctx", now }));
   assert.match(noCfg.blocker.text, /Can't reach cluster gone-ctx: no kubeconfig/);
 });
+
+test("collectLive: a not-ready pod's readiness probe failure (HTTP 404) lands in K8S-001", async () => {
+  const pod = { ...podJ("web-7f-a", "10.0.0.9", false, "2026-10-13T15:00:00Z"), spec: { containers: [{ name: "web", readinessProbe: { httpGet: { path: "/healthz", port: 8080 } } }] } };
+  const kube = fakeKube({
+    service: () => ({ json: svc }),
+    endpointSlices: () => ({ json: { items: [{ endpoints: [{ addresses: ["10.0.0.9"], conditions: { ready: false }, targetRef: { name: "web-7f-a" } }] }] } }),
+    nsPods: () => ({ json: { items: [pod] } }),
+    nsEvents: () => ({ json: { items: [
+      { involvedObject: { kind: "Pod", name: "web-7f-a" }, reason: "Unhealthy", message: "Readiness probe failed: HTTP probe failed with statuscode: 404", count: 12, lastTimestamp: "2026-10-13T15:59:00Z" },
+      { involvedObject: { kind: "Pod", name: "other" }, reason: "Unhealthy", message: "Readiness probe failed: x", count: 1 },
+    ] } }),
+  });
+  const rec = investigation(await collectLive(kube, { namespace: "lab-shop", service: "web", context: "lab-ro", now }));
+  assert.equal(rec.blocker, undefined);
+  const k = rec.findings.find((f) => f.code === "K8S-001");
+  assert.match(k.summary, /Readiness probe GET :8080\/healthz returns 404 \(12 failures\): Readiness probe failed: HTTP probe failed with statuscode: 404/);
+  assert.ok(rec.findings.some((f) => f.code === "NET-001" && f.severity === "high"));
+});
