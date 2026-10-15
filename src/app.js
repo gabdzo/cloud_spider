@@ -61,6 +61,9 @@ export const PLACE_TTL = 60_000;
 
 // The red AWS banner: say exactly what to set, from what the environment
 // has (names only, never values). Exported for the tests.
+const PATH_FRESH = 15_000;
+const PATH_STALE = 120_000;
+
 export function accountHint(error, env = process.env) {
   const text = String(error || "");
   const creds = /credential|security token|not able to validate|InvalidClientTokenId|ExpiredToken|SSO|could not load|profile/i.test(text);
@@ -134,6 +137,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   });
 
   const now = typeof clock === "function" ? clock : Date.now;
+  const pathCache = new Map();
   const tele = telemetry || (kube ? createTelemetry({ kube, clock: now }) : null);
   // TELEMETRY per kube context: the primary one keeps `tele` (and its hour
   // of history); any other gets its own sampler the first time it is shown.
@@ -1795,7 +1799,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     // listeners, rules, target groups, subnets, SGs, routes), read-only.
     async pathGraph() {
       if (!path || !region) return { error: path ? error || "the region is not read yet" : "path reads are not set up" };
-      const result = await readPath(path, region);
+      const result = await cachedPath(region);
       return result.error ? { error: `${result.call}: ${result.error}` } : result.graph;
     },
     async pathView(query = {}) {
@@ -1816,7 +1820,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       });
       if (!path) return failed("path reads are not set up");
       if (!at) return failed(error || "the region is not read yet");
-      const result = await readPath(path, at);
+      const result = await cachedPath(at, { fresh: Boolean(query.fresh) });
       if (at !== region) return { region, stale: true };
       if (result.error) {
         const sentence = accountRead(result.error);
@@ -1843,6 +1847,37 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     },
   };
   return api;
+
+  // The AWS path graph, stale-while-revalidate per region: a read younger
+  // than PATH_FRESH is reused, one younger than PATH_STALE is answered at
+  // once while a single background read refreshes it. Errors are not kept;
+  // concurrent callers share one read.
+  function cachedPath(at, { fresh = false } = {}) {
+    const hit = pathCache.get(at);
+    const age = hit?.result ? now() - hit.at : Infinity;
+    const refresh = () => {
+      if (hit?.pending) return hit.pending;
+      const entry = pathCache.get(at) || {};
+      entry.pending = readPath(path, at)
+        .then((result) => {
+          if (!result.error) pathCache.set(at, { at: now(), result });
+          else pathCache.delete(at);
+          return result;
+        })
+        .finally(() => {
+          const live = pathCache.get(at);
+          if (live) delete live.pending;
+        });
+      pathCache.set(at, entry);
+      return entry.pending;
+    };
+    if (!fresh && age < PATH_FRESH) return Promise.resolve(hit.result);
+    if (!fresh && age < PATH_STALE) {
+      refresh().catch(() => {});
+      return Promise.resolve(hit.result);
+    }
+    return refresh();
+  }
 
   async function kubePathView(target, host, asked = "") {
     const base = { region, loadBalancers: [], selected: "", host, hostNote: "", findings: [], notes: [], kube: true, error: "" };
