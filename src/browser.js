@@ -35,6 +35,7 @@ import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
 import { GROUP_BY, cleanGroupBy } from "./graph-group.js";
 import { TOPOLOGY_GROUP_BY_KEY, groupDiagram, lanesForNamespaces } from "./kube-group.js";
+import { SCOPES, TOPOLOGY_FOCUS_KEY, cleanFocus, focusDiagram } from "./kube-focus.js";
 import { countText, matchOrder, searchKube } from "./kube-search.js";
 import { createK9s } from "./k9s.js";
 import { paintKube } from "./kube-draw.js";
@@ -219,6 +220,236 @@ kubeGroupCustom.addEventListener("change", () => setTopologyGroupBy(kubeGroupCus
 kubeGroupCustom.addEventListener("keydown", (event) => {
   if (event.key === "Enter") setTopologyGroupBy(kubeGroupCustom.value);
 });
+// TOPOLOGY focus (kube-focus.js): ISSUES (default) or ALL, a scope and a
+// namespace pick; kept per browser. A search looks at everything in scope.
+const kubeFocusBox = document.querySelector("#kube-focus");
+const kfIssues = document.querySelector("#kf-issues");
+const kfCount = document.querySelector("#kf-count");
+const kfList = document.querySelector("#kf-list");
+const kfAll = document.querySelector("#kf-all");
+const kfScope = document.querySelector("#kf-scope");
+const kfNs = document.querySelector("#kf-ns");
+const kfNsPop = document.querySelector("#kf-ns-pop");
+const kubeHealthy = document.querySelector("#kube-healthy");
+const kubeIssues = document.querySelector("#kube-issues");
+let topologyFocus = cleanFocus(null);
+try {
+  topologyFocus = cleanFocus(window.localStorage.getItem(TOPOLOGY_FOCUS_KEY));
+} catch {
+  // default
+}
+for (const sc of SCOPES) kfScope.append(new Option(`Scope: ${sc.label}`, sc.id));
+function setTopologyFocus(patch) {
+  topologyFocus = cleanFocus({ ...topologyFocus, ...patch });
+  try {
+    window.localStorage.setItem(TOPOLOGY_FOCUS_KEY, JSON.stringify(topologyFocus));
+  } catch {
+    // not kept
+  }
+  syncFocusBar();
+  draw();
+}
+let focusMemo = { diagram: null, key: "", out: null };
+function focusedView() {
+  const diagram = clusterData?.diagram;
+  const f = currentSearch().active ? { ...topologyFocus, view: "all" } : topologyFocus;
+  const key = JSON.stringify(f);
+  if (focusMemo.diagram !== diagram || focusMemo.key !== key) focusMemo = { diagram, key, out: focusDiagram(diagram, f) };
+  return focusMemo.out;
+}
+function topologyShown() {
+  return mode === "cluster" && clusterData?.diagram?.layout === "kube" && (!clusterHasScreens() || clusterScreen === "topology") && !kubeEmpty.isShown();
+}
+function placePop(pop, btn) {
+  const r = btn.getBoundingClientRect();
+  const w = pop.offsetWidth || 300;
+  pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+  const below = window.innerHeight - r.bottom;
+  if (below > 240) {
+    pop.style.top = `${r.bottom + 4}px`;
+    pop.style.bottom = "";
+  } else {
+    pop.style.top = "";
+    pop.style.bottom = `${window.innerHeight - r.top + 4}px`;
+  }
+}
+function closeFocusPops() {
+  kubeIssues.hidden = true;
+  kfNsPop.hidden = true;
+  kfList.setAttribute("aria-expanded", "false");
+  kfNs.setAttribute("aria-expanded", "false");
+}
+function relatedLine(refs) {
+  if (!refs) return "";
+  const bits = [];
+  for (const c of refs.pvcs || []) bits.push(`PVC ${c.name}${c.phase ? ` ${c.phase}` : ""}${c.pv ? ` → PV ${c.pv}` : ""}`);
+  if (refs.configMaps?.length) bits.push(`ConfigMap ${refs.configMaps.join(", ")}`);
+  if (refs.secrets?.length) bits.push(`Secret ${refs.secrets.join(", ")}`);
+  if (refs.netpols?.length) bits.push(`NetworkPolicy ${refs.netpols.map((n) => n.name).join(", ")}`);
+  return bits.join(" · ");
+}
+function renderIssueList() {
+  const view = focusedView();
+  listedFor = view;
+  const list = view?.issues || [];
+  const head = document.createElement("p");
+  head.className = "kh";
+  head.textContent = list.length ? `${list.length} ISSUE${list.length === 1 ? "" : "S"} · broken first` : "NO ISSUES IN THIS SCOPE";
+  const ol = document.createElement("ol");
+  for (const it of list) {
+    const li = document.createElement("li");
+    const dot = document.createElement("span");
+    dot.className = `kd ${it.severity}`;
+    const name = document.createElement("span");
+    name.className = "kn";
+    const tag = document.createElement("b");
+    tag.textContent = String(it.kind).toUpperCase();
+    name.append(tag, it.ns ? `${it.ns}/${it.name}` : it.name);
+    const why = document.createElement("span");
+    why.className = `kr ${it.severity}`;
+    why.textContent = it.reason;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "INVESTIGATE";
+    btn.title = it.investigate === "pod" ? "open the pod: events, containers, logs" : "select it on the map";
+    btn.addEventListener("click", () => investigateIssue(it.id));
+    li.append(dot, name, btn, why);
+    const rel = relatedLine(it.refs);
+    if (rel || it.node) {
+      const x = document.createElement("span");
+      x.className = "kx";
+      x.textContent = [it.node ? `node ${it.node.replace(/\.[a-z0-9-]+\.compute\.internal$/, "")}` : "", rel].filter(Boolean).join(" · ");
+      li.append(x);
+    }
+    ol.append(li);
+  }
+  kubeIssues.replaceChildren(head, ol);
+}
+function investigateIssue(id) {
+  closeFocusPops();
+  const view = focusedView();
+  const node = view?.diagram?.nodes?.find((n) => n.id === id) || clusterData?.diagram?.nodes?.find((n) => n.id === id);
+  if (!node) return;
+  if (node.ns && clusterLanes.open[node.ns] === false) clusterLanes.open = { ...clusterLanes.open, [node.ns]: true };
+  if (node.owner && !clusterLanes.expanded.includes(node.owner)) clusterLanes.expanded = [...clusterLanes.expanded, node.owner];
+  saveClusterLanes();
+  clusterSelected = node.id;
+  if (node.host) showNode(node);
+  else if (node.kind === "workload") showWorkload(node);
+  else if (node.pod) showPod(node);
+  const at = (placedCluster().nodes || []).find((n) => n.id === id || n.members?.some((m) => m.id === id));
+  if (at) map.scrollTo({ top: Math.max(0, at.y - 230), left: Math.max(0, at.x - 60), behavior: reducedMotion ? "auto" : "smooth" });
+  draw();
+}
+function renderNsPop() {
+  const view = focusedView();
+  const picked = new Set(topologyFocus.namespaces);
+  const rows = (view?.namespaces || []).filter((n) => topologyFocus.scope === "all" || (topologyFocus.scope === "addons") === n.addon);
+  const boxes = rows.map((n) => {
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.value = n.name;
+    box.checked = picked.has(n.name);
+    box.addEventListener("change", () => {
+      const next = new Set(topologyFocus.namespaces);
+      if (box.checked) next.add(n.name);
+      else next.delete(n.name);
+      setTopologyFocus({ namespaces: [...next] });
+    });
+    const small = document.createElement("small");
+    small.textContent = n.addon ? "add-on" : "";
+    label.append(box, n.name, small);
+    return label;
+  });
+  const row = document.createElement("div");
+  row.className = "kf-row";
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.textContent = "ALL NAMESPACES";
+  clear.addEventListener("click", () => {
+    setTopologyFocus({ namespaces: [] });
+    renderNsPop();
+  });
+  row.append(clear);
+  kfNsPop.replaceChildren(...(boxes.length ? boxes : [Object.assign(document.createElement("p"), { textContent: "no namespaces in this scope" })]), row);
+}
+let healthyKey = "";
+function syncFocusBar() {
+  const on = topologyShown();
+  kubeFocusBox.hidden = !on;
+  if (!on) {
+    closeFocusPops();
+    kubeHealthy.hidden = true;
+    healthyKey = "";
+    return;
+  }
+  const view = focusedView();
+  const n = view?.issues?.length || 0;
+  const searching = currentSearch().active;
+  const issuesOn = topologyFocus.view === "issues";
+  kfIssues.setAttribute("aria-pressed", String(issuesOn && !searching));
+  kfAll.setAttribute("aria-pressed", String(!issuesOn || searching));
+  kfCount.textContent = String(n);
+  kfCount.classList.toggle("zero", n === 0);
+  kfList.disabled = n === 0;
+  if (kfScope.value !== topologyFocus.scope) kfScope.value = topologyFocus.scope;
+  const picked = topologyFocus.namespaces.length;
+  kfNs.textContent = picked === 1 ? `NS: ${topologyFocus.namespaces[0]}` : picked ? `NS: ${picked}` : "NS: ALL";
+  const healthy = issuesOn && !searching && n === 0;
+  const key = healthy ? `${view?.healthyLanes}|${view?.hiddenHealthy}|${topologyFocus.scope}|${picked}` : "";
+  if (key !== healthyKey) {
+    healthyKey = key;
+    if (healthy) {
+      const h = document.createElement("h3");
+      h.textContent = "✓ ALL HEALTHY";
+      const p = document.createElement("p");
+      const scope = SCOPES.find((x) => x.id === topologyFocus.scope)?.label || "All";
+      p.textContent = `No issues in ${view?.healthyLanes || 0} namespace${view?.healthyLanes === 1 ? "" : "s"} (scope: ${scope}${picked ? `, ${picked} picked` : ""}). No crash loops, OOM kills, pending or not-ready pods, failed jobs, Services without ready pods or node pressure.`;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "SHOW FULL VIEW";
+      btn.addEventListener("click", () => setTopologyFocus({ view: "all" }));
+      kubeHealthy.replaceChildren(h, p, btn);
+    }
+    kubeHealthy.hidden = !healthy;
+  }
+  if (!kubeIssues.hidden && listedFor !== view) renderIssueList();
+}
+let listedFor = null;
+kfIssues.addEventListener("click", () => setTopologyFocus({ view: "issues" }));
+kfAll.addEventListener("click", () => setTopologyFocus({ view: "all" }));
+kfScope.addEventListener("change", () => setTopologyFocus({ scope: kfScope.value, namespaces: [] }));
+kfList.addEventListener("click", () => {
+  const open = kubeIssues.hidden;
+  closeFocusPops();
+  if (!open) return;
+  renderIssueList();
+  kubeIssues.hidden = false;
+  kfList.setAttribute("aria-expanded", "true");
+  placePop(kubeIssues, kfList);
+});
+kfNs.addEventListener("click", () => {
+  const open = kfNsPop.hidden;
+  closeFocusPops();
+  if (!open) return;
+  renderNsPop();
+  kfNsPop.hidden = false;
+  kfNs.setAttribute("aria-expanded", "true");
+  placePop(kfNsPop, kfNs);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && (!kubeIssues.hidden || !kfNsPop.hidden)) {
+    closeFocusPops();
+    event.stopPropagation();
+  }
+}, true);
+document.addEventListener("pointerdown", (event) => {
+  if (kubeIssues.hidden && kfNsPop.hidden) return;
+  if (kubeIssues.contains(event.target) || kfNsPop.contains(event.target) || kfList.contains(event.target) || kfNs.contains(event.target)) return;
+  closeFocusPops();
+});
+window.addEventListener("resize", closeFocusPops);
 let groupedMemo = { diagram: null, by: "", out: null };
 function groupedDiagram(diagram) {
   if (groupedMemo.diagram !== diagram || groupedMemo.by !== topologyGroupBy) groupedMemo = { diagram, by: topologyGroupBy, out: groupDiagram(diagram, topologyGroupBy) };
@@ -2308,11 +2539,11 @@ function placedCluster() {
     const found = currentSearch();
     // A search opens the lanes and lists the folded workloads it found
     // pods in, without touching the saved lane state.
-    const grouped = groupedDiagram(clusterData.diagram);
+    const grouped = groupedDiagram(focusedView().diagram);
     const state = found.active
       ? { open: { ...clusterLanes.open, ...Object.fromEntries(lanesForNamespaces(grouped, found.open).map((ns) => [ns, true])) }, expanded: [...new Set([...clusterLanes.expanded, ...found.expand])] }
       : clusterLanes;
-    const key = `${map.clientWidth || 0}|${top}|${topologyGroupBy}|${JSON.stringify(state)}`;
+    const key = `${map.clientWidth || 0}|${top}|${topologyGroupBy}|${focusMemo.key}|${JSON.stringify(state)}`;
     if (clusterPlaced.data !== clusterData || clusterPlaced.key !== key) {
       clusterPlaced = { key, data: clusterData, placed: layoutKube(grouped, { width: map.clientWidth || 0, state, top }) };
     }
@@ -2344,6 +2575,7 @@ function drawCluster() {
 
 function draw() {
   syncClusterScreens();
+  if (!kubeFocusBox.hidden || !kubeHealthy.hidden) syncFocusBar();
   const noCluster = mode === "cluster" && !sample && Boolean(clusterData?.unset) && !clusterData?.diagram && (!clusterTabsShown || clusterScreen === "topology");
   const noRegionCluster = mode === "cluster" && !sample && Boolean(clusterData?.emptyRegion) && !clusterData?.diagram?.nodes?.length && (!clusterTabsShown || clusterScreen === "topology");
   if (noCluster) kubeEmpty.show({ context: clusterData.context || "", reason: clusterData.reason || clusterData.note || "" });
@@ -3380,6 +3612,7 @@ function syncSearchBar() {
   const on = searchable();
   kubeSearchEl.hidden = !on;
   kubeGroupBox.hidden = !on;
+  syncFocusBar();
   statusEl.hidden = on;
   confirmEl.classList.toggle("caption", on);
   const found = on ? currentSearch() : null;
