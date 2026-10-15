@@ -13,7 +13,7 @@ import { createRadio } from "./radio.js";
 import { readLogs } from "./logs.js";
 import { readPath } from "./path-read.js";
 import { createPathProber } from "./path-probe.js";
-import { kubePathDiagram, parseKubeTarget, readKubePath } from "./kube-path.js";
+import { ingressFor, kubePathDiagram, parseKubeTarget, podOnlyDiagram, readKubePath, servicesForPod, withIngress } from "./kube-path.js";
 import { pathResult, withPeers } from "./path-view.js";
 import { costFailure } from "./cost.js";
 import { diagramFromClusters } from "./cluster.js";
@@ -1807,6 +1807,9 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       // read-only from the kube context; no AWS read needed.
       const inCluster = parseKubeTarget(query.host);
       if (inCluster) return kubePathView(inCluster, query.host, String(query.context || ""));
+      // No AWS (k8s-only): a host is looked up in the cluster's Ingresses
+      // (ingress-nginx, Traefik, any class) and traced from its backend.
+      if (ec2?.off === true || path?.off === true) return ingressPathView(String(query.host || ""), String(query.context || ""));
       const at = region;
       const failed = (sentence) => ({
         region: at,
@@ -1880,19 +1883,55 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     return refresh();
   }
 
-  async function kubePathView(target, host, asked = "") {
-    const base = { region, loadBalancers: [], selected: "", host, hostNote: "", findings: [], notes: [], kube: true, error: "" };
-    // The configured kube.context (the cluster the app means), else the
-    // primary context, else the default client.
+  // The configured kube.context (the cluster the app means), else the
+  // primary context, else the default client.
+  function pathClient(asked) {
     const wanted = asked || settings?.config?.kube?.context || settings?.kube?.context || "";
-    if (asked && !contexts.some((ctx) => ctx.name === asked)) return { ...base, diagram: null, headline: "", error: `no kube context named ${asked.slice(0, 80)}` };
+    if (asked && !contexts.some((ctx) => ctx.name === asked)) return { error: `no kube context named ${asked.slice(0, 80)}` };
     const client = contexts.find((ctx) => ctx.name === wanted)?.kube || primary?.kube || kube;
-    if (!client?.read) return { ...base, diagram: null, headline: "", error: "no kube context: in-cluster paths need one (kube.context)" };
+    if (!client?.read) return { error: "no kube context: in-cluster paths need one (kube.context)" };
+    return { client };
+  }
+
+  function kubeResult(base, client, diagram, lead = "") {
+    const bad = diagram.nodes.filter((node) => node.status === "broken");
+    return { ...base, diagram, headline: bad.length ? `${bad.length} broken on this in-cluster path` : "every hop on this in-cluster path looks healthy", hostNote: `${lead}in-cluster path in kube context ${client.context || "?"}: read-only, no request sent` };
+  }
+
+  async function kubePathView(target, host, asked = "", ingress = null) {
+    const base = { region, loadBalancers: [], selected: "", host, hostNote: "", findings: [], notes: [], kube: true, error: "" };
+    const { client, error: noClient } = pathClient(asked);
+    if (noClient) return { ...base, diagram: null, headline: "", error: noClient };
     const world = await readKubePath(client, target).catch((failure) => ({ error: failure?.message || String(failure) }));
     if (world.error) return { ...base, diagram: null, headline: "", error: world.error };
+    const first = world.hops?.[0];
+    // "ns/pod": no Service by that name, but a pod is: trace the Service
+    // that selects it, else show the pod alone.
+    if (!ingress && first && !first.svc && !first.error) {
+      const pod = (await client.read("pod", target.ns, target.name).catch(() => null))?.json;
+      if (pod?.metadata) {
+        const svcs = (await client.read("nsServices", target.ns).catch(() => null))?.json?.items || [];
+        const [svcName] = servicesForPod(svcs, pod);
+        if (!svcName) return kubeResult(base, client, podOnlyDiagram(pod), `pod ${target.name}, no Service selects it; `);
+        const via = await readKubePath(client, { ns: target.ns, name: svcName, port: null }).catch((failure) => ({ error: failure?.message || String(failure) }));
+        if (via.error) return { ...base, diagram: null, headline: "", error: via.error };
+        return kubeResult(base, client, kubePathDiagram(via), `pod ${target.name} is behind Service ${svcName}; `);
+      }
+    }
     const diagram = kubePathDiagram(world);
-    const bad = diagram.nodes.filter((node) => node.status === "broken");
-    return { ...base, diagram, headline: bad.length ? `${bad.length} broken on this in-cluster path` : "every hop on this in-cluster path looks healthy", hostNote: `in-cluster path in kube context ${client.context || "?"}: read-only, no request sent` };
+    return ingress ? kubeResult(base, client, withIngress(diagram, ingress), `Ingress ${ingress.ns}/${ingress.ingress} (class ${ingress.cls || "default"}); `) : kubeResult(base, client, diagram);
+  }
+
+  async function ingressPathView(host, asked = "") {
+    const base = { region, loadBalancers: [], selected: "", host, hostNote: "", findings: [], notes: [], kube: true, error: "", diagram: null, headline: "" };
+    if (!host.trim()) return { ...base, error: "type ns/service, a service DNS name (svc.ns.svc.cluster.local), ns/pod, or a host served by an Ingress" };
+    const { client, error: noClient } = pathClient(asked);
+    if (noClient) return { ...base, error: noClient };
+    const got = await client.read("ingresses").catch((failure) => ({ error: failure?.message || String(failure) }));
+    if (!got?.json) return { ...base, error: got?.forbidden ? "Ingresses are forbidden for this kube context, so a host can't be traced; type ns/service instead" : `Ingresses could not be read (${got?.error || "no answer"}); type ns/service instead` };
+    const ing = ingressFor(got.json.items || [], host);
+    if (!ing) return { ...base, error: `no Ingress in this cluster serves ${host.slice(0, 120)} (no AWS here, so there is no ALB to look in); type ns/service, a service DNS name or ns/pod` };
+    return kubePathView({ ns: ing.ns, name: ing.name, port: typeof ing.port === "number" ? ing.port : null }, host, asked, ing);
   }
 
   async function readBill(at) {
