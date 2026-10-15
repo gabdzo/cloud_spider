@@ -825,6 +825,12 @@ const page = `<!doctype html>
   #kube-issues li > button { grid-column: 3; grid-row: 1 / 3; align-self: center; }
   #kube-issues .kf-hint { margin-top: 8px; width: 100%; background: transparent; color: var(--pip-bright); border: 1px dashed var(--pip-dim); }
   #kube-search-count.to-all { cursor: pointer; text-decoration: underline dotted; }
+  .svc-pods { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .svc-pod { display: flex; gap: 8px; align-items: baseline; font-size: 12px; overflow-wrap: anywhere; }
+  .svc-pod.broken > span { color: var(--status-broken); }
+  .svc-pod.hang > span { color: var(--status-hang); }
+  .svc-pod > button { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kp-sub { margin: 10px 0 4px; font-size: 10px; letter-spacing: 0.12em; color: var(--pip-dim-text); }
   #kube-issues .kh { margin: 0 0 6px; color: var(--pip-dim-text); font-size: 11px; letter-spacing: 0.1em; }
   #kf-ns-pop { width: min(300px, calc(100vw - 24px)); }
   #kf-ns-pop label { display: flex; gap: 6px; align-items: center; padding: 2px 0; cursor: pointer; overflow-wrap: anywhere; }

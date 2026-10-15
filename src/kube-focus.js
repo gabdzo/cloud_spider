@@ -193,3 +193,30 @@ export function scopeStats(stats, view, focus = defaultFocus(), searching = fals
   if (f.view === "issues" && !searching) lead.push(`SHOWN ${(view?.diagram?.nodes || []).length}`);
   return { ...stats, cells: [...lead, ...stats.cells] };
 }
+
+// The Service panel (INVESTIGATE on a Service): selector, ports, ready
+// endpoints and the pods behind it (selector match on the pods' labels, or
+// through the workloads it selects).
+export function serviceDetail(diagram, id) {
+  const nodes = diagram?.nodes || [];
+  const svc = nodes.find((n) => n.id === id && n.kind === "service");
+  if (!svc) return null;
+  const sel = Object.entries(svc.svc?.selector || {});
+  const via = new Set((diagram.edges || []).filter((e) => e.from === id).map((e) => e.to));
+  const pods = nodes
+    .filter((n) => n.kind === "pod" && n.ns === svc.ns && ((sel.length && sel.every(([k, v]) => n.tags?.[k] === v)) || (n.owner && via.has(n.owner))))
+    .map((n) => ({ id: n.id, name: n.label, status: n.status, caption: n.caption, node: n.pod?.node || "" }))
+    .sort((a, b) => (a.status === "ok") - (b.status === "ok") || a.name.localeCompare(b.name));
+  const ready = svc.endpoints ?? pods.filter((p) => p.status === "ok").length;
+  return {
+    name: svc.label,
+    ns: svc.ns,
+    type: svc.svc?.type || String(svc.caption || "").split(" ")[0],
+    selector: sel.map(([k, v]) => `${k}=${v}`),
+    ports: (svc.svc?.ports || []).map((p) => `${p.name ? `${p.name} ` : ""}${p.port}→${p.targetPort}/${p.protocol}${p.nodePort ? ` (node ${p.nodePort})` : ""}`),
+    ready,
+    readFrom: svc.endpoints !== undefined ? "EndpointSlices" : "pods",
+    issue: svc.issue || "",
+    pods,
+  };
+}

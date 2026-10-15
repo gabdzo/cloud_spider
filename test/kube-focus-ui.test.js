@@ -43,3 +43,11 @@ test("long NetworkPolicy lists fold to +N; ISSUES says how many healthy are hidd
   assert.match(browser, /healthy hidden · SHOW IN ALL/);
   assert.match(browser, /no match in ISSUES · \$\{elsewhere\} healthy in ALL \(click\)/);
 });
+
+test("INVESTIGATE on a Service opens a Service panel", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  assert.match(browser, /function showService\(node\)/);
+  assert.match(browser, /else if \(node\.kind === "service"\) showService\(node\);/);
+  assert.match(browser, /PODS BEHIND IT/);
+});

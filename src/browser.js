@@ -35,7 +35,7 @@ import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
 import { GROUP_BY, cleanGroupBy } from "./graph-group.js";
 import { TOPOLOGY_GROUP_BY_KEY, groupDiagram, lanesForNamespaces } from "./kube-group.js";
-import { SCOPES, TOPOLOGY_FOCUS_KEY, cleanFocus, focusDiagram, scopeStats } from "./kube-focus.js";
+import { SCOPES, TOPOLOGY_FOCUS_KEY, cleanFocus, focusDiagram, scopeStats, serviceDetail } from "./kube-focus.js";
 import { countText, matchOrder, searchKube } from "./kube-search.js";
 import { createK9s } from "./k9s.js";
 import { paintKube } from "./kube-draw.js";
@@ -346,7 +346,7 @@ function renderIssueList() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = "INVESTIGATE";
-    btn.title = it.investigate === "pod" ? "open the pod: events, containers, logs" : "select it on the map";
+    btn.title = it.investigate === "pod" ? "open the pod: events, containers, logs" : it.kind === "service" ? "open the Service: selector, ports, endpoints, pods" : "open it on the map";
     btn.addEventListener("click", () => investigateIssue(it.id));
     li.append(dot, name, btn, why);
     const rel = relatedLine(it.refs);
@@ -374,6 +374,7 @@ function investigateIssue(id) {
   clusterSelected = node.id;
   if (node.host) showNode(node);
   else if (node.kind === "workload") showWorkload(node);
+  else if (node.kind === "service") showService(node);
   else if (node.pod) showPod(node);
   const at = (placedCluster().nodes || []).find((n) => n.id === id || n.members?.some((m) => m.id === id));
   if (at) map.scrollTo({ top: Math.max(0, at.y - 230), left: Math.max(0, at.x - 60), behavior: reducedMotion ? "auto" : "smooth" });
@@ -3571,6 +3572,49 @@ function showWorkload(node) {
   kubePanel.hidden = false;
 }
 
+// A Service: selector, ports, ready endpoints and the pods behind it
+// (serviceDetail, kube-focus.js); a pod row opens that pod.
+function showService(node) {
+  ++podTicket;
+  podInspector.close();
+  const d = serviceDetail(clusterData?.diagram, node.id);
+  if (!d) return;
+  const head = vel("div", "kp-title");
+  head.append(vel("span", "kp-name", `SERVICE · ${d.ns}/${d.name}`));
+  const close = vel("button", "vp-close", "CLOSE");
+  close.type = "button";
+  close.addEventListener("click", () => {
+    clusterSelected = null;
+    showPod(null);
+    draw();
+  });
+  head.append(close);
+  const facts = vel("dl", "vp-facts");
+  const rows = [
+    ["TYPE", d.type],
+    ["SELECTOR", d.selector.join(", ") || "none (endpoints set by hand)"],
+    ["PORTS", d.ports.join(" · ") || "none"],
+    ["READY", `${d.ready} endpoint${d.ready === 1 ? "" : "s"} (from ${d.readFrom})`],
+  ];
+  if (d.issue) rows.push(["ISSUE", d.issue]);
+  for (const [label, value] of rows) facts.append(vel("dt", "", label), vel("dd", "", value));
+  const body = vel("div", "kp-body vp-metrics");
+  body.append(facts, vel("p", "kp-sub", d.pods.length ? `PODS BEHIND IT · ${d.pods.length}` : "NO PODS MATCH THE SELECTOR"));
+  const list = vel("ul", "svc-pods");
+  for (const p of d.pods) {
+    const li = vel("li", `svc-pod ${p.status}`);
+    const b = vel("button", "cmd", p.name);
+    b.type = "button";
+    b.title = [p.caption, p.node].filter(Boolean).join(" · ");
+    b.addEventListener("click", () => investigateIssue(p.id));
+    li.append(b, vel("span", "", p.caption || p.status));
+    list.append(li);
+  }
+  body.append(list);
+  kubePanel.replaceChildren(head, body);
+  kubePanel.hidden = false;
+}
+
 // Cluster view: click a pod for the deep-inspect panel (pod-inspect-view.js).
 let podTicket = 0;
 const podInspector = createPodInspector(kubePanel, {
@@ -3814,6 +3858,7 @@ canvas.addEventListener("click", async (event) => {
       clusterSelected = node?.id || null;
       if (node?.host) showNode(node);
       else if (node?.kind === "workload") showWorkload(node);
+      else if (node?.kind === "service" && !node.members) showService(node);
       else showPod(node?.pod ? node : null);
     }
     draw();

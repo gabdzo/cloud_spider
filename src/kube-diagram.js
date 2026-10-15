@@ -294,7 +294,7 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
     // with no replicas) is idle, not failing.
     const wanted = targets.length > 0 || pods.some((p) => meta(p).namespace === meta(svc).namespace && subset(svc.spec?.selector, meta(p).labels)) || backed.has(key(svc));
     const noEndpoints = selects && wanted && (ready === 0 || (ready === null && targets.length > 0 && targets.every((t) => t.status === "broken")));
-    nodes.push({ id, kind: "service", ns: meta(svc).namespace, labels: meta(svc).labels || {}, label: meta(svc).name, caption: `${svc.spec?.type || "ClusterIP"} :${ports}`, status: (targets.length && !healthy) || noEndpoints ? "broken" : "ok", ...(ready !== null ? { endpoints: ready } : {}), ...(noEndpoints ? { issue: "no ready pods" } : {}) });
+    nodes.push({ id, kind: "service", ns: meta(svc).namespace, labels: meta(svc).labels || {}, label: meta(svc).name, caption: `${svc.spec?.type || "ClusterIP"} :${ports}`, status: (targets.length && !healthy) || noEndpoints ? "broken" : "ok", ...(ready !== null ? { endpoints: ready } : {}), ...(noEndpoints ? { issue: "no ready pods" } : {}), svc: { type: svc.spec?.type || "ClusterIP", selector: svc.spec?.selector || {}, ports: (svc.spec?.ports || []).map((p) => ({ name: p.name || "", port: p.port, targetPort: p.targetPort ?? p.port, protocol: p.protocol || "TCP", ...(p.nodePort ? { nodePort: p.nodePort } : {}) })) } });
     for (const t of targets) edges.push({ from: id, to: t.id, status: t.status === "broken" ? "broken" : "ok" });
   }
   const ingresses = (snapshot.ingresses || []).filter(inUserNs);
