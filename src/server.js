@@ -1490,6 +1490,7 @@ const page = `<!doctype html>
   #kube-ctx button { padding-right: 26px; }
   #kube-ctx button em { position: absolute; top: 3px; right: 3px; min-width: 15px; padding: 0 3px; font-style: normal; font-size: 9px; line-height: 13px; text-align: center; color: var(--pip-ink); background: var(--status-broken); border: 1px solid var(--btn-rim); }
   #kube-ctx button.warn em { background: var(--status-hang); }
+  #kube-ctx.below { top: 44px; right: 8px; max-width: calc(100% - 16px); }
   @media (max-width: 900px) {
     #kube-ctx { top: 44px; right: 8px; max-width: calc(100% - 16px); }
     #kube-ctx > b { display: none; }

@@ -22,3 +22,12 @@ test("a search stays inside ISSUES and searches what is shown", async () => {
   assert.match(browser, /searchKube\(diagram, text\)/);
   assert.match(browser, /focusedView\(\)\?\.diagram : clusterData\?\.diagram/);
 });
+
+test("the context switcher drops to its own row when it would cover the tabs", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const server = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
+  const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  assert.match(server, /#kube-ctx\.below \{ top: 44px;/);
+  assert.match(browser, /const below = leftSide && free < kubeCtxEl\.scrollWidth;/);
+  assert.match(browser, /kubeCtxEl\.classList\.contains\("below"\)\) \? 88 : 52/);
+});

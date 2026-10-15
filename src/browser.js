@@ -2545,7 +2545,7 @@ function placedCluster() {
   if (clusterData?.diagram?.layout === "kube") {
     // Laid out once per answer, width and lane state; frames only paint.
     // A narrow window puts the context switcher under the tabs.
-    const top = !kubeCtxEl.hidden && (map.clientWidth || 0) < 900 ? 88 : 52;
+    const top = !kubeCtxEl.hidden && ((map.clientWidth || 0) < 900 || kubeCtxEl.classList.contains("below")) ? 88 : 52;
     const found = currentSearch();
     // A search opens the lanes and lists the folded workloads it found
     // pods in, without touching the saved lane state.
@@ -5981,6 +5981,7 @@ function connectChip() {
 function placeConnectChip() {
   if (!kcChip || mode !== "cluster" || kubeDockEl.hidden) {
     kubeCtxEl.style.maxWidth = "";
+    kubeCtxEl.classList.remove("below");
     return;
   }
   const room = kubeDockEl.parentElement?.clientWidth || window.innerWidth;
@@ -5998,13 +5999,22 @@ function placeConnectChip() {
     kubeDockEl.style.top = "8px";
   }
   const leftSide = kubeDockEl.style.left !== "auto";
-  kubeCtxEl.style.maxWidth = leftSide ? `${Math.max(160, room - (kubeDockEl.offsetLeft + kubeDockEl.offsetWidth) - 22)}px` : "";
+  // Not enough room right of the tabs and the EKS chip (a 1024 window): the
+  // context switcher drops to its own row instead of covering them.
+  const free = room - (kubeDockEl.offsetLeft + kubeDockEl.offsetWidth) - 22;
+  kubeCtxEl.style.maxWidth = "";
+  const below = leftSide && free < kubeCtxEl.scrollWidth;
+  if (kubeCtxEl.classList.contains("below") !== below) {
+    kubeCtxEl.classList.toggle("below", below);
+    draw();
+  }
 }
 
 function hideConnectStrip() {
   kubeConnectEl.hidden = true;
   kubeDockEl.hidden = true;
   kubeCtxEl.style.maxWidth = "";
+  kubeCtxEl.classList.remove("below");
 }
 
 function renderConnectStrip(body) {

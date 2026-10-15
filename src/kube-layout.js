@@ -55,6 +55,12 @@ export function middle(text, max) {
   const value = String(text || "");
   if (max < 4 || value.length <= max) return value.length <= max ? value : value.slice(0, Math.max(1, max));
   const keep = max - 1;
+  // A generated suffix ("-6b7d9c5f8-q4mnv", "-0"): keep the start and that
+  // last bit. A plain name ("broken-backend") reads better cut at the end
+  // ("broken-bac…") than in the middle ("broke…kend").
+  const last = /-([a-z0-9]{1,6})$/.exec(value);
+  if (last && /\d/.test(last[1]) && keep - last[1].length >= 4) return `${value.slice(0, keep - last[1].length)}…${last[1]}`;
+  if (!last || !/\d/.test(last[1])) return `${value.slice(0, keep)}…`;
   const head = Math.ceil(keep * 0.55);
   return `${value.slice(0, head)}…${value.slice(value.length - (keep - head))}`;
 }
@@ -513,7 +519,9 @@ export function hoverText(hit) {
   if (hit.type === "expand") return hit.node.kind === "pod-group" ? `${hit.node.label} ×${hit.node.count}: click to list each pod` : `${hit.node.expanded ? "fold" : "list"} the pods of ${hit.node.label}`;
   const n = hit.node;
   if (n.members) return `${n.ns}/${n.members.join(", ")}: ${n.members.length} Services on the same workloads`;
-  if (n.kind === "pod") return `${n.pod?.ns}/${n.label}${n.pod?.node ? ` on ${n.pod.node}` : ""}`;
+  // The full name (cards shorten it), then the caption (an issue's reason).
+  const why = n.caption ? `\n${n.caption}` : "";
+  if (n.kind === "pod") return `${n.pod?.ns}/${n.label}${n.pod?.node ? ` on ${n.pod.node}` : ""}${why}`;
   if (n.kind === "node") return [n.host?.name || n.label, nodeInfoLine(n.host)].filter(Boolean).join(" · ");
-  return n.ns ? `${n.ns}/${n.label}` : n.label;
+  return `${n.ns ? `${n.ns}/${n.label}` : n.label}${why}`;
 }
