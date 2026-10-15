@@ -32,7 +32,7 @@ import { pathVerdict } from "./path-card.js";
 import { drawPanHint, nodeTitle, paintDiagram, paintPath, sentenceRect } from "./path-draw.js";
 import { CLUSTER_COLUMNS } from "./cluster.js";
 import { KUBE_COLUMNS } from "./kube-diagram.js";
-import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
+import { hoverText, kubeHit, layoutKube, middle } from "./kube-layout.js";
 import { GROUP_BY, cleanGroupBy } from "./graph-group.js";
 import { TOPOLOGY_GROUP_BY_KEY, groupDiagram, lanesForNamespaces } from "./kube-group.js";
 import { SCOPES, TOPOLOGY_FOCUS_KEY, cleanFocus, diagnoseChoices, diagnoseTarget, focusDiagram, scopeStats, serviceDetail } from "./kube-focus.js";
@@ -3661,11 +3661,11 @@ function showService(node) {
   const list = vel("ul", "svc-pods");
   for (const p of d.pods) {
     const li = vel("li", `svc-pod ${p.status}`);
-    const b = vel("button", "cmd", p.name);
+    const b = vel("button", "cmd svc-pod-btn", middle(p.name, 40));
     b.type = "button";
-    b.title = [p.caption, p.node].filter(Boolean).join(" · ");
+    b.title = [p.name, p.caption, p.node].filter(Boolean).join(" · ");
     b.addEventListener("click", () => investigateIssue(p.id));
-    li.append(b, vel("span", "", p.caption || p.status));
+    li.append(b, vel("span", "svc-pod-why", p.caption || p.status));
     list.append(li);
   }
   body.append(list);

@@ -831,10 +831,11 @@ const page = `<!doctype html>
   #kube-issues .kf-hint { margin-top: 8px; width: 100%; background: transparent; color: var(--pip-bright); border: 1px dashed var(--pip-dim); }
   #kube-search-count.to-all { cursor: pointer; text-decoration: underline dotted; }
   .svc-pods { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-  .svc-pod { display: flex; gap: 8px; align-items: baseline; font-size: 12px; overflow-wrap: anywhere; }
+  .kp-body .svc-pods > li.svc-pod, .svc-pod { grid-template-columns: none; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; min-width: 0; }
   .svc-pod.broken > span { color: var(--status-broken); }
   .svc-pod.hang > span { color: var(--status-hang); }
-  .svc-pod > button { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kp-body .svc-pod > button.svc-pod-btn { flex: 0 1 auto; width: auto; min-width: 0; max-width: 100%; min-height: 26px; height: auto; padding: 2px 8px; font-size: 11px; letter-spacing: 0.04em; text-transform: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kp-body .svc-pod > .svc-pod-why { flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
   .kp-sub { margin: 10px 0 4px; font-size: 10px; letter-spacing: 0.12em; color: var(--pip-dim-text); }
   #kube-issues .kh { margin: 0 0 6px; color: var(--pip-dim-text); font-size: 11px; letter-spacing: 0.1em; }
   #kf-ns-pop { width: min(300px, calc(100vw - 24px)); }
@@ -1891,7 +1892,7 @@ const page = `<!doctype html>
   .k9-msg { margin-left: auto; color: var(--pip-mid); }
   .k9-msg.k9-bad { color: var(--status-broken); }
   @media (max-width: 899px) { #k9s { left: 6px; right: 6px; height: 62%; } .k9-input { width: 120px; } }
-  #kube-panel { position: absolute; z-index: 5; right: 12px; top: var(--kube-top, 48px); width: min(460px, calc(100% - 24px)); max-height: calc(100% - 60px); background: var(--pip-screen); }
+  #kube-panel { position: absolute; z-index: 6; right: 12px; top: calc(var(--kube-top, 48px) + 4px); width: min(460px, calc(100% - 24px)); max-height: calc(100% - 60px); background: var(--pip-screen); }
   .kp-title { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.12em; font-size: 11px; }
   .kp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kp-body { overflow: auto; padding: 6px 12px 10px; }
