@@ -139,15 +139,18 @@ export function pathVerdict(diagram) {
     const card = cardOf(bad);
     return { tone: bad.status, text: `${bad.status === "broken" ? "✕" : "!"} ${from} → ${card.type.split(" ·")[0]} ${card.name}: ${short(card.reason)}` };
   }
+  const tgs = nodes.filter((node) => node.kind === "tg");
   const answer = nodes.find((node) => node.kind === "answer");
-  if (answer) {
+  if (answer && !tgs.length) {
     const card = cardOf(answer);
     const hang = answer.status === "hang";
     return { tone: hang ? "hang" : "ok", text: `${hang ? "!" : "✓"} ${from} → ${card.type}: the ALB answers ${answer.facts?.answer === "redirect" ? `→ ${card.name}` : "itself"}, no target is reached${hang ? " (fine if on purpose)" : ""}` };
   }
-  const end = [...nodes].reverse().find((node) => node.kind === "tg") || nodes[nodes.length - 1];
+  // A weighted split names each share ("kuma 90% / canary 10%").
+  const shared = tgs.filter((node) => node.facts?.share != null);
+  const endName = shared.length > 1 ? shared.map((node) => `${cardOf(node).name} ${node.facts.share}%`).join(" / ") : cardOf(tgs[0] || nodes[nodes.length - 1]).name;
   const targets = nodes.filter((node) => node.kind === "target");
   const ok = targets.filter((node) => node.status === "ok").length;
   const unknown = nodes.some((node) => node.status === "unknown");
-  return { tone: unknown ? "unknown" : "ok", text: `${unknown ? "?" : "✓"} ${from} → ${cardOf(end).name}: ${unknown ? "nothing failed, some hops unchecked" : "OK"}${targets.length ? ` · ${ok}/${targets.length} targets healthy` : ""}` };
+  return { tone: unknown ? "unknown" : "ok", text: `${unknown ? "?" : "✓"} ${from} → ${endName}: ${unknown ? "nothing failed, some hops unchecked" : "OK"}${targets.length ? ` · ${ok}/${targets.length} targets healthy` : ""}` };
 }

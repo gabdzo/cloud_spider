@@ -63,3 +63,11 @@ test("the verdict names the first failing hop, or where the request ends", () =>
   assert.match(redirect.text, /^✓ Internet → REDIRECT · 301: the ALB answers → \/dashboard/);
   assert.equal(pathVerdict({ nodes: [] }).text, "");
 });
+
+test("a forward path with a default fixed rule beside it is judged on the forward", () => {
+  const n = (kind, label, status, facts = {}) => ({ id: label, kind, label, status, sentence: "", facts });
+  const v = pathVerdict({ nodes: [n("internet", "INTERNET", "ok"), n("tg", "frontend", "ok"), n("answer", "404", "ok", { answer: "fixed", code: "404" }), n("target", "t", "ok")] });
+  assert.match(v.text, /^✓ Internet → frontend: OK/);
+  const w = pathVerdict({ nodes: [n("internet", "INTERNET", "ok"), n("tg", "kuma", "ok", { share: 90 }), n("tg", "canary", "ok", { share: 10 })] });
+  assert.match(w.text, /kuma 90% \/ canary 10%: OK/);
+});
