@@ -2868,7 +2868,7 @@ function renderPathProbe() {
   if (!pathProbeButton) return;
   pathProbeButton.hidden = mode !== "path" || sample;
   pathProbeButton.disabled = pathProbe === "pending";
-  pathProbeButton.textContent = pathProbe === "pending" ? "PROBING…" : "↻ RE-PROBE";
+  pathProbeButton.textContent = pathProbe === "pending" ? "…" : "↻";
 }
 pathProbeButton?.addEventListener("click", () => probePath(pathQuery(), true));
 

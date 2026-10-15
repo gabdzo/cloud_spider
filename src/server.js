@@ -2686,6 +2686,8 @@ const page = `<!doctype html>
   #path-flow[hidden] { display: none; }
   @media (prefers-reduced-motion: reduce) { .term-cursor, .term-light[data-state="running"] { animation: none; } }
   @media (max-width: 900px) { #term { top: 6px; right: 6px; bottom: 6px; width: calc(100% - 12px); } }
+  /* SNIFF's verdict stays one line; the whole of it (and the timing) is on its hover. */
+  #status[data-tone] { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; max-width: 100%; vertical-align: bottom; }
   #status[data-tone="hang"] { color: var(--status-hang); }
   #status[data-tone="broken"] { color: var(--status-broken); font-weight: bold; }
   #status.issue { color: var(--status-broken); text-shadow: 0 0 6px rgba(255, 90, 54, 0.4); }
@@ -3382,7 +3384,7 @@ const page = `<!doctype html>
       <button id="no" class="cmd" type="button" hidden>leave it</button>
     </span>
     <button id="path-flow" class="cmd" type="button" hidden title="SNIFF layout: left to right or top to bottom">↔ / ↕</button>
-    <button id="path-probe" class="cmd" type="button" hidden title="Send the one real request again (GET from this machine to this path's ALB; no cookies; answers are cached ~30 s)">↻ RE-PROBE</button>
+    <button id="path-probe" class="cmd" type="button" hidden title="Send the one real request again (GET from this machine to this path's ALB; no cookies; answers are cached ~30 s)" aria-label="re-probe">↻</button>
     <button id="ask-this" class="cmd" type="button" data-icon="terminal" hidden>ASK ABOUT THIS</button>
   </div>
   <p id="error" hidden></p>

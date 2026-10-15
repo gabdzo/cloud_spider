@@ -389,7 +389,8 @@ function lbNode(graph, lb) {
       };
     }
   }
-  const symptom = symptomOf(lb, graph.metrics?.[lb.arn]);
+  const symptom = symptomOf(lb, graph.metrics?.[lb.arn], answersItself(graph, lb));
+  if (symptom?.status === "ok") return { ...node, sentence: symptom.sentence };
   return symptom ? { ...node, ...symptom, symptom: true } : node;
 }
 
@@ -404,21 +405,33 @@ function routesToInternet(graph, vpcId, subnetId) {
   );
 }
 
-function symptomOf(lb, m) {
+// The status codes this ALB's own fixed-response rules answer with: those
+// count in HTTPCode_ELB_5XX too, so a maintenance 503 is not a broken ALB.
+function answersItself(graph, lb) {
+  const listeners = new Set(graph.listeners.filter((item) => item.lbArn === lb.arn).map((item) => item.arn));
+  const codes = new Set();
+  for (const rule of graph.rules) if (listeners.has(rule.listenerArn)) for (const action of rule.actions || []) if (action.type === "fixed-response") codes.add(Number(action.statusCode));
+  for (const listener of graph.listeners) if (listeners.has(listener.arn)) for (const action of listener.defaultActions || []) if (action.type === "fixed-response") codes.add(Number(action.statusCode));
+  return codes;
+}
+
+function symptomOf(lb, m, fixedCodes = new Set()) {
   if (!m) return null;
   const when = "in the last 15 minutes";
-  if (m.elb504 > 0) {
+  if (m.elb504 > 0 && !fixedCodes.has(504)) {
     return { status: "hang", sentence: `${m.elb504} requests timed out at ${lb.name} ${when}. A target took the connection and did not answer in time.` };
   }
-  if (m.elb502 > 0) {
+  if (m.elb502 > 0 && !fixedCodes.has(502)) {
     return { status: "broken", sentence: `${m.elb502} requests got 502 from ${lb.name} ${when}. A target closed the connection or sent a bad response.` };
   }
-  if (m.elb503 > 0) {
+  if (m.elb503 > 0 && !fixedCodes.has(503)) {
     return { status: "broken", sentence: `${m.elb503} requests got 503 from ${lb.name} ${when}. No target could take them.` };
   }
   if (m.target5xx > 0) {
     return { status: "broken", sentence: `${m.target5xx} requests got a 5xx from the service itself ${when}.` };
   }
+  const own = [503, 502, 504].find((code) => m[`elb${code}`] > 0 && fixedCodes.has(code));
+  if (own) return { status: "ok", sentence: `${m[`elb${own}`]} requests got ${own} from ${lb.name} ${when}; a fixed-response rule here answers ${own} on purpose, so they are not counted as a fault.` };
   return null;
 }
 

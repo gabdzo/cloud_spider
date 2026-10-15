@@ -138,7 +138,9 @@ function configView(nodes) {
   const tgs = nodes.filter((node) => node.kind === "tg");
   const answer = !tgs.length ? nodes.find((node) => node.kind === "answer") : null;
   const shared = tgs.filter((node) => node.facts?.share != null);
-  const endName = shared.length > 1 ? shared.map((node) => `${cardOf(node).name} ${node.facts.share}%`).join(" / ") : cardOf(tgs[0] || nodes[nodes.length - 1]).name;
+  // A weighted split stays short: "kuma… 90% / 10% (2 target groups)"; the
+  // names are on the cards.
+  const endName = shared.length > 1 ? `${shared.length} target groups ${shared.map((node) => `${node.facts.share}%`).join("/")}` : cardOf(tgs[0] || nodes[nodes.length - 1]).name;
   const targets = nodes.filter((node) => node.kind === "target");
   const healthy = targets.length ? `${targets.filter((node) => node.status === "ok").length}/${targets.length} healthy` : "";
   return { bad, from, tgs, answer, endName, healthy, unknown: nodes.some((node) => node.status === "unknown") };
@@ -190,7 +192,11 @@ export function pathVerdict(diagram, probe = null) {
       if (r.ok && r.status === expect) return { tone: "ok", text: `✓ ${c.from} → ${said} in ${ms}${local}`, title };
       return { tone: "broken", text: `✕ ${c.from}: AWS config says ${said}, but a real request got ${got}${local}`, title };
     }
-    const what = `${f.code}${f.body ? ` ${short(f.body).slice(0, 40)}` : ""}`;
+    // "503 showcase is in maintenance (…": the body up to a bracket or 28
+    // characters, cut at a word.
+    const body = String(f.body || "").split(/[(\n<{]/)[0].trim();
+    const clip = body.length > 28 ? `${body.slice(0, 28).replace(/\s+\S*$/, "")}…` : body;
+    const what = `${f.code}${clip ? ` ${clip}` : ""}`;
     if (!sent) return { tone: hang ? "hang" : "ok", text: `${hang ? "!" : "✓"} ${c.from} → ${what}: the ALB answers itself${hang ? " (on purpose?)" : ""}${pending}`, title };
     if (r.ok && r.status === expect) return { tone: hang ? "hang" : "ok", text: `${hang ? "!" : "✓"} ${c.from} → ${what} in ${ms}${hang ? " (on purpose)" : ""}${local}`, title };
     return { tone: "broken", text: `✕ ${c.from}: AWS config says the ALB answers ${f.code}, but a real request got ${got}${local}`, title };

@@ -78,7 +78,7 @@ test("verdict with a real request: time, redirect, maintenance, and disagreement
   assert.match(pathVerdict(forward, res({ ok: false, error: "timeout", timing: { dns: 5, total: 8005 } })).text, /timed out after 8005 ms.*likely at ALB/);
   const redirect = { nodes: [n("internet", "INTERNET", "ok"), n("answer", "301 → /dashboard", "ok", { answer: "redirect", code: "301", to: { path: "/dashboard", protocol: "HTTP", port: "80", sameHost: true } })] };
   assert.equal(pathVerdict(redirect, res({ ok: true, status: 301, timing: { total: 40 } })).text, "✓ Internet → 301 → /dashboard in 40 ms (from this machine)");
-  const maint = { nodes: [n("internet", "INTERNET", "ok"), n("answer", "503", "hang", { answer: "fixed", code: "503", body: "maintenance" })] };
+  const maint = { nodes: [n("internet", "INTERNET", "ok"), n("answer", "503", "hang", { answer: "fixed", code: "503", body: "maintenance (cloud spider showcase)" })] };
   const m = pathVerdict(maint, res({ ok: true, status: 503, timing: { total: 35 } }));
   assert.equal(m.text, "! Internet → 503 maintenance in 35 ms (on purpose) (from this machine)");
   const broken = { nodes: [n("internet", "INTERNET", "ok"), n("tg", "empty", "broken")] };
@@ -101,4 +101,25 @@ test("the boutique shape (two bands, a two-card column in each) fits the 381 px 
   const e = (from, to) => ({ from, to, status: "ok" });
   const placed = layoutPath({ nodes, edges: [e("i", "lb"), e("lb", "l"), e("l", "r1"), e("l", "r0"), e("r1", "tg"), e("r0", "a"), e("tg", "t"), e("t", "n"), e("n", "c")] }, 984);
   assert.ok(placed.contentHeight <= 381, `contentHeight ${placed.contentHeight}`);
+});
+
+test("a weighted split stays short in the verdict", () => {
+  const w = { nodes: [n("internet", "INTERNET", "ok"), n("tg", "kuma", "ok", { share: 90 }), n("tg", "canary", "ok", { share: 10 })] };
+  assert.equal(pathVerdict(w, res({ ok: true, status: 200, timing: { total: 99 } })).text, "✓ Internet → 2 target groups 90%/10%: 200 in 99 ms (from this machine)");
+});
+
+import { diagnose } from "../src/path-diagnose.js";
+import { actionFrom } from "../src/aws-path.js";
+
+test("ELB 503s on an ALB with a fixed 503 rule are not called a broken ALB", () => {
+  const g = (fixed) => ({
+    loadBalancers: [{ arn: "lb", name: "showcase", type: "application", scheme: "internal", dns: "d", state: "active", securityGroups: [], subnetIds: [], vpcId: "v" }],
+    listeners: [{ arn: "l", lbArn: "lb", port: 80, protocol: "HTTP", defaultActions: [] }],
+    rules: [{ arn: "r", listenerArn: "l", priority: "1", isDefault: false, hosts: [], paths: ["/m"], actions: [actionFrom(fixed ? { Type: "fixed-response", FixedResponseConfig: { StatusCode: "503", ContentType: "text/plain" } } : { Type: "fixed-response", FixedResponseConfig: { StatusCode: "404", ContentType: "text/plain" } })] }],
+    targetGroups: [], health: {}, tags: {}, nodes: [], clusters: [], securityGroups: [], interfaces: [], routeTables: [], subnets: [], metrics: { lb: { elb503: 3 } }, notes: [],
+  });
+  const lbOf = (graph) => diagnose(graph, "lb").nodes.find((node) => node.kind === "lb");
+  assert.equal(lbOf(g(true)).status, "ok");
+  assert.match(lbOf(g(true)).sentence, /answers 503 on purpose/);
+  assert.equal(lbOf(g(false)).status, "broken");
 });
