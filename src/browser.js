@@ -77,6 +77,8 @@ import { sloBlock, sloFacts } from "./slo-view.js";
 import { renderSpend } from "./spend-view.js";
 import { createSettings, readHidden, visibleModules } from "./settings-view.js";
 import { nsPanelModel } from "./map-ns-panel.js";
+import { pipModel } from "./pipboy-model.js";
+import { PIP_ON_KEY, mountPip } from "./pipboy-view.js";
 import { KUBE_MAP_KEY, POLICIES_KEY, compoundHit, compoundHover, kubeModel, layoutKubeOnly, readKubeChoices, readPoliciesOn } from "./map-kube.js";
 import { mountWhere } from "./where.js";
 
@@ -2743,7 +2745,32 @@ function drawCluster() {
   });
 }
 
+// The Pip-Boy STAT screen (pipboy-view.js): over the MAP, on a toggle.
+const pipBoyButton = /** @type {HTMLButtonElement} */ (document.querySelector("#map-pipboy"));
+const pipBoyEl = /** @type {HTMLElement} */ (document.querySelector("#pipboy"));
+let pipBoyOn = readPref(PIP_ON_KEY, "0") === "1";
+const pipBoy = mountPip(pipBoyEl, {
+  load: () => fetch(sample ? "/api/cluster-sample" : `/api/cluster${clusterContext ? `?context=${encodeURIComponent(clusterContext)}` : ""}`).then((r) => r.json()),
+  model: pipModel,
+  onClose: () => setPipBoy(false),
+  store: (() => { try { return window.localStorage; } catch { return null; } })(),
+});
+function setPipBoy(on) {
+  pipBoyOn = on;
+  try { window.localStorage.setItem(PIP_ON_KEY, on ? "1" : "0"); } catch { /* this page only */ }
+  syncPipBoy();
+}
+function syncPipBoy() {
+  const room = mode === "map" && moduleOn("kubernetes");
+  pipBoyButton.hidden = !room || pipBoyOn;
+  const show = room && pipBoyOn;
+  if (show && pipBoyEl.hidden) pipBoy.show();
+  else if (!show && !pipBoyEl.hidden) pipBoy.hide();
+}
+pipBoyButton.addEventListener("click", () => setPipBoy(true));
+
 function draw() {
+  syncPipBoy();
   syncClusterScreens();
   if (!kubeFocusBox.hidden || !kubeHealthy.hidden) syncFocusBar();
   const noCluster = mode === "cluster" && !sample && Boolean(clusterData?.unset) && !clusterData?.diagram && (!clusterTabsShown || clusterScreen === "topology");
