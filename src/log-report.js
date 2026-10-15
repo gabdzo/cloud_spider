@@ -1,3 +1,4 @@
+// @ts-check
 // LOG ERRORS service: picks the source (Loki first, then CloudWatch Logs
 // Insights for EKS when the aws module is on), reads tonight's window and the
 // one before, restarts from the pods, and hands it all to log-errors.js.
@@ -45,6 +46,9 @@ export function withWindow(report, asked, why = "") {
 
 // nodeIndex: async () => nodeOf, read once per build (main.js: the live
 // SERVICES graph), so LOG ERRORS can link a service to its graph node.
+/**
+ * @param {{ logs?: Record<string, any>, fetch?: typeof globalThis.fetch, insights?: any, kube?: any, clock?: () => number, nodeOf?: any, nodeIndex?: any }} [options]
+ */
 export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights = null, kube = null, clock = Date.now, nodeOf: fixedNodeOf = null, nodeIndex = null } = {}) {
   const cache = new Map(); // window kind -> { at, value }
   const flights = new Map();
