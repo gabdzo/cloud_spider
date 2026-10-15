@@ -101,3 +101,17 @@ test("cleanFocus: bad saved values fall back", () => {
   assert.deepEqual(cleanFocus({ view: "x", scope: "addons", namespaces: ["ok", "Bad NS", 3, "ok"] }), { view: "issues", scope: "addons", namespaces: ["ok"] });
   assert.deepEqual(cleanFocus(JSON.stringify({ view: "all" })).view, "all");
 });
+
+test("bottom bar follows scope and mode", async () => {
+  const { scopeStats } = await import("../src/kube-focus.js");
+  const { pathStats } = await import("../src/chrome.js");
+  const d = cluster();
+  const apps = focusDiagram(d, { view: "all", scope: "apps" }).diagram;
+  const base = pathStats(apps);
+  const issues = focusDiagram(d, { view: "issues", scope: "apps" });
+  const got = scopeStats(base, issues, { view: "issues", scope: "apps" });
+  assert.deepEqual(got.cells.slice(0, 2), ["SCOPE APPS", `SHOWN ${issues.diagram.nodes.length}`]);
+  assert.ok(base.cells[0] !== pathStats(d).cells[0], "apps counts differ from the whole cluster");
+  assert.deepEqual(scopeStats(base, issues, { view: "all", scope: "all", namespaces: ["shop"] }).cells[0], "SCOPE ALL · shop");
+  assert.equal(scopeStats(base, issues, { view: "issues" }, true).cells[1], base.cells[0], "a search shows all: no SHOWN");
+});

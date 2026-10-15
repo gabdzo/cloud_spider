@@ -181,3 +181,15 @@ export function focusDiagram(diagram, focus = defaultFocus()) {
   const ids = new Set(out.map((n) => n.id));
   return { ...base, diagram: { ...diagram, nodes: out, edges: edges.filter((e) => ids.has(e.from) && ids.has(e.to)), columns: usedColumns(out) }, hiddenHealthy, healthyLanes };
 }
+
+// The bottom bar's cells for TOPOLOGY: the scope's counts (pathStats of the
+// scoped ALL diagram), led by the scope and, in ISSUES, "SHOWN n" cards.
+export function scopeStats(stats, view, focus = defaultFocus(), searching = false) {
+  if (!stats) return stats;
+  const f = cleanFocus(focus);
+  const scope = SCOPES.find((x) => x.id === f.scope)?.label.toUpperCase() || "ALL";
+  const where = f.namespaces.length ? `${scope} · ${f.namespaces.length === 1 ? f.namespaces[0] : `${f.namespaces.length} NS`}` : scope;
+  const lead = [`SCOPE ${where}`];
+  if (f.view === "issues" && !searching) lead.push(`SHOWN ${(view?.diagram?.nodes || []).length}`);
+  return { ...stats, cells: [...lead, ...stats.cells] };
+}
