@@ -3632,7 +3632,7 @@ function showService(node) {
     showPod(null);
     draw();
   });
-  const dx = vel("button", "vp-close", "DIAGNOSE");
+  const dx = vel("button", "vp-close vp-primary", "▶ DIAGNOSE");
   dx.type = "button";
   dx.title = "read-only investigation of this Service (DIAGNOSE)";
   dx.addEventListener("click", () => diagnoseNode(node.id));

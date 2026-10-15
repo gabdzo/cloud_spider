@@ -1927,6 +1927,13 @@ const page = `<!doctype html>
     color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-ink);
   }
   .vp-close:hover, .vp-close:focus-visible { outline: none; color: var(--pip-hot); box-shadow: 0 0 0 1px var(--pip-hot); }
+  /* primary action in a panel title bar: solid amber plate on the bright green bar so it reads as THE button */
+  .vp-close.vp-primary {
+    min-height: 24px; padding: 0 12px; font-size: 11px; font-weight: bold; color: #000;
+    background: var(--world-amber, #ffcc33); border: 2px solid #000; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 0 8px rgba(255, 204, 51, 0.6);
+  }
+  .vp-close.vp-primary:hover, .vp-close.vp-primary:focus-visible { color: #000; background: #ffe680; box-shadow: 0 0 0 2px #000, 0 0 12px rgba(255, 204, 51, 0.9); }
+  .kp-title .vp-close:not(.vp-primary) { min-height: 24px; border: 2px solid #000; }
   .vault-panel.damaged { border-color: var(--status-broken); }
   .vault-panel.damaged .vp-title { color: var(--pip-ink); background: var(--status-broken); }
   .vault-panel.damaged::before, .vault-panel.damaged::after { border-color: var(--status-broken); }
