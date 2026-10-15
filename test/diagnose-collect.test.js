@@ -121,3 +121,20 @@ test("collectLive: a not-ready pod's readiness probe failure (HTTP 404) lands in
   assert.match(k.summary, /Readiness probe GET :8080\/healthz returns 404 \(12 failures\): Readiness probe failed: HTTP probe failed with statuscode: 404/);
   assert.ok(rec.findings.some((f) => f.code === "NET-001" && f.severity === "high"));
 });
+
+test("collectLive: the SNIFF path graph is read alongside the kube reads, not after them (cluster northwind-qa)", async () => {
+  const slow = (v) => new Promise((r) => setTimeout(() => r(v), 150));
+  const kube = fakeKube({
+    service: () => slow({ json: svc }),
+    endpointSlices: () => slow({ json: { items: [] } }),
+    nsPods: () => slow({ json: { items: [podJ("web-1", "10.0.0.5", true)] } }),
+  });
+  kube.target = async () => ({ clusterName: "northwind-qa" });
+  let started = 0;
+  const t0 = Date.now();
+  const pathGraph = () => { started = Date.now() - t0; return slow({ targetGroups: [] }); };
+  const facts = await collectLive(kube, { namespace: "app", service: "web", context: "northwind-qa-viewer", now, pathGraph });
+  assert.ok(started < 100, `path graph started at ${started} ms, before the kube reads finished`);
+  assert.ok(Date.now() - t0 < 290, `took ${Date.now() - t0} ms: the reads overlap`);
+  assert.equal(facts.scope.cluster, "northwind-qa");
+});
