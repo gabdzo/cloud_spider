@@ -267,6 +267,17 @@ const shutdown = createShutdown({
   save: () => Promise.race([sloStore.save(), new Promise((done) => setTimeout(done, 2000).unref())]),
 });
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => shutdown.signal(signal));
+// A promise nobody awaited that failed is logged, not a crash of the whole
+// page (Node's default exits); an exception that escaped everything is
+// logged and the server shuts down the normal way (pulumi asked to cancel,
+// SLO history saved) rather than dying mid-write.
+process.on("unhandledRejection", (reason) => {
+  process.stdout.write(`unhandled rejection: ${reason?.stack || reason}\n`);
+});
+process.on("uncaughtException", (error) => {
+  process.stdout.write(`uncaught exception: ${error?.stack || error}\n`);
+  shutdown.signal("SIGTERM");
+});
 
 const pulumi = spawnSync("pulumi", ["version"], { shell: false });
 const pulumiLine = pulumiWarning(pulumi.status);
