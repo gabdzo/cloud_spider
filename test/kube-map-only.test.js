@@ -55,7 +55,10 @@ test("layoutKubeOnly wraps entry chips inside the room", () => {
   const many = { nodes: [...diagram.nodes, ...Array.from({ length: 12 }, (_, i) => ({ id: `svc:x/s${i}`, kind: "service", ns: "x", label: `service-${i}`, status: "ok", svc: { type: "LoadBalancer", ports: [{ port: 80 }] } }))], edges: diagram.edges };
   const placed = layoutKubeOnly(new Map([["wren", kubeModel(many, "wren")]]), { room: 500 });
   assert.ok(placed.kubeOnly.entries.every((e) => e.x + e.w <= 8 + 500));
-  assert.ok(new Set(placed.kubeOnly.entries.map((e) => e.y)).size > 1);
+  // One row; the rest fold into "+N more" (none dropped).
+  assert.equal(new Set(placed.kubeOnly.entries.map((e) => e.y)).size, 1);
+  const more = placed.kubeOnly.entries.find((e) => e.kind === "more");
+  assert.ok(more && placed.kubeOnly.entries.length - 1 + more.rest.length >= 12);
 });
 
 test("policy lines: every allow line drawn by default, outside peers as chips, POLICIES OFF hides them", async () => {

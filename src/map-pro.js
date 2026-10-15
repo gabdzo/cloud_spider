@@ -802,6 +802,10 @@ function compoundGround(ctx, placed) {
   }
   for (const c of compoundsOf(placed)) {
     round(ctx, c.x + 0.5, c.y + 0.5, c.w - 1, c.h - 1, 10);
+    if (c.solid) {
+      ctx.fillStyle = C.canvas;
+      ctx.fill();
+    }
     ctx.fillStyle = rgba(C.eks, 0.05);
     ctx.fill();
     ctx.strokeStyle = rgba(C.eks, 0.7);

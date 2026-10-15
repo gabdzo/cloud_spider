@@ -12,6 +12,11 @@ const TONE = { ok: PIP.bright, hang: STATUS.hang, broken: STATUS.broken, unknown
 
 // Chain-link fence with posts, on a slightly paler pad of soil.
 function fence(ctx, c) {
+  // k8s-only: the band is the map, so the desert props stay out of it.
+  if (c.solid) {
+    ctx.fillStyle = rgba(PIP.ink, 0.92);
+    ctx.fillRect(c.x, c.y, c.w, c.h);
+  }
   ctx.fillStyle = rgba(WORLD.dirtLight, 0.55);
   ctx.fillRect(c.x, c.y, c.w, c.h);
   ctx.strokeStyle = rgba(WORLD.metalLight, 0.7);
