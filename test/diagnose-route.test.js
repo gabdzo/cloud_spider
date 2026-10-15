@@ -29,3 +29,16 @@ test("route: live needs DNS names and a context; unknown paths fall through", as
   assert.equal((await call("POST", "/api/diagnose/verify", { investigation_id: "nope" })).status, 404);
   assert.equal((await call("GET", "/api/other")).handled, false);
 });
+
+test("route: no context asked → the configured default context, not the first one; an asked one wins", async () => {
+  const asked = [];
+  const fake = (name) => ({ context: name, target: async () => ({ error: `${name} unreachable` }), read: async () => ({}) });
+  const dx = { kubeOf: (name) => { asked.push(name); return ["alpha-lab", "zeta-shop"].includes(name) ? fake(name) : null; }, defaultContext: () => "zeta-shop", store: { save: async () => {}, load: async () => null } };
+  const one = await call("POST", "/api/diagnose/investigate", { namespace: "shop", service: "cart" }, dx);
+  assert.equal(one.body.scope.context, "zeta-shop");
+  const two = await call("POST", "/api/diagnose/investigate", { context: "alpha-lab", namespace: "shop", service: "cart" }, dx);
+  assert.equal(two.body.scope.context, "alpha-lab");
+  assert.deepEqual(asked, ["zeta-shop", "alpha-lab"]);
+  const gone = await call("POST", "/api/diagnose/investigate", { context: "old-one", namespace: "shop", service: "cart" }, dx);
+  assert.match(gone.body.error, /no kube context named old-one/);
+});

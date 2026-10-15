@@ -1062,6 +1062,12 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     // The kube client for a context by name, from the live list (so a
     // context CONNECT just added is found without a restart); "" is the
     // primary one. SCORE scans through this.
+    // kube.context from cloudspider.yaml when it is one of the contexts,
+    // else the first (primary) one. DIAGNOSE starts here.
+    defaultContext() {
+      const wanted = settings?.config?.kube?.context || settings?.kube?.context || "";
+      return contexts.some((ctx) => ctx.name === wanted) ? wanted : primary?.name || "";
+    },
     kubeOf(name = "") {
       if (!name) return kube || null;
       return contexts.find((ctx) => ctx.name === name)?.kube || null;
