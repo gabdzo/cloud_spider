@@ -70,16 +70,21 @@ export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights 
     const source = sourceName();
     let restarts = [];
     let notes = [];
-    const nodeOf = fixedNodeOf || (nodeIndex ? await nodeIndex().catch(() => null) : null);
-    if (kube?.read) {
-      const pods = await kube.read("pods").catch(() => ({ error: "pods not read" }));
+    // The graph index, the pods and both log windows are independent: read
+    // them together (they ran one after another: ~20 s on demo-prod).
+    const logsRead = source ? Promise.all([readWindow(source, window), readWindow(source, dayBefore(window))]) : null;
+    const [nodeOf, pods] = await Promise.all([
+      fixedNodeOf || (nodeIndex ? nodeIndex().catch(() => null) : null),
+      kube?.read ? kube.read("pods").catch(() => ({ error: "pods not read" })) : null,
+    ]);
+    if (pods) {
       if (pods.json) restarts = restartsFromPods(pods.json.items, window);
       else notes.push("restarts: pods not readable");
     }
     if (!source) {
       return { ...logErrors({ restarts, window, source: "", partial: true, nodeOf }), notes: [...notes, "no log store configured: logs.loki.url, or logs.cloudwatch.logGroups with the aws module"] };
     }
-    const [tonight, before] = await Promise.all([readWindow(source, window), readWindow(source, dayBefore(window))]);
+    const [tonight, before] = await logsRead;
     if (source === "bundle" && /answered 40[34]/.test(tonight.error || "")) {
       const why = /404/.test(tonight.error) ? "the observe bundle (STACKS → Observe, logs=on) is not installed" : "the viewer may not get services/proxy loki:http in cloudspider-observe";
       return { ...logErrors({ restarts, window, source: "", partial: true, nodeOf }), notes: [...notes, `no log store: logs.loki.url, logs.cloudwatch.logGroups with the aws module, or ${why}`] };
@@ -110,6 +115,9 @@ export function createLogReport({ logs = {}, fetch = globalThis.fetch, insights 
       const kind = cleanLogWindow(window);
       if (sample) return withWindow(sampleLogErrors(scenario, clock(), kind === "auto" ? "night" : kind), kind);
       if (kind === "auto") {
+        // Loki is free to ask: start the 1h fallback with the night read.
+        // CloudWatch Insights is billed per GB scanned, so it stays serial.
+        if (sourceName() !== "cloudwatch") one("1h", fresh).catch(() => {});
         const night = await one("night", fresh);
         if (hasErrors(night) || night.error) return withWindow(night, "auto");
         return withWindow(await one("1h", fresh), "auto", "night had no errors");

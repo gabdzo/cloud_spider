@@ -183,3 +183,13 @@ test("config: logs.loki.url from env, bad window refused", () => {
   const bad = loadConfig({ root: "/nowhere", argv: ["--set", "logs.window.start=25:00"], env: {}, exists: () => false });
   assert.ok(bad.errors.some((e) => /logs\.window\.start/.test(e)));
 });
+
+test("createLogReport: the graph index, pods and Loki are read together, not one after another (cluster fjord-prod)", async () => {
+  const slow = (v) => new Promise((r) => setTimeout(() => r(v), 120));
+  const fetch = () => slow({ status: 200, json: async () => ({ data: { result: [] } }) });
+  const kube = { read: () => slow({ json: { items: [] } }) };
+  const report = createLogReport({ logs: { loki: { url: "http://loki.fjord-prod:3100" }, window: {} }, fetch, kube, nodeIndex: () => slow(() => null), clock: () => Date.parse("2026-10-12T08:00:00Z") });
+  const t0 = Date.now();
+  await report.report({ window: "night" });
+  assert.ok(Date.now() - t0 < 300, `took ${Date.now() - t0} ms`);
+});
