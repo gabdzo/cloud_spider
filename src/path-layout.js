@@ -12,10 +12,10 @@ const PAD = 24;
 const COLUMN = { internet: 0, lb: 1, listener: 2, rule: 3, tg: 4, answer: 4, target: 5, node: 6, cluster: 7, pods: 1, rtb: 2, pcx: 3, tgw: 3, return: 4, nacl: 5, sg: 6, db: 7 };
 
 export function layoutDiagram(diagram, columns, maxWidth = 0) {
-  const columnOf = (kind) => columns[kind] ?? 0;
+  const columnOf = (node) => node.col ?? columns[node.kind] ?? 0; // node.col: in-cluster paths (kube-path.js) number their own
   const grouped = new Map();
   for (const node of diagram?.nodes || []) {
-    const col = columnOf(node.kind);
+    const col = columnOf(node);
     if (!grouped.has(col)) grouped.set(col, []);
     grouped.get(col).push(node);
   }
@@ -42,7 +42,7 @@ export function layoutDiagram(diagram, columns, maxWidth = 0) {
       return { ...edge, x1: a.x + a.w, y1: a.y + a.h / 2, x2: b.x, y2: b.y + b.h / 2 };
     })
     .filter(Boolean);
-  const maxCol = Math.max(0, ...nodes.map((node) => columnOf(node.kind)));
+  const maxCol = Math.max(0, ...nodes.map((node) => columnOf(node)));
   const maxRows = Math.max(0, ...[...grouped.values()].map((list) => list.length));
   return {
     nodes,
@@ -82,10 +82,10 @@ const CARD_ROW_GAP = 4;
 // the 1024x800 map (381 px) without a scroll.
 const PAD_Y = 6;
 export function layoutCards(diagram, columns, maxWidth = 0) {
-  const columnOf = (kind) => columns[kind] ?? 0;
+  const columnOf = (node) => node.col ?? columns[node.kind] ?? 0; // node.col: in-cluster paths (kube-path.js) number their own
   const grouped = new Map();
   for (const node of diagram?.nodes || []) {
-    const col = columnOf(node.kind);
+    const col = columnOf(node);
     if (!grouped.has(col)) grouped.set(col, []);
     grouped.get(col).push(node);
   }
@@ -145,11 +145,11 @@ export function layoutCards(diagram, columns, maxWidth = 0) {
 // that matched is marked so the drawer can highlight it.
 const V_GAP = 22;
 export function layoutVertical(diagram, columns, maxWidth = 0) {
-  const columnOf = (kind) => columns[kind] ?? 0;
+  const columnOf = (node) => node.col ?? columns[node.kind] ?? 0; // node.col: in-cluster paths (kube-path.js) number their own
   const leads = new Set((diagram?.edges || []).map((edge) => edge.from));
   const levels = new Map();
   for (const node of diagram?.nodes || []) {
-    const level = columnOf(node.kind);
+    const level = columnOf(node);
     if (!levels.has(level)) levels.set(level, []);
     levels.get(level).push(node);
   }

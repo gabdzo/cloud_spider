@@ -13,6 +13,7 @@ import { createRadio } from "./radio.js";
 import { readLogs } from "./logs.js";
 import { readPath } from "./path-read.js";
 import { createPathProber } from "./path-probe.js";
+import { kubePathDiagram, parseKubeTarget, readKubePath } from "./kube-path.js";
 import { pathResult, withPeers } from "./path-view.js";
 import { costFailure } from "./cost.js";
 import { diagramFromClusters } from "./cluster.js";
@@ -1792,6 +1793,10 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       return result.error ? { error: `${result.call}: ${result.error}` } : result.graph;
     },
     async pathView(query = {}) {
+      // In-cluster: "ns/svc" or "svc.ns.svc.cluster.local" (kube-path.js),
+      // read-only from the kube context; no AWS read needed.
+      const inCluster = parseKubeTarget(query.host);
+      if (inCluster) return kubePathView(inCluster, query.host, String(query.context || ""));
       const at = region;
       const failed = (sentence) => ({
         region: at,
@@ -1832,6 +1837,21 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     },
   };
   return api;
+
+  async function kubePathView(target, host, asked = "") {
+    const base = { region, loadBalancers: [], selected: "", host, hostNote: "", findings: [], notes: [], kube: true, error: "" };
+    // The configured kube.context (the cluster the app means), else the
+    // primary context, else the default client.
+    const wanted = asked || settings?.config?.kube?.context || settings?.kube?.context || "";
+    if (asked && !contexts.some((ctx) => ctx.name === asked)) return { ...base, diagram: null, headline: "", error: `no kube context named ${asked.slice(0, 80)}` };
+    const client = contexts.find((ctx) => ctx.name === wanted)?.kube || primary?.kube || kube;
+    if (!client?.read) return { ...base, diagram: null, headline: "", error: "no kube context: in-cluster paths need one (kube.context)" };
+    const world = await readKubePath(client, target).catch((failure) => ({ error: failure?.message || String(failure) }));
+    if (world.error) return { ...base, diagram: null, headline: "", error: world.error };
+    const diagram = kubePathDiagram(world);
+    const bad = diagram.nodes.filter((node) => node.status === "broken");
+    return { ...base, diagram, headline: bad.length ? `${bad.length} broken on this in-cluster path` : "every hop on this in-cluster path looks healthy", hostNote: `in-cluster path in kube context ${client.context || "?"}: read-only, no request sent` };
+  }
 
   async function readBill(at) {
     if (!cost?.read) {

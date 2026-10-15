@@ -937,7 +937,7 @@ function square(grid) {
   return rows;
 }
 
-const ALIAS = { internet: "igw", answer: "fixed",
+const ALIAS = { internet: "igw", answer: "fixed", endpoints: "target", proxy: "path",
   alb: "lb", service: "lb", instance: "ec2", eks: "cluster", region: "map",
   "control-plane": "cluster", workload: "pod", route: "lb", ingress: "lb", project: "namespace", generic: "ec2",
   pods: "pod", rtb: "path", return: "path", pcx: "endpoint", tgw: "endpoint", nacl: "policy", sg: "secret",

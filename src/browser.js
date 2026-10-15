@@ -3098,7 +3098,7 @@ async function probePath(asked, fresh = false) {
 
 function renderPathProbe() {
   if (!pathProbeButton) return;
-  pathProbeButton.hidden = mode !== "path" || sample;
+  pathProbeButton.hidden = mode !== "path" || sample || Boolean(pathData?.kube);
   pathProbeButton.disabled = pathProbe === "pending";
   pathProbeButton.textContent = pathProbe === "pending" ? "…" : "↻";
 }
@@ -3133,7 +3133,9 @@ async function pullPath() {
   const wasSample = sample;
   const asked = pathQuery();
   try {
-    const response = await fetch(`${wasSample ? "/api/path-sample" : "/api/path"}?${asked}`);
+    // In-cluster paths read the context picked in the Cluster view.
+    const ctxParam = clusterContext ? `&context=${encodeURIComponent(clusterContext)}` : "";
+    const response = await fetch(`${wasSample ? "/api/path-sample" : "/api/path"}?${asked}${ctxParam}`);
     const body = await readBody(response);
     if (body.stale || mode !== "path" || wasSample !== sample) return;
     if (pathQuery() !== asked) {
@@ -3148,7 +3150,10 @@ async function pullPath() {
     if (picked?.public && picked.url && !netdebugView.target()) netdebugView.setTarget(picked.url);
     syncLoadBalancers(body.loadBalancers || [], body.selected || "");
     if (pathSelected && !body.diagram?.nodes?.some((node) => node.id === pathSelected)) pathSelected = null;
-    if (!wasSample && !body.error && body.diagram) probePath(asked);
+    if (body.kube) {
+      pathProbe = null;
+      pathProbeKey = "";
+    } else if (!wasSample && !body.error && body.diagram) probePath(asked);
     setStatus(ui, body.error ? "" : pathStatus(body));
     errorEl.hidden = !body.error;
     errorEl.textContent = body.error || "";

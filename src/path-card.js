@@ -72,6 +72,10 @@ export const SOURCE = {
   target: "elbv2 DescribeTargetHealth + security groups (ec2 DescribeSecurityGroups)",
   node: "ec2 DescribeInstances",
   cluster: "eks DescribeCluster + DescribeNodegroup (health issues)",
+  service: "kubernetes GET Service (read-only)",
+  endpoints: "kubernetes EndpointSlices (discovery.k8s.io/v1)",
+  pod: "kubernetes Pods + pod Events (readiness probe messages)",
+  proxy: "kubernetes ConfigMap mounted by the pod (nginx proxy_pass / upstream parsed)",
 };
 
 export function cardOf(node) {
@@ -116,6 +120,17 @@ function cardBody(node) {
         return { ...base, type: `REDIRECT · ${f.code}`, glyph: "redirect", name: to.path || String(node.label).split("→ ")[1] || node.label, port: to.protocol ? `${to.protocol} :${to.port}${to.sameHost ? "" : ` ${to.host}`}` : `→ ${f.code}`, detail: f.query ? `query ${f.query}` : "client follows; no target hit" };
       }
       return { ...base, type: `FIXED RESPONSE · ${f.code}`, glyph: "fixed", name: f.body ? `"${f.body}"` : `${f.code}`, full: f.body || String(f.code), port: `${f.code}${f.contentType ? ` ${f.contentType}` : ""}`, detail: "the ALB answers itself" };
+    case "service": {
+      const ports = (f.ports || []).map((p) => `:${p.port} → ${p.targetPort}`).join(" ");
+      return { ...base, type: f.missing ? "SERVICE · missing" : `SERVICE · ${f.type || "ClusterIP"}`, name: node.label, port: ports || f.clusterIP || "", detail: f.selector ? `selector ${f.selector}` : node.caption || "" };
+    }
+    case "endpoints":
+      return { ...base, type: "ENDPOINTS", name: node.label, port: "EndpointSlices", detail: f.notReady ? `${f.notReady} not ready` : f.total ? "all ready" : f.total === 0 ? "none" : "" };
+    case "pod":
+      if (f.more) return { ...base, type: "PODS", name: node.label, detail: "" };
+      return { ...base, type: f.ready ? "POD · Ready" : "POD · not Ready", name: node.label, port: f.ip || "", detail: f.ready ? `${f.restarts} restarts · ${f.node || "?"}` : f.reason || "not Ready" };
+    case "proxy":
+      return { ...base, type: "NGINX UPSTREAM", glyph: "", name: f.host ? String(f.host).replace(/\.svc\.cluster\.local$/, ".svc") : node.label, full: node.label, port: `${String(f.scheme || "http").toUpperCase()} :${f.port ?? "?"}`, detail: `ConfigMap ${f.configMap || "?"}` };
     default:
       return base;
   }
@@ -135,15 +150,16 @@ const short = (text) => String(text || "").split(/(?<=\.)\s/)[0].replace(/\.$/, 
 function configView(nodes) {
   const bad = nodes.filter((node) => node.kind !== "answer" && RANK[node.status]).sort((a, b) => RANK[b.status] - RANK[a.status])[0];
   const from = nodes[0].kind === "internet" ? "Internet" : cardOf(nodes[0]).name;
-  const tgs = nodes.filter((node) => node.kind === "tg");
+  const kube = nodes[0].kind === "service";
+  const tgs = nodes.filter((node) => node.kind === "tg" || (kube && node.kind === "service")).slice(kube ? -1 : 0);
   const answer = !tgs.length ? nodes.find((node) => node.kind === "answer") : null;
   const shared = tgs.filter((node) => node.facts?.share != null);
   // A weighted split stays short: "kuma… 90% / 10% (2 target groups)"; the
   // names are on the cards.
-  const endName = shared.length > 1 ? `${shared.length} target groups ${shared.map((node) => `${node.facts.share}%`).join("/")}` : cardOf(tgs[0] || nodes[nodes.length - 1]).name;
-  const targets = nodes.filter((node) => node.kind === "target");
+  const endName = kube && tgs[0]?.id === nodes[0].id ? "its pods" : shared.length > 1 ? `${shared.length} target groups ${shared.map((node) => `${node.facts.share}%`).join("/")}` : cardOf(tgs[0] || nodes[nodes.length - 1]).name;
+  const targets = nodes.filter((node) => node.kind === "target" || (node.kind === "pod" && !node.facts?.more));
   const healthy = targets.length ? `${targets.filter((node) => node.status === "ok").length}/${targets.length} healthy` : "";
-  return { bad, from, tgs, answer, endName, healthy, unknown: nodes.some((node) => node.status === "unknown") };
+  return { bad, from, tgs, answer, endName, healthy: kube ? healthy.replace("healthy", "pods ready") : healthy, kube, unknown: nodes.some((node) => node.status === "unknown") };
 }
 
 // The timing split and what was sent, for the verdict's hover.
@@ -172,7 +188,7 @@ export function pathVerdict(diagram, probe = null) {
   const failed = sent && (!r.ok || r.status >= 500);
   const got = sent ? (r.ok ? `${r.status} in ${ms}` : `${r.error === "timeout" ? "timed out" : r.error} after ${ms}`) : "";
   const local = sent ? " (from this machine)" : "";
-  const pending = probe === "pending" ? " · probing…" : r?.skipped ? ` · not probed: ${r.skipped}` : "";
+  const pending = c.kube && !probe ? " · read-only, no request sent" : probe === "pending" ? " · probing…" : r?.skipped ? ` · not probed: ${r.skipped}` : "";
   const hopName = (node) => (node ? `${cardOf(node).type.split(" ·")[0]} ${cardOf(node).name}` : "");
 
   if (c.bad) {
