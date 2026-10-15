@@ -15,6 +15,7 @@ export const IMAGES = {
   wiki: "ghcr.io/requarks/wiki:2.5.307",
   mealie: "ghcr.io/mealie-recipes/mealie:v2.8.0",
   redis: "redis:7.4.2-alpine",
+  nginx: "nginxinc/nginx-unprivileged:1.27.5-alpine",
 };
 
 // Online Boutique (upstream release/kubernetes-manifests.yaml, minus the
@@ -158,6 +159,8 @@ export function costEstimate({ nodes = 2, albs = 2, nlbs = 1, ebsGb = 2 * 20 + 1
 //   /maintenance  fixed-response 503 text/plain
 //   /canary* + header X-Canary: 1 -> kuma-canary (100%)
 //   /canary*      weighted forward 90 kuma / 10 kuma-canary
+//   /broken*      -> broken-backend, whose pod never turns Ready (1.2.0):
+//                 its target group stays empty, SNIFF's red demo path
 // kuma-canary is a second Service on the same Kuma pod (one more target
 // group, no new pods): the canary is about the ALB's routing, not the app.
 export const CANARY_SERVICE = "uptime-kuma-canary";
@@ -186,6 +189,7 @@ export function routesIngress() {
         path("/canary", use("canary-header")),
         path("/canary", use("canary-weighted")),
         path("/dashboard", { service: { name: kuma.service, port } }),
+        path("/broken", { service: { name: BROKEN.name, port: { number: BROKEN.port } } }),
       ] } }],
     },
   };
@@ -194,4 +198,29 @@ export function routesIngress() {
 export function canaryService() {
   const kuma = PRODUCTS.find((p) => p.id === "kuma");
   return { metadata: { name: CANARY_SERVICE, namespace: kuma.ns, labels: { app: kuma.service, track: "canary" } }, spec: { selector: { app: kuma.service }, ports: [{ name: "tcp", port: kuma.port, targetPort: kuma.port }] } };
+}
+
+// SNIFF demo pieces (1.2.0). Tiny (5m CPU, 16Mi each), on the existing nodes.
+// broken-backend: plain nginx whose readiness probe asks for /healthz, which
+// it does not serve (404), so the pod never turns Ready: its Service has
+// 0/1 ready endpoints and the ALB target group behind /broken stays empty.
+export const BROKEN = { name: "broken-backend", ns: "uptime-kuma", port: 8080, readinessPath: "/healthz" };
+// wiki-proxy: an internal nginx (ClusterIP only) in front of Wiki.js, so
+// SNIFF can draw Service -> nginx upstream -> Service -> pods in-cluster.
+export const WIKI_PROXY = { name: "wiki-proxy", ns: "wiki", port: 8080, upstream: "wiki.wiki.svc.cluster.local:3000" };
+export function wikiProxyConf() {
+  return [
+    "upstream wiki_backend {",
+    `    server ${WIKI_PROXY.upstream};`,
+    "}",
+    "server {",
+    `    listen ${WIKI_PROXY.port};`,
+    "    location = /healthz { return 200 \"ok\\n\"; }",
+    "    location / {",
+    "        proxy_pass http://wiki_backend;",
+    "        proxy_set_header Host $host;",
+    "    }",
+    "}",
+    "",
+  ].join("\n");
 }
