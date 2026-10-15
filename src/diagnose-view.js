@@ -36,12 +36,13 @@ export function investigationHtml(rec, { sample = false, verification = null, ou
   if (rec.error) return `<p class="dx-err">${esc(rec.error)}</p>`;
   const v = verification || rec.verification;
   const s = rec.scope || {};
-  const findings = rec.findings.length ? `<ol class="dx-findings">${rec.findings.map((f) => findingHtml(f, rec.evidence)).join("")}</ol>` : `<p class="dx-none">No rule fired on the evidence that could be read.${rec.coverage.complete ? "" : " Coverage is partial: that is not the same as healthy."}</p>`;
+  const block = rec.blocker ? `<p class="dx-blocker" role="alert">${esc(rec.blocker.text)}${rec.blocker.suggest ? `, did you mean <button type="button" class="dx-link" data-dx-suggest="${esc(rec.blocker.suggest)}" data-dx-field="${rec.blocker.kind === "namespace" ? "ns" : "svc"}">${esc(rec.blocker.suggest)}</button>?` : "."}</p>` : "";
+  const findings = block ? block : rec.findings.length ? `<ol class="dx-findings">${rec.findings.map((f) => findingHtml(f, rec.evidence)).join("")}</ol>` : `<p class="dx-none">No rule fired on the evidence that could be read.${rec.coverage.complete ? "" : " Coverage is partial: that is not the same as healthy."}</p>`;
   const hyp = rec.hypotheses.length ? `<section class="dx-hyp"><h4>HYPOTHESES <small>not facts · based on the evidence listed</small></h4><ul>${rec.hypotheses.map((x) => `<li><span>${esc(x.text)}</span><small>${esc(x.confidence)} · ${esc(x.based_on.join(", "))}</small></li>`).join("")}</ul></section>` : "";
   const qs = rec.questions.length ? `<section class="dx-q"><h4>OPEN QUESTIONS · ${rec.questions.length}</h4><ul>${rec.questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ul></section>` : "";
   const rel = rec.relationships.length ? `<section class="dx-rel"><h4>PATH</h4><ul>${rec.relationships.map((r) => `<li class="p-${esc(r.provenance)}"><code>${esc(r.from.replace(/^\w+:\/\/[^/]+\//, ""))}</code> <i>${esc(r.type)}</i> <code>${esc(r.to.replace(/^\w+:\/\/[^/]+\//, ""))}</code> <small>${esc(r.provenance)} · ${esc(r.how)}</small></li>`).join("")}</ul></section>` : "";
   const outcomes = sample ? `<label class="dx-outcome" title="SAMPLE only: which 'after' the demo verifies against">AFTER <select data-dx-outcome>${[["", "FIXED"], ["still", "NOT FIXED"], ["gone", "EVIDENCE GONE"]].map(([k, t]) => `<option value="${k}"${k === outcome ? " selected" : ""}>${t}</option>`).join("")}</select></label>` : "";
-  return `<div class="dx-sum"><span class="dx-scope">${esc(s.cluster)} · ${esc(s.namespace)}/${esc(s.service)}</span><span class="dx-verdict v-${esc(v.status)}">${esc(VERDICT[v.status])}</span><small>${rec.findings.length} finding${rec.findings.length === 1 ? "" : "s"} · coverage ${rec.coverage.complete ? "complete" : `partial (${esc(rec.coverage.missing.join(", "))})`} · ${esc(rec.observed_at)}</small></div>`
+  return `<div class="dx-sum"><span class="dx-scope">${esc(s.cluster)} · ${esc(s.namespace)}/${esc(s.service)}</span>${rec.blocker ? `<span class="dx-verdict v-blocked">${rec.blocker.kind === "unreachable" || rec.blocker.kind === "forbidden" ? "CAN'T REACH" : "NOT FOUND"}</span>` : `<span class="dx-verdict v-${esc(v.status)}">${esc(VERDICT[v.status])}</span>`}<small>${rec.findings.length} finding${rec.findings.length === 1 ? "" : "s"} · coverage ${rec.coverage.complete ? "complete" : `partial (${esc(rec.coverage.missing.join(", "))})`} · ${esc(rec.observed_at)}</small></div>`
     + `<div class="dx-cols"><div class="dx-main"><h4>FINDINGS</h4>${findings}${hyp}${sample ? `<p class="dx-fix">${esc(SAMPLE_FIX)}</p>` : ""}${verifyHtml(v)}</div>`
     + `<aside class="dx-side"><h4>CAPABILITIES</h4>${capsHtml(rec.capabilities)}${rel}${qs}</aside></div>`
     + `<div class="dx-actions"><button type="button" class="dx-btn dx-primary" data-dx-verify title="re-run the same read-only checks and compare with this investigation">VERIFY AGAIN</button>${outcomes}<button type="button" class="dx-btn" data-dx-json title="download the investigation record (schema ${esc(rec.schema_version)})">EXPORT JSON</button><small class="dx-ro">read-only · nothing installed · schema ${esc(rec.schema_version)}</small></div>`;
@@ -73,15 +74,19 @@ export function openDiagnose(opts = {}, { fetchJson = fetchJsonDefault, doc = gl
   overlay.addEventListener("click", (ev) => ev.target === overlay && close());
   $(".dx-close").addEventListener("click", close);
   $(".dx-sub").textContent = sample ? "SAMPLE · brother-sandbox/db · offline fixture" : `LIVE · ${opts.context || "primary context"} · GETs only`;
-  if (!sample) {
+  function form() {
     $(".dx-form").innerHTML = `<label>NAMESPACE <input name="dxNs" spellcheck="false" autocomplete="off" value="${esc(st.ns)}"></label><label>SERVICE <input name="dxSvc" spellcheck="false" autocomplete="off" value="${esc(st.svc)}"></label><button type="button" class="dx-btn dx-primary" data-dx-go>INVESTIGATE</button>`;
     $("[data-dx-go]").addEventListener("click", () => { st.ns = $("[name=dxNs]").value.trim(); st.svc = $("[name=dxSvc]").value.trim(); investigate(); });
-  } else $(".dx-form").remove();
+  }
+  if (!sample) form();
+  else $(".dx-form").remove();
   function paint(note = "") {
     $(".dx-body").innerHTML = (note ? `<p class="dx-note">${esc(note)}</p>` : "") + investigationHtml(st.rec, { sample, verification: st.verification, outcome: st.outcome });
     $("[data-dx-verify]")?.addEventListener("click", verifyAgain);
     $("[data-dx-outcome]")?.addEventListener("change", (ev) => (st.outcome = ev.target.value));
     $("[data-dx-json]")?.addEventListener("click", exportJson);
+    // "did you mean uptime-kuma?": take it and investigate again
+    $("[data-dx-suggest]")?.addEventListener("click", (ev) => { st[ev.currentTarget.dataset.dxField] = ev.currentTarget.dataset.dxSuggest; form(); investigate(); });
     for (const b of overlay.querySelectorAll("[data-copy]")) b.addEventListener("click", () => { globalThis.navigator?.clipboard?.writeText(b.dataset.copy).catch(() => {}); b.textContent = "COPIED"; });
     if (st.busy) for (const b of overlay.querySelectorAll(".dx-btn:not(.dx-close)")) b.disabled = true;
   }
@@ -92,6 +97,8 @@ export function openDiagnose(opts = {}, { fetchJson = fetchJsonDefault, doc = gl
     const body = sample ? { sample: true } : { context: opts.context || "", namespace: st.ns, service: st.svc };
     st.rec = await fetchJson("/api/diagnose/investigate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch((e) => ({ error: String(e.message || e) }));
     st.busy = false;
+    // the context the server actually read (the default one when none was named)
+    if (!sample && st.rec?.scope?.context) $(".dx-sub").textContent = `LIVE · ${st.rec.scope.context} · GETs only`;
     paint();
   }
   async function verifyAgain() {

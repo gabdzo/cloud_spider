@@ -85,3 +85,21 @@ test("targetGroupFacts: verified only by a matching IP target; tag alone and ins
   const out = targetGroupFacts(graph, facts);
   assert.deepEqual(out.map((t) => [t.name, t.mapping.status]), [["ip-match", "verified"], ["tag-only", "unknown"], ["nodeport", "unknown"]]);
 });
+
+test("collectLive: a typo'd namespace / service / unreachable cluster is a plain blocker, not 'no rule fired'", async () => {
+  const nsList = () => ({ json: { items: ["shop-prod", "kube-system"].map((name) => ({ metadata: { name } })) } });
+  const typoNs = investigation(await collectLive(fakeKube({ namespaces: nsList }), { namespace: "shop-prdo", service: "cart", context: "zeta-viewer", now }));
+  assert.equal(typoNs.blocker.kind, "namespace");
+  assert.match(typoNs.blocker.text, /Namespace shop-prdo not found on cluster kind-test/);
+  assert.equal(typoNs.blocker.suggest, "shop-prod");
+  const typoSvc = investigation(await collectLive(fakeKube({ namespaces: nsList, nsServices: () => ({ json: { items: [{ metadata: { name: "cart-api" } }, { metadata: { name: "web" } }] } }) }), { namespace: "shop-prod", service: "cart-ap", now }));
+  assert.equal(typoSvc.blocker.kind, "service");
+  assert.equal(typoSvc.blocker.suggest, "cart-api");
+  const far = investigation(await collectLive(fakeKube({ namespaces: nsList }), { namespace: "zzz", service: "cart", now }));
+  assert.equal(far.blocker.suggest, "");
+  const down = investigation(await collectLive(fakeKube({ service: () => ({ error: "connect ETIMEDOUT" }) }), { namespace: "a", service: "b", context: "lab-ro", now }));
+  assert.equal(down.blocker.kind, "unreachable");
+  assert.match(down.blocker.text, /Can't reach cluster kind-test \(context lab-ro\): connect ETIMEDOUT/);
+  const noCfg = investigation(await collectLive({ target: async () => ({ error: "no kubeconfig" }) }, { namespace: "a", service: "b", context: "gone-ctx", now }));
+  assert.match(noCfg.blocker.text, /Can't reach cluster gone-ctx: no kubeconfig/);
+});
