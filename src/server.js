@@ -10,7 +10,9 @@ import { mergeLive, readLive as observeLive } from "./observe/live.js";
 import { sampleObserve } from "./observe/sample.js";
 import { originAllowed } from "./origin.js";
 import http from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sampleScoreView } from "./score/sample-scan.js";
@@ -3594,11 +3596,7 @@ async function route(app, req, res) {
     return;
   }
   if (req.method === "GET" && url.pathname === "/") {
-    res.writeHead(200, {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-    });
-    res.end(pageFor(app.settings?.()?.config?.ui?.theme, app.settings?.()?.modules?.enabled));
+    sendCached(req, res, "text/html; charset=utf-8", pageFor(app.settings?.()?.config?.ui?.theme, app.settings?.()?.modules?.enabled));
     return;
   }
 
@@ -3614,12 +3612,7 @@ async function route(app, req, res) {
       return;
     }
     if (FILES.has(name)) {
-      const body = await readFile(join(root, name));
-      res.writeHead(200, {
-        "content-type": "text/javascript; charset=utf-8",
-        "cache-control": "no-store",
-      });
-      res.end(body);
+      sendCached(req, res, "text/javascript; charset=utf-8", await assetBody(name));
       return;
     }
   }
@@ -4198,11 +4191,62 @@ export function sampleKubeCluster() {
 }
 
 function send(res, status, body) {
-  res.writeHead(status, {
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-  });
-  res.end(JSON.stringify(body));
+  const text = JSON.stringify(body);
+  const headers = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
+  // gzip a large answer (/api/cluster is ~100 KB, ~6 KB gzipped) when the
+  // client takes it; small ones are not worth the CPU.
+  if (text.length >= GZIP_MIN && acceptsGzip(res.req)) {
+    res.writeHead(status, { ...headers, "content-encoding": "gzip", vary: "accept-encoding" });
+    res.end(gzipSync(text, { level: 4 }));
+    return;
+  }
+  res.writeHead(status, headers);
+  res.end(text);
+}
+
+// Static page and modules: an ETag (content hash) and "no-cache", so a
+// reload revalidates each file with a 304 instead of downloading 1.8 MB
+// again, and an edited file is still picked up at once; gzipped once per
+// content. A file is re-read only when its mtime or size changes.
+export const GZIP_MIN = 2048;
+const assets = new Map();
+const zipped = new Map();
+export function acceptsGzip(req) {
+  return /\bgzip\b/i.test(String(req?.headers?.["accept-encoding"] || ""));
+}
+async function assetBody(name) {
+  const file = join(root, name);
+  const st = await stat(file);
+  const hit = assets.get(name);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.body;
+  const body = await readFile(file);
+  assets.set(name, { mtimeMs: st.mtimeMs, size: st.size, body });
+  return body;
+}
+export function etagOf(body) {
+  return `"${createHash("sha1").update(body).digest("base64url").slice(0, 22)}"`;
+}
+export function sendCached(req, res, type, body) {
+  const etag = etagOf(body);
+  const headers = { "content-type": type, "cache-control": "no-cache", etag, vary: "accept-encoding" };
+  if (String(req.headers?.["if-none-match"] || "").split(/\s*,\s*/).includes(etag)) {
+    res.writeHead(304, headers);
+    res.end();
+    return;
+  }
+  if (body.length >= GZIP_MIN && acceptsGzip(req)) {
+    let gz = zipped.get(etag);
+    if (!gz) {
+      gz = gzipSync(body, { level: 6 });
+      if (zipped.size > 400) zipped.clear();
+      zipped.set(etag, gz);
+    }
+    res.writeHead(200, { ...headers, "content-encoding": "gzip" });
+    res.end(gz);
+    return;
+  }
+  res.writeHead(200, headers);
+  res.end(body);
 }
 
 async function readJson(req) {
