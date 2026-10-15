@@ -45,3 +45,30 @@ test("k8s-only SNIFF: ns/svc and svc DNS work with no region; probe is skipped, 
   assert.match(web.headline, /healthy/);
   assert.match((await app.pathProbe({ host: "shop/web" })).skipped, /k8s-only/);
 });
+
+test("k8s-only SNIFF: a host served by an ingress-nginx Ingress traces Ingress → Service → endpoints → pods (longest path wins)", async () => {
+  const app = bareApp();
+  const root = await app.pathView({ host: "https://shop.bro.lab/" });
+  assert.equal(root.error, "");
+  assert.deepEqual(root.diagram.nodes.slice(0, 2).map((n) => n.label), ["shop/web", "shop/web"]);
+  assert.equal(root.diagram.nodes[0].kind, "ingress");
+  assert.equal(root.diagram.nodes[0].facts.cls, "nginx");
+  assert.match(root.headline, /healthy/);
+  const api = await app.pathView({ host: "shop.bro.lab/api/items" });
+  assert.equal(api.diagram.nodes[1].label, "shop/api");
+  assert.match(api.headline, /broken/);
+  const none = await app.pathView({ host: "nothing.bro.lab" });
+  assert.match(none.error, /no Ingress in this cluster serves nothing\.bro\.lab/);
+});
+
+test("k8s-only SNIFF: ns/pod traces the Service that selects it; NodePort and LoadBalancer say how to reach them from outside", async () => {
+  const app = bareApp();
+  const pod = await app.pathView({ host: "shop/api-1" });
+  assert.match(pod.hostNote, /pod api-1 is behind Service api/);
+  assert.equal(pod.diagram.nodes[0].label, "shop/api");
+  const np = await app.pathView({ host: "shop/web-np" });
+  assert.deepEqual(np.diagram.nodes[0].facts.nodePorts, [30080]);
+  assert.match(np.diagram.nodes[0].sentence, /node port 30080/);
+  const lb = await app.pathView({ host: "ingress-nginx/ingress-nginx-controller" });
+  assert.match(lb.diagram.nodes[0].sentence, /load balancer 192\.168\.1\.240/);
+});

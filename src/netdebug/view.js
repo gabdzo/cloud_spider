@@ -222,7 +222,7 @@ async function copyText(text, button) {
   }
 }
 
-export function createNetdebugView({ root, hostInput = null, sample = () => false, context = () => "", choices = () => null, onDone = () => {}, fetchJson = (url, opts) => fetch(url, opts).then((r) => r.json()) }) {
+export function createNetdebugView({ root, hostInput = null, sample = () => false, context = () => "", choices = () => null, pathService = () => null, onDone = () => {}, fetchJson = (url, opts) => fetch(url, opts).then((r) => r.json()) }) {
   // The DEBUG panel floats over the bottom of the stage. Reserve its height
   // on the stage (--nd-h, read by .mapwrap) so the PATH above stays visible
   // and scrolls instead of hiding behind the panel (UX overlaps B).
@@ -313,13 +313,22 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
   const dxBtn = h("button", { className: "nd-btn nd-dx", type: "button", text: "INVESTIGATE", title: "DIAGNOSE a Service: read-only evidence, findings, VERIFY AGAIN after a fix" });
   dxBtn.addEventListener("click", () => {
     if (sample()) return openDiagnose({ sample: true });
-    const host = (/^[a-z]+:\/\/([^/:]+)/i.exec(field.value.trim()) || [null, field.value.trim().split(/[/:]/)[0]])[1] || "";
-    const [svc, ns] = host.split(".");
+    const typed = field.value.trim();
+    const slash = /^([a-z0-9-]+)\/([a-z0-9-]+)$/.exec(typed);
+    const host = (/^[a-z]+:\/\/([^/:]+)/i.exec(typed) || [null, typed.split(/[/:]/)[0]])[1] || "";
+    let [svc, ns] = slash ? [slash[2], slash[1]] : host.split(".");
     const dns = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
+    // Nothing usable typed: the Service SNIFF is showing (ns/svc, a pod, an
+    // Ingress host on plain Kubernetes).
+    let fromPath = false;
+    if (!slash && (!(ns && dns.test(svc) && dns.test(ns)) || /\.(com|net|org|io|aws|amazonaws)$/.test(host))) {
+      const shown = pathService?.() || null;
+      if (shown) [svc, ns, fromPath] = [shown.service, shown.namespace, true];
+    }
     // The cluster context the rest of the UI is on (CLUSTER's switcher), not
     // the server's first context.
     const ctx = context() || "";
-    openDiagnose({ ...(ctx ? { context: ctx } : {}), choices: choices() || null, ...(ns && dns.test(svc) && dns.test(ns) && !/\.(com|net|org|io|aws|amazonaws)$/.test(host) ? { namespace: ns, service: svc } : {}) });
+    openDiagnose({ ...(ctx ? { context: ctx } : {}), choices: choices() || null, ...(ns && dns.test(svc) && dns.test(ns) && (slash || fromPath || !/\.(com|net|org|io|aws|amazonaws)$/.test(host)) ? { namespace: ns, service: svc } : {}) });
   });
   const bar = h("div", { className: "nd-bar" }, h("b", { className: "nd-title", text: "DEBUG" }), field, insideBtn, modes, runBtn, dxBtn, meta, exports, fold);
   root.replaceChildren(bar, insideRow, body);

@@ -119,6 +119,14 @@ const netdebugView = createNetdebugView({
   // DIAGNOSE reads the context CLUSTER shows (switcher / saved pick).
   context: () => clusterData?.context || clusterContext || "",
   choices: () => diagnoseChoices(clusterData?.diagram),
+  // The Service an in-cluster SNIFF path shows (after its Ingress), so
+  // INVESTIGATE works on plain Kubernetes with nothing typed in DEBUG.
+  pathService: () => {
+    if (mode !== "path" || !pathData?.kube) return null;
+    const svc = (pathData.diagram?.nodes || []).find((node) => node.kind === "service" && !node.facts?.missing);
+    const [namespace, service] = String(svc?.label || "").split("/");
+    return namespace && service ? { namespace, service } : null;
+  },
   onDone(report) {
     const who = report.checks?.find((c) => c.id === "L-HTTP-03")?.observed?.answeredBy;
     const host = report.target?.host || "";
@@ -3234,6 +3242,8 @@ async function pullPath() {
     const picked = (body.loadBalancers || []).find((item) => item.arn === body.selected);
     if (picked?.public && picked.url && !netdebugView.target()) netdebugView.setTarget(picked.url);
     syncLoadBalancers(body.loadBalancers || [], body.selected || "");
+    // In-cluster paths (and k8s-only, no AWS) have no load balancer to pick.
+    lbSelect.hidden = Boolean(body.kube) && !(body.loadBalancers || []).length;
     if (pathSelected && !body.diagram?.nodes?.some((node) => node.id === pathSelected)) pathSelected = null;
     if (body.kube) {
       pathProbe = null;

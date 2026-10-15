@@ -8,9 +8,9 @@
 //   ingress-nginx/ingress-nginx-controller  LoadBalancer (MetalLB-style IP)
 //   Ingress shop/web (class nginx, host shop.bro.lab): / → web, /api → api
 const ago = (min) => new Date(Date.parse("2026-10-15T18:00:00Z") - min * 60000).toISOString();
-const pod = (ns, name, labels, { ready = true, cm = "", port = 8080 } = {}) => ({
+const pod = (ns, name, labels, { ready = true, cm = "", port = 8080, extra = [] } = {}) => ({
   metadata: { namespace: ns, name, labels, creationTimestamp: ago(60) },
-  spec: { nodeName: "bro-node-1", containers: [{ name: "c", image: "nginx:1.27", ports: [{ containerPort: port }], readinessProbe: { httpGet: { path: "/healthz", port } } }], volumes: cm ? [{ name: "conf", configMap: { name: cm } }] : [] },
+  spec: { nodeName: "bro-node-1", containers: [{ name: "c", image: "nginx:1.27", ports: [port, ...extra].map((containerPort) => ({ containerPort })), readinessProbe: { httpGet: { path: "/healthz", port } } }], volumes: cm ? [{ name: "conf", configMap: { name: cm } }] : [] },
   status: { phase: "Running", podIP: `10.244.0.${name.length * 7}`, conditions: [{ type: "Ready", status: ready ? "True" : "False" }], containerStatuses: [{ name: "c", ready, restartCount: 0, state: { running: { startedAt: ago(60) } } }] },
 });
 const svc = (ns, name, selector, type = "ClusterIP", ports = [{ port: 80, targetPort: 8080 }], status = {}) => ({ metadata: { namespace: ns, name }, spec: { type, selector, clusterIP: `10.96.0.${name.length}`, ports }, status });
@@ -28,7 +28,7 @@ export const BARE = {
     pod("shop", "web-1", { app: "web" }), pod("shop", "web-2", { app: "web" }),
     pod("shop", "api-1", { app: "api" }, { ready: false }),
     pod("shop", "proxy-1", { app: "proxy" }, { cm: "proxy-conf" }),
-    pod("ingress-nginx", "ingress-nginx-controller-1", { app: "ingress-nginx" }, { port: 80 }),
+    pod("ingress-nginx", "ingress-nginx-controller-1", { app: "ingress-nginx" }, { port: 80, extra: [443] }),
     pod("cert-manager", "cert-manager-webhook-1", { app: "webhook" }, { port: 10250 }),
   ],
   configMaps: { "shop/proxy-conf": { "default.conf": "server { location / { proxy_pass http://api.shop.svc.cluster.local:80; } }" } },

@@ -82,9 +82,12 @@ export function kubePathDiagram(world) {
     const chosen = (hop.pods || []).filter((pod) => picks(hop.svc.spec?.selector, pod));
     const ep = serviceEndpoints(hop.svc, hop.slices, chosen);
     const ports = ep.ports.map((p) => ({ port: p.port, targetPort: p.targetPort }));
+    const nodePorts = (hop.svc.spec?.ports || []).map((p) => p.nodePort).filter(Boolean);
+    const lbAddr = (hop.svc.status?.loadBalancer?.ingress || []).map((a) => a.ip || a.hostname).filter(Boolean).join(", ");
+    const outside = nodePorts.length ? ` From outside: node port ${nodePorts.join(", ")}${hop.svc.spec?.type === "LoadBalancer" ? (lbAddr ? `, load balancer ${lbAddr}` : ", load balancer address pending") : ""}.` : "";
     const selector = Object.entries(hop.svc.spec?.selector || {}).map(([k, v]) => `${k}=${v}`).join(",");
     const svcFlag = ep.flags.find((f) => f.id === "selector" || f.id === "port");
-    nodes.push({ id, col, kind: "service", label: `${hop.ns}/${hop.name}`, caption: selector || "no selector", facts: { ns: hop.ns, type: hop.svc.spec?.type || "ClusterIP", clusterIP: hop.svc.spec?.clusterIP || "", ports, selector }, status: svcFlag ? "broken" : "ok", sentence: svcFlag ? `${hop.name}: ${svcFlag.why}.` : `Service ${hop.name} (${hop.svc.spec?.type || "ClusterIP"} ${hop.svc.spec?.clusterIP || ""}) sends ${ports.map((p) => `:${p.port} → ${p.targetPort}`).join(", ")} to pods with ${selector || "no selector"}.` });
+    nodes.push({ id, col, kind: "service", label: `${hop.ns}/${hop.name}`, caption: selector || "no selector", facts: { ns: hop.ns, type: hop.svc.spec?.type || "ClusterIP", clusterIP: hop.svc.spec?.clusterIP || "", ports, selector, nodePorts, lbAddress: lbAddr }, status: svcFlag ? "broken" : "ok", sentence: svcFlag ? `${hop.name}: ${svcFlag.why}.` : `Service ${hop.name} (${hop.svc.spec?.type || "ClusterIP"} ${hop.svc.spec?.clusterIP || ""}) sends ${ports.map((p) => `:${p.port} → ${p.targetPort}`).join(", ")} to pods with ${selector || "no selector"}.${outside}` });
     if (prev) link(prev, id);
     const epId = `ep:${hop.ns}/${hop.name}`;
     const total = ep.list ? ep.list.length : null;
@@ -157,4 +160,62 @@ export async function readKubePath(kube, target) {
     }
   }
   return { hops };
+}
+
+// A host (or URL) served by an Ingress of any class (ingress-nginx, Traefik,
+// HAProxy, ALB): the rule whose host matches (exact, else "*.domain") and
+// whose path is the longest prefix of the URL's path. null when none.
+export function ingressFor(ingresses, text) {
+  const raw = String(text || "").trim().toLowerCase().replace(/^[a-z]+:\/\//, "");
+  const cut = raw.search(/[/?#]/);
+  const host = (cut < 0 ? raw : raw.slice(0, cut)).replace(/:\d+$/, "").replace(/\.$/, "");
+  const urlPath = cut < 0 ? "/" : raw.slice(cut).replace(/[?#].*$/, "") || "/";
+  if (!host || !/^[a-z0-9.*-]+$/.test(host)) return null;
+  let best = null;
+  for (const ing of ingresses || []) {
+    const ns = ing.metadata?.namespace || "default";
+    for (const rule of ing.spec?.rules || []) {
+      const h = String(rule.host || "").toLowerCase();
+      const exact = h === host;
+      const wild = h.startsWith("*.") && host.endsWith(h.slice(1)) && host.split(".").length === h.split(".").length;
+      if (!exact && !wild) continue;
+      for (const p of rule.http?.paths || []) {
+        const path = p.path || "/";
+        const ok = p.pathType === "Exact" ? urlPath === path : urlPath === path || urlPath.startsWith(path.endsWith("/") ? path : `${path}/`) || path === "/";
+        const svc = p.backend?.service;
+        if (!ok || !svc?.name) continue;
+        const score = (exact ? 1e6 : 0) + path.length;
+        if (!best || score > best.score) best = { score, ns, name: svc.name, port: svc.port?.number ?? svc.port?.name ?? null, ingress: ing.metadata?.name || "", cls: ing.spec?.ingressClassName || ing.metadata?.annotations?.["kubernetes.io/ingress.class"] || "", host: h, path, pathType: p.pathType || "Prefix", tls: (ing.spec?.tls || []).some((t) => (t.hosts || []).map((x) => x.toLowerCase()).includes(h)), address: (ing.status?.loadBalancer?.ingress || []).map((a) => a.ip || a.hostname).filter(Boolean).join(", ") };
+      }
+    }
+  }
+  if (!best) return null;
+  const { score, ...out } = best;
+  return out;
+}
+
+// The Ingress hop in front of a traced Service (the first node).
+export function withIngress(diagram, ing) {
+  const id = `ing:${ing.ns}/${ing.ingress}`;
+  const first = diagram.nodes[0];
+  const missing = !first || first.facts?.missing;
+  const node = { id, col: -1, kind: "ingress", label: `${ing.ns}/${ing.ingress}`, caption: `${ing.host}${ing.path}`, facts: { ...ing }, status: missing ? "broken" : "ok", sentence: `Ingress ${ing.ingress} (class ${ing.cls || "default"}) sends ${ing.tls ? "https" : "http"}://${ing.host}${ing.path} to Service ${ing.name}${ing.port != null ? `:${ing.port}` : ""}${ing.address ? `; its controller answers on ${ing.address}` : "; no address yet (is the ingress controller running?)"}.` };
+  const nodes = [node, ...diagram.nodes.map((n) => ({ ...n, col: n.col + 1 }))];
+  node.col = 0;
+  return { nodes, edges: first ? [{ from: id, to: first.id, status: missing ? "broken" : "ok", sentence: "" }, ...diagram.edges] : diagram.edges };
+}
+
+// A pod given as ns/name (no Service by that name): the Service(s) whose
+// selector picks it, so the trace starts there. [] when none.
+export function servicesForPod(services, pod) {
+  return (services || []).filter((s) => s.metadata?.namespace === pod.metadata?.namespace && Object.keys(s.spec?.selector || {}).length && picks(s.spec.selector, pod)).map((s) => s.metadata.name);
+}
+
+// A pod with no Service in front: one node.
+export function podOnlyDiagram(pod) {
+  const ready = podReady(pod);
+  const name = pod.metadata.name;
+  const ns = pod.metadata.namespace;
+  const reason = ready ? "" : notReadyWhy(pod);
+  return { nodes: [{ id: `pod:${ns}/${name}`, col: 0, kind: "pod", label: name, caption: ready ? "Ready" : reason, facts: { ns, ready, restarts: restarts(pod), node: pod.spec?.nodeName || "", ip: pod.status?.podIP || "", phase: pod.status?.phase || "", reason }, status: ready ? "ok" : "broken", sentence: `${name} ${ready ? "is Ready" : `is not Ready: ${reason}`}; no Service selects it, so nothing in the cluster routes to it by name.` }], edges: [] };
 }

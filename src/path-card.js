@@ -122,8 +122,10 @@ function cardBody(node) {
       return { ...base, type: `FIXED RESPONSE · ${f.code}`, glyph: "fixed", name: f.body ? `"${f.body}"` : `${f.code}`, full: f.body || String(f.code), port: `${f.code}${f.contentType ? ` ${f.contentType}` : ""}`, detail: "the ALB answers itself" };
     case "service": {
       const ports = (f.ports || []).map((p) => `:${p.port} → ${p.targetPort}`).join(" ");
-      return { ...base, type: f.missing ? "SERVICE · missing" : `SERVICE · ${f.type || "ClusterIP"}`, name: node.label, port: ports || f.clusterIP || "", detail: f.selector ? `selector ${f.selector}` : node.caption || "" };
+      return { ...base, type: f.missing ? "SERVICE · missing" : `SERVICE · ${f.type || "ClusterIP"}`, name: node.label, port: `${ports || f.clusterIP || ""}${f.nodePorts?.length ? ` · node :${f.nodePorts.join(",:")}` : ""}`, detail: f.selector ? `selector ${f.selector}` : node.caption || "" };
     }
+    case "ingress":
+      return { ...base, type: `INGRESS · ${f.cls || "default class"}`, name: `${f.host}${f.path}`, full: node.label, port: `${f.tls ? "HTTPS" : "HTTP"} → ${f.name}${f.port != null ? `:${f.port}` : ""}`, detail: f.address ? `controller ${f.address}` : "no address yet" };
     case "endpoints":
       return { ...base, type: "ENDPOINTS", name: node.label, port: "EndpointSlices", detail: f.notReady ? `${f.notReady} not ready` : f.total ? "all ready" : f.total === 0 ? "none" : "" };
     case "pod":
@@ -150,7 +152,7 @@ const short = (text) => String(text || "").split(/(?<=\.)\s/)[0].replace(/\.$/, 
 function configView(nodes) {
   const bad = nodes.filter((node) => node.kind !== "answer" && RANK[node.status]).sort((a, b) => RANK[b.status] - RANK[a.status])[0];
   const from = nodes[0].kind === "internet" ? "Internet" : cardOf(nodes[0]).name;
-  const kube = nodes[0].kind === "service";
+  const kube = ["service", "ingress", "pod"].includes(nodes[0].kind);
   const tgs = nodes.filter((node) => node.kind === "tg" || (kube && node.kind === "service")).slice(kube ? -1 : 0);
   const answer = !tgs.length ? nodes.find((node) => node.kind === "answer") : null;
   const shared = tgs.filter((node) => node.facts?.share != null);
