@@ -551,6 +551,9 @@ let place = null;
 let region = "";
 let animTime = 0;
 let pulling = false;
+const PULL_EVERY = 2000;
+const PULL_EVERY_OFF = 10_000;
+let viewOff = false;
 let sample = false;
 // #?sample=1&doors=1, read before the page rewrites the hash (sampleDoors).
 const doorsAsked = new URLSearchParams(location.hash.replace(/^#\??/, "")).get("doors") === "1";
@@ -1329,11 +1332,22 @@ async function loadVaults() {
   vaultsLoading = true;
   try {
     const q = wasSample ? "?sample=1" : "";
-    const [body, addons, score] = await Promise.all([
-      fetch(`/api/vaults${q}`).then((response) => response.json()),
-      fetch(`/api/addons${q}`).then((response) => (response.ok ? response.json() : null)).catch(() => null),
-      wasSample ? null : fetch("/api/score?target=kubernetes").then((response) => (response.ok ? response.json() : null)).catch(() => null),
-    ]);
+    // Progressive: the vaults come from files and answer fast; add-ons and
+    // the score read the cluster (seconds). Paint the vaults as soon as they
+    // land, then fill in the add-on tree and the score when they arrive.
+    const addonsRead = fetch(`/api/addons${q}`).then((response) => (response.ok ? response.json() : null)).catch(() => null);
+    const scoreRead = wasSample ? Promise.resolve(null) : fetch("/api/score?target=kubernetes").then((response) => (response.ok ? response.json() : null)).catch(() => null);
+    const body = await fetch(`/api/vaults${q}`).then((response) => response.json());
+    if (ticket !== vaultsTicket || wasSample !== sample) return;
+    vaultsData = {
+      vaults: Array.isArray(body?.vaults) ? body.vaults : [],
+      note: body?.note || "",
+      templates: Array.isArray(body?.templates) ? body.templates : [],
+    };
+    vaultsShown = vaultSignature(vaultsData.vaults);
+    renderChrome();
+    draw();
+    const [addons, score] = await Promise.all([addonsRead, scoreRead]);
     if (ticket !== vaultsTicket || wasSample !== sample) return;
     vaultAddons = { tree: Array.isArray(addons?.tree) ? addons.tree : [], primary: addons?.detectedCluster || "" };
     try {
@@ -1342,11 +1356,6 @@ async function loadVaults() {
     } catch {
       vaultScore = null;
     }
-    vaultsData = {
-      vaults: Array.isArray(body?.vaults) ? body.vaults : [],
-      note: body?.note || "",
-      templates: Array.isArray(body?.templates) ? body.templates : [],
-    };
     vaultsFor = wasSample;
     vaultsAt = Date.now();
     vaultsShown = vaultSignature(vaultsData.vaults);
@@ -3016,14 +3025,33 @@ function syncRegions(regions, current) {
   if (current && regionSelect.value !== current) regionSelect.value = current;
 }
 
-async function pull() {
-  if (pulling) return;
+// One /api/view read at a time, shared: a caller that arrives while one is
+// in flight awaits that same read (so `await pull()` really waits), and the
+// two-second tick skips when a read just finished or the tab is hidden.
+let pullShared = null;
+let pullDoneAt = 0;
+function pull({ tick = false } = {}) {
+  if (pullShared) return pullShared;
+  // With nothing to refresh (viewOff) poll slowly instead of every 2 s.
+  const every = viewOff ? PULL_EVERY_OFF : PULL_EVERY;
+  if (tick && (document.hidden || Date.now() - pullDoneAt < every - PULL_EVERY / 2)) return Promise.resolve();
+  pullShared = pullOnce().finally(() => {
+    pullShared = null;
+    pullDoneAt = Date.now();
+  });
+  return pullShared;
+}
+
+async function pullOnce() {
   pulling = true;
   try {
     const query = new URLSearchParams({ grain: campGrain });
     if (sample) query.set("sample", "1");
     const view = await fetch(`/api/view?${query}`).then((response) => response.json());
     // The map module is off: nothing to read, and no error to show.
+    // Nothing to refresh: the map module is off, or the read failed with no
+    // place (a config or credentials problem a 2 s poll cannot fix).
+    viewOff = view.off === "map" || Boolean(view.error && !view.place);
     if (view.off === "map") {
       if (!sample) liveMorning = view.morning || null;
       renderChrome();
@@ -6488,7 +6516,15 @@ setInterval(() => {
   pullKubeHealth();
 }, 30_000);
 setTimeout(pullKubeHealth, 2500);
-setTimeout(pullMapKube, 1500);
+// The cluster layer on the map: as soon as the first /api/view answer has
+// painted (progressive), or at 1.5 s, whichever is first; once.
+let mapKubeKicked = false;
+function kickMapKube() {
+  if (mapKubeKicked) return;
+  mapKubeKicked = true;
+  pullMapKube();
+}
+setTimeout(kickMapKube, 1500);
 setTimeout(pullKubeRadio, 4000);
 
 window.matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", (e) => {
@@ -6553,13 +6589,14 @@ window.addEventListener("resize", () => {
 });
 
 setInterval(() => {
-  pull();
-}, 2000);
+  pull({ tick: true });
+}, PULL_EVERY);
 
 // The overview reads the bill once, when the first live pull has a place
 // (Overview plan R2/T2), then the server's six-hour cache. The two-second
 // pull itself never asks for it.
 pull().then(() => {
+  kickMapKube();
   if (place && !sample) queueSpend();
 });
 
