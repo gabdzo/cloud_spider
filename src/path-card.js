@@ -129,28 +129,85 @@ export function lightWord(status) {
 // path order) or, when nothing fails, where the request ends up. Intended
 // answers (a redirect, a maintenance 503) say what they answer instead.
 const RANK = { broken: 3, hang: 2 };
-export function pathVerdict(diagram) {
-  const nodes = diagram?.nodes || [];
-  if (!nodes.length) return { tone: "unknown", text: "" };
-  const short = (text) => String(text || "").split(/(?<=\.)\s/)[0].replace(/\.$/, "");
+const short = (text) => String(text || "").split(/(?<=\.)\s/)[0].replace(/\.$/, "");
+
+// What the AWS config alone says about the path.
+function configView(nodes) {
   const bad = nodes.filter((node) => node.kind !== "answer" && RANK[node.status]).sort((a, b) => RANK[b.status] - RANK[a.status])[0];
   const from = nodes[0].kind === "internet" ? "Internet" : cardOf(nodes[0]).name;
-  if (bad) {
-    const card = cardOf(bad);
-    return { tone: bad.status, text: `${bad.status === "broken" ? "✕" : "!"} ${from} → ${card.type.split(" ·")[0]} ${card.name}: ${short(card.reason)}` };
-  }
   const tgs = nodes.filter((node) => node.kind === "tg");
-  const answer = nodes.find((node) => node.kind === "answer");
-  if (answer && !tgs.length) {
-    const card = cardOf(answer);
-    const hang = answer.status === "hang";
-    return { tone: hang ? "hang" : "ok", text: `${hang ? "!" : "✓"} ${from} → ${card.type}: the ALB answers ${answer.facts?.answer === "redirect" ? `→ ${card.name}` : "itself"}, no target is reached${hang ? " (fine if on purpose)" : ""}` };
-  }
-  // A weighted split names each share ("kuma 90% / canary 10%").
+  const answer = !tgs.length ? nodes.find((node) => node.kind === "answer") : null;
   const shared = tgs.filter((node) => node.facts?.share != null);
-  const endName = shared.length > 1 ? shared.map((node) => `${cardOf(node).name} ${node.facts.share}%`).join(" / ") : cardOf(tgs[0] || nodes[nodes.length - 1]).name;
+  // A weighted split stays short: "kuma… 90% / 10% (2 target groups)"; the
+  // names are on the cards.
+  const endName = shared.length > 1 ? `${shared.length} target groups ${shared.map((node) => `${node.facts.share}%`).join("/")}` : cardOf(tgs[0] || nodes[nodes.length - 1]).name;
   const targets = nodes.filter((node) => node.kind === "target");
-  const ok = targets.filter((node) => node.status === "ok").length;
-  const unknown = nodes.some((node) => node.status === "unknown");
-  return { tone: unknown ? "unknown" : "ok", text: `${unknown ? "?" : "✓"} ${from} → ${endName}: ${unknown ? "nothing failed, some hops unchecked" : "OK"}${targets.length ? ` · ${ok}/${targets.length} targets healthy` : ""}` };
+  const healthy = targets.length ? `${targets.filter((node) => node.status === "ok").length}/${targets.length} healthy` : "";
+  return { bad, from, tgs, answer, endName, healthy, unknown: nodes.some((node) => node.status === "unknown") };
+}
+
+// The timing split and what was sent, for the verdict's hover.
+export function probeTitle(probe) {
+  const r = probe?.result;
+  if (!r) return "";
+  if (r.skipped) return `real request: not sent (${r.skipped})`;
+  const t = r.timing || {};
+  const ms = (v) => (v == null ? "–" : `${v} ms`);
+  const sent = r.request ? `${r.request.method} ${r.request.url}${Object.entries(r.request.headers || {}).map(([k, v]) => ` · ${k}: ${v}`).join("")}` : "";
+  const age = r.cached ? `, ${Math.round((r.ageMs || 0) / 1000)} s ago (cached)` : ", just now";
+  return [`real request from this machine${age}`, sent, `DNS ${ms(t.dns)} · TCP ${ms(t.tcp)} · TLS ${ms(t.tls)} · TTFB ${ms(t.ttfb)} · total ${ms(t.total)}`, r.location ? `Location: ${r.location}` : "", r.server ? `server: ${r.server}` : ""].filter(Boolean).join("\n");
+}
+
+// One line that answers "does this path work?": what the AWS config says,
+// plus (when sent) what one real request from this machine got. When the
+// two disagree the line says so.
+export function pathVerdict(diagram, probe = null) {
+  const nodes = diagram?.nodes || [];
+  if (!nodes.length) return { tone: "unknown", text: "", title: "" };
+  const c = configView(nodes);
+  const r = probe?.result || null;
+  const title = probeTitle(probe);
+  const sent = r && !r.skipped;
+  const ms = sent ? `${r.timing?.total ?? "?"} ms` : "";
+  const failed = sent && (!r.ok || r.status >= 500);
+  const got = sent ? (r.ok ? `${r.status} in ${ms}` : `${r.error === "timeout" ? "timed out" : r.error} after ${ms}`) : "";
+  const local = sent ? " (from this machine)" : "";
+  const pending = probe === "pending" ? " · probing…" : r?.skipped ? ` · not probed: ${r.skipped}` : "";
+  const hopName = (node) => (node ? `${cardOf(node).type.split(" ·")[0]} ${cardOf(node).name}` : "");
+
+  if (c.bad) {
+    const card = cardOf(c.bad);
+    const base = `${c.from} → ${hopName(c.bad)}: ${short(card.reason)}`;
+    if (sent && !failed) return { tone: "hang", text: `! AWS config says ${hopName(c.bad)} is ${c.bad.status}, but a real request got ${got}${local}`, title: `${base}\n${title}` };
+    return { tone: c.bad.status, text: `${c.bad.status === "broken" ? "✕" : "!"} ${base}${sent ? ` · real request: ${got}` : pending}`, title };
+  }
+  if (c.answer) {
+    const f = c.answer.facts || {};
+    const card = cardOf(c.answer);
+    const expect = Number(f.code);
+    const hang = c.answer.status === "hang";
+    if (f.answer === "redirect") {
+      const said = `${f.code} → ${card.name}`;
+      if (!sent) return { tone: "ok", text: `✓ ${c.from} → ${said}: the ALB answers, no target${pending}`, title };
+      if (r.ok && r.status === expect) return { tone: "ok", text: `✓ ${c.from} → ${said} in ${ms}${local}`, title };
+      return { tone: "broken", text: `✕ ${c.from}: AWS config says ${said}, but a real request got ${got}${local}`, title };
+    }
+    // "503 showcase is in maintenance (…": the body up to a bracket or 28
+    // characters, cut at a word.
+    const body = String(f.body || "").split(/[(\n<{]/)[0].trim();
+    const clip = body.length > 28 ? `${body.slice(0, 28).replace(/\s+\S*$/, "")}…` : body;
+    const what = `${f.code}${clip ? ` ${clip}` : ""}`;
+    if (!sent) return { tone: hang ? "hang" : "ok", text: `${hang ? "!" : "✓"} ${c.from} → ${what}: the ALB answers itself${hang ? " (on purpose?)" : ""}${pending}`, title };
+    if (r.ok && r.status === expect) return { tone: hang ? "hang" : "ok", text: `${hang ? "!" : "✓"} ${c.from} → ${what} in ${ms}${hang ? " (on purpose)" : ""}${local}`, title };
+    return { tone: "broken", text: `✕ ${c.from}: AWS config says the ALB answers ${f.code}, but a real request got ${got}${local}`, title };
+  }
+  const tail = c.healthy ? ` · ${c.healthy}` : "";
+  if (failed) {
+    // Where it most likely broke: no TCP connect = the ALB (SG, NACL, DNS);
+    // a 502/503/504 or a drop after connecting = behind it.
+    const hop = !r.ok && r.timing?.tcp == null ? nodes.find((node) => node.kind === "lb") : c.tgs[0];
+    return { tone: "broken", text: `✕ ${c.from} → ${c.endName}: ${got}${local}, likely at ${hopName(hop)} · AWS config says OK${tail}`, title };
+  }
+  if (sent) return { tone: "ok", text: `✓ ${c.from} → ${c.endName}: ${got}${tail}${local}`, title };
+  return { tone: c.unknown ? "unknown" : "ok", text: `${c.unknown ? "?" : "✓"} ${c.from} → ${c.endName}: ${c.unknown ? "nothing failed, some hops unchecked" : "OK"}${tail}${pending}`, title };
 }

@@ -251,6 +251,10 @@ const askThis = document.querySelector("#ask-this");
 // SNIFF layout: "h" left to right (default; reads best at 1024x800, where the
 // map is wide and short) or "v" top to bottom. Kept per browser.
 const pathFlowButton = document.querySelector("#path-flow");
+const pathProbeButton = document.querySelector("#path-probe");
+// SNIFF's one real request (from this machine), per lb+host query.
+let pathProbe = null;
+let pathProbeKey = "";
 let pathFlow = (() => { try { return localStorage.getItem("cs.sniffFlow") === "v" ? "v" : "h"; } catch { return "h"; } })();
 const termEl = document.querySelector("#term");
 let termReady = false;
@@ -2828,12 +2832,45 @@ function leaveSample() {
 // SNIFF's status line is the verdict; the longer notes go on its hover.
 function pathStatus(body) {
   const words = [body.hostNote, body.headline].filter(Boolean).join(" ");
-  const verdict = pathVerdict(body.diagram);
-  statusEl.title = words;
+  const verdict = pathVerdict(body.diagram, sample ? null : pathProbe);
+  statusEl.title = [verdict.title, words].filter(Boolean).join("\n\n");
   statusEl.dataset.tone = verdict.text ? verdict.tone : "";
   const line = verdict.text || words;
   return sample ? `sample, not the account. ${line}` : line;
 }
+
+// One GET from this machine to the path's own ALB (server: path-probe.js,
+// cached ~30 s there). A new lb/host shows "probing…" until it answers.
+async function probePath(asked, fresh = false) {
+  if (asked !== pathProbeKey) {
+    pathProbeKey = asked;
+    pathProbe = "pending";
+  }
+  if (fresh) pathProbe = "pending";
+  renderPathProbe();
+  try {
+    const response = await fetch(`/api/path/probe?${asked}${fresh ? "&fresh=1" : ""}`);
+    const body = await readBody(response);
+    if (pathProbeKey !== asked) return;
+    pathProbe = body?.result ? body : { result: { skipped: body?.error || "no answer" } };
+  } catch (error) {
+    if (pathProbeKey !== asked) return;
+    pathProbe = { result: { skipped: error?.message || String(error) } };
+  }
+  renderPathProbe();
+  if (mode === "path" && pathData && pathQuery() === asked) {
+    setStatus(ui, pathStatus(pathData));
+    renderChrome();
+  }
+}
+
+function renderPathProbe() {
+  if (!pathProbeButton) return;
+  pathProbeButton.hidden = mode !== "path" || sample;
+  pathProbeButton.disabled = pathProbe === "pending";
+  pathProbeButton.textContent = pathProbe === "pending" ? "…" : "↻";
+}
+pathProbeButton?.addEventListener("click", () => probePath(pathQuery(), true));
 
 function syncLoadBalancers(list, selected) {
   const shown = [...lbSelect.options].map((option) => option.value).join();
@@ -2879,6 +2916,7 @@ async function pullPath() {
     if (picked?.public && picked.url && !netdebugView.target()) netdebugView.setTarget(picked.url);
     syncLoadBalancers(body.loadBalancers || [], body.selected || "");
     if (pathSelected && !body.diagram?.nodes?.some((node) => node.id === pathSelected)) pathSelected = null;
+    if (!wasSample && !body.error && body.diagram) probePath(asked);
     setStatus(ui, body.error ? "" : pathStatus(body));
     errorEl.hidden = !body.error;
     errorEl.textContent = body.error || "";
@@ -3956,7 +3994,9 @@ function askThisQuestion() {
 function renderPathFlow() {
   if (!pathFlowButton) return;
   pathFlowButton.hidden = mode !== "path";
-  pathFlowButton.textContent = pathFlow === "v" ? "↕ TOP-DOWN" : "↔ LEFT-RIGHT";
+  // Compact so the SNIFF row (picker, URL, ↔, ↻, ASK) stays one row at 1024.
+  pathFlowButton.textContent = pathFlow === "v" ? "↕" : "↔";
+  pathFlowButton.title = pathFlow === "v" ? "SNIFF layout: top to bottom (click for left to right)" : "SNIFF layout: left to right (click for top to bottom)";
   pathFlowButton.setAttribute("aria-pressed", String(pathFlow === "v"));
 }
 pathFlowButton?.addEventListener("click", () => {
@@ -3968,6 +4008,7 @@ pathFlowButton?.addEventListener("click", () => {
 
 function renderAskThis() {
   renderPathFlow();
+  renderPathProbe();
   const question = askThisQuestion();
   askThis.hidden = !question;
   if (question) askThis.title = question;

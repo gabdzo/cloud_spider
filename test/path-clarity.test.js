@@ -55,12 +55,12 @@ test("the verdict names the first failing hop, or where the request ends", () =>
   const n = (kind, label, status, extra = {}) => ({ id: label, kind, label, status, sentence: `${label} says why. More.`, facts: {}, ...extra });
   const ok = pathVerdict({ nodes: [n("internet", "INTERNET", "ok"), n("lb", "alb", "ok"), n("tg", "frontend", "ok"), n("target", "10.0.0.1:8080", "ok")] });
   assert.equal(ok.tone, "ok");
-  assert.match(ok.text, /^✓ Internet → frontend: OK · 1\/1 targets healthy$/);
+  assert.match(ok.text, /^✓ Internet → frontend: OK · 1\/1 healthy$/);
   const bad = pathVerdict({ nodes: [n("internet", "INTERNET", "ok"), n("tg", "empty", "hang"), n("target", "t", "broken")] });
   assert.equal(bad.tone, "broken");
   assert.match(bad.text, /^✕ Internet → TARGET[A-Z ]* t: t says why$/);
   const redirect = pathVerdict({ nodes: [n("internet", "INTERNET", "ok"), n("answer", "301 → /dashboard", "ok", { facts: { answer: "redirect", code: "301", to: { path: "/dashboard", protocol: "HTTP", port: "80", sameHost: true } } })] });
-  assert.match(redirect.text, /^✓ Internet → REDIRECT · 301: the ALB answers → \/dashboard/);
+  assert.match(redirect.text, /^✓ Internet → 301 → \/dashboard: the ALB answers/);
   assert.equal(pathVerdict({ nodes: [] }).text, "");
 });
 
@@ -69,5 +69,5 @@ test("a forward path with a default fixed rule beside it is judged on the forwar
   const v = pathVerdict({ nodes: [n("internet", "INTERNET", "ok"), n("tg", "frontend", "ok"), n("answer", "404", "ok", { answer: "fixed", code: "404" }), n("target", "t", "ok")] });
   assert.match(v.text, /^✓ Internet → frontend: OK/);
   const w = pathVerdict({ nodes: [n("internet", "INTERNET", "ok"), n("tg", "kuma", "ok", { share: 90 }), n("tg", "canary", "ok", { share: 10 })] });
-  assert.match(w.text, /kuma 90% \/ canary 10%: OK/);
+  assert.match(w.text, /2 target groups 90%\/10%: OK/);
 });

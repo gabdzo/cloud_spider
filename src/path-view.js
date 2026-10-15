@@ -1,4 +1,5 @@
 import { peerPath, peerTargets } from "./peer-path.js";
+import { probePlan } from "./path-probe.js";
 import { diagnose, headline, hostOf, matchHost, requestOf, routeOn } from "./path-diagnose.js";
 
 // SNIFF across a peering: the picker lists "peer:<target>" entries after
@@ -52,6 +53,7 @@ export function pathResult(graph, { lb = "", host = "", region = "" } = {}) {
     diagram: { nodes: result.nodes, edges: result.edges },
     findings: result.findings,
     headline: headline(result),
+    probe: probePlan(graph, selected, route?.ruleArn || null, request),
   };
 }
 

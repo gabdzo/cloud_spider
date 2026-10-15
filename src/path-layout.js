@@ -75,9 +75,12 @@ export const CARD_H = 86;
 // a listener that goes elsewhere) gets a two-line card: it is context.
 export const ASIDE_H = 46;
 const CARD_GAP = 30;
-const BAND_GAP = 24;
+const BAND_GAP = 16;
 const CARD_PAD = 14;
-const CARD_ROW_GAP = 8;
+const CARD_ROW_GAP = 4;
+// Top and bottom margin: tighter than the sides so two two-card bands fit
+// the 1024x800 map (381 px) without a scroll.
+const PAD_Y = 6;
 export function layoutCards(diagram, columns, maxWidth = 0) {
   const columnOf = (kind) => columns[kind] ?? 0;
   const grouped = new Map();
@@ -100,7 +103,7 @@ export function layoutCards(diagram, columns, maxWidth = 0) {
   for (const [col, list] of grouped) grouped.set(col, [...list].sort((a, b) => Number(isAside(a, list)) - Number(isAside(b, list))));
   const bandH = Array.from({ length: bands }, (_, b) => Math.max(CARD_H, ...[...grouped].filter(([col]) => Math.floor(col / per) === b).map(([, list]) => columnHeight(list))));
   const bandTop = [];
-  let y = CARD_PAD;
+  let y = PAD_Y;
   for (const h of bandH) {
     bandTop.push(y);
     y += h + BAND_GAP;
@@ -132,7 +135,7 @@ export function layoutCards(diagram, columns, maxWidth = 0) {
     })
     .filter(Boolean);
   const width = CARD_PAD * 2 + per * colW + (per - 1) * CARD_GAP;
-  return { nodes, edges, cards: true, contentWidth: width, contentHeight: y - BAND_GAP + CARD_PAD };
+  return { nodes, edges, cards: true, contentWidth: width, contentHeight: y - BAND_GAP + PAD_Y };
 }
 
 // Top to bottom (the ↕ toggle): Internet on top, one level per hop down to
