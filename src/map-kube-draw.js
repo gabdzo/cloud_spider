@@ -41,6 +41,7 @@ export function drawCompoundGround(ctx, placed) {
 // NetworkPolicy allow lines: a soft arc per line; a bundle (too many lines
 // for one namespace pair) is thicker and says how many it carries.
 function policyLines(ctx, lines, only) {
+  if (!lines.length) return;
   for (const l of lines) {
     if (only && !only(l)) continue;
     const lift = Math.min(60, 16 + Math.abs(l.x2 - l.x1) / 6);
