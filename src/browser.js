@@ -262,11 +262,14 @@ function focusedView() {
 // The bottom bar under TOPOLOGY: counts for the scope (All / Apps /
 // Add-ons / picked namespaces); in ISSUES, also how many cards are shown.
 let scopeMemo = { diagram: null, key: "", out: null };
-function topologyStats() {
+function scopedAll() {
   const diagram = clusterData?.diagram;
   const key = JSON.stringify({ scope: topologyFocus.scope, namespaces: topologyFocus.namespaces });
   if (scopeMemo.diagram !== diagram || scopeMemo.key !== key) scopeMemo = { diagram, key, out: focusDiagram(diagram, { ...topologyFocus, view: "all" }).diagram };
-  return scopeStats(pathStats(scopeMemo.out), focusedView(), topologyFocus);
+  return scopeMemo.out;
+}
+function topologyStats() {
+  return scopeStats(pathStats(scopedAll()), focusedView(), topologyFocus);
 }
 function topologyShown() {
   return mode === "cluster" && clusterData?.diagram?.layout === "kube" && (!clusterHasScreens() || clusterScreen === "topology") && !kubeEmpty.isShown();
@@ -296,8 +299,29 @@ function relatedLine(refs) {
   for (const c of refs.pvcs || []) bits.push(`PVC ${c.name}${c.phase ? ` ${c.phase}` : ""}${c.pv ? ` → PV ${c.pv}` : ""}`);
   if (refs.configMaps?.length) bits.push(`ConfigMap ${refs.configMaps.join(", ")}`);
   if (refs.secrets?.length) bits.push(`Secret ${refs.secrets.join(", ")}`);
-  if (refs.netpols?.length) bits.push(`NetworkPolicy ${refs.netpols.map((n) => n.name).join(", ")}`);
+  if (refs.netpols?.length) bits.push(`NetworkPolicy ${shortList(refs.netpols.map((n) => n.name))}`);
   return bits.join(" · ");
+}
+// Two names, then "+N" (the full list is the line's tooltip).
+function shortList(names, keep = 2) {
+  return names.length > keep + 1 ? `${names.slice(0, keep).join(", ")} +${names.length - keep}` : names.join(", ");
+}
+function fullRelated(refs) {
+  return refs?.netpols?.length > 3 ? `NetworkPolicies: ${refs.netpols.map((n) => n.name).join(", ")}` : "";
+}
+// In ISSUES: "N healthy hidden", with a way to ALL.
+function hiddenHint() {
+  const view = focusedView();
+  if (topologyFocus.view !== "issues" || !view?.hiddenHealthy) return null;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "kf-hint";
+  btn.textContent = `${view.hiddenHealthy} healthy hidden · SHOW IN ALL`;
+  btn.addEventListener("click", () => {
+    closeFocusPops();
+    setTopologyFocus({ view: "all" });
+  });
+  return btn;
 }
 function renderIssueList() {
   const view = focusedView();
@@ -330,11 +354,14 @@ function renderIssueList() {
       const x = document.createElement("span");
       x.className = "kx";
       x.textContent = [it.node ? `node ${it.node.replace(/\.[a-z0-9-]+\.compute\.internal$/, "")}` : "", rel].filter(Boolean).join(" · ");
+      const full = fullRelated(it.refs);
+      if (full) x.title = full;
       li.append(x);
     }
     ol.append(li);
   }
-  kubeIssues.replaceChildren(head, ol);
+  const hint = hiddenHint();
+  kubeIssues.replaceChildren(...[head, ol, hint].filter(Boolean));
 }
 function investigateIssue(id) {
   closeFocusPops();
@@ -429,6 +456,9 @@ function syncFocusBar() {
 let listedFor = null;
 kfIssues.addEventListener("click", () => setTopologyFocus({ view: "issues" }));
 kfAll.addEventListener("click", () => setTopologyFocus({ view: "all" }));
+kubeSearchCount.addEventListener("click", () => {
+  if (kubeSearchCount.classList.contains("to-all")) setTopologyFocus({ view: "all" });
+});
 kfScope.addEventListener("change", () => setTopologyFocus({ scope: kfScope.value, namespaces: [] }));
 kfList.addEventListener("click", () => {
   const open = kubeIssues.hidden;
@@ -3635,8 +3665,11 @@ function syncSearchBar() {
   confirmEl.classList.toggle("caption", on);
   const found = on ? currentSearch() : null;
   kubeSearchCount.hidden = !found?.active;
-  kubeSearchCount.textContent = countText(found);
+  // In ISSUES a miss may only be hidden: say how many ALL would find.
+  const elsewhere = found?.active && !found.count && topologyFocus.view === "issues" ? searchKube(scopedAll(), kubeSearchEl.value).count : 0;
+  kubeSearchCount.textContent = elsewhere ? `no match in ISSUES · ${elsewhere} healthy in ALL (click)` : countText(found);
   kubeSearchCount.classList.toggle("none", Boolean(found?.active && !found.count));
+  kubeSearchCount.classList.toggle("to-all", Boolean(elsewhere));
 }
 
 function jumpToMatch(step = 1) {

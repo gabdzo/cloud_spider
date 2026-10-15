@@ -823,6 +823,8 @@ const page = `<!doctype html>
   #kube-issues .kr.broken { color: var(--status-broken); }
   #kube-issues .kx { grid-column: 2 / 4; color: var(--pip-dim-text); font-size: 11px; overflow-wrap: anywhere; }
   #kube-issues li > button { grid-column: 3; grid-row: 1 / 3; align-self: center; }
+  #kube-issues .kf-hint { margin-top: 8px; width: 100%; background: transparent; color: var(--pip-bright); border: 1px dashed var(--pip-dim); }
+  #kube-search-count.to-all { cursor: pointer; text-decoration: underline dotted; }
   #kube-issues .kh { margin: 0 0 6px; color: var(--pip-dim-text); font-size: 11px; letter-spacing: 0.1em; }
   #kf-ns-pop { width: min(300px, calc(100vw - 24px)); }
   #kf-ns-pop label { display: flex; gap: 6px; align-items: center; padding: 2px 0; cursor: pointer; overflow-wrap: anywhere; }
