@@ -76,7 +76,7 @@ import { drawSprite } from "./draw-kit.js";
 import { sloBlock, sloFacts } from "./slo-view.js";
 import { renderSpend } from "./spend-view.js";
 import { createSettings, readHidden, visibleModules } from "./settings-view.js";
-import { KUBE_MAP_KEY, compoundHit, compoundHover, kubeModel, layoutKubeOnly, readKubeChoices } from "./map-kube.js";
+import { KUBE_MAP_KEY, POLICIES_KEY, compoundHit, compoundHover, kubeModel, layoutKubeOnly, readKubeChoices, readPoliciesOn } from "./map-kube.js";
 import { mountWhere } from "./where.js";
 
 const ui = createUi();
@@ -1220,6 +1220,7 @@ function vaultKeys() {
 // localStorage.
 const mapKube = { models: new Map(), sig: "", choices: {}, hover: null, focus: null, ticket: 0, sample: false, keepSample: false };
 try {
+  mapKube.policies = readPoliciesOn(window.localStorage);
   mapKube.choices = readKubeChoices(window.localStorage);
 } catch {
   // AUTO everywhere
@@ -1229,6 +1230,7 @@ function mapKubeSignature(models) {
   const out = [];
   for (const [name, model] of models) {
     out.push(name, model.nodes.map((n) => `${n.instanceId}:${n.status}`).join(","));
+    out.push(`np${model.netpol?.total ?? "-"}`, Object.entries(model.netpol?.ns || {}).map(([k, v]) => `${k}:${v.badge}:${v.policies.length}`).join(","), (model.entries || []).map((e) => `${e.id}:${e.status}`).join(","));
     for (const app of model.apps) out.push(`${app.id}:${app.have}/${app.want}:${app.status}:${app.pods.map((p) => `${p.id}@${p.instanceId}:${p.status}`).join(",")}`);
   }
   return out.join("|");
@@ -1309,8 +1311,8 @@ let kubeOnlyMemo = { key: "", placed: null };
 function placedMap() {
   if (kubeMapOnly()) {
     const room = Math.max(320, (map.clientWidth || 960) - 16);
-    const key = `${room}|${mapKube.sig}|${JSON.stringify(mapKube.choices)}|${mapKube.policies ? 1 : 0}`;
-    if (kubeOnlyMemo.key !== key) kubeOnlyMemo = { key, placed: layoutKubeOnly(mapKube.models, { room, choice: (cluster) => mapKube.choices[cluster] || "auto" }) };
+    const key = `${room}|${mapKube.sig}|${JSON.stringify(mapKube.choices)}|${mapKube.policies === false ? 0 : 1}`;
+    if (kubeOnlyMemo.key !== key) kubeOnlyMemo = { key, placed: layoutKubeOnly(mapKube.models, { room, choice: (cluster) => mapKube.choices[cluster] || "auto", policies: mapKube.policies !== false }) };
     return kubeOnlyMemo.placed;
   }
   const width = map.clientWidth || 0;
@@ -1320,8 +1322,8 @@ function placedMap() {
   const flowLimit = window.innerWidth >= 1600 && width > ROW_LIMIT ? width : 0;
   const vaults = vaultsData.vaults;
   const extra = {
-    key: `${flowLimit}|${sampleDoors() ? "doors" : ""}|${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}|${mapView}|${mapTagKey}|${mapKube.sig}|${JSON.stringify(mapKube.choices)}`,
-    options: { flowLimit, vaults, vaultMode: "page", ...(sampleDoors() ? { vaultMode: "doors" } : {}), isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey, kube: mapKube.models.size ? { models: mapKube.models, choice: (cluster) => mapKube.choices[cluster] || "auto" } : null },
+    key: `${flowLimit}|${sampleDoors() ? "doors" : ""}|${vaultsShown}|${vaultState.key(vaultKeys())}|${vpcFold.key((place?.vpcs || []).map((vpc) => vpc.id))}|${mapView}|${mapTagKey}|${mapKube.sig}|${JSON.stringify(mapKube.choices)}|${mapKube.policies === false ? 0 : 1}`,
+    options: { flowLimit, vaults, vaultMode: "page", ...(sampleDoors() ? { vaultMode: "doors" } : {}), isOpen: (key) => vaultState.isOpen(key), isClosed: (id) => vpcFold.isOpen(id), view: mapView, groupBy: mapTagKey, kube: mapKube.models.size ? { models: mapKube.models, choice: (cluster) => mapKube.choices[cluster] || "auto", policies: mapKube.policies !== false } : null },
   };
   const placed = layoutCache.get(place || EMPTY_PLACE, rowLimit, extra);
   // A reload with the same vaults keeps the layout but brings new check
@@ -3948,6 +3950,17 @@ canvas.addEventListener("click", async (event) => {
   }
   if (mapKube.models.size) {
     const kubeHitNow = compoundHit(placedMap(), event.offsetX, event.offsetY);
+    if (kubeHitNow?.type === "policies") {
+      mapKube.policies = !kubeHitNow.on;
+      try {
+        window.localStorage.setItem(POLICIES_KEY, mapKube.policies ? "1" : "0");
+      } catch {
+        // this page only
+      }
+      draw();
+      return;
+    }
+    if (kubeHitNow?.type === "netpol" || kubeHitNow?.type === "policy-source") return;
     if (kubeHitNow?.type === "lod") {
       setKubeLevel(kubeHitNow.cluster, kubeHitNow.value);
       return;
@@ -4172,7 +4185,7 @@ canvas.addEventListener("mousemove", (event) => {
   }
   if (mode === "map" && mapKube.models.size) {
     const hit = compoundHit(placedMap(), event.offsetX, event.offsetY);
-    const id = hit ? (hit.type === "lod" ? `lod:${hit.cluster}:${hit.value}` : hit.type === "kube" ? `kube:${hit.cluster}` : hit.type === "netpol" ? `netpol:${hit.cluster}:${hit.ns}` : hit.id || `compound:${hit.cluster}`) : null;
+    const id = hit ? (hit.type === "lod" ? `lod:${hit.cluster}:${hit.value}` : hit.type === "kube" ? `kube:${hit.cluster}` : hit.type === "netpol" ? `netpol:${hit.cluster}:${hit.ns}` : hit.type === "policies" ? `policies:${hit.cluster}` : hit.id || `compound:${hit.cluster}`) : null;
     if (hit?.type === "kube") hit.text = kubeChipState(hit.cluster).text;
     if (id !== mapKube.hover) {
       mapKube.hover = id;

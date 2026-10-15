@@ -809,6 +809,34 @@ function compoundGround(ctx, placed) {
     ctx.setLineDash([6, 4]);
     ctx.stroke();
     ctx.setLineDash([]);
+    for (const l of c.lines || []) {
+      const lift = Math.min(60, 16 + Math.abs(l.x2 - l.x1) / 6);
+      ctx.strokeStyle = rgba(C.ok, l.bundle ? 0.6 : 0.35);
+      ctx.lineWidth = l.bundle ? Math.min(5, 1 + Math.log2(l.count)) : 1;
+      ctx.beginPath();
+      ctx.moveTo(l.x1, l.y1);
+      ctx.quadraticCurveTo((l.x1 + l.x2) / 2, Math.min(l.y1, l.y2) - lift, l.x2, l.y2);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 1;
+    for (const s of c.sources || []) {
+      round(ctx, s.x + 0.5, s.y + 0.5, s.w - 1, s.h - 1, 4);
+      ctx.strokeStyle = C.text3;
+      ctx.stroke();
+      ctx.font = ui(9, 500);
+      ctx.fillStyle = C.text2;
+      ctx.fillText(clip(ctx, s.label, s.w - 8), s.x + 4, s.y + s.h - 4);
+    }
+    if (c.pol) {
+      round(ctx, c.pol.x, c.pol.y, c.pol.w, c.pol.h, 4);
+      ctx.fillStyle = c.pol.on ? rgba(C.ok, 0.25) : "transparent";
+      ctx.fill();
+      ctx.strokeStyle = c.pol.on ? C.ok : C.off;
+      ctx.stroke();
+      ctx.font = ui(8.5, 600);
+      ctx.fillStyle = c.pol.on ? C.ok : C.text3;
+      ctx.fillText(c.pol.on ? "POLICIES" : "POLICIES OFF", c.pol.x + 4, c.pol.y + c.pol.h - 3);
+    }
   }
 }
 
