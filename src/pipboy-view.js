@@ -221,6 +221,16 @@ export function pipHtml(model, state) {
   return `${top}<p class="pb-sub">${state.tab === "stat" ? "NAMESPACES · HEALTH" : state.tab === "pods" ? "WORKLOADS · SERVICES" : "ENTRY POINTS · POLICIES"}</p><div class="pb-main"><ul class="pb-list" role="listbox" tabindex="0" aria-label="namespaces">${rows}</ul><div class="pb-detail">${detailHtml(sel, state.tab)}</div></div>${bar}`;
 }
 
+/** The app-wide phosphor: <html data-tint>, kept per browser, announced. @param {"green"|"amber"} tint @param {Storage|null} [store] */
+export function setTint(tint, store = null) {
+  if (tint === "amber") document.documentElement.dataset.tint = "amber";
+  else delete document.documentElement.dataset.tint;
+  try { (store || window.localStorage).setItem(PIP_THEME_KEY, tint); } catch { /* this page only */ }
+  window.dispatchEvent(new CustomEvent("cs-tint", { detail: tint }));
+}
+/** @returns {"green"|"amber"} */
+export function readTint() { try { return window.localStorage.getItem(PIP_THEME_KEY) === "amber" ? "amber" : "green"; } catch { return "green"; } }
+
 /** @param {Storage|null} store @param {string} key @param {string} fallback */
 const pref = (store, key, fallback) => { try { return store?.getItem(key) || fallback; } catch { return fallback; } };
 /** @param {Storage|null} store @param {string} key @param {string} value */
@@ -280,7 +290,7 @@ export function mountPip(el, io) {
     const topo = /** @type {HTMLElement|null} */ (t.closest("[data-topology]"));
     if (topo) return io.openTopology?.(topo.dataset.topology || "");
     if (t.closest("[data-grid]")) return toGrid();
-    if (t.closest("[data-theme-toggle]")) { state.theme = state.theme === "amber" ? "green" : "amber"; keep(store, PIP_THEME_KEY, state.theme); tint(); return render(); }
+    if (t.closest("[data-theme-toggle]")) { setTint(state.theme === "amber" ? "green" : "amber", store); return; }
     if (t.closest("[data-close]")) io.onClose();
   });
   el.addEventListener("keydown", (event) => {
@@ -310,6 +320,7 @@ export function mountPip(el, io) {
     const t = /** @type {HTMLElement|null} */ (/** @type {HTMLElement} */ (event.target).closest("[data-tile],[data-entry-ns]"));
     hotLinks(el, t ? t.dataset.tile || t.dataset.entryNs || "" : focusOf());
   });
+  window.addEventListener("cs-tint", (event) => { state.theme = /** @type {CustomEvent} */ (event).detail === "amber" ? "amber" : "green"; if (!el.hidden) render(); });
   let resize = 0;
   window.addEventListener("resize", () => { clearTimeout(resize); resize = Number(setTimeout(() => { if (!el.hidden && state.view === "grid") drawLinks(el, model, focusOf()); }, 120)); });
   return {

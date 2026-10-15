@@ -326,6 +326,7 @@ export function cssVars() {
   // the cluster screens' top: under the sub-tabs and CONTEXT (browser.js
   // layoutKubeBar measures and overrides it on the screen's host)
   lines.push("--kube-top: 50px;");
+  lines.push("--glow-rgb: 20, 255, 106;", "--ink-rgb: 4, 20, 10;");
   lines.push("--pip-dim-text: color-mix(in srgb, var(--pip-mid) 55%, var(--pip-dim));");
   lines.push(`--glow-bright: ${rgba(PIP.bright, 0.55)};`);
   lines.push(`--glow-soft: ${rgba(PIP.bright, 0.18)};`);
@@ -334,7 +335,7 @@ export function cssVars() {
   lines.push(`--font: ${FONT_STACK};`);
   lines.push(`--font-ui: ${FONT_STACK};`, `--font-mono: ${FONT_STACK};`, ...roleLines(ROLES.pip));
   const pro = [...roleLines(ROLES.pro), ...Object.entries(proRemap()).map(([name, value]) => `--${name}: ${value};`), `--font: ${FONT_UI};`, `--font-ui: ${FONT_UI};`, `--font-mono: ${FONT_MONO};`, "--pip-dim-text: color-mix(in srgb, var(--pip-mid) 40%, var(--pip-dim));"];
-  const amber = lines.map((line) => line.replace(/#[0-9a-fA-F]{6}\b/g, toAmber).replace(/rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/g, (all, r, g, b, a) => { const hex = toAmber(`#${[r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")}`); return rgba(hex, a); })).filter((line, i) => line !== lines[i]);
+  const amber = ["--glow-rgb: 255, 169, 20;", "--ink-rgb: 20, 14, 4;"].concat(lines.filter((l) => !/^--(glow|ink)-rgb/.test(l)).map((line) => line.replace(/#[0-9a-fA-F]{6}\b/g, toAmber).replace(/rgba\((\d+), (\d+), (\d+), ([\d.]+)\)/g, (all, r, g, b, a) => { const hex = toAmber(`#${[r, g, b].map((v) => Number(v).toString(16).padStart(2, "0")).join("")}`); return rgba(hex, a); }))).filter((line) => !lines.includes(line));
   return `:root { ${lines.join(" ")} }\n  :root[data-theme="pro"] { ${pro.join(" ")} }\n  :root[data-tint="amber"]:not([data-theme="pro"]) { ${amber.join(" ")} }`;
 }
 

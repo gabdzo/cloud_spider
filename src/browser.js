@@ -78,7 +78,9 @@ import { renderSpend } from "./spend-view.js";
 import { createSettings, readHidden, visibleModules } from "./settings-view.js";
 import { nsPanelModel } from "./map-ns-panel.js";
 import { pipModel } from "./pipboy-model.js";
-import { PIP_ON_KEY, mountPip } from "./pipboy-view.js";
+import { PIP_ON_KEY, mountPip, readTint, setTint } from "./pipboy-view.js";
+// GREEN / AMBER for the whole app, before anything paints.
+if (readTint() === "amber") document.documentElement.dataset.tint = "amber";
 import { KUBE_MAP_KEY, POLICIES_KEY, compoundHit, compoundHover, kubeModel, layoutKubeOnly, readKubeChoices, readPoliciesOn } from "./map-kube.js";
 import { mountWhere } from "./where.js";
 
@@ -2772,6 +2774,11 @@ function syncPipBoy() {
   else if (!show && !pipBoyEl.hidden) pipBoy.hide();
 }
 pipBoyButton.addEventListener("click", () => setPipBoy(true));
+const tintKey = /** @type {HTMLButtonElement|null} */ (document.querySelector("#tint-key"));
+const showTint = () => { if (!tintKey) return; const amber = readTint() === "amber"; tintKey.textContent = amber ? "GRN" : "AMB"; tintKey.setAttribute("aria-pressed", String(amber)); tintKey.title = amber ? "phosphor: back to green" : "phosphor: amber (Pip-Boy 3000), the whole app"; };
+tintKey?.addEventListener("click", () => { setTint(readTint() === "amber" ? "green" : "amber"); });
+window.addEventListener("cs-tint", () => { showTint(); draw(); });
+showTint();
 
 function draw() {
   syncPipBoy();
