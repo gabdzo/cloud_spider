@@ -3555,8 +3555,16 @@ export function pageFor(theme, enabled) {
     .replace("</head>", `${gateStyle(mods)}</head>`);
 }
 
+const STARTED_AT = new Date().toISOString();
+
+// A slow or stuck client cannot hold a socket forever: headers within 20 s,
+// a whole request within 2 min (a stack RUN streams its answer, the
+// request itself is small). Idle keep-alive sockets close after 5 s.
+export const SERVER_TIMEOUTS = { headersTimeout: 20_000, requestTimeout: 120_000, keepAliveTimeout: 5_000 };
+
 export function listen(app, port = 9241, host = "127.0.0.1") {
   const server = createServer(app);
+  Object.assign(server, SERVER_TIMEOUTS);
   return new Promise((resolve, reject) => {
     const fail = (error) => reject(error);
     server.once("error", fail);
@@ -3615,6 +3623,13 @@ async function route(app, req, res) {
       sendCached(req, res, "text/javascript; charset=utf-8", await assetBody(name));
       return;
     }
+  }
+
+  // Liveness for a supervisor or container: answers without touching AWS or
+  // the cluster, so it stays fast when they are slow.
+  if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/healthz") {
+    send(res, 200, { ok: true, uptime_s: Math.round(process.uptime()), started_at: STARTED_AT });
+    return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/config") {
