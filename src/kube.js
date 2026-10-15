@@ -68,6 +68,8 @@ export const PATHS = {
   // Cluster add-ons (OPS screen, radio). A missing CRD answers 404: that
   // add-on is simply not installed.
   events: () => "/api/v1/events?limit=500",
+  // DIAGNOSE: one namespace's events (why a readiness probe fails)
+  nsEvents: (ns) => `/api/v1/namespaces/${checkName(ns)}/events?limit=500`,
   hpas: () => "/apis/autoscaling/v2/horizontalpodautoscalers",
   policyReports: () => "/apis/wgpolicyk8s.io/v1alpha2/policyreports",
   clusterPolicyReports: () => "/apis/wgpolicyk8s.io/v1alpha2/clusterpolicyreports",

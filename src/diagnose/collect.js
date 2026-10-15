@@ -60,6 +60,15 @@ export async function collectLive(kube, { namespace, service, context = "", path
     const sel = facts.service.selector;
     const mine = Object.keys(sel).length ? (pods.json.items || []).filter((p) => selects(sel, p.metadata?.labels || {})) : [];
     facts.pods = mine.slice(0, 50).map(podFact);
+    // Why a running pod is not ready: its last "Readiness probe failed" event.
+    const unready = new Set(facts.pods.filter((p) => p.phase === "Running" && !p.ready).map((p) => p.name));
+    if (unready.size) {
+      const events = await read("nsEvents", namespace);
+      for (const p of facts.pods) {
+        const last = (events.json?.items || []).filter((e) => e.involvedObject?.kind === "Pod" && e.involvedObject?.name === p.name && e.reason === "Unhealthy" && /^Readiness probe/i.test(e.message || "")).sort((a, b) => Date.parse(b.lastTimestamp || b.eventTime || 0) - Date.parse(a.lastTimestamp || a.eventTime || 0))[0];
+        if (last && unready.has(p.name)) p.probeFailure = { message: String(last.message).slice(0, 300), count: last.count || 1 };
+      }
+    }
   }
 
   // Admission webhooks and their backends (OPS-001)
@@ -154,7 +163,17 @@ export function podFact(p) {
   const ready = (p.status?.conditions || []).find((c) => c.type === "Ready");
   const cs = p.status?.containerStatuses || [];
   const waiting = cs.map((c) => c.state?.waiting?.reason).find(Boolean);
-  return { name: p.metadata?.name, phase: p.status?.phase || "", ready: ready?.status === "True", readySince: ready?.lastTransitionTime || null, restarts: cs.reduce((n, c) => n + (c.restartCount || 0), 0), reason: waiting || ready?.reason || "", ip: p.status?.podIP || "" };
+  return { name: p.metadata?.name, phase: p.status?.phase || "", ready: ready?.status === "True", readySince: ready?.lastTransitionTime || null, restarts: cs.reduce((n, c) => n + (c.restartCount || 0), 0), reason: waiting || ready?.reason || "", ip: p.status?.podIP || "", ...(probeOf(p) ? { readinessProbe: probeOf(p) } : {}) };
+}
+
+// "GET :8080/healthz", "tcp :5432", "exec": what the readiness probe asks.
+function probeOf(p) {
+  const r = (p.spec?.containers || []).map((c) => c.readinessProbe).find(Boolean);
+  if (!r) return "";
+  if (r.httpGet) return `${r.httpGet.scheme === "HTTPS" ? "HTTPS " : ""}GET :${r.httpGet.port}${r.httpGet.path || "/"}`;
+  if (r.tcpSocket) return `tcp :${r.tcpSocket.port}`;
+  if (r.grpc) return `grpc :${r.grpc.port}`;
+  return r.exec ? "exec" : "";
 }
 
 function whFacts(res, kind) {
