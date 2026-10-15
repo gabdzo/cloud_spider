@@ -20,6 +20,8 @@ export const DEFAULT_CONTEXT = "cloudspider-viewer";
 export const DEFAULT_OTEL_METRICS = "demo/otel-metrics";
 const DNS = /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/;
 const TIMEOUT_MS = 8000;
+export const SHARE_MS = 0;
+export const MAX_INFLIGHT = 12;
 
 export function kubeconfigPath(env = process.env) {
   const first = String(env.KUBECONFIG || "").split(delimiter).find(Boolean);
@@ -315,12 +317,49 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     return pending;
   }
 
+  // The same GET asked by several screens at once (CLUSTER, add-ons, score
+  // and the morning report each list pods and deployments) goes out once:
+  // callers in flight share it (SHARE_MS > 0 would also reuse a 2xx body;
+  // off: the screens own their caches and TTLs).
+  // Each caller parses its own copy, so nobody sees another's mutations.
+  // At most MAX_INFLIGHT GETs per context run at once.
+  const inflight = new Map();
+  const recent = new Map();
+  function shared(url, key, run) {
+    if (!key) return run();
+    const hit = recent.get(key);
+    if (SHARE_MS && hit && clock() - hit.at < SHARE_MS) return Promise.resolve(hit.res);
+    if (inflight.has(key)) return inflight.get(key);
+    const p = run().then((res) => {
+      inflight.delete(key);
+      if (res.status >= 200 && res.status < 300 && !res.error) {
+        if (recent.size > 200) recent.clear();
+        recent.set(key, { at: clock(), res });
+      }
+      return res;
+    });
+    inflight.set(key, p);
+    return p;
+  }
+  let running = 0;
+  const queue = [];
+  async function limited(run) {
+    if (running >= MAX_INFLIGHT) await new Promise((go) => queue.push(go));
+    running++;
+    try {
+      return await run();
+    } finally {
+      running--;
+      queue.shift()?.();
+    }
+  }
+
   async function getPath(path, { text = false, keepLine = null, timeout = 0 } = {}) {
     const t = await resolveTarget();
     if (t.error) return { error: t.error, unset: true };
     const tok = await token(t);
     if (tok.error) return { error: tok.error };
-    let res = await get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}), ...(timeout ? { timeout } : {}) });
+    let res = await shared(`${t.server}${path}`, keepLine || timeout ? null : `${text ? "t" : "j"} ${path}`, () => limited(() => get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}), ...(timeout ? { timeout } : {}) })));
     // 429: the API server's flow control said "later" (it does right after
     // an add-on install floods it). Try again twice before calling the read
     // failed, so one busy second does not turn a control UNKNOWN.
