@@ -48,6 +48,17 @@ export function investigationHtml(rec, { sample = false, verification = null, ou
     + `<div class="dx-actions"><button type="button" class="dx-btn dx-primary" data-dx-verify title="re-run the same read-only checks and compare with this investigation">VERIFY AGAIN</button>${outcomes}<button type="button" class="dx-btn" data-dx-json title="download the investigation record (schema ${esc(rec.schema_version)})">EXPORT JSON</button><small class="dx-ro">read-only · nothing installed · schema ${esc(rec.schema_version)}</small></div>`;
 }
 
+const optionsHtml = (names = []) => names.slice(0, 500).map((n) => `<option value="${esc(n)}"></option>`).join("");
+// The two fields, with the live namespaces / Services (choices) to pick from.
+export function formHtml(st, choices = null) {
+  const ns = choices?.namespaces || [];
+  const svcs = choices?.services?.[st.ns] || [];
+  return `<label>NAMESPACE <input name="dxNs" spellcheck="false" autocomplete="off"${ns.length ? ' list="dx-nss"' : ""} value="${esc(st.ns)}"></label>`
+    + `<label>SERVICE <input name="dxSvc" spellcheck="false" autocomplete="off"${choices ? ' list="dx-svcs"' : ""} value="${esc(st.svc)}"></label>`
+    + (ns.length ? `<datalist id="dx-nss">${optionsHtml(ns)}</datalist>` : "") + (choices ? `<datalist id="dx-svcs">${optionsHtml(svcs)}</datalist>` : "")
+    + `<button type="button" class="dx-btn dx-primary" data-dx-go>INVESTIGATE</button>`;
+}
+
 const fetchJsonDefault = (u, o) => fetch(u, o).then((r) => r.json());
 
 // openDiagnose({ sample, context, namespace, service }): one panel at a time.
@@ -75,8 +86,10 @@ export function openDiagnose(opts = {}, { fetchJson = fetchJsonDefault, doc = gl
   $(".dx-close").addEventListener("click", close);
   $(".dx-sub").textContent = sample ? "SAMPLE · brother-sandbox/db · offline fixture" : `LIVE · ${opts.context || "primary context"} · GETs only`;
   function form() {
-    $(".dx-form").innerHTML = `<label>NAMESPACE <input name="dxNs" spellcheck="false" autocomplete="off" value="${esc(st.ns)}"></label><label>SERVICE <input name="dxSvc" spellcheck="false" autocomplete="off" value="${esc(st.svc)}"></label><button type="button" class="dx-btn dx-primary" data-dx-go>INVESTIGATE</button>`;
+    $(".dx-form").innerHTML = formHtml(st, opts.choices);
     $("[data-dx-go]").addEventListener("click", () => { st.ns = $("[name=dxNs]").value.trim(); st.svc = $("[name=dxSvc]").value.trim(); investigate(); });
+    // the Service list follows the namespace typed or picked
+    $("[name=dxNs]").addEventListener("input", (ev) => { const list = $("#dx-svcs"); if (list) list.innerHTML = optionsHtml(opts.choices?.services?.[ev.target.value.trim()] || []); });
   }
   if (!sample) form();
   else $(".dx-form").remove();
