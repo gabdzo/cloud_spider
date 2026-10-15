@@ -312,7 +312,7 @@ test("the overview has a home control and a spend box, and the map poll does not
     assert.doesNotMatch(pullFn, /api\/cost/);
     assert.doesNotMatch(pullFn, /queueSpend|loadSpend/);
     // The first live pull, and only that one, asks for the bill once.
-    assert.match(source, /pull\(\)\.then\(\(\) => \{\n  if \(place && !sample\) queueSpend\(\);\n\}\);/);
+    assert.match(source, /pull\(\)\.then\(\(\) => \{\n  kickMapKube\(\);\n  if \(place && !sample\) queueSpend\(\);\n\}\);/);
     await fetch(`${base}/api/view`);
     assert.equal(reads, 0);
     const sample = await fetch(`${base}/api/cost-sample`);
