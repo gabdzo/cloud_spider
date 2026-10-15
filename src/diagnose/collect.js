@@ -33,6 +33,9 @@ export async function collectLive(kube, { namespace, service, context = "", path
     facts.capabilities = caps;
     return facts;
   }
+  // The ALB side is read at the same time as the kube side (it took up to
+  // 2× the timeout after everything else, so DIAGNOSE waited for the sum).
+  const graphRead = pathGraph ? timed(pathGraph(), timeoutMs * 2, "path graph") : null;
   const [svc, slices, pods, vwh, mwh, certs, metrics] = await Promise.all([
     read("service", namespace, service),
     read("endpointSlices", namespace, service),
@@ -112,8 +115,8 @@ export async function collectLive(kube, { namespace, service, context = "", path
   }
 
   // ALB side (NET-002): only through the SNIFF path graph, when AWS is set up
-  if (pathGraph) {
-    const graph = await timed(pathGraph(), timeoutMs * 2, "path graph");
+  if (graphRead) {
+    const graph = await graphRead;
     if (graph?.error || !graph?.targetGroups) cap("aws-elbv2", /denied|not authorized|forbidden/i.test(graph?.error || "") ? "forbidden" : "unavailable", graph?.error || "no path graph");
     else {
       cap("aws-elbv2", "available", "target groups and health from SNIFF's reads");
