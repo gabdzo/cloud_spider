@@ -3382,6 +3382,7 @@ const page = `<!doctype html>
       <button id="no" class="cmd" type="button" hidden>leave it</button>
     </span>
     <button id="path-flow" class="cmd" type="button" hidden title="SNIFF layout: left to right or top to bottom">↔ / ↕</button>
+    <button id="path-probe" class="cmd" type="button" hidden title="Send the one real request again (GET from this machine to this path's ALB; no cookies; answers are cached ~30 s)">↻ RE-PROBE</button>
     <button id="ask-this" class="cmd" type="button" data-icon="terminal" hidden>ASK ABOUT THIS</button>
   </div>
   <p id="error" hidden></p>
@@ -3624,6 +3625,12 @@ async function route(app, req, res) {
         url.searchParams.get("lb") || "",
       ),
     );
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/path/probe") {
+    await app.boot();
+    send(res, 200, await app.pathProbe({ lb: url.searchParams.get("lb") || "", host: url.searchParams.get("host") || "", fresh: url.searchParams.get("fresh") === "1" }));
     return;
   }
 

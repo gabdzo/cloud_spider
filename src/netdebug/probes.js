@@ -144,19 +144,20 @@ export function tlsHandshake(address, host, port, { timeoutMs = 5000, ca } = {})
 
 // L-HTTP-01..03: one GET or HEAD to the address, Host and SNI set to the
 // name. No body sent, none kept, no cookies, no credentials.
-export function httpRequest(target, address, { method = "GET", timeoutMs = 10_000, ca } = {}) {
+export function httpRequest(target, address, { method = "GET", timeoutMs = 10_000, ca, extraHeaders = {}, hostHeader: hostOverride = "" } = {}) {
   return new Promise((resolve) => {
     const t0 = performance.now();
     const timing = { connect: null, tls: null, ttfb: null, total: null };
     const lib = target.scheme === "https" ? https : http;
-    const hostHeader = [80, 443].includes(target.port) ? target.host : `${target.host}:${target.port}`;
+    const name = hostOverride || target.host;
+    const hostHeader = [80, 443].includes(target.port) ? name : `${name}:${target.port}`;
     const req = lib.request({
       host: address,
       port: target.port,
       method: method === "HEAD" ? "HEAD" : "GET",
       path: target.path + (target.rawQuery || ""),
       agent: false,
-      headers: { host: hostHeader, "user-agent": USER_AGENT, accept: "*/*", connection: "close" },
+      headers: { ...extraHeaders, host: hostHeader, "user-agent": USER_AGENT, accept: "*/*", connection: "close" },
       ...(target.scheme === "https" ? { servername: isIP(target.host) ? undefined : target.host, rejectUnauthorized: false, ALPNProtocols: ["http/1.1"], ...(ca ? { ca } : {}) } : {}),
     });
     let settled = false;
