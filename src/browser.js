@@ -3994,7 +3994,9 @@ function askThisQuestion() {
 function renderPathFlow() {
   if (!pathFlowButton) return;
   pathFlowButton.hidden = mode !== "path";
-  pathFlowButton.textContent = pathFlow === "v" ? "↕ TOP-DOWN" : "↔ LEFT-RIGHT";
+  // Compact so the SNIFF row (picker, URL, ↔, ↻, ASK) stays one row at 1024.
+  pathFlowButton.textContent = pathFlow === "v" ? "↕" : "↔";
+  pathFlowButton.title = pathFlow === "v" ? "SNIFF layout: top to bottom (click for left to right)" : "SNIFF layout: left to right (click for top to bottom)";
   pathFlowButton.setAttribute("aria-pressed", String(pathFlow === "v"));
 }
 pathFlowButton?.addEventListener("click", () => {
