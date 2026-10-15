@@ -1,3 +1,4 @@
+// @ts-check
 // One config for Cloud Spider: cloudspider.yaml.
 //
 // Where it is read from (the first that exists):
@@ -143,6 +144,11 @@ export const SCHEMA = {
 
 const isLeaf = (node) => node && typeof node.type === "string";
 
+/**
+ * @param {Record<string, any>} [schema]
+ * @param {string[]} [prefix]
+ * @returns {{ path: string[], spec: any }[]}
+ */
 export function leaves(schema = SCHEMA, prefix = []) {
   const out = [];
   for (const [key, node] of Object.entries(schema)) {
@@ -286,6 +292,10 @@ export const FLAGS = {
   ...Object.fromEntries(leaves().filter((l) => l.spec.flag).map((l) => [l.spec.flag, { type: "string" }])),
 };
 
+/**
+ * @param {string[]} argv
+ * @returns {{ values: Record<string, any>, error?: string }}
+ */
 export function parseFlags(argv) {
   try {
     const { values } = parseArgs({ args: argv, options: FLAGS, strict: true, allowPositionals: false });
@@ -297,6 +307,9 @@ export function parseFlags(argv) {
 
 // Which file: { file, tried }. Missing files are fine; a named one that is
 // missing is an error.
+/**
+ * @param {{ flag?: string, env?: Record<string, string | undefined>, root?: string, home?: string, exists?: (path: string) => boolean }} [options]
+ */
 export function findConfigFile({ flag = "", env = {}, root, home = homedir(), exists = existsSync } = {}) {
   if (flag) return { file: resolve(flag), named: "--config" };
   if (env.CLOUDSPIDER_CONFIG) return { file: resolve(env.CLOUDSPIDER_CONFIG), named: "CLOUDSPIDER_CONFIG" };
@@ -334,7 +347,7 @@ export function loadConfig({ argv = [], env = {}, root = process.cwd(), home = h
     // file:line:col of a key (the key itself, so an unknown key points at
     // the typo and a bad value at the line that holds it).
     const at = (path) => {
-      const parent = path.length > 1 ? doc.getIn(path.slice(0, -1), true) : doc.contents;
+      const parent = /** @type {any} */ (path.length > 1 ? doc.getIn(path.slice(0, -1), true) : doc.contents);
       const pair = parent?.items?.find?.((item) => item.key?.value === path.at(-1));
       const range = pair?.key?.range;
       if (!range) return file;
