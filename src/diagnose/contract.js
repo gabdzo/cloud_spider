@@ -6,7 +6,7 @@
 //   schema_version: "1.0", kind: "cloudspider.investigation",
 //   investigation_id, started_at, observed_at, mode: "live" | "sample",
 //   scope: { context, cluster, namespace, service },
-//   capabilities: [{ name, status: available|not-configured|forbidden|unavailable|not-installed, detail, optional }],
+//   capabilities: [{ name, status: available|not-configured|forbidden|unavailable|not-installed|not-applicable, detail, optional }],
 //   resources: [{ ref, kind, name, namespace }],
 //   relationships: [{ from, to, type, provenance: verified|unknown, how }],
 //   evidence: [{ id, source, observed_at, scope, summary, normalized, raw?, limits? }],
@@ -26,7 +26,7 @@ export const KIND = "cloudspider.investigation";
 export const SEVERITIES = ["critical", "high", "medium", "low", "info"];
 export const CONFIDENCES = ["high", "medium", "low"];
 export const STATUSES = ["confirmed", "suspected", "insufficient_evidence"];
-export const CAPABILITY = ["available", "not-configured", "not-installed", "forbidden", "unavailable"];
+export const CAPABILITY = ["available", "not-configured", "not-installed", "forbidden", "unavailable", "not-applicable"];
 export const VERDICTS = ["not_run", "resolved", "still_failing", "inconclusive"];
 
 // Stable across pod restarts: code + the durable resource (+ a subject such

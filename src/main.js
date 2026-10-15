@@ -249,6 +249,8 @@ app.diagnose = {
   // page), and without it the region is never read and NET-002 stays
   // "unavailable" (found by the chaos drill).
   pathGraph: mods.has("aws") ? async () => { await app.boot(); return app.pathGraph(); } : null,
+  // k8s-only: ALB target health is not applicable (not a coverage gap).
+  awsOff: !mods.has("aws"),
   store: createInvestigationStore({ dir: join(stateDir, "investigations") }),
 };
 // SLO history survives a restart (.cloudspider/slo-ledger.json).

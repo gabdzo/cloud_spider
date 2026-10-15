@@ -25,7 +25,7 @@ const statusOf = (res) => (res.json || res.text != null ? "available" : res.forb
  * @param {any} kube
  * @param {{ namespace?: string, service?: string, context?: string, pathGraph?: null | (() => Promise<any>), now?: () => string, timeoutMs?: number }} opts
  */
-export async function collectLive(kube, { namespace, service, context = "", pathGraph = null, now = () => new Date().toISOString(), timeoutMs = READ_TIMEOUT_MS } = {}) {
+export async function collectLive(kube, { namespace, service, context = "", pathGraph = null, awsOff = false, now = () => new Date().toISOString(), timeoutMs = READ_TIMEOUT_MS } = {}) {
   const t0 = Date.now();
   const read = (name, ...args) => timed(kube.read(name, ...args), timeoutMs, name);
   const target = await timed(kube.target(), timeoutMs, "kube target");
@@ -127,7 +127,8 @@ export async function collectLive(kube, { namespace, service, context = "", path
       cap("aws-elbv2", "available", "target groups and health from SNIFF's reads");
       facts.targetGroups = targetGroupFacts(graph, facts);
     }
-  } else cap("aws-elbv2", "not-configured", "no AWS region read for this context");
+  } else if (awsOff) cap("aws-elbv2", "not-applicable", "no AWS here (profile k8s-only): ALB target health does not apply; the Service, endpoints and pods above are the whole path");
+  else cap("aws-elbv2", "not-configured", "no AWS region read for this context");
   cap("debug-pod", "available", "optional: SNIFF ▸ FROM INSIDE starts a debug pod on request. Investigate never starts it.", "action");
   facts.capabilities = caps;
   facts.elapsed_ms = Date.now() - t0;

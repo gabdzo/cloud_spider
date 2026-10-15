@@ -5,7 +5,7 @@
 // SAMPLE runs the brother-sandbox db story offline, same schema as live.
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const VERDICT = { not_run: "NOT VERIFIED", resolved: "RESOLVED", still_failing: "STILL FAILING", inconclusive: "INCONCLUSIVE" };
-const CAP_TEXT = { available: "OK", "not-configured": "NOT SET UP", "not-installed": "NOT INSTALLED", forbidden: "FORBIDDEN", unavailable: "NO ANSWER" };
+const CAP_TEXT = { available: "OK", "not-configured": "NOT SET UP", "not-installed": "NOT INSTALLED", forbidden: "FORBIDDEN", unavailable: "NO ANSWER", "not-applicable": "N/A" };
 const SAMPLE_FIX = "Demo fix: db's code fakes \"pool exhausted\" (random.random() < 0.05). Remove that line and roll out db, then VERIFY AGAIN.";
 
 export function capsHtml(caps = []) {
