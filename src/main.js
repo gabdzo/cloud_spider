@@ -19,7 +19,7 @@ import { createTerraformReader } from "./terraform.js";
 import { createLearn } from "./learn.js";
 import { createAgent } from "./agent.js";
 import { createKube } from "./kube.js";
-import { loadContexts } from "./kube-contexts.js";
+import { loadContexts, primaryContext } from "./kube-contexts.js";
 import { readFile } from "node:fs/promises";
 import { watchFile } from "node:fs";
 import { createConnector } from "./kube-connect.js";
@@ -104,7 +104,8 @@ const vaults = {
   sampleLogs,
 };
 // Kube contexts (kube-contexts.js): env, cloudspider.contexts.yaml, or the
-// one CLOUDSPIDER_KUBE_CONTEXT. The first is the primary one.
+// one CLOUDSPIDER_KUBE_CONTEXT. The primary is kube.context when set and
+// listed, else the first (kube-contexts.js primaryContext).
 const kubeConfig = await loadContexts({ env: process.env, read: readFile, cwd: root, configured: config.kube.contexts, singleFrom: loaded.sources?.["kube.context"] || "" });
 for (const line of kubeConfig.errors) process.stdout.write(`kube contexts: ${line}\n`);
 const kubeContexts = kubeConfig.contexts.map((ctx) => ({ ...ctx, kube: createKube({ context: ctx.name, namespaces: ctx.namespaces }) }));
@@ -117,12 +118,14 @@ async function loadKubeContexts() {
   return { ...got, contexts: got.contexts.map((ctx) => ({ ...ctx, kube: createKube({ context: ctx.name, namespaces: ctx.namespaces }) })) };
 }
 const connector = createConnector({ env: process.env, contextsFile, exampleFile: join(root, "cloudspider.contexts.example.yaml") });
-const kube = kubeContexts[0]?.kube || createKube();
+const preferContext = loaded.sources?.["kube.context"] && loaded.sources["kube.context"] !== "default" ? config.kube.context : "";
+const kube = kubeContexts[primaryContext(kubeContexts, { preferred: preferContext })]?.kube || createKube();
 // Stack runs (pulumi). Kept here too: a Ctrl-C waits for them (shutdown.js).
 // Every stack PREVIEW / RUN / TAKE IT DOWN lands in audit.jsonl too (src/stack-audit.js).
 const stackGitSha = (() => { try { return spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).stdout?.trim() || ""; } catch { return ""; } })();
 const stacks = createUpgrade({ runsDir: join(stateDir, "runs"), volumes: aws.volumes, eksMaxNodes: config.stacks.eks.maxNodes, gitSha: stackGitSha, preflight: createEksPreflight(new EC2Client({ region: "eu-north-1" })), audit: (entry) => fsp.mkdir(stateDir, { recursive: true }).then(() => fsp.appendFile(join(stateDir, "audit.jsonl"), JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n")) });
 const app = createApp({
+  preferContext,
   auditFile: join(stateDir, "audit.jsonl"),
   ec2: aws.ec2,
   trail: aws.trail,
@@ -164,7 +167,7 @@ app.logErrors = createLogReport({
   kube,
   nodeIndex: mods.has("graph") && kube ? async () => {
     if (nodeIndexCache && Date.now() - nodeIndexCache.at < 60_000) return nodeIndexCache.fn;
-    const reads = await readGraph(kube);
+    const reads = await readGraph(app.kubeOf(""));
     if (reads.error) return null;
     nodeIndexCache = { at: Date.now(), fn: nodeLookup(buildGraph(reads, { title: reads.clusterName, namespaces: reads.scope, withPodNodes: true })) };
     return nodeIndexCache.fn;
@@ -205,8 +208,8 @@ if (mods.has("kubernetes") && (config.kube.writeContexts || []).length) app.eksS
 // reports under storage.path/netdebug, probes in the audit log.
 // FROM INSIDE (N9): the debug pod, only with network.pod.enabled and a
 // context in kube.writeContexts. Reads use the viewer of that cluster (the
-// write context itself when it is also listed, else the first context).
-const viewerFor = (ctx) => (app.contextNames().includes(ctx) ? app.kubeOf(ctx) : app.kubeOf(app.contextNames()[0]));
+// write context itself when it is also listed, else the primary context).
+const viewerFor = (ctx) => (app.contextNames().includes(ctx) ? app.kubeOf(ctx) : app.kubeOf(""));
 const podWriters = new Map();
 app.netdebug = createNetdebug({ settings: config.network, pageOrigin, dir: join(stateDir, "netdebug"), auditFile: join(stateDir, "audit.jsonl"), pod: mods.has("kubernetes") ? {
   cfg: config.network.pod,

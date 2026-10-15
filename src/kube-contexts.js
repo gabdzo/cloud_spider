@@ -6,8 +6,10 @@
 //      or the file named by CLOUDSPIDER_KUBE_CONTEXTS_FILE
 //   3. env CLOUDSPIDER_KUBE_CONTEXT (one context, every namespace), default
 //      cloudspider-viewer
-// The first context is the primary one: the map compound, telemetry, OPS
-// and the SLOs read it as before. Names come from this config only; a name
+// The primary context (primaryContext below) is kube.context when it is set
+// and listed, else the first listed one that does not answer AccessDenied,
+// else the first: the map compound, /api/cluster, TELEMETRY, OPS, SLOs, the
+// morning report, health watches, topology, SNIFF and DIAGNOSE read it. Names come from this config only; a name
 // that does not look like a kube context or namespace is refused here.
 import { parse } from "yaml";
 import { DEFAULT_CONTEXT } from "./kube.js";
@@ -151,4 +153,22 @@ async function readContexts({ env = process.env, read, cwd = process.cwd(), conf
 
 export function scopeText(namespaces) {
   return namespaces === "*" ? "every namespace" : `namespace${namespaces.length === 1 ? "" : "s"} ${namespaces.join(", ")}`;
+}
+
+// A read error that says this identity may not read the cluster (a dead or
+// revoked cluster): such a context is shown GONE and never made primary.
+export const DENIED = /AccessDenied|Unauthorized|\b401\b|not authorized to perform|forbidden/i;
+
+/**
+ * The one resolver for the primary kube context.
+ * @param {{ name: string }[]} contexts
+ * @param {{ preferred?: string, denied?: (name: string) => boolean }} [opts]
+ * @returns {number} index into contexts, -1 when empty
+ */
+export function primaryContext(contexts = [], { preferred = "", denied = () => false } = {}) {
+  if (!contexts.length) return -1;
+  const want = preferred ? contexts.findIndex((ctx) => ctx?.name === preferred) : -1;
+  if (want >= 0) return want;
+  const alive = contexts.findIndex((ctx) => !denied(ctx?.name));
+  return alive >= 0 ? alive : 0;
 }

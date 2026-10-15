@@ -597,8 +597,11 @@ Cloud Spider reads its contexts from the first of these it finds:
 2. the file, or the path in `CLOUDSPIDER_KUBE_CONTEXTS_FILE`
 3. the single `CLOUDSPIDER_KUBE_CONTEXT` (§7)
 
-The first context listed is the **primary** one. The map compound (§18),
-TELEMETRY, OPS and the cluster SLOs read the primary only. Every context
+The **primary** context is `kube.context` from `cloudspider.yaml` when it is
+set and listed; otherwise the first listed context that does not answer
+AccessDenied (such a context shows GONE in the switcher), else the first.
+The map compound (§18), `/api/cluster`, TELEMETRY, OPS, topology, SNIFF,
+DIAGNOSE and the cluster SLOs read the primary only. Every context
 gets:
 
 - **A button in the Cluster view's context switcher.** The button's health
