@@ -551,6 +551,9 @@ let place = null;
 let region = "";
 let animTime = 0;
 let pulling = false;
+const PULL_EVERY = 2000;
+const PULL_EVERY_OFF = 10_000;
+let viewOff = false;
 let sample = false;
 // #?sample=1&doors=1, read before the page rewrites the hash (sampleDoors).
 const doorsAsked = new URLSearchParams(location.hash.replace(/^#\??/, "")).get("doors") === "1";
@@ -3022,14 +3025,33 @@ function syncRegions(regions, current) {
   if (current && regionSelect.value !== current) regionSelect.value = current;
 }
 
-async function pull() {
-  if (pulling) return;
+// One /api/view read at a time, shared: a caller that arrives while one is
+// in flight awaits that same read (so `await pull()` really waits), and the
+// two-second tick skips when a read just finished or the tab is hidden.
+let pullShared = null;
+let pullDoneAt = 0;
+function pull({ tick = false } = {}) {
+  if (pullShared) return pullShared;
+  // With nothing to refresh (viewOff) poll slowly instead of every 2 s.
+  const every = viewOff ? PULL_EVERY_OFF : PULL_EVERY;
+  if (tick && (document.hidden || Date.now() - pullDoneAt < every - PULL_EVERY / 2)) return Promise.resolve();
+  pullShared = pullOnce().finally(() => {
+    pullShared = null;
+    pullDoneAt = Date.now();
+  });
+  return pullShared;
+}
+
+async function pullOnce() {
   pulling = true;
   try {
     const query = new URLSearchParams({ grain: campGrain });
     if (sample) query.set("sample", "1");
     const view = await fetch(`/api/view?${query}`).then((response) => response.json());
     // The map module is off: nothing to read, and no error to show.
+    // Nothing to refresh: the map module is off, or the read failed with no
+    // place (a config or credentials problem a 2 s poll cannot fix).
+    viewOff = view.off === "map" || Boolean(view.error && !view.place);
     if (view.off === "map") {
       if (!sample) liveMorning = view.morning || null;
       renderChrome();
@@ -6567,8 +6589,8 @@ window.addEventListener("resize", () => {
 });
 
 setInterval(() => {
-  pull();
-}, 2000);
+  pull({ tick: true });
+}, PULL_EVERY);
 
 // The overview reads the bill once, when the first live pull has a place
 // (Overview plan R2/T2), then the server's six-hour cache. The two-second
