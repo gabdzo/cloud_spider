@@ -57,6 +57,7 @@ export function kubeModel(diagram, name = "") {
     nodes: nodes.map((n) => ({ id: n.id, name: n.host?.name || n.label, label: n.label, instanceId: n.host?.instanceId || "", status: n.status, ready: n.host?.ready })),
     apps,
     pods: apps.reduce((sum, a) => sum + a.pods.length, 0),
+    netpol: diagram?.netpol || null,
     namespaces: [...new Set(apps.map((a) => a.ns))].sort((a, b) => Number(SYSTEM.test(a)) - Number(SYSTEM.test(b)) || a.localeCompare(b)),
   };
 }
@@ -118,8 +119,9 @@ function nsSummary(apps) {
 // nodeShacks: the subnet's node buildings (faces). apps: assignApps' list
 // for this subnet. room: the width the yard can give.
 export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice, room }) {
+  const netpol = model?.netpol?.ns || null;
   const inner = Math.max(CELL.w, room - 2 * MK.PAD);
-  const items = { buildings: [], stalls: [], figures: [], ns: [], lod: [] };
+  const items = { buildings: [], stalls: [], figures: [], ns: [], lod: [], badges: [] };
   let y = MK.HEAD;
   // Node buildings.
   const cols = Math.max(1, Math.min(nodeShacks.length || 1, Math.floor((inner + CELL.gap) / (CELL.w + CELL.gap))));
@@ -135,7 +137,9 @@ export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice
     for (const ns of namespaces) {
       const mine = apps.filter((a) => a.ns === ns).sort((a, b) => Number(!!a.bare) - Number(!!b.bare) || a.label.localeCompare(b.label));
       const system = SYSTEM.test(ns);
-      items.ns.push({ ns, x: MK.PAD, y, w: inner, text: `${ns}${system ? " · system" : ""} · ${nsSummary(mine)}`, system });
+      const badge = netpol ? policyBadge(netpol[ns]) : null;
+      items.ns.push({ ns, x: MK.PAD, y, w: inner - (badge ? badge.w + 4 : 0), text: `${ns}${system ? " · system" : ""} · ${nsSummary(mine)}`, system });
+      if (badge) items.badges.push({ ...badge, type: "netpol", cluster, ns, x: MK.PAD + inner - badge.w, y: y + 2, h: MK.NS - 4 });
       y += MK.NS;
       // Level 2 folds the system namespaces to their line; 3 shows them.
       if (system && level < 3) {
@@ -168,6 +172,12 @@ export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice
     }
   }
   const w = Math.min(room, Math.max(right + MK.PAD, 384));
+  // Badges sit at the compound's right edge; the ns line stops before them.
+  for (const bd of items.badges) {
+    bd.x = w - MK.PAD - bd.w;
+    const line = items.ns.find((l) => l.ns === bd.ns);
+    if (line) line.w = Math.max(40, bd.x - 4 - line.x);
+  }
   // LOD switch, top right: 1 2 3 A.
   LOD_LEVELS.forEach((value, index) => {
     const lw = value === "auto" ? MK.LOD_W + 8 : MK.LOD_W;
@@ -189,6 +199,7 @@ export function moveCompound(compound, x, y) {
     figures: compound.figures.map(shift),
     ns: compound.ns.map(shift),
     lod: compound.lod.map(shift),
+    badges: (compound.badges || []).map(shift),
   };
 }
 
@@ -216,6 +227,8 @@ export function compoundHit(placed, x, y) {
     if (lod) return { ...lod };
     const chip = kubeChip(compound);
     if (inside(chip)) return chip;
+    const badge = (compound.badges || []).find(inside);
+    if (badge) return { ...badge };
     const pod = compound.figures.find(inside);
     if (pod) return { ...pod };
     const app = compound.stalls.find(inside);
@@ -228,6 +241,7 @@ export function compoundHit(placed, x, y) {
 
 export function compoundHover(hit) {
   if (!hit) return "";
+  if (hit.type === "netpol") return badgeHover(hit);
   if (hit.type === "lod") return `detail ${hit.value === "auto" ? "AUTO" : hit.value}: ${LOD_TEXT[hit.value]}`;
   if (hit.type === "pod") return `${hit.ns}/${hit.label}${hit.caption ? ` · ${hit.caption}` : ""} · click: deep-inspect in the Cluster view`;
   if (hit.type === "app") return `${hit.kind} ${hit.ns}/${hit.label}${hit.count ? ` · ${hit.count} ready` : ""}${hit.services.length ? ` · svc ${hit.services.join(", ")}` : ""} · click: open in the Cluster view`;
@@ -243,4 +257,22 @@ export function readKubeChoices(storage) {
   } catch {
     return {};
   }
+}
+
+// The namespace's NetworkPolicy badge (netpol-model.js): DENY · n when a
+// policy picks every pod (one badge for ingress and egress), PARTIAL when
+// some pods have no policy, OPEN when none does. No summary: no badge.
+export function policyBadge(summary) {
+  if (!summary) return { badge: "open", text: "OPEN", w: 34, policies: [], uncovered: 0 };
+  const n = summary.policies.length;
+  const text = summary.badge === "deny" ? `DENY · ${n}` : summary.badge === "partial" ? `PARTIAL · ${n}` : "OPEN";
+  return { badge: summary.badge, text, w: 10 + text.length * 5.6, policies: summary.policies.map((p) => p.name), denyIn: !!summary.denyIn, denyOut: !!summary.denyOut, uncovered: summary.uncovered || 0 };
+}
+
+export function badgeHover(hit) {
+  if (hit.badge === "open") return `${hit.ns}: no NetworkPolicy · every pod accepts traffic from anywhere in the cluster`;
+  const dirs = [hit.denyIn && "ingress", hit.denyOut && "egress"].filter(Boolean).join(" + ");
+  const head = hit.badge === "deny" ? `${hit.ns}: default deny${dirs ? ` (${dirs})` : ""}` : `${hit.ns}: ${hit.uncovered} workload${hit.uncovered === 1 ? "" : "s"} with no NetworkPolicy`;
+  const names = hit.policies.slice(0, 6).join(", ") + (hit.policies.length > 6 ? ` +${hit.policies.length - 6}` : "");
+  return `${head} · ${names}`;
 }

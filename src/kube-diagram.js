@@ -3,6 +3,7 @@
 // node. System namespaces carry their insides too (marked `system`): the
 // lane layout (kube-layout.js) folds them shut until they are opened.
 import { nodeFacts } from "./node-labels.js";
+import { nsPolicySummary, policyEdges } from "./netpol-model.js";
 
 export const KUBE_COLUMNS = {
   "control-plane": 0,
@@ -374,6 +375,10 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       host: { name: nodeName, type, pods: running, ready: item ? healthy : null, instanceId: (/\/((?:i-)?[0-9a-z-]+)$/.exec(item?.spec?.providerID || "") || [])[1] || "", load, ...placeOf(item) },
     });
   }
+  // NetworkPolicies for the map (netpol-model.js): one badge per namespace
+  // and the allow lines between workloads. Only when the read worked: an
+  // unread list must not show every namespace as OPEN.
+  const netpol = Array.isArray(snapshot.networkPolicies) ? netpolOf(snapshot, nodes, nsLabels) : null;
   // Labels stay for the search bar (kube-search.js, k=v), minus the
   // controllers' hash labels, at most 16 per card.
   for (const n of nodes) {
@@ -383,11 +388,23 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
     }
     delete n.labels;
   }
-  return { layout: "kube", columns: usedColumns(nodes), nodes, edges };
+  return { layout: "kube", columns: usedColumns(nodes), nodes, edges, ...(netpol ? { netpol } : {}) };
 }
 
 // Only the columns that have something in them (no ingress: no gap).
 export function usedColumns(nodes) {
   const used = Object.entries(KUBE_COLUMNS).filter(([kind]) => nodes.some((n) => n.kind === kind)).sort((a, b) => a[1] - b[1]);
   return Object.fromEntries(used.map(([kind], index) => [kind, index]));
+}
+
+// Workloads stand for their pods (their template labels are what a
+// podSelector sees); bare pods stand for themselves.
+function netpolOf(snapshot, nodes, nsLabels) {
+  const groups = nodes.filter((n) => n.kind === "workload").map((n) => ({ ns: n.ns, name: n.label, group: n.label, labels: n.labels || {} }));
+  const owned = new Set(nodes.filter((n) => n.kind === "pod" && n.owner).map((n) => n.id));
+  for (const n of nodes) if (n.kind === "pod" && !owned.has(n.id)) groups.push({ ns: n.ns, name: n.label, group: n.label, labels: n.labels || {} });
+  const namespaces = nodes.filter((n) => n.kind === "namespace").map((n) => n.label || String(n.id).slice(3));
+  const summary = nsPolicySummary(snapshot.networkPolicies, groups, namespaces);
+  const { edges, bundled, total } = policyEdges(snapshot.networkPolicies, groups, nsLabels);
+  return { ns: Object.fromEntries(summary), edges, bundled, total };
 }
