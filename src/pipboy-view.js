@@ -58,6 +58,28 @@ export const PIP_CSS = `
 #pipboy .pb-bar .pb-meter i{position:absolute;inset:0 auto 0 0;background:var(--pb-fg)}
 #pipboy .pb-empty{margin:auto;text-align:center;color:var(--pb-dim)}
 #pipboy .pb-close{border-color:var(--pb-dim)!important}
+
+#pipboy{background:radial-gradient(ellipse at 50% 45%,color-mix(in srgb,var(--pb-fg) 9%,var(--pb-bg)) 0%,var(--pb-bg) 70%,#000 120%);border:3px solid color-mix(in srgb,var(--pb-fg) 30%,#000);border-radius:18px;box-shadow:inset 0 0 60px rgba(0,0,0,.85),inset 0 0 12px var(--pb-glow);margin:4px;inset:0}
+#pipboy::before{content:"";position:absolute;inset:0;pointer-events:none;border-radius:16px;background:linear-gradient(transparent 0,rgba(255,255,255,.035) 50%,transparent 100%);background-size:100% 6px;animation:pb-roll 7s linear infinite}
+@keyframes pb-roll{from{background-position:0 0}to{background-position:0 100%}}
+@media (prefers-reduced-motion:reduce){#pipboy::before{animation:none}}
+#pipboy .pb-top{border-bottom:2px solid var(--pb-fg);position:relative;padding-left:14px}
+#pipboy .pb-top::before,#pipboy .pb-top::after{content:"";position:absolute;bottom:-2px;width:2px;height:10px;background:var(--pb-fg)}
+#pipboy .pb-top::before{left:0}#pipboy .pb-top::after{right:0}
+#pipboy .pb-tab{font-size:20px;letter-spacing:2px;font-weight:bold;opacity:.7}
+#pipboy .pb-tab[aria-selected=true]{opacity:1;border:0;margin:0;background:none;position:relative}
+#pipboy .pb-tab[aria-selected=true]::before{content:"";position:absolute;left:0;right:0;bottom:-4px;height:8px;border:2px solid var(--pb-fg);border-bottom:0;background:var(--pb-bg)}
+#pipboy .pb-sub{letter-spacing:3px;color:var(--pb-fg);opacity:.8}
+#pipboy .pb-row{font-size:15px;padding:4px 10px;border-bottom:0;margin-bottom:2px}
+#pipboy .pb-row[aria-selected=true]{box-shadow:0 0 10px var(--pb-glow)}
+#pipboy .pb-row[aria-selected=true] .pb-n::after{content:" ◄";}
+#pipboy .pb-fig{filter:drop-shadow(0 0 5px var(--pb-glow))}
+#pipboy .pb-figbox{min-width:140px}
+#pipboy .pb-name{font-size:24px}
+#pipboy .pb-text{border-top:1px solid var(--pb-dim);border-bottom:1px solid var(--pb-dim);padding:4px 0;margin-top:4px}
+#pipboy h4{color:var(--pb-fg);opacity:.85;border-bottom:1px solid var(--pb-dim)}
+#pipboy .pb-bar>span{background:color-mix(in srgb,var(--pb-fg) 18%,var(--pb-bg));font-weight:bold;letter-spacing:1px;padding:3px 12px}
+#pipboy .pb-bar .pb-alert{background:var(--pb-alert-bg)}
 `;
 
 /** @typedef {import("./pipboy-model.js").PipNs} PipNs */
@@ -68,7 +90,7 @@ function list(title, /** @type {string[]} */ items, empty, wide = false) {
 
 /** @param {PipNs} ns @param {string} tab */
 export function detailHtml(ns, tab) {
-  const head = `<div class="pb-head"><div class="pb-figbox">${figureSvg(ns.state, 5)}<span class="pb-state ${ns.state}">${ns.state.toUpperCase()}</span></div><div><h3 class="pb-name">${esc(ns.name)} <small class="pb-sys">${ns.health}/10</small></h3><p class="pb-text">${esc(ns.text)}</p></div></div>`;
+  const head = `<div class="pb-head"><div class="pb-figbox">${figureSvg(ns.state, 6)}<span class="pb-state ${ns.state}">${ns.state.toUpperCase()}</span></div><div><h3 class="pb-name">${esc(ns.name)} <small class="pb-sys">${ns.health}/10</small></h3><p class="pb-text">${esc(ns.text)}</p></div></div>`;
   const wl = list("WORKLOADS", ns.workloads.map((w) => `<li class="${w.status === "ok" ? "" : "bad"}"><span>${esc(w.name)}</span><span class="pb-r">${esc(w.kind.toLowerCase())} ${w.have}/${w.want}</span></li>`), "no workloads");
   const issues = ns.issues.length ? `<h4>ISSUES</h4>${ns.issues.map((i) => `<p class="pb-rule pb-alert">✖ ${esc(i)}</p>`).join("")}` : "";
   const sv = list("SERVICES", ns.services.map((s) => `<li class="${s.status === "ok" ? "" : "bad"}"><span>${esc(s.name)}</span><span class="pb-r">${esc(s.type)} ${esc(s.ports)}</span></li>`), "no services");
@@ -92,7 +114,7 @@ export function pipHtml(model, state) {
   const rows = model.namespaces.map((n) => `<li class="pb-row${n.state === "healthy" ? "" : " pb-bad"}${n.system ? " pb-sys" : ""}" role="option" data-ns="${esc(n.name)}" aria-selected="${n === sel}"><span class="pb-n">${esc(n.name)}</span><span class="pb-v">${n.health}</span></li>`).join("");
   const t = model.totals;
   const pct = t.pods ? Math.round((100 * t.ready) / t.pods) : 100;
-  const bar = `<div class="pb-bar"><span>PODS ${t.ready}/${t.pods}<i class="pb-meter"><i style="width:${pct}%"></i></i></span><span>NODES ${t.nodesReady}/${t.nodes}</span><span class="${t.issues ? "pb-alert" : ""}">ISSUES ${t.issues}</span></div>`;
+  const bar = `<div class="pb-bar"><span>HP · PODS ${t.ready}/${t.pods}<i class="pb-meter"><i style="width:${pct}%"></i></i></span><span>LEVEL · NODES ${t.nodesReady}/${t.nodes}</span><span class="${t.issues ? "pb-alert" : ""}">AP · ISSUES ${t.issues}</span></div>`;
   return `${top}<p class="pb-sub">${state.tab === "stat" ? "NAMESPACES · HEALTH" : state.tab === "pods" ? "WORKLOADS · SERVICES" : "ENTRY POINTS · POLICIES"}</p><div class="pb-main"><ul class="pb-list" role="listbox" tabindex="0" aria-label="namespaces">${rows}</ul><div class="pb-detail">${detailHtml(sel, state.tab)}</div></div>${bar}`;
 }
 
