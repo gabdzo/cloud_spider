@@ -115,6 +115,8 @@ const netdebugView = createNetdebugView({
   root: document.querySelector("#netdebug"),
   hostInput,
   sample: () => sample,
+  // DIAGNOSE reads the context CLUSTER shows (switcher / saved pick).
+  context: () => clusterData?.context || clusterContext || "",
   onDone(report) {
     const who = report.checks?.find((c) => c.id === "L-HTTP-03")?.observed?.answeredBy;
     const host = report.target?.host || "";

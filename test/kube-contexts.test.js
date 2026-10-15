@@ -183,3 +183,11 @@ test("two contexts in the app: own clients and caches, own poll clocks, isolated
   const morning = app.view().morning;
   assert.deepEqual(morning?.pods?.map((p) => [p.label, p.status]), [["LAB", "unknown"], ["WORK", "fail"]]);
 });
+
+test("defaultContext: kube.context from the config when listed, else the first context (DIAGNOSE starts there)", () => {
+  const k = (name) => ({ context: name, read: async () => ({}) });
+  const make = (want) => createApp({ ec2: {}, trail: {}, logs: {}, kube: k("lab-viewer"), kubeContexts: [{ name: "lab-viewer", namespaces: "*", pollMs: 60_000, kube: k("lab-viewer") }, { name: "shop-ro", namespaces: "*", pollMs: 60_000, kube: k("shop-ro") }], settings: { config: { kube: { context: want } } }, pageOrigin: "http://127.0.0.1:1", write() {} });
+  assert.equal(make("shop-ro").defaultContext(), "shop-ro");
+  assert.equal(make("gone-ctx").defaultContext(), "lab-viewer");
+  assert.equal(make("").defaultContext(), "lab-viewer");
+});

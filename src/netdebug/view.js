@@ -222,7 +222,7 @@ async function copyText(text, button) {
   }
 }
 
-export function createNetdebugView({ root, hostInput = null, sample = () => false, onDone = () => {}, fetchJson = (url, opts) => fetch(url, opts).then((r) => r.json()) }) {
+export function createNetdebugView({ root, hostInput = null, sample = () => false, context = () => "", onDone = () => {}, fetchJson = (url, opts) => fetch(url, opts).then((r) => r.json()) }) {
   // The DEBUG panel floats over the bottom of the stage. Reserve its height
   // on the stage (--nd-h, read by .mapwrap) so the PATH above stays visible
   // and scrolls instead of hiding behind the panel (UX overlaps B).
@@ -316,7 +316,10 @@ export function createNetdebugView({ root, hostInput = null, sample = () => fals
     const host = (/^[a-z]+:\/\/([^/:]+)/i.exec(field.value.trim()) || [null, field.value.trim().split(/[/:]/)[0]])[1] || "";
     const [svc, ns] = host.split(".");
     const dns = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
-    openDiagnose(ns && dns.test(svc) && dns.test(ns) && !/\.(com|net|org|io|aws|amazonaws)$/.test(host) ? { namespace: ns, service: svc } : {});
+    // The cluster context the rest of the UI is on (CLUSTER's switcher), not
+    // the server's first context.
+    const ctx = context() || "";
+    openDiagnose({ ...(ctx ? { context: ctx } : {}), ...(ns && dns.test(svc) && dns.test(ns) && !/\.(com|net|org|io|aws|amazonaws)$/.test(host) ? { namespace: ns, service: svc } : {}) });
   });
   const bar = h("div", { className: "nd-bar" }, h("b", { className: "nd-title", text: "DEBUG" }), field, insideBtn, modes, runBtn, dxBtn, meta, exports, fold);
   root.replaceChildren(bar, insideRow, body);

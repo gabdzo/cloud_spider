@@ -36,9 +36,12 @@ export async function diagnoseRoute(req, res, url, dx, { send, readJson }) {
     const namespace = String(args.namespace || "");
     const service = String(args.service || "");
     if (!NAME.test(namespace) || !NAME.test(service)) { send(res, 400, { error: "namespace and service (DNS names) are required" }); return true; }
-    const kube = dx?.kubeOf?.(String(args.context || ""));
-    if (!kube) { send(res, 200, { error: "no kube context is set up", unset: true }); return true; }
-    const facts = await collectLive(kube, { namespace, service, context: String(args.context || kube.context || ""), pathGraph: dx.pathGraph || null });
+    // No context asked: the configured kube.context (what CLUSTER shows),
+    // not whichever context happens to be first in the list.
+    const asked = String(args.context || "") || String(dx?.defaultContext?.() || "");
+    const kube = dx?.kubeOf?.(asked);
+    if (!kube) { send(res, 200, { error: asked ? `no kube context named ${asked.slice(0, 80)}` : "no kube context is set up", unset: !asked }); return true; }
+    const facts = await collectLive(kube, { namespace, service, context: asked || kube.context || "", pathGraph: dx.pathGraph || null });
     const rec = investigation(facts, { mode: "live" });
     await store.save(rec).catch(() => {});
     send(res, 200, { ...rec, elapsed_ms: facts.elapsed_ms });
