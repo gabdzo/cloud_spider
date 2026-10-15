@@ -220,3 +220,33 @@ export function serviceDetail(diagram, id) {
     pods,
   };
 }
+
+// DIAGNOSE from a TOPOLOGY card: which namespace/Service to investigate.
+// A Service is itself; a pod or workload is the Service in front of it
+// (its selector matches the pod's labels, or it points at the workload).
+export function diagnoseTarget(diagram, id) {
+  const nodes = diagram?.nodes || [];
+  const n = nodes.find((x) => x.id === id);
+  if (!n) return null;
+  if (n.kind === "service") return { namespace: n.ns || "", service: n.label };
+  const services = nodes.filter((s) => s.kind === "service" && s.ns === n.ns);
+  const pods = n.kind === "workload" ? nodes.filter((p) => p.kind === "pod" && p.owner === n.id) : [n];
+  const workloads = new Set([n.id, ...pods.map((p) => p.owner).filter(Boolean)]);
+  const fronts = (s) => {
+    const sel = Object.entries(s.svc?.selector || {});
+    if (sel.length && pods.some((p) => sel.every(([k, v]) => p.tags?.[k] === v))) return true;
+    return (diagram.edges || []).some((e) => e.from === s.id && workloads.has(e.to));
+  };
+  const svc = services.filter(fronts).sort((a, b) => (a.status === "ok") - (b.status === "ok") || a.label.localeCompare(b.label))[0];
+  return { namespace: n.ns || "", service: svc?.label || "" };
+}
+
+// Live names for DIAGNOSE's fields: namespaces, and Services per namespace.
+export function diagnoseChoices(diagram) {
+  const nodes = diagram?.nodes || [];
+  const services = {};
+  for (const s of nodes) if (s.kind === "service" && s.ns) (services[s.ns] ||= []).push(s.label);
+  const namespaces = [...new Set([...nodes.filter((x) => x.kind === "namespace").map((x) => x.label), ...nodes.map((x) => x.ns).filter(Boolean)])].sort();
+  for (const k of Object.keys(services)) services[k] = [...new Set(services[k])].sort();
+  return { namespaces, services };
+}

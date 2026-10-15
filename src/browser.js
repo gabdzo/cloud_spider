@@ -35,7 +35,8 @@ import { KUBE_COLUMNS } from "./kube-diagram.js";
 import { hoverText, kubeHit, layoutKube } from "./kube-layout.js";
 import { GROUP_BY, cleanGroupBy } from "./graph-group.js";
 import { TOPOLOGY_GROUP_BY_KEY, groupDiagram, lanesForNamespaces } from "./kube-group.js";
-import { SCOPES, TOPOLOGY_FOCUS_KEY, cleanFocus, focusDiagram, scopeStats, serviceDetail } from "./kube-focus.js";
+import { SCOPES, TOPOLOGY_FOCUS_KEY, cleanFocus, diagnoseChoices, diagnoseTarget, focusDiagram, scopeStats, serviceDetail } from "./kube-focus.js";
+import { openDiagnose } from "./diagnose-view.js";
 import { countText, matchOrder, searchKube } from "./kube-search.js";
 import { createK9s } from "./k9s.js";
 import { paintKube } from "./kube-draw.js";
@@ -117,6 +118,7 @@ const netdebugView = createNetdebugView({
   sample: () => sample,
   // DIAGNOSE reads the context CLUSTER shows (switcher / saved pick).
   context: () => clusterData?.context || clusterContext || "",
+  choices: () => diagnoseChoices(clusterData?.diagram),
   onDone(report) {
     const who = report.checks?.find((c) => c.id === "L-HTTP-03")?.observed?.answeredBy;
     const host = report.target?.host || "";
@@ -348,7 +350,7 @@ function renderIssueList() {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = "INVESTIGATE";
-    btn.title = it.investigate === "pod" ? "open the pod: events, containers, logs" : it.kind === "service" ? "open the Service: selector, ports, endpoints, pods" : "open it on the map";
+    btn.title = canDiagnose(it.id) ? "DIAGNOSE the Service in front of it (read-only: endpoints, readiness, webhooks…)" : "open it on the map";
     btn.addEventListener("click", () => investigateIssue(it.id));
     li.append(dot, name, btn, why);
     const rel = relatedLine(it.refs);
@@ -381,6 +383,18 @@ function investigateIssue(id) {
   const at = (placedCluster().nodes || []).find((n) => n.id === id || n.members?.some((m) => m.id === id));
   if (at) map.scrollTo({ top: Math.max(0, at.y - 230), left: Math.max(0, at.x - 60), behavior: reducedMotion ? "auto" : "smooth" });
   draw();
+  if (canDiagnose(id)) diagnoseNode(id);
+}
+// INVESTIGATE on a Service, pod or workload: DIAGNOSE prefilled with its
+// namespace and the Service in front of it, in the context TOPOLOGY shows.
+function canDiagnose(id) {
+  const n = clusterData?.diagram?.nodes?.find((x) => x.id === id);
+  return !!n && (n.kind === "service" || n.kind === "workload" || !!n.pod) && !!n.ns;
+}
+function diagnoseNode(id) {
+  const t = diagnoseTarget(clusterData?.diagram, id);
+  if (!t) return;
+  openDiagnose({ context: clusterData?.context || clusterContext || "", namespace: t.namespace, service: t.service, choices: diagnoseChoices(clusterData?.diagram) });
 }
 function renderNsPop() {
   const view = focusedView();
@@ -3590,7 +3604,11 @@ function showService(node) {
     showPod(null);
     draw();
   });
-  head.append(close);
+  const dx = vel("button", "vp-close", "DIAGNOSE");
+  dx.type = "button";
+  dx.title = "read-only investigation of this Service (DIAGNOSE)";
+  dx.addEventListener("click", () => diagnoseNode(node.id));
+  head.append(dx, close);
   const facts = vel("dl", "vp-facts");
   const rows = [
     ["TYPE", d.type],
