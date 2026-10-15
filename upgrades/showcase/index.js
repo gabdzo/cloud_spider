@@ -5,7 +5,7 @@ import { eksProvider } from "../eks-kube.js";
 import { ship } from "../netpol.js";
 import { inheritTags, stackTags } from "../tags.js";
 import { assertStackConfig } from "../schema/stacks.js";
-import { BOUTIQUE, IMAGES, NLB_SERVICE, PRODUCTS, canaryService, directIngressFor, ingressFor, routesIngress } from "./plan.js";
+import { BOUTIQUE, BROKEN, IMAGES, NLB_SERVICE, PRODUCTS, WIKI_PROXY, canaryService, directIngressFor, ingressFor, routesIngress, wikiProxyConf } from "./plan.js";
 
 // The demo "prod" cluster's four products (plan.js). Stack showcase-<cluster>.
 // Needs, on the cluster: the lbc, cert-manager and kyverno add-on stacks and
@@ -34,10 +34,11 @@ const inNs = (ns, extra = []) => ({ ...k, dependsOn: [namespaces[ns], ...extra] 
 // runAs: each image's own non-root user, so no entrypoint needs chown or
 // setuid (all capabilities are dropped; seen live 2026-10-14: redis, Mealie
 // and Uptime Kuma crashed with "Operation not permitted" as root).
-function app(ns, name, { image, port, targetPort, env = {}, cpu, memory, volumes = [], mounts = [], replicas = 1, strategy, runAs, command }) {
+function app(ns, name, { image, port, targetPort, env = {}, cpu, memory, volumes = [], mounts = [], replicas = 1, strategy, runAs, command, readiness, skipAwait = false }) {
   const labels = { app: name };
   const dep = new k8s.apps.v1.Deployment(`${ns}-${name}`, {
-    metadata: { name, namespace: ns, labels },
+    // skipAwait (Deployment and Service): a pod meant never to be Ready.
+    metadata: { name, namespace: ns, labels, ...(skipAwait ? { annotations: { "pulumi.com/skipAwait": "true" } } : {}) },
     spec: {
       replicas, selector: { matchLabels: labels }, ...(strategy ? { strategy } : {}),
       template: {
@@ -45,13 +46,13 @@ function app(ns, name, { image, port, targetPort, env = {}, cpu, memory, volumes
         spec: {
           topologySpreadConstraints: spread(name),
           ...(runAs ? { securityContext: { runAsNonRoot: true, runAsUser: runAs, runAsGroup: runAs, fsGroup: runAs, fsGroupChangePolicy: "OnRootMismatch" } } : {}),
-          containers: [{ name, image, ...(command ? { command } : {}), ports: [{ containerPort: targetPort || port }], env: Object.entries(env).map(([n, value]) => (typeof value === "string" ? { name: n, value } : { name: n, valueFrom: value })), resources: res(cpu, memory), securityContext: hardened, volumeMounts: mounts }],
+          containers: [{ name, image, ...(command ? { command } : {}), ports: [{ containerPort: targetPort || port }], env: Object.entries(env).map(([n, value]) => (typeof value === "string" ? { name: n, value } : { name: n, valueFrom: value })), resources: res(cpu, memory), securityContext: hardened, volumeMounts: mounts, ...(readiness ? { readinessProbe: { httpGet: { path: readiness, port: targetPort || port }, periodSeconds: 30, failureThreshold: 1 } } : {}) }],
           volumes,
         },
       },
     },
   }, inNs(ns));
-  const svc = new k8s.core.v1.Service(`${ns}-${name}`, { metadata: { name, namespace: ns, labels }, spec: { selector: labels, ports: [{ name: "tcp", port, targetPort: targetPort || port }] } }, inNs(ns));
+  const svc = new k8s.core.v1.Service(`${ns}-${name}`, { metadata: { name, namespace: ns, labels, ...(skipAwait ? { annotations: { "pulumi.com/skipAwait": "true" } } : {}) }, spec: { selector: labels, ports: [{ name: "tcp", port, targetPort: targetPort || port }] } }, inNs(ns));
   return { dep, svc };
 }
 // gp3, encrypted, volumes tagged project=showcase (the vault claims them).
@@ -94,7 +95,12 @@ export const directLinks = directIngresses.map((ing, i) => ing.status.loadBalanc
 // Demo rules on the shared ALB's :80: path, redirect, fixed-response, header
 // canary and a weighted forward (plan.js routesIngress). Rules are free.
 const canary = new k8s.core.v1.Service("uptime-kuma-canary", canaryService(), inNs(kuma.ns));
-new k8s.networking.v1.Ingress("showcase-routes", routesIngress(), inNs(kuma.ns, [ingresses[1], canary]));
+// SNIFF demo (1.2.0): a backend that never turns Ready behind /broken, and
+// an internal nginx in front of Wiki.js (plan.js BROKEN, WIKI_PROXY).
+const broken = app(BROKEN.ns, BROKEN.name, { image: IMAGES.nginx, port: BROKEN.port, cpu: "5m", memory: "16Mi", runAs: 101, readiness: BROKEN.readinessPath, skipAwait: true });
+new k8s.core.v1.ConfigMap(`${WIKI_PROXY.ns}-${WIKI_PROXY.name}`, { metadata: { name: WIKI_PROXY.name, namespace: WIKI_PROXY.ns }, data: { "default.conf": wikiProxyConf() } }, inNs(WIKI_PROXY.ns));
+app(WIKI_PROXY.ns, WIKI_PROXY.name, { image: IMAGES.nginx, port: WIKI_PROXY.port, cpu: "5m", memory: "16Mi", runAs: 101, readiness: "/healthz", volumes: [{ name: "conf", configMap: { name: WIKI_PROXY.name } }], mounts: [{ name: "conf", mountPath: "/etc/nginx/conf.d" }] });
+new k8s.networking.v1.Ingress("showcase-routes", routesIngress(), inNs(kuma.ns, [ingresses[1], canary, broken.svc]));
 export const hosts = PRODUCTS.filter((p) => p.host).map((p) => `${p.host}.${domain}`);
 export const sharedAlb = ingresses[1].status.loadBalancer.ingress[0].hostname;
 export const boutiqueAlb = ingresses[0].status.loadBalancer.ingress[0].hostname;

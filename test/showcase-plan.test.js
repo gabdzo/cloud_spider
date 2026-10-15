@@ -90,3 +90,16 @@ test("showcase-routes: path, redirect, fixed-response, header canary and weighte
   assert.equal(ing.metadata.namespace, canaryService().metadata.namespace);
   assert.equal(canaryService().metadata.name, CANARY_SERVICE);
 });
+
+import { BROKEN, WIKI_PROXY, routesIngress, wikiProxyConf } from "../upgrades/showcase/plan.js";
+
+test("1.2.0: /broken forwards to a backend that never turns Ready; wiki-proxy's upstream is Wiki.js", () => {
+  const paths = routesIngress().spec.rules[0].http.paths;
+  const broken = paths.find((p) => p.path === "/broken");
+  assert.deepEqual(broken.backend, { service: { name: BROKEN.name, port: { number: 8080 } } });
+  assert.equal(paths.at(-1), broken, "after the existing rules (no priority shuffle)");
+  assert.equal(BROKEN.ns, "uptime-kuma", "same namespace as the routes Ingress");
+  assert.match(wikiProxyConf(), /upstream wiki_backend \{\n\s+server wiki\.wiki\.svc\.cluster\.local:3000;/);
+  assert.match(wikiProxyConf(), /listen 8080;/);
+  assert.equal(WIKI_PROXY.ns, "wiki");
+});
