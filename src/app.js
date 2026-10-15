@@ -1839,6 +1839,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     // SNIFF's one real request, on the graph the last pathView read (no
     // second AWS read); the plan comes from the same rule the map draws.
     async pathProbe(query = {}) {
+      if (ec2?.off === true) return { skipped: "no AWS here (profile k8s-only): in-cluster paths are read, not probed" };
       if (!lastPathGraph || lastPathGraph.at !== region) return { skipped: "the path is not read yet" };
       if (String(query.lb || "").startsWith("peer:")) return { skipped: "peering paths are not probed" };
       const plan = pathResult(lastPathGraph.graph, { lb: query.lb || "", host: query.host || "", region }).probe;
@@ -1917,6 +1918,14 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   }
 
   async function loadBoot() {
+    // aws module off (k8s-only): no regions, no place, no error; the kube
+    // views and in-cluster SNIFF need none of it (ec2 is the awsOff stub).
+    if (ec2?.off === true) {
+      loading = false;
+      place = null;
+      error = "";
+      return;
+    }
     let listed = await ec2.describeRegions();
     // An SCP can deny ec2:DescribeRegions (seen on cloudspider-up's account)
     // while everything else works: use the configured regions, else the

@@ -11,7 +11,7 @@ export function investigation(facts, { mode = "live", id = "", startedAt = facts
   const caps = facts.capabilities || [];
   // "action" capabilities (the debug pod) are things you may choose to run,
   // not evidence this investigation lacks.
-  const missing = caps.filter((c) => c.role !== "action" && c.status !== "available").map((c) => c.name);
+  const missing = caps.filter((c) => c.role !== "action" && c.status !== "available" && c.status !== "not-applicable").map((c) => c.name);
   const forbidden = caps.filter((c) => c.status === "forbidden").map((c) => c.name);
   const order = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
   out.findings.sort((a, b) => order[a.severity] - order[b.severity] || a.code.localeCompare(b.code));

@@ -41,7 +41,7 @@ export async function diagnoseRoute(req, res, url, dx, { send, readJson }) {
     const asked = String(args.context || "") || String(dx?.defaultContext?.() || "");
     const kube = dx?.kubeOf?.(asked);
     if (!kube) { send(res, 200, { error: asked ? `no kube context named ${asked.slice(0, 80)}` : "no kube context is set up", unset: !asked }); return true; }
-    const facts = await collectLive(kube, { namespace, service, context: asked || kube.context || "", pathGraph: dx.pathGraph || null });
+    const facts = await collectLive(kube, { namespace, service, context: asked || kube.context || "", pathGraph: dx.pathGraph || null, awsOff: Boolean(dx.awsOff) });
     const rec = investigation(facts, { mode: "live" });
     await store.save(rec).catch(() => {});
     send(res, 200, { ...rec, elapsed_ms: facts.elapsed_ms });
@@ -55,7 +55,7 @@ export async function diagnoseRoute(req, res, url, dx, { send, readJson }) {
     else {
       const kube = dx?.kubeOf?.(before.scope.context || "");
       if (!kube) { send(res, 200, { error: "no kube context is set up" }); return true; }
-      afterFacts = await collectLive(kube, { namespace: before.scope.namespace, service: before.scope.service, context: before.scope.context, pathGraph: dx.pathGraph || null });
+      afterFacts = await collectLive(kube, { namespace: before.scope.namespace, service: before.scope.service, context: before.scope.context, pathGraph: dx.pathGraph || null, awsOff: Boolean(dx.awsOff) });
     }
     const result = verify(before, afterFacts);
     const { after, ...summary } = result;
