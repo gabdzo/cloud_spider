@@ -305,7 +305,7 @@ test("the overview has a home control and a spend box, and the map poll does not
     const mapwrap = html.slice(html.indexOf('class="mapwrap"'), html.indexOf('id="radio-panel"'));
     assert.doesNotMatch(mapwrap, /id="tally"|id="spend"/);
     const source = await fetch(`${base}/browser.js`).then((response) => response.text());
-    const pullStart = source.indexOf("async function pull(");
+    const pullStart = source.indexOf("async function pullOnce(");
     const pullEnd = source.indexOf("\nfunction showSample");
     assert.ok(pullStart >= 0 && pullEnd > pullStart);
     const pullFn = source.slice(pullStart, pullEnd);
