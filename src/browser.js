@@ -4161,7 +4161,7 @@ canvas.addEventListener("mousemove", (event) => {
   }
   if (mode === "map" && mapKube.models.size) {
     const hit = compoundHit(placedMap(), event.offsetX, event.offsetY);
-    const id = hit ? (hit.type === "lod" ? `lod:${hit.cluster}:${hit.value}` : hit.type === "kube" ? `kube:${hit.cluster}` : hit.id || `compound:${hit.cluster}`) : null;
+    const id = hit ? (hit.type === "lod" ? `lod:${hit.cluster}:${hit.value}` : hit.type === "kube" ? `kube:${hit.cluster}` : hit.type === "netpol" ? `netpol:${hit.cluster}:${hit.ns}` : hit.id || `compound:${hit.cluster}`) : null;
     if (hit?.type === "kube") hit.text = kubeChipState(hit.cluster).text;
     if (id !== mapKube.hover) {
       mapKube.hover = id;

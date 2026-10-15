@@ -54,3 +54,28 @@ test("edges past the cap bundle per namespace pair with a count, nothing dropped
   assert.equal(r.edges[0].count, 900);
   assert.deepEqual(r.edges[0].policies, ["from-east"]);
 });
+
+test("kube diagram carries netpol only when the list was read; the map lays one badge per namespace", async () => {
+  const { diagramFromKube } = await import("../src/kube-diagram.js");
+  const { kubeModel, layoutCompound, badgeHover, compoundHit, moveCompound } = await import("../src/map-kube.js");
+  const meta = (ns, name, labels = {}) => ({ namespace: ns, name, labels });
+  const snap = {
+    namespaces: [{ metadata: { name: "harrier", labels: {} } }, { metadata: { name: "plover", labels: {} } }],
+    nodes: [],
+    pods: [{ metadata: { ...meta("harrier", "api-1", { app: "api" }), ownerReferences: [] }, spec: { containers: [{ name: "a" }] }, status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }] } },
+      { metadata: meta("plover", "web-1", { app: "web" }), spec: { containers: [{ name: "w" }] }, status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }] } }],
+    services: [], deployments: [], daemonsets: [], statefulsets: [], ingresses: [],
+  };
+  assert.equal(diagramFromKube(snap).netpol, undefined);
+  const d = diagramFromKube({ ...snap, networkPolicies: [np("harrier", "default-deny", { podSelector: {}, policyTypes: ["Ingress", "Egress"] })] });
+  assert.equal(d.netpol.ns.harrier.badge, "deny");
+  assert.equal(d.netpol.ns.plover.badge, "open");
+  const model = kubeModel(d, "grebe");
+  const c = moveCompound(layoutCompound({ cluster: "grebe", model, nodeShacks: [], apps: model.apps, level: 2, choice: "2", room: 600 }), 10, 20);
+  const bh = c.badges.find((b) => b.ns === "harrier");
+  assert.equal(bh.text, "DENY · 1");
+  assert.match(badgeHover(bh), /harrier: default deny \(ingress \+ egress\) · default-deny/);
+  assert.match(badgeHover(c.badges.find((b) => b.ns === "plover")), /no NetworkPolicy/);
+  const hit = compoundHit({ settlements: [{ plots: [{ compound: c }] }] }, bh.x + 2, bh.y + 2);
+  assert.equal(hit.type, "netpol");
+});

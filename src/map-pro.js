@@ -854,6 +854,18 @@ function compoundTop(ctx, placed, { animTime = 0, reducedMotion = false, hover =
       ctx.lineTo(line.x + line.w, line.y + 14.5);
       ctx.stroke();
     }
+    for (const bd of c.badges || []) {
+      const deny = bd.badge === "deny";
+      ctx.fillStyle = deny ? rgba(C.ok, hover === `netpol:${c.cluster}:${bd.ns}` ? 0.45 : 0.25) : "transparent";
+      ctx.fillRect(bd.x, bd.y, bd.w, bd.h);
+      ctx.strokeStyle = deny ? C.ok : C.warn;
+      ctx.setLineDash(deny ? [] : [3, 2]);
+      ctx.strokeRect(bd.x + 0.5, bd.y + 0.5, bd.w - 1, bd.h - 1);
+      ctx.setLineDash([]);
+      ctx.font = ui(8.5, 600);
+      ctx.fillStyle = deny ? C.ok : C.warn;
+      ctx.fillText(bd.text, bd.x + 5, bd.y + bd.h - 3);
+    }
     // Apps (deployments): a small card with the pod tile and count.
     for (const s of c.stalls) {
       const w = Math.min(s.w, MK.STALL_W);

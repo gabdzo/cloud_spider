@@ -107,6 +107,8 @@ export function drawCompoundTop(ctx, placed, { animTime = 0, reducedMotion = fal
       ctx.fillStyle = line.system ? PIP.dim : PIP.mid;
       ctx.fillText(text, line.x + 2, line.y + 11);
     }
+    // NetworkPolicy badges: DENY solid, PARTIAL / OPEN dashed amber.
+    for (const bd of c.badges || []) policyBadgeChip(ctx, bd, hover === `netpol:${c.cluster}:${bd.ns}`);
     // Tents.
     for (const s of c.stalls) {
       const sprite = tent(s.status, s.system);
@@ -134,4 +136,23 @@ export function drawCompoundTop(ctx, placed, { animTime = 0, reducedMotion = fal
       if (hover === f.id || selected === f.id) brackets(ctx, f.x - 2, f.y - 1, f.w + 4, f.h + 2, PIP.bright, 4, 1);
     }
   }
+}
+
+function policyBadgeChip(ctx, b, lit) {
+  const deny = b.badge === "deny";
+  ctx.font = font(8);
+  if (deny) {
+    ctx.fillStyle = lit ? PIP.hot : PIP.bright;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.fillStyle = PIP.ink;
+  } else {
+    ctx.fillStyle = rgba(PIP.ink, 0.7);
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.strokeStyle = STATUS.hang;
+    ctx.setLineDash([3, 2]);
+    ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+    ctx.setLineDash([]);
+    ctx.fillStyle = STATUS.hang;
+  }
+  ctx.fillText(b.text, b.x + 5, b.y + b.h - 3);
 }
