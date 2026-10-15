@@ -57,3 +57,34 @@ test("layoutKubeOnly wraps entry chips inside the room", () => {
   assert.ok(placed.kubeOnly.entries.every((e) => e.x + e.w <= 8 + 500));
   assert.ok(new Set(placed.kubeOnly.entries.map((e) => e.y)).size > 1);
 });
+
+test("policy lines: every allow line drawn by default, outside peers as chips, POLICIES OFF hides them", async () => {
+  const { diagramFromKube } = await import("../src/kube-diagram.js");
+  const { layoutCompound } = await import("../src/map-kube.js");
+  const pod = (ns, name, labels) => ({ metadata: { namespace: ns, name: `${name}-5d8f7c-x`, labels, ownerReferences: [{ kind: "ReplicaSet", name: `${name}-5d8f7c` }] }, spec: { containers: [{ name }] }, status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }] } });
+  const dep = (ns, name, labels) => ({ metadata: { namespace: ns, name }, spec: { replicas: 1, selector: { matchLabels: labels }, template: { metadata: { labels } } }, status: { readyReplicas: 1 } });
+  const snap = {
+    namespaces: ["fjord", "delta"].map((name) => ({ metadata: { name, labels: { "kubernetes.io/metadata.name": name } } })), nodes: [],
+    pods: [pod("fjord", "web", { app: "web" }), pod("fjord", "api", { app: "api" }), pod("delta", "batch", { app: "batch" })],
+    deployments: [dep("fjord", "web", { app: "web" }), dep("fjord", "api", { app: "api" }), dep("delta", "batch", { app: "batch" })],
+    services: [], daemonsets: [], statefulsets: [], ingresses: [],
+    networkPolicies: [
+      { metadata: { namespace: "fjord", name: "api-in" }, spec: { podSelector: { matchLabels: { app: "api" } }, policyTypes: ["Ingress"], ingress: [{ from: [{ podSelector: { matchLabels: { app: "web" } } }, { namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "delta" } }, podSelector: { matchLabels: { app: "batch" } } }, { ipBlock: { cidr: "10.0.0.0/8" } }] }] } },
+    ],
+  };
+  const model = kubeModel(diagramFromKube(snap), "osprey");
+  const on = layoutCompound({ cluster: "osprey", model, nodeShacks: [], apps: model.apps, level: 2, choice: "2", room: 800, fill: true });
+  assert.equal(on.lines.length, 3);
+  assert.deepEqual(on.sources.map((s) => s.label), ["10.0.0.0/8"]);
+  assert.ok(on.pol.on && on.pol.count === 3);
+  assert.ok(on.lines.every((l) => Number.isFinite(l.x1 + l.y1 + l.x2 + l.y2)));
+  const off = layoutCompound({ cluster: "osprey", model, nodeShacks: [], apps: model.apps, level: 2, choice: "2", room: 800, fill: true, policies: false });
+  assert.equal(off.lines.length, 0);
+  assert.equal(off.pol.on, false);
+  const { moveCompound } = await import("../src/map-kube.js");
+  const moved = moveCompound(on, 10, 10);
+  const placed = { settlements: [{ plots: [{ compound: moved }] }] };
+  const hit = compoundHit(placed, moved.pol.x + 2, moved.pol.y + 2);
+  assert.equal(hit.type, "policies");
+  assert.match(compoundHover(hit), /3 allow lines · click: hide/);
+});

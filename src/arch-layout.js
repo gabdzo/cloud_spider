@@ -439,7 +439,7 @@ function kubeCompounds(kube, instances, subnets, room) {
     const apps = assignApps(model, nodeSubnet, level);
     for (const subnetId of new Set(nodeSubnet.values())) {
       if (out.has(subnetId)) continue;
-      out.set(subnetId, { cluster, model, level, choice, room, apps: apps.get(subnetId) || [], nodeIds: [...nodeSubnet].filter(([, s]) => s === subnetId).map(([id]) => id) });
+      out.set(subnetId, { cluster, model, level, choice, room, policies: kube.policies !== false, apps: apps.get(subnetId) || [], nodeIds: [...nodeSubnet].filter(([, s]) => s === subnetId).map(([id]) => id) });
     }
   }
   return out;

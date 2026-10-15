@@ -32,7 +32,37 @@ function fence(ctx, c) {
 }
 
 export function drawCompoundGround(ctx, placed) {
-  for (const c of compoundsOf(placed)) fence(ctx, c);
+  for (const c of compoundsOf(placed)) {
+    fence(ctx, c);
+    policyLines(ctx, c.lines || [], null);
+  }
+}
+
+// NetworkPolicy allow lines: a soft arc per line; a bundle (too many lines
+// for one namespace pair) is thicker and says how many it carries.
+function policyLines(ctx, lines, only) {
+  for (const l of lines) {
+    if (only && !only(l)) continue;
+    const lift = Math.min(60, 16 + Math.abs(l.x2 - l.x1) / 6);
+    const mx = (l.x1 + l.x2) / 2;
+    const my = Math.min(l.y1, l.y2) - lift;
+    ctx.strokeStyle = rgba(PIP.bright, only ? 0.95 : l.bundle ? 0.7 : 0.55);
+    ctx.lineWidth = only ? 2.5 : l.bundle ? Math.min(5, 1.5 + Math.log2(l.count)) : 1.5;
+    ctx.beginPath();
+    ctx.moveTo(l.x1, l.y1);
+    ctx.quadraticCurveTo(mx, my, l.x2, l.y2);
+    ctx.stroke();
+    ctx.fillStyle = rgba(PIP.bright, only ? 1 : 0.6);
+    ctx.fillRect(l.x2 - 2, l.y2 - 2, 4, 4);
+    if (l.bundle) {
+      ctx.font = font(8);
+      const t = `×${l.count}`;
+      labelBacking(ctx, t, mx - 6, (l.y1 + l.y2) / 2 - lift / 2, 8);
+      ctx.fillStyle = PIP.bright;
+      ctx.fillText(t, mx - 6, (l.y1 + l.y2) / 2 - lift / 2);
+    }
+  }
+  ctx.lineWidth = 1;
 }
 
 function lodButton(ctx, b, hover) {
@@ -107,6 +137,38 @@ export function drawCompoundTop(ctx, placed, { animTime = 0, reducedMotion = fal
       labelBacking(ctx, text, line.x + 2, line.y + 11, 9);
       ctx.fillStyle = line.system ? PIP.dim : PIP.mid;
       ctx.fillText(text, line.x + 2, line.y + 11);
+    }
+    // Lines of the hovered tent or outside chip, bright, over everything.
+    const lit = c.stalls.find((s) => s.id === hover) || (c.sources || []).find((s) => s.id === hover);
+    if (lit) {
+      const key = lit.type === "policy-source" ? lit.id.slice(4) : `${lit.ns}/${lit.label}`;
+      policyLines(ctx, c.lines || [], (l) => l.from === key || l.to === key);
+    }
+    for (const s of c.sources || []) {
+      ctx.font = font(8);
+      ctx.fillStyle = rgba(PIP.ink, 0.85);
+      ctx.fillRect(s.x, s.y, s.w, s.h);
+      ctx.strokeStyle = hover === s.id ? PIP.hot : PIP.mid;
+      ctx.setLineDash([2, 2]);
+      ctx.strokeRect(s.x + 0.5, s.y + 0.5, s.w - 1, s.h - 1);
+      ctx.setLineDash([]);
+      ctx.fillStyle = PIP.mid;
+      ctx.fillText(clip(s.label, Math.floor((s.w - 8) / 5.4)), s.x + 5, s.y + s.h - 4);
+    }
+    if (c.sources?.length) {
+      ctx.font = font(8);
+      ctx.fillStyle = PIP.dim;
+      ctx.fillText("OUTSIDE · POLICY PEERS", c.sources[0].x, c.sources[0].y - 4);
+    }
+    if (c.pol) {
+      const p = c.pol;
+      ctx.font = font(8);
+      ctx.fillStyle = p.on ? PIP.bright : rgba(PIP.ink, 0.9);
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.strokeStyle = hover === `policies:${c.cluster}` ? PIP.hot : PIP.mid;
+      ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
+      ctx.fillStyle = p.on ? PIP.ink : PIP.mid;
+      ctx.fillText(p.on ? "POLICIES" : "POLICIES OFF", p.x + 4, p.y + p.h - 4);
     }
     // NetworkPolicy badges: DENY solid, PARTIAL / OPEN dashed amber.
     for (const bd of c.badges || []) policyBadgeChip(ctx, bd, hover === `netpol:${c.cluster}:${bd.ns}`);

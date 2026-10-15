@@ -119,10 +119,10 @@ function nsSummary(apps) {
 // One compound, laid out from (0, 0); placeYard moves it into the yard.
 // nodeShacks: the subnet's node buildings (faces). apps: assignApps' list
 // for this subnet. room: the width the yard can give.
-export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice, room, fill = false }) {
+export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice, room, fill = false, policies = true }) {
   const netpol = model?.netpol?.ns || null;
   const inner = Math.max(CELL.w, room - 2 * MK.PAD);
-  const items = { buildings: [], stalls: [], figures: [], ns: [], lod: [], badges: [] };
+  const items = { buildings: [], stalls: [], figures: [], ns: [], lod: [], badges: [], lines: [], sources: [], pol: null };
   let y = MK.HEAD;
   // Node buildings.
   const cols = Math.max(1, Math.min(nodeShacks.length || 1, Math.floor((inner + CELL.gap) / (CELL.w + CELL.gap))));
@@ -173,6 +173,13 @@ export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice
     }
   }
   const w = fill ? room : Math.min(room, Math.max(right + MK.PAD, 384));
+  // NetworkPolicy allow lines (all of them; POLICIES OFF hides them).
+  // External ends (CIDRs, wide selectors folded into one) get a chip row.
+  let extraH = 0;
+  if (model?.netpol && level >= 2) {
+    items.pol = { type: "policies", cluster, on: policies, count: model.netpol.total || 0, bundled: !!model.netpol.bundled, x: 0, y: 5, w: 70, h: MK.LOD_H };
+    if (policies) extraH = policyLines(items, model.netpol, cluster, MK.PAD, y, (fill ? room : Math.min(room, Math.max(right + MK.PAD, 384))) - 2 * MK.PAD);
+  }
   // Badges sit at the compound's right edge; the ns line stops before them.
   for (const bd of items.badges) {
     bd.x = w - MK.PAD - bd.w;
@@ -185,7 +192,8 @@ export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice
     const lx = w - MK.PAD - (3 * MK.LOD_W + MK.LOD_W + 8 + 6) + index * (MK.LOD_W + 2);
     items.lod.push({ type: "lod", cluster, value, active: String(choice) === value, shown: String(level) === value, x: lx, y: 5, w: lw, h: MK.LOD_H });
   });
-  return { cluster, level, choice, summary, w, h: Math.max(y, MK.HEAD + 20) + 2, ...items };
+  if (items.pol) items.pol.x = (items.lod[0]?.x ?? w) - KUBE_CHIP_W - 6 - items.pol.w - 6;
+  return { cluster, level, choice, summary, w, h: Math.max(y + extraH, MK.HEAD + 20) + 2, ...items };
 }
 
 // Moves a compound (and everything in it) to x, y.
@@ -201,6 +209,9 @@ export function moveCompound(compound, x, y) {
     ns: compound.ns.map(shift),
     lod: compound.lod.map(shift),
     badges: (compound.badges || []).map(shift),
+    lines: (compound.lines || []).map((l) => ({ ...l, x1: l.x1 + x, y1: l.y1 + y, x2: l.x2 + x, y2: l.y2 + y })),
+    sources: (compound.sources || []).map(shift),
+    pol: compound.pol ? shift(compound.pol) : null,
   };
 }
 
@@ -230,6 +241,9 @@ export function compoundHit(placed, x, y) {
     if (lod) return { ...lod };
     const chip = kubeChip(compound);
     if (inside(chip)) return chip;
+    if (compound.pol && inside(compound.pol)) return { ...compound.pol };
+    const src = (compound.sources || []).find(inside);
+    if (src) return { ...src };
     const badge = (compound.badges || []).find(inside);
     if (badge) return { ...badge };
     const pod = compound.figures.find(inside);
@@ -245,6 +259,8 @@ export function compoundHit(placed, x, y) {
 export function compoundHover(hit) {
   if (!hit) return "";
   if (hit.type === "netpol") return badgeHover(hit);
+  if (hit.type === "policies") return `NetworkPolicy lines: ${hit.on ? "ON" : "OFF"} · ${hit.count} allow line${hit.count === 1 ? "" : "s"}${hit.bundled ? " (bundled per namespace pair)" : ""} · click: ${hit.on ? "hide" : "show"}`;
+  if (hit.type === "policy-source") return `${hit.label}: allowed by ${hit.policies.join(", ")} · ${hit.lines} line${hit.lines === 1 ? "" : "s"}`;
   if (hit.type === "entry") return `${hit.kindText} ${hit.ns}/${hit.label}${hit.caption ? ` · ${hit.caption}` : ""}${hit.targets?.length ? ` → svc ${hit.targets.join(", ")}` : ""}${hit.status === "broken" ? " · no ready pods behind it" : ""} · click: open in the Cluster view`;
   if (hit.type === "lod") return `detail ${hit.value === "auto" ? "AUTO" : hit.value}: ${LOD_TEXT[hit.value]}`;
   if (hit.type === "pod") return `${hit.ns}/${hit.label}${hit.caption ? ` · ${hit.caption}` : ""} · click: deep-inspect in the Cluster view`;
@@ -306,7 +322,7 @@ export const ENTRY = { H: 18, GAP: 6, HEAD: 18, CHAR: 5.6 };
 // compound (nodes as buildings, namespaces with their workloads). The
 // shape is a layout()'s (settlements empty) plus kubeOnly, so draw.js,
 // map-pro.js and the hit tests read it unchanged.
-export function layoutKubeOnly(models, { room = 960, choice = () => "auto", x0 = 8, y0 = 8 } = {}) {
+export function layoutKubeOnly(models, { room = 960, choice = () => "auto", x0 = 8, y0 = 8, policies = true } = {}) {
   const compounds = [];
   const buildings = [];
   const entries = [];
@@ -334,7 +350,7 @@ export function layoutKubeOnly(models, { room = 960, choice = () => "auto", x0 =
     }
     const level = levelOf(choice(cluster), model, room);
     const nodeShacks = model.nodes.map((n) => ({ id: n.id, kind: "node", label: n.label, name: n.name, caption: n.ready === false ? "NotReady" : "Ready", state: n.ready === false ? "stopped" : n.ready ? "running" : "pending" }));
-    const raw = layoutCompound({ cluster, model, nodeShacks, apps: model.apps, level, choice: choice(cluster), room, fill: true });
+    const raw = layoutCompound({ cluster, model, nodeShacks, apps: model.apps, level, choice: choice(cluster), room, fill: true, policies });
     const c = moveCompound(raw, x0, y);
     compounds.push(c);
     buildings.push(...c.buildings);
@@ -342,4 +358,61 @@ export function layoutKubeOnly(models, { room = 960, choice = () => "auto", x0 =
     y = c.y + c.h + 16;
   }
   return { settlements: [], orphans: { items: [], label: "" }, zones: [], camp: null, vaults: null, regionEdges: [], hubs: [], badges: [], contentWidth: right + x0, contentHeight: y, kubeOnly: { compounds, buildings, entries, labels } };
+}
+
+export const POLICIES_KEY = "cloudspider.map.policies";
+export function readPoliciesOn(storage) {
+  try {
+    return storage?.getItem(POLICIES_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+// Where each end of an allow line sits: a workload's tent (top centre), a
+// namespace's line (its badge end), or a chip in the OUTSIDE row for ends
+// that are not pods here (CIDRs, folded selectors, "anywhere").
+// Returns the height the chip row adds below y.
+function policyLines(items, netpol, cluster, x0, y, inner) {
+  const stall = new Map(items.stalls.map((s) => [`${s.ns}/${s.label}`, s]));
+  const nsLine = new Map(items.ns.map((l) => [l.ns, l]));
+  const outside = new Map();
+  for (const e of netpol.edges || []) for (const end of [e.from, e.to]) {
+    if (end.ns || outside.has(end.id)) continue;
+    outside.set(end.id, { type: "policy-source", cluster, id: `src:${end.id}`, label: end.label, policies: [], lines: 0 });
+  }
+  let x = x0;
+  let rowY = y + 16;
+  for (const chip of outside.values()) {
+    const w = Math.min(inner, Math.round(12 + chip.label.length * 5.4));
+    if (x > x0 && x + w > x0 + inner) {
+      x = x0;
+      rowY += 20;
+    }
+    Object.assign(chip, { x, y: rowY, w, h: 16 });
+    items.sources.push(chip);
+    x += w + 6;
+  }
+  const at = (end) => {
+    if (!end.ns) {
+      const c = outside.get(end.id);
+      return c ? { x: c.x + c.w / 2, y: c.y, kind: "outside" } : null;
+    }
+    const s = stall.get(`${end.ns}/${end.label}`);
+    if (s) return { x: s.x + Math.min(s.w, MK.STALL_W) / 2, y: s.y + 8, kind: "stall" };
+    const l = nsLine.get(end.ns);
+    return l ? { x: l.x + Math.min(l.w, 140), y: l.y + MK.NS / 2, kind: "ns" } : null;
+  };
+  for (const e of netpol.edges || []) {
+    const a = at(e.from);
+    const b = at(e.to);
+    if (!a || !b || (a.x === b.x && a.y === b.y)) continue;
+    for (const end of [e.from, e.to]) if (!end.ns && outside.has(end.id)) {
+      const c = outside.get(end.id);
+      c.lines++;
+      for (const p of e.policies || []) if (!c.policies.includes(p)) c.policies.push(p);
+    }
+    items.lines.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, from: e.from.id, to: e.to.id, dir: e.dir, ports: e.ports || [], policies: e.policies || [], bundle: !!e.bundle, count: e.count || 1 });
+  }
+  return outside.size ? rowY + 20 - y : 0;
 }
