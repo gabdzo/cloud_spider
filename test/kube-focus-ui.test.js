@@ -14,3 +14,11 @@ test("TOPOLOGY focus bar: in the prompt bar, served, both themes, kept per brows
   assert.match(browser, /SHOW FULL VIEW/);
   assert.match(browser, /INVESTIGATE/);
 });
+
+test("a search stays inside ISSUES and searches what is shown", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
+  assert.doesNotMatch(browser, /currentSearch\(\)\.active \? \{ \.\.\.topologyFocus, view: "all" \}/);
+  assert.match(browser, /searchKube\(diagram, text\)/);
+  assert.match(browser, /focusedView\(\)\?\.diagram : clusterData\?\.diagram/);
+});

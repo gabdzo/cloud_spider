@@ -253,7 +253,8 @@ function setTopologyFocus(patch) {
 let focusMemo = { diagram: null, key: "", out: null };
 function focusedView() {
   const diagram = clusterData?.diagram;
-  const f = currentSearch().active ? { ...topologyFocus, view: "all" } : topologyFocus;
+  // A search looks inside what is shown (ISSUES stays ISSUES).
+  const f = topologyFocus;
   const key = JSON.stringify(f);
   if (focusMemo.diagram !== diagram || focusMemo.key !== key) focusMemo = { diagram, key, out: focusDiagram(diagram, f) };
   return focusMemo.out;
@@ -265,7 +266,7 @@ function topologyStats() {
   const diagram = clusterData?.diagram;
   const key = JSON.stringify({ scope: topologyFocus.scope, namespaces: topologyFocus.namespaces });
   if (scopeMemo.diagram !== diagram || scopeMemo.key !== key) scopeMemo = { diagram, key, out: focusDiagram(diagram, { ...topologyFocus, view: "all" }).diagram };
-  return scopeStats(pathStats(scopeMemo.out), focusedView(), topologyFocus, currentSearch().active);
+  return scopeStats(pathStats(scopeMemo.out), focusedView(), topologyFocus);
 }
 function topologyShown() {
   return mode === "cluster" && clusterData?.diagram?.layout === "kube" && (!clusterHasScreens() || clusterScreen === "topology") && !kubeEmpty.isShown();
@@ -396,17 +397,16 @@ function syncFocusBar() {
   }
   const view = focusedView();
   const n = view?.issues?.length || 0;
-  const searching = currentSearch().active;
   const issuesOn = topologyFocus.view === "issues";
-  kfIssues.setAttribute("aria-pressed", String(issuesOn && !searching));
-  kfAll.setAttribute("aria-pressed", String(!issuesOn || searching));
+  kfIssues.setAttribute("aria-pressed", String(issuesOn));
+  kfAll.setAttribute("aria-pressed", String(!issuesOn));
   kfCount.textContent = String(n);
   kfCount.classList.toggle("zero", n === 0);
   kfList.disabled = n === 0;
   if (kfScope.value !== topologyFocus.scope) kfScope.value = topologyFocus.scope;
   const picked = topologyFocus.namespaces.length;
   kfNs.textContent = picked === 1 ? `NS: ${topologyFocus.namespaces[0]}` : picked ? `NS: ${picked}` : "NS: ALL";
-  const healthy = issuesOn && !searching && n === 0;
+  const healthy = issuesOn && n === 0;
   const key = healthy ? `${view?.healthyLanes}|${view?.hiddenHealthy}|${topologyFocus.scope}|${picked}` : "";
   if (key !== healthyKey) {
     healthyKey = key;
@@ -3613,8 +3613,11 @@ function searchable() {
 
 function currentSearch() {
   const text = searchable() ? kubeSearchEl.value : "";
-  if (searchMemo.diagram !== clusterData?.diagram || searchMemo.text !== text) {
-    searchMemo = { diagram: clusterData?.diagram, text, result: searchKube(clusterData?.diagram, text) };
+  // TOPOLOGY searches the focused diagram (scope, ISSUES): a match that is
+  // not shown is not counted.
+  const diagram = clusterData?.diagram?.layout === "kube" ? focusedView()?.diagram : clusterData?.diagram;
+  if (searchMemo.diagram !== diagram || searchMemo.text !== text) {
+    searchMemo = { diagram, text, result: searchKube(diagram, text) };
   }
   return searchMemo.result;
 }
