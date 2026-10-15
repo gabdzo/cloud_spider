@@ -3443,8 +3443,7 @@ const page = `<!doctype html>
   /* GREEN / AMBER phosphor for the whole app (theme.js data-tint): the CSS
      follows the remapped vars; canvases and pixel icons drawn in the green
      ramp are turned amber with a hue shift (alerts stay distinct). */
-  @media (min-width: 1200px) { header { flex-wrap: nowrap; } }
-  #tint-key { font-size: 10px; letter-spacing: 0.08em; width: auto; padding: 0 6px; }
+  #tint-key { font: inherit; font-size: 10px; letter-spacing: 0.08em; padding: 0 5px; color: var(--pip-mid); background: none; border: 1px solid var(--pip-dark); border-radius: 3px; cursor: pointer; }
   :root[data-tint="amber"] #tint-key { color: var(--pip-bright); }
   :root[data-tint="amber"]:not([data-theme="pro"]) canvas:not(#place),
   :root[data-tint="amber"]:not([data-theme="pro"]) img.px,
@@ -3489,8 +3488,8 @@ const page = `<!doctype html>
     <label data-module="aws">REGION <select id="region"></select></label>
     <span><b>MODE</b> <output id="acct">LIVE</output></span>
     <span><b>TIME</b> <output id="clock">--:--</output></span>
+    <button id="tint-key" class="tint" type="button" aria-pressed="false" title="phosphor: green or amber (Pip-Boy 3000), the whole app">AMB</button>
   </div>
-  <button id="tint-key" class="gear tint" type="button" aria-pressed="false" title="phosphor: green or amber (Pip-Boy 3000), the whole app">AMB</button>
   <button id="settings-key" class="gear" type="button" aria-expanded="false" aria-controls="settings" title="settings: theme and the effective config"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
   <div class="knobs" aria-hidden="true"><i class="knob"></i><i class="knob small"></i><i class="power"></i></div>
 </header>

@@ -244,7 +244,7 @@ const keep = (store, key, value) => { try { store?.setItem(key, value); } catch 
  */
 export function mountPip(el, io) {
   const store = io.store ?? null;
-  const state = { selected: pref(store, PIP_SEL_KEY, ""), tab: "stat", view: "grid", theme: pref(store, PIP_THEME_KEY, "green") === "amber" ? "amber" : "green", error: "", loading: true };
+  const state = { scrollSel: true, selected: pref(store, PIP_SEL_KEY, ""), tab: "stat", view: "grid", theme: pref(store, PIP_THEME_KEY, "green") === "amber" ? "amber" : "green", error: "", loading: true };
   /** @type {any} */
   let model = null;
   let timer = 0;
@@ -255,7 +255,14 @@ export function mountPip(el, io) {
     el.dataset.theme = state.theme;
     el.dataset.view = state.view;
     const hadFocus = el.contains(document.activeElement);
+    // A refresh must not jump: keep every scroller where it was.
+    const scrolls = [".pb-list", ".pb-detail", ".pb-gridwrap"].map((q) => [q, el.querySelector(q)?.scrollTop || 0]);
+    const own = el.scrollTop;
+    const open = [...el.querySelectorAll("details[open] summary")].map((d) => d.textContent);
     el.innerHTML = pipHtml(model, state);
+    for (const [q, top] of scrolls) { const n = el.querySelector(/** @type {string} */ (q)); if (n && top) n.scrollTop = Number(top); }
+    el.scrollTop = own;
+    el.querySelectorAll("details summary").forEach((d) => { if (open.includes(d.textContent)) /** @type {HTMLDetailsElement} */ (d.parentElement).open = true; });
     if (state.view === "grid") {
       drawLinks(el, model, focusOf());
       const sel = /** @type {HTMLElement|null} */ (el.querySelector(".pb-tile[aria-pressed=true]"));
@@ -263,18 +270,22 @@ export function mountPip(el, io) {
     } else {
       const list = /** @type {HTMLElement|null} */ (el.querySelector(".pb-list"));
       if (hadFocus) list?.focus();
-      list?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" });
+      if (state.scrollSel) list?.querySelector("[aria-selected=true]")?.scrollIntoView({ block: "nearest" });
+      state.scrollSel = false;
     }
   };
   const pull = async () => {
     const body = await io.load().catch((e) => ({ error: e?.message || "the cluster did not answer" }));
-    model = body?.diagram ? io.model(body) : model;
-    state.error = body?.error && !body?.diagram ? String(body.error) : "";
+    const next = body?.diagram ? io.model(body) : model;
+    const error = body?.error && !body?.diagram ? String(body.error) : "";
+    const same = !state.loading && error === state.error && JSON.stringify(next) === JSON.stringify(model);
+    model = next;
+    state.error = error;
     state.loading = false;
-    if (!el.hidden) render();
+    if (!el.hidden && !same) render();
   };
   const focusOf = () => (model?.namespaces?.some((/** @type {any} */ n) => n.name === state.selected) ? state.selected : model?.namespaces?.[0]?.name || "");
-  const select = (/** @type {string} */ name) => { state.selected = name; keep(store, PIP_SEL_KEY, name); render(); };
+  const select = (/** @type {string} */ name) => { state.selected = name; state.scrollSel = true; keep(store, PIP_SEL_KEY, name); render(); };
   const zoom = (/** @type {string} */ name) => { state.view = "one"; select(name); };
   const toGrid = () => { state.view = "grid"; render(); };
   el.addEventListener("click", (event) => {
