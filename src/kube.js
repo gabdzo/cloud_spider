@@ -262,6 +262,8 @@ export function bodySink(keepLine = null, cap = BODY_CAP) {
 
 // What a namespaced snapshot reads per namespace, and which of those the
 // view cannot do without (the rest degrade to a "no access" chip).
+export const TOPOLOGY_EXTRAS = ["jobs", "pvcs", "pvs", "networkPolicies", "endpointSlicesAll"];
+
 export const SCOPED_READS = { pods: "nsPods", services: "nsServices", deployments: "nsDeployments", daemonsets: "nsDaemonsets", statefulsets: "nsStatefulsets", jobs: "nsJobs", ingresses: "nsIngresses", podMetrics: "nsPodMetrics" };
 
 // context: the kubeconfig context; namespaces: "*" (the whole cluster) or a
@@ -412,12 +414,21 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
       const t = await resolveTarget();
       if (t.error) return { error: t.error, unset: true };
       if (scope !== "*") return scopedSnapshot(t);
-      const names = ["namespaces", "nodes", "pods", "services", "deployments", "daemonsets", "statefulsets", "ingresses", "podMetrics", "nodeMetrics"];
+      // TOPOLOGY ISSUES (kube-focus.js) also reads Jobs, PVCs, PVs,
+      // NetworkPolicies and EndpointSlices; those are extras: a failed read
+      // leaves them empty, never the view.
+      const names = ["namespaces", "nodes", "pods", "services", "deployments", "daemonsets", "statefulsets", "ingresses", "podMetrics", "nodeMetrics", ...TOPOLOGY_EXTRAS];
       const results = await Promise.all(names.map((name) => getPath(PATHS[name]())));
       const out = { clusterName: t.clusterName, notes: [] };
-      const fatal = results.find((r, i) => r.error && !r.forbidden && !r.missing && !/Metrics$/.test(names[i]));
+      const fatal = results.find((r, i) => r.error && !r.forbidden && !r.missing && !/Metrics$/.test(names[i]) && !TOPOLOGY_EXTRAS.includes(names[i]));
       if (fatal) return { error: fatal.error, clusterName: t.clusterName };
       names.forEach((name, i) => {
+        // An extra that was not read stays undefined (not "none"): no
+        // EndpointSlices read must not turn every Service red.
+        if (TOPOLOGY_EXTRAS.includes(name)) {
+          if (results[i].json) out[name] = results[i].json.items || [];
+          return;
+        }
         out[name] = results[i].json?.items || [];
         if (results[i].forbidden) out.notes.push(`${name}: forbidden for the viewer role`);
         if (name === "podMetrics" && (results[i].missing || results[i].error)) out.notes.push("no metrics-server (pod CPU/memory hidden)");
