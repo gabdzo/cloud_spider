@@ -76,6 +76,7 @@ import { drawSprite } from "./draw-kit.js";
 import { sloBlock, sloFacts } from "./slo-view.js";
 import { renderSpend } from "./spend-view.js";
 import { createSettings, readHidden, visibleModules } from "./settings-view.js";
+import { nsPanelModel } from "./map-ns-panel.js";
 import { KUBE_MAP_KEY, POLICIES_KEY, compoundHit, compoundHover, kubeModel, layoutKubeOnly, readKubeChoices, readPoliciesOn } from "./map-kube.js";
 import { mountWhere } from "./where.js";
 
@@ -167,6 +168,7 @@ const viewTagKey = document.querySelector("#view-tag-key");
 const MAP_VIEW_KEY = "cloudspider.mapView";
 const MAP_TAG_KEY = "cloudspider.mapTagKey";
 const kubePanel = document.querySelector("#kube-panel");
+const mapNsPanel = document.querySelector("#map-ns-panel");
 const kubeTabs = document.querySelector("#kube-tabs");
 const kubeCtxEl = document.querySelector("#kube-ctx");
 const kubeConnectEl = document.querySelector("#kube-connect");
@@ -1273,6 +1275,73 @@ function openInCluster(hit) {
   setClusterScreen("topology");
   mapKube.keepSample = sample;
   enterCluster();
+}
+
+// The namespace panel on the MAP (map-ns-panel.js): policies, who may
+// come in and go out, what needs a look; TOPOLOGY is its detail.
+function showNsPanel(cluster, ns) {
+  const model = mapKube.models.get(cluster);
+  if (!model || !mapNsPanel) return;
+  const p = nsPanelModel(model, ns);
+  const head = vel("div", "kp-title");
+  head.append(vel("span", "kp-name", `NAMESPACE · ${ns}`));
+  const close = vel("button", "vp-close", "CLOSE");
+  close.type = "button";
+  close.addEventListener("click", () => {
+    mapNsPanel.hidden = true;
+    mapNsPanel.replaceChildren();
+  });
+  head.append(close);
+  const body = vel("div", "kp-body");
+  body.append(vel("p", `np-head ${p.badge}`, p.headline));
+  if (p.policies.length) {
+    body.append(vel("p", "kp-sub", `NETWORK POLICIES · ${p.policies.length}`));
+    for (const pol of p.policies) {
+      const d = vel("details");
+      d.append(vel("summary", "", `${pol.name} · ${pol.selects} · ${pol.pods} · ${pol.types.join("+")}`));
+      for (const line of [...pol.ingress, ...pol.egress]) d.append(vel("div", "np-rule", line));
+      body.append(d);
+    }
+  }
+  const list = (title, rows, cls = "") => {
+    if (!rows.length) return;
+    body.append(vel("p", "kp-sub", title));
+    const ul = vel("ul");
+    for (const r of rows) ul.append(vel("li", cls, r));
+    body.append(ul);
+  };
+  list(`ALLOWED IN FROM OTHER NAMESPACES / OUTSIDE · ${p.allowedIn.length}`, p.allowedIn);
+  list(`ALLOWED OUT · ${p.allowedOut.length}`, p.allowedOut);
+  if (p.insideCount) body.append(vel("p", "kp-sub", `${p.insideCount} allow line${p.insideCount === 1 ? "" : "s"} inside ${ns}`));
+  list("ENTRY POINTS", p.entries);
+  list(`NEEDS A LOOK · ${p.issues.length}`, p.issues.map((i) => `${i.label} · ${i.text}`), "np-bad");
+  const acts = vel("div", "np-acts");
+  const topo = vel("button", "vp-close vp-primary", "OPEN IN TOPOLOGY ›");
+  topo.type = "button";
+  topo.title = `TOPOLOGY, this namespace only (${ns}): pods, nodes, volumes, events`;
+  topo.addEventListener("click", () => openNamespaceTopology(cluster, ns));
+  acts.append(topo);
+  const svc = p.issueService || p.service;
+  if (svc) {
+    const dx = vel("button", "vp-close", "DIAGNOSE");
+    dx.type = "button";
+    dx.title = `read-only investigation of ${ns}/${svc}`;
+    dx.addEventListener("click", () => openDiagnose({ context: clusterContext || "", namespace: ns, service: svc }));
+    const sniff = vel("a", "vp-close", "SNIFF ›");
+    sniff.href = `#path?debug=${encodeURIComponent(`${ns}/${svc}`)}`;
+    sniff.title = `SNIFF the in-cluster path to ${ns}/${svc}`;
+    acts.append(dx, sniff);
+  }
+  body.append(acts);
+  mapNsPanel.replaceChildren(head, body);
+  mapNsPanel.hidden = false;
+}
+
+// TOPOLOGY as the namespace's detail: the focus narrowed to it, ALL view.
+function openNamespaceTopology(cluster, ns) {
+  if (mapNsPanel) mapNsPanel.hidden = true;
+  setTopologyFocus({ namespaces: [ns], view: "all", scope: "all" });
+  openInCluster({ type: "compound", cluster });
 }
 
 function applyClusterFocus() {
@@ -2678,6 +2747,7 @@ function draw() {
   renderVaultPage();
   if (vaultPageOpen()) return;
   if (mode === "path" || mode === "cluster") {
+    if (mapNsPanel) mapNsPanel.hidden = true;
     wallGrain.hidden = true;
     tallyEl.hidden = true;
     placeFolds(null);
@@ -3964,7 +4034,11 @@ canvas.addEventListener("click", async (event) => {
       draw();
       return;
     }
-    if (kubeHitNow?.type === "netpol" || kubeHitNow?.type === "policy-source") return;
+    if (kubeHitNow?.type === "netpol") {
+      showNsPanel(kubeHitNow.cluster, kubeHitNow.ns);
+      return;
+    }
+    if (kubeHitNow?.type === "policy-source") return;
     if (kubeHitNow?.type === "lod") {
       setKubeLevel(kubeHitNow.cluster, kubeHitNow.value);
       return;

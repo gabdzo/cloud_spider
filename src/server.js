@@ -94,6 +94,7 @@ export const FILES = new Set([
   "slo-view.js",
   "map-kube.js",
   "netpol-model.js",
+  "map-ns-panel.js",
   "netdebug/kube-checks.js",
   "cidr.js",
   "map-kube-draw.js",
@@ -1892,6 +1893,18 @@ const page = `<!doctype html>
   .k9-msg { margin-left: auto; color: var(--pip-mid); }
   .k9-msg.k9-bad { color: var(--status-broken); }
   @media (max-width: 899px) { #k9s { left: 6px; right: 6px; height: 62%; } .k9-input { width: 120px; } }
+  #map-ns-panel { position: absolute; z-index: 6; right: 12px; top: 8px; width: min(340px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow: auto; background: var(--pip-screen); }
+  #map-ns-panel .np-head { font-size: 12px; margin: 4px 0 6px; }
+  #map-ns-panel .np-head.deny { color: var(--pip-bright); }
+  #map-ns-panel .np-head.open, #map-ns-panel .np-head.partial, #map-ns-panel .np-head.unread { color: var(--world-amber); }
+  #map-ns-panel details { border: 1px solid var(--pip-dark); margin: 3px 0; padding: 2px 6px; font-size: 11px; }
+  #map-ns-panel summary { cursor: pointer; }
+  #map-ns-panel .np-rule { color: var(--pip-mid); padding-left: 8px; overflow-wrap: anywhere; }
+  #map-ns-panel ul { margin: 2px 0 6px; padding-left: 14px; font-size: 11px; }
+  #map-ns-panel .np-bad { color: var(--status-broken); }
+  #map-ns-panel .np-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  #map-ns-panel .np-acts a { text-decoration: none; }
+  @media (max-width: 1100px) { #map-ns-panel { width: min(290px, calc(100% - 24px)); } }
   #kube-panel { position: absolute; z-index: 6; right: 12px; top: calc(var(--kube-top, 48px) + 4px); width: min(460px, calc(100% - 24px)); max-height: calc(100% - 60px); background: var(--pip-screen); }
   .kp-title { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; color: var(--pip-ink); background: var(--pip-bright); letter-spacing: 0.12em; font-size: 11px; }
   .kp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3495,6 +3508,7 @@ const page = `<!doctype html>
       <section id="kf-ns-pop" aria-label="namespaces" hidden></section>
       <section id="kube-graph" aria-label="services graph (sample prototype)" tabindex="-1" hidden data-module="graph"></section>
       <section id="kube-panel" class="vault-panel" aria-label="pod details" hidden></section>
+      <section id="map-ns-panel" class="vault-panel" aria-label="namespace policies" hidden></section>
       <section id="k9s" aria-label="K9S window, read-only resource table" hidden data-module="kubernetes"></section>
       <form id="pip" hidden></form>
       <section id="term" hidden></section>

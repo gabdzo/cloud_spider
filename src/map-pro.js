@@ -815,7 +815,7 @@ function compoundGround(ctx, placed) {
     ctx.setLineDash([]);
     for (const l of c.lines || []) {
       const lift = Math.min(60, 16 + Math.abs(l.x2 - l.x1) / 6);
-      ctx.strokeStyle = rgba(C.ok, l.bundle ? 0.6 : 0.35);
+      ctx.strokeStyle = rgba(C.ok, l.bundle ? 0.7 : 0.5);
       ctx.lineWidth = l.bundle ? Math.min(5, 1 + Math.log2(l.count)) : 1;
       ctx.beginPath();
       ctx.moveTo(l.x1, l.y1);
