@@ -23,7 +23,7 @@ const statusOf = (res) => (res.json || res.text != null ? "available" : res.forb
 
 /**
  * @param {any} kube
- * @param {{ namespace?: string, service?: string, context?: string, pathGraph?: null | (() => Promise<any>), now?: () => string, timeoutMs?: number }} opts
+ * @param {{ namespace?: string, service?: string, context?: string, pathGraph?: null | (() => Promise<any>), awsOff?: boolean, now?: () => string, timeoutMs?: number }} opts
  */
 export async function collectLive(kube, { namespace, service, context = "", pathGraph = null, awsOff = false, now = () => new Date().toISOString(), timeoutMs = READ_TIMEOUT_MS } = {}) {
   const t0 = Date.now();
