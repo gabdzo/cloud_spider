@@ -197,7 +197,7 @@ export const TINT = (() => {
   }
 })();
 if (TINT === "amber") {
-  for (const table of [PALETTE, PIP, WORLD, CASE, STATUS, STATE_COLOR]) {
+  for (const table of [PALETTE, PIP, WORLD, SKYLINE, CASE, STATUS, STATE_COLOR]) {
     for (const [k, v] of Object.entries(table)) if (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v)) table[k] = toAmber(v);
   }
 }
@@ -375,4 +375,29 @@ export function toAmber(hex) {
   const c = (1 - Math.abs(2 * l - 1)) * sat, H = 38 / 60, x = c * (1 - Math.abs((H % 2) - 1)), m = l - c / 2;
   const [rr, gg, bb] = [c + m, x + m, m];
   return `#${[rr, gg, bb].map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, "0")).join("")}`;
+}
+
+// amberizeCss rewrites every green-hued colour literal (#rrggbb or rgb/rgba)
+// in a stylesheet to its amber twin. CSS that predates the theme variables
+// still carries hardcoded greens; this catches them all in one pass.
+/** @param {string} css */
+export function amberizeCss(css) {
+  /** @param {number} r @param {number} g @param {number} b */
+  const green = (r, g, b) => {
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    if (mx === 0 || (mx - mn) / mx < 0.2 || g !== mx) return false;
+    const h = (60 * ((b - r) / (mx - mn)) + 120) % 360;
+    return h >= 70 && h <= 175;
+  };
+  const hex = (/** @type {number} */ n) => n.toString(16).padStart(2, "0");
+  return css
+    .replace(/#([0-9a-f]{6})\b/gi, (m, h) => {
+      const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+      return green(r, g, b) ? toAmber(m) : m;
+    })
+    .replace(/rgb(a?)\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/g, (m, a, r, g, b) => {
+      if (!green(+r, +g, +b)) return m;
+      const t = toAmber(`#${hex(+r)}${hex(+g)}${hex(+b)}`);
+      return `rgb${a}(${parseInt(t.slice(1, 3), 16)}, ${parseInt(t.slice(3, 5), 16)}, ${parseInt(t.slice(5, 7), 16)}`;
+    });
 }

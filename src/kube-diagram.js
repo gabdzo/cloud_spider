@@ -75,9 +75,12 @@ export function podState(pod) {
     health = "hang";
     word = waiting || "Pending";
   } else if (status.phase === "Running" && !ready) {
-    health = "hang";
+    // A failing readiness probe is a real failure, not a warning.
+    health = (pod?.spec?.containers || []).some((c) => c.readinessProbe) ? "broken" : "hang";
     word = "NotReady";
   } else if (status.phase === "Succeeded") health = "unknown";
+  // Out of memory is a failure even once the container is back up.
+  if (health === "ok" && containers.some((c) => c.lastState?.terminated?.reason === "OOMKilled")) health = "broken";
   return { health, word, restarts, ready };
 }
 
@@ -170,6 +173,7 @@ export function podIssue(pod, state = podState(pod), refs) {
   const restarts = state.restarts ? `${state.restarts} restart${state.restarts === 1 ? "" : "s"}` : "";
   const pending = (refs?.pvcs || []).find((c) => c.phase && c.phase !== "Bound");
   if (pending) return `PVC ${pending.name} ${pending.phase}`;
+  if (oom && state.word === "Running") return ["OOMKilled", restarts].filter(Boolean).join(" · ");
   if (state.health === "broken" || state.health === "hang") {
     const probed = (pod?.spec?.containers || []).some((c) => c.readinessProbe);
     const why = state.word === "Pending" ? pendingWhy(pod) : state.word === "NotReady" && probed ? "readiness probe failing" : "";
