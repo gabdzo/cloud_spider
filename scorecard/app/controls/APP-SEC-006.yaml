@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-006
+revision: 1
+title: "seccomp RuntimeDefault"
+category: security
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-seccomp
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "seccomp RuntimeDefault (app readiness checklist)."
+remediation: { summary: "Set seccompProfile.type: RuntimeDefault.", effort: S }
+verification: "seccomp RuntimeDefault."

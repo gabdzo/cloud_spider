@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-007
+revision: 1
+title: "Secrets mounted as files, not env"
+category: security
+target: app
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: app-secret-env
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Secrets mounted as files, not env (app readiness checklist)."
+remediation: { summary: "Mount the Secret as a volume (env leaks into dumps and child processes).", effort: M }
+verification: "Secrets mounted as files, not env."

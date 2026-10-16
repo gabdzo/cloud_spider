@@ -1,0 +1,15 @@
+kind: Control
+id: APP-OBS-005
+revision: 1
+title: "An alert rule covers it"
+category: observability
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-alerts
+aggregation: all-or-nothing
+requires: ["app", "app-ctx", "app-monitors"]
+whyItMatters: "An alert rule covers it (app readiness checklist)."
+remediation: { summary: "Add a PrometheusRule for its error rate and availability.", effort: M }
+verification: "An alert rule covers it."

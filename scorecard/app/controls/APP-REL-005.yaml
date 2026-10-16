@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-005
+revision: 1
+title: "Liveness probe, distinct from readiness"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: app-liveness
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Liveness probe, distinct from readiness (app readiness checklist)."
+remediation: { summary: "Add a cheap livenessProbe that does not check dependencies.", effort: S }
+verification: "Liveness probe, distinct from readiness."

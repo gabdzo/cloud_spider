@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-005
+revision: 1
+title: "Read-only root filesystem"
+category: security
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-readonly-fs
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Read-only root filesystem (app readiness checklist)."
+remediation: { summary: "Set readOnlyRootFilesystem: true, mount emptyDir where it writes.", effort: M }
+verification: "Read-only root filesystem."

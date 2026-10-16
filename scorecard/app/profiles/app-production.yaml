@@ -1,0 +1,12 @@
+id: app-production
+version: 1
+target: app
+environments: [production, prod, staging]
+minCoverage: 0.60
+minCategoryCoverage: 0.40
+minAssessedControls: 8
+minCategoryControls: 1
+runtimeRequired: false
+categoryWeights: { reliability: 35, security: 30, observability: 15, exposure: 10, ops: 10 }
+gates: []
+overrides: {}

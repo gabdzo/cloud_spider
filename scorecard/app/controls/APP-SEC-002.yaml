@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-002
+revision: 1
+title: "allowPrivilegeEscalation: false"
+category: security
+target: app
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: app-escalation
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "allowPrivilegeEscalation: false (app readiness checklist)."
+remediation: { summary: "Set allowPrivilegeEscalation: false.", effort: S }
+verification: "allowPrivilegeEscalation: false."

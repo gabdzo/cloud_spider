@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-011
+revision: 1
+title: "A NetworkPolicy selects it"
+category: security
+target: app
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: app-netpol
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "A NetworkPolicy selects it (app readiness checklist)."
+remediation: { summary: "Add a default-deny plus allow rules for its callers.", effort: M }
+verification: "A NetworkPolicy selects it."

@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-013
+revision: 1
+title: "imagePullPolicy is not Never"
+category: security
+target: app
+evidenceType: config
+severity: { default: info }
+confidence: high
+evaluator: app-pull-policy
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "imagePullPolicy is not Never (app readiness checklist)."
+remediation: { summary: "Use IfNotPresent or Always.", effort: S }
+verification: "imagePullPolicy is not Never."

@@ -1,0 +1,15 @@
+kind: Control
+id: APP-OPS-005
+revision: 1
+title: "Referenced ConfigMaps and ServiceAccount exist"
+category: ops
+target: app
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: app-refs
+aggregation: proportional
+requires: ["app", "app-ctx", "app-configmaps", "app-serviceaccounts"]
+whyItMatters: "Referenced ConfigMaps and ServiceAccount exist (app readiness checklist)."
+remediation: { summary: "Create the missing object or fix the reference.", effort: S }
+verification: "Referenced ConfigMaps and ServiceAccount exist."

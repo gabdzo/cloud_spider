@@ -1,0 +1,15 @@
+kind: Control
+id: APP-OPS-001
+revision: 1
+title: "Standard app.kubernetes.io labels"
+category: ops
+target: app
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: app-labels
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "Standard app.kubernetes.io labels (app readiness checklist)."
+remediation: { summary: "Set app.kubernetes.io/name and instance.", effort: S }
+verification: "Standard app.kubernetes.io labels."

@@ -1,0 +1,15 @@
+kind: Control
+id: APP-OBS-006
+revision: 1
+title: "It has an SLO"
+category: observability
+target: app
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: app-slo
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "It has an SLO (app readiness checklist)."
+remediation: { summary: "Add an SLO in its observability file (STACKS card).", effort: S }
+verification: "It has an SLO."
