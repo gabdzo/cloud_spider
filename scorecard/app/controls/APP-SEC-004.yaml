@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-004
+revision: 1
+title: "Capabilities dropped"
+category: security
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-capabilities
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Capabilities dropped (app readiness checklist)."
+remediation: { summary: "Set capabilities.drop: [ALL].", effort: S }
+verification: "Capabilities dropped."

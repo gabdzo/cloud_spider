@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-007
+revision: 1
+title: "CPU and memory requests set"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: app-requests
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "CPU and memory requests set (app readiness checklist)."
+remediation: { summary: "Set resources.requests.cpu and memory.", effort: S }
+verification: "CPU and memory requests set."

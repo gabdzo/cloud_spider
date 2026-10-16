@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-011
+revision: 1
+title: "Graceful shutdown behind a load balancer"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-graceful
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "Graceful shutdown behind a load balancer (app readiness checklist)."
+remediation: { summary: "Add a preStop sleep (5-15s) and enough terminationGracePeriodSeconds.", effort: S }
+verification: "Graceful shutdown behind a load balancer."

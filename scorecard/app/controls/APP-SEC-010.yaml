@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-010
+revision: 1
+title: "Least-privilege RBAC"
+category: security
+target: app
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: app-rbac
+aggregation: proportional
+requires: ["app", "app-ctx", "app-rbac"]
+whyItMatters: "Least-privilege RBAC (app readiness checklist)."
+remediation: { summary: "Replace wildcards, secret listing and pods/exec with exact verbs and resources.", effort: M }
+verification: "Least-privilege RBAC."

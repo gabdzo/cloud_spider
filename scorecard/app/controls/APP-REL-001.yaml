@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-001
+revision: 1
+title: "Runs 2+ replicas"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: app-replicas
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "Runs 2+ replicas (app readiness checklist)."
+remediation: { summary: "Set replicas: 2+ or an HPA with minReplicas 2.", effort: S }
+verification: "Runs 2+ replicas."

@@ -1,0 +1,15 @@
+kind: Control
+id: APP-EXP-004
+revision: 1
+title: "Services are ClusterIP behind an Ingress"
+category: exposure
+target: app
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: app-service-type
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Services are ClusterIP behind an Ingress (app readiness checklist)."
+remediation: { summary: "Use ClusterIP plus an Ingress instead of LoadBalancer/NodePort.", effort: M }
+verification: "Services are ClusterIP behind an Ingress."

@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-009
+revision: 1
+title: "HPA is sane and active"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-hpa
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "HPA is sane and active (app readiness checklist)."
+remediation: { summary: "minReplicas 2+, min < max, and a working metrics source.", effort: S }
+verification: "HPA is sane and active."

@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-006
+revision: 1
+title: "Slow starters use a startupProbe"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: app-startup
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Slow starters use a startupProbe (app readiness checklist)."
+remediation: { summary: "Replace a long initialDelaySeconds with a startupProbe.", effort: S }
+verification: "Slow starters use a startupProbe."

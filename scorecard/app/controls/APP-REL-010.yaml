@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-010
+revision: 1
+title: "Rollout keeps it up"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-rollout
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "Rollout keeps it up (app readiness checklist)."
+remediation: { summary: "Use RollingUpdate with maxUnavailable below the replica count.", effort: S }
+verification: "Rollout keeps it up."

@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-012
+revision: 1
+title: "Pods healthy now"
+category: reliability
+target: app
+evidenceType: runtime
+severity: { default: critical }
+confidence: high
+evaluator: app-healthy
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Pods healthy now (app readiness checklist)."
+remediation: { summary: "Fix the crashing or unready pods (logs, events).", effort: M }
+verification: "Pods healthy now."

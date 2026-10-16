@@ -1,0 +1,15 @@
+kind: Control
+id: APP-EXP-002
+revision: 1
+title: "Service targetPorts match the pods"
+category: exposure
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-ports
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Service targetPorts match the pods (app readiness checklist)."
+remediation: { summary: "Point targetPort at a named containerPort.", effort: S }
+verification: "Service targetPorts match the pods."

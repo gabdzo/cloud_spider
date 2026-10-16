@@ -1,0 +1,15 @@
+kind: Control
+id: APP-OPS-004
+revision: 1
+title: "priorityClassName set"
+category: ops
+target: app
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: app-priority
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "priorityClassName set (app readiness checklist)."
+remediation: { summary: "Assign a PriorityClass so it is not evicted first.", effort: S }
+verification: "priorityClassName set."

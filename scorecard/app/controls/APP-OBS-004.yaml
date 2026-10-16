@@ -1,0 +1,15 @@
+kind: Control
+id: APP-OBS-004
+revision: 1
+title: "Traces are emitted"
+category: observability
+target: app
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: app-traces
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "Traces are emitted (app readiness checklist)."
+remediation: { summary: "Set OTEL_* env for the SDK or install Beyla.", effort: M }
+verification: "Traces are emitted."

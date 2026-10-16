@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-003
+revision: 1
+title: "Replicas spread across nodes"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-spread
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "Replicas spread across nodes (app readiness checklist)."
+remediation: { summary: "Add topologySpreadConstraints on kubernetes.io/hostname and zone.", effort: S }
+verification: "Replicas spread across nodes."

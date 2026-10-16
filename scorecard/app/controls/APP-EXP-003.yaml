@@ -1,0 +1,15 @@
+kind: Control
+id: APP-EXP-003
+revision: 1
+title: "Ingress serves TLS"
+category: exposure
+target: app
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: app-ingress-tls
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Ingress serves TLS (app readiness checklist)."
+remediation: { summary: "Add spec.tls or an ACM certificate.", effort: S }
+verification: "Ingress serves TLS."

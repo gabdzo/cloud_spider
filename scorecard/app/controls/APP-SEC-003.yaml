@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-003
+revision: 1
+title: "Runs as non-root"
+category: security
+target: app
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: app-non-root
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Runs as non-root (app readiness checklist)."
+remediation: { summary: "Set runAsNonRoot: true (and a non-zero runAsUser).", effort: S }
+verification: "Runs as non-root."

@@ -1,0 +1,15 @@
+kind: Control
+id: APP-OPS-002
+revision: 1
+title: "Version label"
+category: ops
+target: app
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: app-version
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "Version label (app readiness checklist)."
+remediation: { summary: "Set app.kubernetes.io/version.", effort: S }
+verification: "Version label."

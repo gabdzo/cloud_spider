@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-002
+revision: 1
+title: "Has a PodDisruptionBudget that allows drains"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-pdb
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "Has a PodDisruptionBudget that allows drains (app readiness checklist)."
+remediation: { summary: "Add a PDB with maxUnavailable: 1.", effort: S }
+verification: "Has a PodDisruptionBudget that allows drains."

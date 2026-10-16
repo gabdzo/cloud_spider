@@ -1,0 +1,15 @@
+kind: Control
+id: APP-EXP-001
+revision: 1
+title: "Services have ready endpoints"
+category: exposure
+target: app
+evidenceType: runtime
+severity: { default: critical }
+confidence: high
+evaluator: app-endpoints
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Services have ready endpoints (app readiness checklist)."
+remediation: { summary: "Fix the selector or the unready pods.", effort: S }
+verification: "Services have ready endpoints."

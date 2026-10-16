@@ -5,15 +5,16 @@ export const STATUSES = ["PASS", "FAIL", "UNKNOWN", "NOT_ASSESSED", "NOT_APPLICA
 export const SEVERITIES = ["critical", "high", "medium", "low", "info"];
 // One Critical outweighs 20 Lows; one High outweighs 7 Lows (spec §6.2).
 export const SEVERITY_WEIGHT = { critical: 40, high: 15, medium: 5, low: 2, info: 0 };
-export const CATEGORIES = ["security", "reliability", "networking", "observability", "finops", "governance", "sre", "platform"];
+export const CATEGORIES = ["security", "reliability", "networking", "observability", "finops", "governance", "sre", "platform", "exposure", "ops"];
 // Kubernetes flavours a control can be limited to (platforms: [eks]).
 export const PLATFORMS = ["eks", "kubernetes", "openshift"];
-export const TARGETS = ["aws", "kubernetes"];
+// "app": one Kubernetes workload and what belongs to it (src/score/app).
+export const TARGETS = ["aws", "kubernetes", "app"];
 export const EVIDENCE_TYPES = ["config", "runtime", "process"];
 export const AGGREGATIONS = ["all-or-nothing", "proportional"];
 export const CONFIDENCE = ["high", "medium", "low"];
 export const EFFORTS = ["S", "M", "L"];
-export const ID_PATTERN = /^(AWS|K8S|SRE|NET)-[A-Z][A-Z0-9]{2,3}-\d{3}$/;
+export const ID_PATTERN = /^(AWS|K8S|SRE|NET|APP)-[A-Z][A-Z0-9]{2,3}-\d{3}$/;
 
 // Returns { ok, errors } for one parsed control document. A control has
 // either an `evaluator` (assessed) or a `blockedBy` (stub, always

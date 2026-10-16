@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-009
+revision: 1
+title: "Own ServiceAccount, no unused token"
+category: security
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-service-account
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Own ServiceAccount, no unused token (app readiness checklist)."
+remediation: { summary: "Give it its own ServiceAccount; set automountServiceAccountToken: false if it never calls the API.", effort: S }
+verification: "Own ServiceAccount, no unused token."

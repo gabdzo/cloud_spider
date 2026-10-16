@@ -10,6 +10,10 @@ export async function scoreRoute(req, res, url, score, { send, readJson }) {
     send(res, 200, await score.view({ context: url.searchParams.get("context") || "", target: url.searchParams.get("target") === "aws" ? "aws" : "kubernetes" }));
     return true;
   }
+  if (req.method === "GET" && url.pathname === "/api/score/apps") {
+    send(res, 200, score.apps ? await score.apps({ context: url.searchParams.get("context") || "", sample: url.searchParams.get("sample") === "1" }) : { error: "the app score is not set up" });
+    return true;
+  }
   if (req.method === "GET" && url.pathname === "/api/score/report") {
     const out = await score.report(url.searchParams.get("id") || "", url.searchParams.get("format") || "md");
     if (out.error) {

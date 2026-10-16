@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-012
+revision: 1
+title: "Image pinned to a tag or digest"
+category: security
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-image-tag
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Image pinned to a tag or digest (app readiness checklist)."
+remediation: { summary: "Use an immutable tag or @sha256 digest.", effort: S }
+verification: "Image pinned to a tag or digest."

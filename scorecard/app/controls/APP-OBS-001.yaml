@@ -1,0 +1,15 @@
+kind: Control
+id: APP-OBS-001
+revision: 1
+title: "Metrics are scraped"
+category: observability
+target: app
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: app-metrics
+aggregation: all-or-nothing
+requires: ["app", "app-ctx", "app-monitors"]
+whyItMatters: "Metrics are scraped (app readiness checklist)."
+remediation: { summary: "Add a ServiceMonitor or PodMonitor (or install Beyla from OBSERVE).", effort: S }
+verification: "Metrics are scraped."

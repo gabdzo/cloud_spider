@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-008
+revision: 1
+title: "No secret-looking literals in env or ConfigMaps"
+category: security
+target: app
+evidenceType: config
+severity: { default: critical }
+confidence: high
+evaluator: app-secret-literals
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "No secret-looking literals in env or ConfigMaps (app readiness checklist)."
+remediation: { summary: "Move the value into a Secret (names checked only, values never read).", effort: S }
+verification: "No secret-looking literals in env or ConfigMaps."

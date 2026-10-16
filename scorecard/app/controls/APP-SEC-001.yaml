@@ -1,0 +1,15 @@
+kind: Control
+id: APP-SEC-001
+revision: 1
+title: "No privileged or host access"
+category: security
+target: app
+evidenceType: config
+severity: { default: critical }
+confidence: high
+evaluator: app-privileged
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "No privileged or host access (app readiness checklist)."
+remediation: { summary: "Drop privileged, hostNetwork/PID/IPC and hostPath.", effort: M }
+verification: "No privileged or host access."

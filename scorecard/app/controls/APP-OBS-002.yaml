@@ -1,0 +1,15 @@
+kind: Control
+id: APP-OBS-002
+revision: 1
+title: "A named metrics port"
+category: observability
+target: app
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: app-metrics-port
+aggregation: all-or-nothing
+requires: ["app", "app-ctx"]
+whyItMatters: "A named metrics port (app readiness checklist)."
+remediation: { summary: "Name the port 'metrics' (or http-metrics).", effort: S }
+verification: "A named metrics port."

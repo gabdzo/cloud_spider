@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-008
+revision: 1
+title: "Memory limit set"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: app-memory-limit
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Memory limit set (app readiness checklist)."
+remediation: { summary: "Set resources.limits.memory.", effort: S }
+verification: "Memory limit set."

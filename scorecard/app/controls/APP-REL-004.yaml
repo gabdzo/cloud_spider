@@ -1,0 +1,15 @@
+kind: Control
+id: APP-REL-004
+revision: 1
+title: "Serving containers have a readinessProbe"
+category: reliability
+target: app
+evidenceType: config
+severity: { default: high }
+confidence: high
+evaluator: app-readiness
+aggregation: proportional
+requires: ["app", "app-ctx"]
+whyItMatters: "Serving containers have a readinessProbe (app readiness checklist)."
+remediation: { summary: "Add a readinessProbe on the serving port.", effort: S }
+verification: "Serving containers have a readinessProbe."

@@ -29,6 +29,9 @@ import { diffScans } from "./history.js";
 import { runScan } from "./scan.js";
 import { permissionReport } from "./permissions.js";
 import { renderReport } from "./report.js";
+import { collectApps } from "./app/collect.js";
+import { loadAppCatalog, scoreApps } from "./app/score.js";
+import { sampleClusterSnapshot } from "../kube-sample.js";
 
 export const KUBE_COLLECTORS = [kubeWorkloads, kubeMetrics, kubePolicy, kubeNodes, kubeRbac, kubeNetwork, kubeProtect, kubeAws, kubeObs];
 export const AWS_COLLECTORS = [awsNetwork, awsElbv2, awsEks, awsRds, awsCloudtrail, awsObservability, awsRoute53, awsCloudfront, awsLbEdge, awsVpcNet, awsAcm, awsPeering];
@@ -111,7 +114,29 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
   const addonTree = async () => (app?.addonsView ? (await app.addonsView().catch(() => null))?.tree || null : null);
   const controlOf = async (scanId, id) => (await history.get(scanId))?.results.find((r) => r.id === id) || null;
 
+  // APP score: per context, cached 60 s. Sample mode reads a fake kube
+  // built from the sample cluster, never a real one.
+  const appCache = new Map();
+  let appCatalog = null;
+  async function appsView({ context = "", sample = false } = {}) {
+    const key = sample ? "\u0000sample" : context;
+    const hit = appCache.get(key);
+    if (hit && clock().getTime() - hit.at < 60_000) return hit.view;
+    appCatalog ??= await loadAppCatalog();
+    let kube;
+    if (sample) kube = sampleKube();
+    else {
+      kube = scopedKube(kubeFor(context));
+      if (!kube) return { error: `no kube context ${context || "(default)"}`, hint: "CONNECT a cluster on its EKS card first." };
+    }
+    const collected = await collectApps(kube);
+    const view = { context: sample ? "sample" : kube.context || context, at: clock().toISOString(), ...scoreApps(collected, { controls: appCatalog.controls, profiles: appCatalog.profiles, environment: settings.environment || "" }) };
+    appCache.set(key, { at: clock().getTime(), view });
+    return view;
+  }
+
   return {
+    apps: appsView,
     async view({ context = "", target = "kubernetes" } = {}) {
       if (target === "aws") {
         const latest = await history.latest("aws", "account");
@@ -161,4 +186,10 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
       return fixes.state();
     },
   };
+}
+
+// A read-only kube over the sample cluster: lists it has, 404 for the rest.
+export function sampleKube() {
+  const snap = sampleClusterSnapshot();
+  return { context: "sample", scope: "*", noAccess: () => ({}), async read(name) { return Array.isArray(snap[name]) ? { json: { items: snap[name] } } : { missing: true }; } };
 }
