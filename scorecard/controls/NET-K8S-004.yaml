@@ -1,0 +1,15 @@
+kind: Control
+id: NET-K8S-004
+revision: 1
+title: "Ingresses serve TLS"
+category: networking
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: medium
+evaluator: ingress-tls
+aggregation: proportional
+requires: [kube-ingresses]
+whyItMatters: "Plain HTTP exposes sessions and credentials to anyone on the path."
+remediation: { summary: "Add spec.tls (with cert-manager) or, on an ALB, an ACM certificate via alb.ingress.kubernetes.io/certificate-arn with an HTTPS redirect.", effort: M }
+verification: "Every Ingress has spec.tls or an ALB certificate-arn annotation."

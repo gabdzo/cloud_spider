@@ -105,6 +105,7 @@ export function scoreCard(results, profile) {
   card.verdictLabel = VERDICT_LABEL[card.verdict];
   card.confidence = confidenceOf(card, results, profile);
   card.points = pointsOf(results, qualifying);
+  card.namespaces = namespaceScores(results);
   card.priorities = priorities(results).map((p) => ({ ...p, points: card.points[p.id] ?? null }));
   return card;
 }
@@ -132,6 +133,34 @@ export function pointsOf(results, qualifying) {
     out[r.id] = round1(((c.weight / total) * 100 * weightOf(r) * (1 - (r.p ?? 0))) / c.assessedWeight);
   }
   return out;
+}
+
+// A score per namespace (score plan #6): every assessed control that has
+// resources named "namespace/name", weighted by severity, credited by the
+// share of that namespace's resources that pass. Cluster-level controls
+// (nodes, CoreDNS) have no namespace and do not count here.
+export function namespaceScores(results) {
+  const per = new Map();
+  for (const r of results) {
+    if (!assessed(r) || !weightOf(r)) continue;
+    const groups = new Map();
+    for (const item of r.resources || []) {
+      const ns = /^([a-z0-9-]+)\/[^/\s]+$/.exec(String(item.id || ""))?.[1];
+      if (!ns) continue;
+      const g = groups.get(ns) || { n: 0, pass: 0 };
+      g.n++;
+      if (item.pass) g.pass++;
+      groups.set(ns, g);
+    }
+    for (const [ns, g] of groups) {
+      const t = per.get(ns) || { namespace: ns, weight: 0, earned: 0, failing: [] };
+      t.weight += weightOf(r);
+      t.earned += (weightOf(r) * g.pass) / g.n;
+      if (g.pass < g.n) t.failing.push(r.id);
+      per.set(ns, t);
+    }
+  }
+  return [...per.values()].map((t) => ({ namespace: t.namespace, score: round1((100 * t.earned) / t.weight), failing: t.failing })).sort((a, b) => a.score - b.score || a.namespace.localeCompare(b.namespace));
 }
 
 const CONFIDENCE_FACTOR = { high: 1, medium: 0.7, low: 0.4 };

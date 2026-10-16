@@ -21,6 +21,10 @@ const range = (a, b) => (a === b ? `${a}` : `${a}-${b}`);
 const pct = (x) => `${(x * 100).toFixed(1)}%`;
 
 export const networkEvaluators = {
+  // Plain-HTTP Ingresses (score plan #7): spec.tls or an ALB ACM certificate.
+  "ingress-tls"({ data }) {
+    return { items: (data["kube-ingresses"]?.items || []).map((i) => ({ id: `${i.namespace}/${i.name}`, pass: i.tls, detail: i.tls ? `TLS via ${i.tlsFrom}` : "serves plain HTTP: no spec.tls and no ACM certificate annotation" })) };
+  },
   // NET-DNS-003: ≥2 ready CoreDNS replicas on ≥2 nodes, and a PDB.
   "coredns-resilient"({ data }) {
     const pods = data["kube-coredns"].pods || [];

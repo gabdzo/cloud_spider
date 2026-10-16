@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-REL-011
+revision: 1
+title: "App deployments run 2+ replicas (or scale with an HPA)"
+category: sre
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: multi-replica
+aggregation: proportional
+requires: [kube-deployments, kube-hpas]
+whyItMatters: "One replica means a node drain, a spot reclaim or a crash is an outage, and a PodDisruptionBudget cannot help."
+remediation: { summary: "Set replicas: 2 or more (spread across zones), or add a HorizontalPodAutoscaler with minReplicas 2.", effort: S }
+verification: "Every app Deployment with replicas > 0 has 2+ replicas or an HPA targeting it."

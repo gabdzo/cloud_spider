@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-SEC-011
+revision: 1
+title: "App workloads run as non-root"
+category: security
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: run-as-non-root
+aggregation: proportional
+requires: [kube-deployments, kube-statefulsets]
+whyItMatters: "A container escape from a root process starts with more privileges on the node."
+remediation: { summary: "Set securityContext.runAsNonRoot: true on the pod (and a non-zero runAsUser if the image has no USER).", effort: S }
+verification: "Every app Deployment and StatefulSet sets runAsNonRoot on the pod or on every container."

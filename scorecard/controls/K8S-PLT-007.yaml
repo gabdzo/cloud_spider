@@ -1,11 +1,11 @@
 kind: Control
 id: K8S-PLT-007
-revision: 1
+revision: 2
 title: "Event-driven autoscaling (KEDA) runs"
 category: platform
 target: kubernetes
 evidenceType: config
-severity: { default: low }
+severity: { default: info }
 confidence: high
 evaluator: workload-present
 aggregation: all-or-nothing

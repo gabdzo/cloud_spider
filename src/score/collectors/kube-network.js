@@ -28,7 +28,7 @@ const READS = [
     return { enforcer: cniEnforcer(items), daemonsets: items.map(name) };
   }],
   ["services", "kube-services", (res) => ({ items: (res.json.items || []).map((s) => ({ namespace: ns(s), name: name(s), type: s?.spec?.type || "ClusterIP", selector: Object.keys(s?.spec?.selector || {}).length > 0 })) })],
-  ["ingresses", "kube-ingresses", (res) => ({ items: (res.json.items || []).map((i) => ({ namespace: ns(i), name: name(i), services: backendsOf(i) })) })],
+  ["ingresses", "kube-ingresses", (res) => ({ items: (res.json.items || []).map((i) => ({ namespace: ns(i), name: name(i), services: backendsOf(i), tls: (i?.spec?.tls || []).length > 0 || Boolean(i?.metadata?.annotations?.["alb.ingress.kubernetes.io/certificate-arn"]), tlsFrom: (i?.spec?.tls || []).length ? "spec.tls" : i?.metadata?.annotations?.["alb.ingress.kubernetes.io/certificate-arn"] ? "acm" : "" })) })],
   ["endpointSlicesAll", "kube-endpointslices", (res) => ({
     items: (res.json.items || []).map((s) => ({
       namespace: ns(s),

@@ -64,6 +64,7 @@ export function scoreModel(view) {
     delta: view.diff?.delta == null ? null : { text: `${view.diff.delta > 0 ? "+" : ""}${view.diff.delta} since the last scan`, up: view.diff.delta > 0 },
     spark: (view.trend || []).map((t) => (t.overall == null ? 0 : Math.round(t.overall))),
     categories,
+    namespaces: (card.namespaces || []).map((n) => ({ name: n.namespace, score: Math.round(n.score), text: scoreText(n.score), tone: toneOf(n.score), failing: n.failing })),
     counts,
     next,
     rows,
@@ -314,6 +315,18 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
       fill.style.width = `${c.score ?? 0}%`;
       bar.append(fill);
       tile.append(el("span", "sc-label", c.name), el("b", "", c.text), bar, el("span", "sc-muted sc-small", `coverage ${c.coverage}% · weight ${c.weight}`));
+      wrap.append(tile);
+    }
+    // By namespace (score plan #6): the same tiles, one per namespace.
+    for (const n of model.namespaces || []) {
+      const tile = el("div", "sc-cat sc-ns");
+      tile.dataset.tone = n.tone;
+      const bar = el("div", "sc-catbar");
+      const fill = el("i");
+      fill.style.width = `${n.score}%`;
+      bar.append(fill);
+      tile.title = n.failing.length ? `failing here: ${n.failing.join(", ")}` : "nothing failing in this namespace";
+      tile.append(el("span", "sc-label", `ns ${n.name}`), el("b", "", n.text), bar, el("span", "sc-muted sc-small", n.failing.length ? `${n.failing.length} failing` : "all pass"));
       wrap.append(tile);
     }
     return wrap;
