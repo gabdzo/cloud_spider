@@ -57,7 +57,8 @@ export function findIssues(snap, { now = Date.now(), prev = null } = {}) {
     const containers = [...(status.initContainerStatuses || []), ...(status.containerStatuses || [])];
     const restarts = restartsOf(pod);
     const waiting = containers.map((c) => c.state?.waiting?.reason).filter(Boolean);
-    const oom = containers.find((c) => c.lastState?.terminated?.reason === "OOMKilled" || c.state?.terminated?.reason === "OOMKilled");
+    // An OOM restart is news while recent (15 min); a pod Ready since is fine.
+    const oom = containers.find((c) => c.state?.terminated?.reason === "OOMKilled" || (c.lastState?.terminated?.reason === "OOMKilled" && now - (Date.parse(c.lastState.terminated.finishedAt || "") || now) < 15 * 60_000));
     const before = prev?.[`${ns}/${name}`];
     const flagged = out.length;
     if (waiting.includes("CrashLoopBackOff")) add("crashloop", ns, name, `${restarts} restart${restarts === 1 ? "" : "s"}`, { restarts });

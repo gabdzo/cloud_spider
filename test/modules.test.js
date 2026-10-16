@@ -13,7 +13,8 @@ test("profiles resolve, and the full profile leaves observe off", () => {
   assert.equal(full.has("observe"), false);
   const k8s = resolveModules({ modules: { profile: "k8s-only" } });
   assert.deepEqual(k8s.enabled, PROFILES["k8s-only"]);
-  for (const id of ["aws", "map", "cost", "radio"]) assert.equal(k8s.has(id), false, id);
+  for (const id of ["aws", "map", "cost"]) assert.equal(k8s.has(id), false, id);
+  assert.equal(k8s.has("radio"), true, "RADIO carries pod findings in k8s-only");
   assert.equal(k8s.has("network"), true, "FROM INSIDE works without AWS");
   const aws = resolveModules({ modules: { profile: "aws-only" } });
   assert.equal(aws.has("kubernetes"), false);

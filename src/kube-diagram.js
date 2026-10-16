@@ -55,13 +55,31 @@ export function nodeLoad(usage, allocatable) {
   return { text: `CPU ${cp}% MEM ${mp}%`, hot: cp >= 85 || mp >= 85, cpu: c, mem: m, cpuOf: ca, memOf: ma, cpuPct: cp, memPct: mp };
 }
 
-export function podState(pod) {
+// A restart counts as news for this long; older ones are a neutral note.
+export const RECENT_RESTART_MS = 15 * 60_000;
+const agoText = (ms) => (ms < 3600_000 ? `${Math.max(1, Math.round(ms / 60_000))}m` : ms < 172800_000 ? `${Math.round(ms / 3600_000)}h` : `${Math.round(ms / 86400_000)}d`);
+
+/** The newest container restart: when, whether it is recent, and a note ("5 restarts, last 2h ago"). */
+export function restartInfo(pod, now = Date.now()) {
+  const containers = pod?.status?.containerStatuses || [];
+  const restarts = containers.reduce((sum, c) => sum + (c.restartCount || 0), 0);
+  const last = Math.max(0, ...containers.map((c) => Date.parse(c.lastState?.terminated?.finishedAt || "") || 0));
+  // true: within 15 min; false: older; null: a restart with no known time.
+  const recent = !restarts ? false : last ? now - last < RECENT_RESTART_MS : null;
+  const lastOom = containers.some((c) => c.lastState?.terminated?.reason === "OOMKilled");
+  const note = restarts ? `${restarts} restart${restarts === 1 ? "" : "s"}${last ? `, last ${agoText(now - last)} ago` : ""}` : "";
+  return { restarts, last, recent, lastOom, note };
+}
+
+export function podState(pod, now = Date.now()) {
   const status = pod?.status || {};
   const containers = status.containerStatuses || [];
   const waiting = containers.map((c) => c.state?.waiting?.reason).find(Boolean);
   const terminated = containers.map((c) => c.state?.terminated?.reason).find((r) => r && r !== "Completed");
   const restarts = containers.reduce((sum, c) => sum + (c.restartCount || 0), 0);
-  const ready = containers.length > 0 && containers.every((c) => c.ready);
+  // Running means phase Running and the Ready condition True (containers as a fallback).
+  const cond = (status.conditions || []).find((c) => c.type === "Ready");
+  const ready = cond ? cond.status === "True" : containers.length > 0 && containers.every((c) => c.ready);
   let health = "ok";
   let word = status.phase || "Unknown";
   if (waiting && /CrashLoopBackOff|ImagePullBackOff|ErrImagePull|CreateContainerConfigError|Error/.test(waiting)) {
@@ -79,9 +97,12 @@ export function podState(pod) {
     health = (pod?.spec?.containers || []).some((c) => c.readinessProbe) ? "broken" : "hang";
     word = "NotReady";
   } else if (status.phase === "Succeeded") health = "unknown";
-  // Out of memory is a failure even once the container is back up.
-  if (health === "ok" && containers.some((c) => c.lastState?.terminated?.reason === "OOMKilled")) health = "broken";
-  return { health, word, restarts, ready };
+  // Out of memory is a failure even once the container is back up, while
+  // it is recent; an old restart (Ready since) is only a note.
+  const info = restartInfo(pod, now);
+  if (health === "ok" && info.recent === true) health = info.lastOom ? "broken" : "hang";
+  else if (health === "ok" && info.recent === null && info.lastOom) health = "broken";
+  return { health, word, restarts, ready, recent: info.recent, restartNote: info.note };
 }
 
 function workloadState(kind, item) {
@@ -169,7 +190,7 @@ const RESTART_ISSUE = 3;
 // card's status (podState) is unchanged; this is what ISSUES shows on it.
 export function podIssue(pod, state = podState(pod), refs) {
   const containers = pod?.status?.containerStatuses || [];
-  const oom = containers.find((c) => c.state?.terminated?.reason === "OOMKilled" || c.lastState?.terminated?.reason === "OOMKilled");
+  const oom = containers.find((c) => c.state?.terminated?.reason === "OOMKilled" || (state.recent !== false && c.lastState?.terminated?.reason === "OOMKilled"));
   const restarts = state.restarts ? `${state.restarts} restart${state.restarts === 1 ? "" : "s"}` : "";
   const pending = (refs?.pvcs || []).find((c) => c.phase && c.phase !== "Bound");
   if (pending) return `PVC ${pending.name} ${pending.phase}`;
@@ -181,7 +202,7 @@ export function podIssue(pod, state = podState(pod), refs) {
   }
   if (state.health === "unknown") return "";
   if (oom) return ["OOMKilled", restarts].filter(Boolean).join(" · ");
-  if (state.restarts >= RESTART_ISSUE) return restarts;
+  if (state.restarts >= RESTART_ISSUE && state.recent !== false) return restarts;
   return "";
 }
 
@@ -341,8 +362,9 @@ export function diagramFromKube(snapshot, { cluster = {} } = {}) {
       kind: "pod",
       ns: meta(pod).namespace,
       label: meta(pod).name,
-      caption: [state.word, state.restarts ? `${state.restarts} restart${state.restarts === 1 ? "" : "s"}` : "", usage].filter(Boolean).join(" · "),
+      caption: [state.word, state.restartNote || "", usage].filter(Boolean).join(" · "),
       status: state.health,
+      running: state.word === "Running" && state.ready,
       pod: { ns: meta(pod).namespace, name: meta(pod).name, containers: (pod.spec?.containers || []).map((c) => c.name), node: pod.spec?.nodeName || "" },
       labels: meta(pod).labels || {},
     });
