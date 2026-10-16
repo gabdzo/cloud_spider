@@ -250,9 +250,19 @@ const kfNs = document.querySelector("#kf-ns");
 const kfNsPop = document.querySelector("#kf-ns-pop");
 const kubeHealthy = document.querySelector("#kube-healthy");
 const kubeIssues = document.querySelector("#kube-issues");
+const kfNsClear = document.createElement("button");
+kfNsClear.type = "button";
+kfNsClear.id = "kf-ns-clear";
+kfNsClear.textContent = "✕";
+kfNsClear.title = "show all namespaces";
+kfNsClear.hidden = true;
+kfNs.after(kfNsClear);
+kfNsClear.addEventListener("click", () => setTopologyFocus({ namespaces: [] }));
 let topologyFocus = cleanFocus(null);
 try {
-  topologyFocus = cleanFocus(window.localStorage.getItem(TOPOLOGY_FOCUS_KEY));
+  // A namespace focus is per visit, never restored: a stored one used to
+  // leave CLUSTER > Topology stuck on a single namespace.
+  topologyFocus = cleanFocus({ ...cleanFocus(window.localStorage.getItem(TOPOLOGY_FOCUS_KEY)), namespaces: [] });
 } catch {
   // default
 }
@@ -260,7 +270,7 @@ for (const sc of SCOPES) kfScope.append(new Option(`Scope: ${sc.label}`, sc.id))
 function setTopologyFocus(patch) {
   topologyFocus = cleanFocus({ ...topologyFocus, ...patch });
   try {
-    window.localStorage.setItem(TOPOLOGY_FOCUS_KEY, JSON.stringify(topologyFocus));
+    window.localStorage.setItem(TOPOLOGY_FOCUS_KEY, JSON.stringify({ ...topologyFocus, namespaces: [] }));
   } catch {
     // not kept
   }
@@ -464,6 +474,7 @@ function syncFocusBar() {
   if (kfScope.value !== topologyFocus.scope) kfScope.value = topologyFocus.scope;
   const picked = topologyFocus.namespaces.length;
   kfNs.textContent = picked === 1 ? `NS: ${topologyFocus.namespaces[0]}` : picked ? `NS: ${picked}` : "NS: ALL";
+  kfNsClear.hidden = !picked;
   const healthy = issuesOn && n === 0;
   const key = healthy ? `${view?.healthyLanes}|${view?.hiddenHealthy}|${topologyFocus.scope}|${picked}` : "";
   if (key !== healthyKey) {
@@ -1278,11 +1289,6 @@ function openInCluster(hit) {
   // everything in it (ALL), with that card focused.
   if ((hit.type === "app" || hit.type === "pod" || hit.type === "entry") && hit.ns && /^[a-z0-9-]+$/.test(hit.ns)) {
     topologyFocus = cleanFocus({ ...topologyFocus, namespaces: [hit.ns], view: "all" });
-    try {
-      window.localStorage.setItem(TOPOLOGY_FOCUS_KEY, JSON.stringify(topologyFocus));
-    } catch {
-      // not kept
-    }
   }
   mapKube.focus = hit.type === "compound" ? null : { id: hit.id, type: hit.type, ns: hit.ns, app: hit.app || null };
   mapKube.hover = null;
@@ -3390,7 +3396,8 @@ async function pullPath() {
       pathProbe = null;
       pathProbeKey = "";
     } else if (!wasSample && !body.error && body.diagram) probePath(asked);
-    setStatus(ui, body.error ? "" : pathStatus(body));
+    setStatus(ui, body.error || body.empty ? "" : pathStatus(body));
+    showSniffExamples(body.empty ? body.examples || [] : null);
     errorEl.hidden = !body.error;
     errorEl.textContent = body.error || "";
     renderChrome();
@@ -3409,6 +3416,38 @@ async function pullPath() {
       pullPath();
     }
   }
+}
+
+// SNIFF with nothing typed (k8s-only): a friendly prompt with live examples.
+let sniffEmptyEl = null;
+function showSniffExamples(examples) {
+  if (!examples) {
+    if (sniffEmptyEl) sniffEmptyEl.hidden = true;
+    return;
+  }
+  if (!sniffEmptyEl) {
+    sniffEmptyEl = document.createElement("div");
+    sniffEmptyEl.id = "sniff-empty";
+    sniffEmptyEl.style.cssText = "position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:5;max-width:560px;padding:16px 20px;border:2px solid var(--ink, currentColor);background:var(--panel, rgba(0,0,0,.85));color:var(--ink, inherit);font:inherit;text-align:left";
+    errorEl.parentElement.append(sniffEmptyEl);
+  }
+  const head = document.createElement("div");
+  head.textContent = "SNIFF a path: type ns/service, a service DNS name, ns/pod or an Ingress host. Try one:";
+  head.style.marginBottom = "10px";
+  const buttons = examples.map(({ label, target }) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sniff-example";
+    button.textContent = `${label}: ${target}`;
+    button.style.cssText = "display:block;margin:4px 0;cursor:pointer;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+    button.addEventListener("click", () => {
+      hostInput.value = target;
+      hostInput.dispatchEvent(new Event("change"));
+    });
+    return button;
+  });
+  sniffEmptyEl.replaceChildren(head, ...buttons);
+  sniffEmptyEl.hidden = mode !== "path";
 }
 
 // A view read that failed on the server (a 500 with a status line, or not
@@ -3485,7 +3524,7 @@ function enterPath() {
 function leavePath() {
   setViewHash("");
   showRadioFor("map");
-  mode = "map";
+  mode = "map"; showSniffExamples(null);
   pathData = null;
   pathSelected = null;
   lbSelect.hidden = true;
@@ -3547,7 +3586,7 @@ function enterCluster() {
   // Sample stays on across views (from a map compound as from the tab).
   mapKube.keepSample = false;
   showRadioFor("cluster");
-  mode = "cluster";
+  mode = "cluster"; showSniffExamples(null);
   clusterData = (!sample && clusterContext && readingView(clusterContext)) || null;
   if (clusterData) renderContexts(clusterData);
   clusterSelected = null;
@@ -3569,7 +3608,7 @@ function leaveCluster() {
   if (kubeConnectEl) hideConnectStrip();
   contextsShown = "";
   showRadioFor("map");
-  mode = "map";
+  mode = "map"; showSniffExamples(null);
   clusterData = null;
   clusterSelected = null;
   showPod(null);
@@ -6464,7 +6503,9 @@ tabVaults.addEventListener("click", () => {
 
 clusterButton.addEventListener("click", () => {
   markHistory();
+  if (topologyFocus.namespaces.length) topologyFocus = cleanFocus({ ...topologyFocus, namespaces: [] });
   if (mode !== "cluster") enterCluster();
+  else syncFocusBar(), renderChrome(), draw();
 });
 
 home.addEventListener("click", goOverview);

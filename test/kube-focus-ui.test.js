@@ -9,7 +9,9 @@ test("TOPOLOGY focus bar: in the prompt bar, served, both themes, kept per brows
   assert.match(server, /<section id="kube-healthy"/);
   assert.match(server, /:root\[data-theme="pro"\] #kube-focus/);
   const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
-  assert.match(browser, /window\.localStorage\.setItem\(TOPOLOGY_FOCUS_KEY, JSON\.stringify\(topologyFocus\)\)/);
+  // Kept per browser, except the namespace focus (per visit, never restored).
+  assert.match(browser, /window\.localStorage\.setItem\(TOPOLOGY_FOCUS_KEY, JSON\.stringify\(\{ \.\.\.topologyFocus, namespaces: \[\] \}\)\)/);
+  assert.match(browser, /kfNsClear/);
   assert.match(browser, /groupedDiagram\(focusedView\(\)\.diagram\)/);
   assert.match(browser, /SHOW FULL VIEW/);
   assert.match(browser, /INVESTIGATE/);

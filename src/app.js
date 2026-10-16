@@ -38,6 +38,7 @@ import { buildTable, describe, findObject, viewFor, yamlOf } from "./kube-table.
 import { sampleClusterSnapshot } from "./kube-sample.js";
 import { sampleVaultSnapshot } from "./vault-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
+import { pickSniffExamples } from "./sniff-examples.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, nodeGroupChange, runHint, watchLine } from "./upgrade-rules.js";
 import { CONNECT_REGION, connectCommand, connectionOf, contextsForCluster, sameEndpoint, validCluster, viewerAlias } from "./kube-connect.js";
@@ -1945,10 +1946,17 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     return ingress ? kubeResult(base, client, withIngress(diagram, ingress), `Ingress ${ingress.ns}/${ingress.ingress} (class ${ingress.cls || "default"}); `) : kubeResult(base, client, diagram);
   }
 
+  async function sniffExamples(client) {
+    const list = async (kind) => (await client.read(kind).catch(() => null))?.json?.items || [];
+    const [ings, svcs, pods] = await Promise.all([list("ingresses"), list("services"), list("pods")]);
+    return pickSniffExamples(ings, svcs, pods);
+  }
+
   async function ingressPathView(host, asked = "") {
     const base = { region, loadBalancers: [], selected: "", host, hostNote: "", findings: [], notes: [], kube: true, error: "", diagram: null, headline: "" };
-    if (!host.trim()) return { ...base, error: "type ns/service, a service DNS name (svc.ns.svc.cluster.local), ns/pod, or a host served by an Ingress" };
     const { client, error: noClient } = pathClient(asked);
+    // Nothing typed yet: a friendly empty state with live examples, no error.
+    if (!host.trim()) return { ...base, empty: true, examples: noClient ? [] : await sniffExamples(client) };
     if (noClient) return { ...base, error: noClient };
     const got = await client.read("ingresses").catch((failure) => ({ error: failure?.message || String(failure) }));
     if (!got?.json) return { ...base, error: got?.forbidden ? "Ingresses are forbidden for this kube context, so a host can't be traced; type ns/service instead" : `Ingresses could not be read (${got?.error || "no answer"}); type ns/service instead` };
