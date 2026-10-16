@@ -20,7 +20,7 @@ test("NET-* ids are valid control ids, and the kube NET controls load and name e
   const { controls, errors } = await loadCatalog();
   assert.deepEqual(errors, []);
   const net = controls.filter((c) => c.id.startsWith("NET-") && c.target === "kubernetes").map((c) => c.id).sort();
-  assert.deepEqual(net, ["NET-DNS-003", "NET-DNS-004", "NET-K8S-001", "NET-K8S-002", "NET-K8S-003"]);
+  assert.deepEqual(net, ["NET-DNS-003", "NET-DNS-004", "NET-K8S-001", "NET-K8S-002", "NET-K8S-003", "NET-K8S-004"]);
   for (const c of controls.filter((x) => x.id.startsWith("NET-") && x.evaluator)) assert.equal(typeof E[c.evaluator], "function", c.id);
 });
 
@@ -40,7 +40,7 @@ test("collector: CoreDNS pods with their nodes, metrics, kube-system CNI, servic
   assert.equal(got.get("kube-coredns-metrics").fields.total, 1000);
   assert.equal(got.get("kube-cni").fields.enforcer, "VPC CNI network policy agent");
   assert.deepEqual(got.get("kube-services").fields.items, [{ namespace: "shop", name: "web", type: "ClusterIP", selector: false }, { namespace: "shop", name: "lb", type: "LoadBalancer", selector: false }]);
-  assert.deepEqual(got.get("kube-ingresses").fields.items, [{ namespace: "shop", name: "web", services: ["web", "fallback"] }]);
+  assert.deepEqual(got.get("kube-ingresses").fields.items, [{ namespace: "shop", name: "web", services: ["web", "fallback"], tls: false, tlsFrom: "" }]);
   assert.deepEqual(got.get("kube-endpointslices").fields.items, [{ namespace: "shop", service: "web", endpoints: [{ zone: "a", ready: true }, { zone: "b", ready: false }] }]);
   assert.ok(kube.calls.every((name) => kubeNetwork.reads.includes(`GET ${name}`)), kube.calls.join());
 });

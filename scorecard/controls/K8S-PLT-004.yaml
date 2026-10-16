@@ -1,6 +1,6 @@
 kind: Control
 id: K8S-PLT-004
-revision: 1
+revision: 2
 title: "cert-manager runs"
 category: platform
 target: kubernetes
@@ -9,8 +9,9 @@ severity: { default: low }
 confidence: high
 evaluator: workload-present
 aggregation: all-or-nothing
-requires: [kube-cluster, kube-deployments, kube-daemonsets]
+requires: [kube-cluster, kube-deployments, kube-daemonsets, kube-ingresses]
 params:
+  skipIfAllAcm: true
   deployments: [cert-manager]
 whyItMatters: "Certificates handled by hand expire; cert-manager renews them as Kubernetes objects."
 remediation: { summary: "Install cert-manager from the Stacks add-ons.", effort: S, addon: cert-manager }

@@ -1,8 +1,8 @@
 kind: Control
 id: K8S-REL-003
-revision: 1
+revision: 2
 title: "Replicated deployments have a PodDisruptionBudget"
-category: reliability
+category: sre
 target: kubernetes
 evidenceType: config
 severity: { default: medium }

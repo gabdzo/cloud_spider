@@ -1,0 +1,15 @@
+kind: Control
+id: K8S-REL-012
+revision: 1
+title: "App deployments have liveness probes"
+category: reliability
+target: kubernetes
+evidenceType: config
+severity: { default: low }
+confidence: high
+evaluator: liveness-probes
+aggregation: proportional
+requires: [kube-deployments]
+whyItMatters: "A hung process that still holds its port is never restarted without a liveness probe."
+remediation: { summary: "Add a livenessProbe (a cheap health endpoint, generous thresholds) to every long-running container.", effort: S }
+verification: "Every container of every app Deployment has a livenessProbe."

@@ -15,6 +15,10 @@ const PENDING_LIMIT_MS = 10 * 60_000;
 export const kubeEvaluators = {
   // A platform component runs: any listed deployment or daemonset, ready.
   "workload-present"({ data, params }) {
+    // Only where it is needed (score plan #8): when every Ingress already
+    // gets TLS from an ACM certificate on the ALB, cert-manager adds nothing.
+    const ings = data["kube-ingresses"]?.items || [];
+    if (params.skipIfAllAcm && ings.length && ings.every((i) => i.tlsFrom === "acm")) return { notApplicable: "every Ingress has an ACM certificate on its load balancer (cert-manager is not needed)" };
     const cluster = data["kube-cluster"].clusterName || "cluster";
     const wanted = [
       ...(params.deployments || []).map((name) => ({ kind: "deployment", name, list: data["kube-deployments"]?.items || [] })),
@@ -40,6 +44,27 @@ export const kubeEvaluators = {
   },
   "readiness-probes"({ data }) {
     return { items: data["kube-deployments"].items.filter(isApp).map((w) => ({ id: ref(w), pass: w.containers.every((c) => c.readinessProbe), detail: w.containers.filter((c) => !c.readinessProbe).map((c) => c.name).join(", ") })) };
+  },
+  // 2026-10-16 (score plan #7): replicas, liveness, non-root, spot-only.
+  "multi-replica"({ data }) {
+    const hpa = new Set((data["kube-hpas"]?.items || []).map((h) => `${h.namespace}/${h.target}`));
+    const list = data["kube-deployments"].items.filter(isApp).filter((w) => w.replicas !== 0);
+    return { items: list.map((w) => ({ id: ref(w), pass: (w.replicas ?? 1) >= 2 || hpa.has(ref(w)), detail: `${w.replicas ?? 1} replica: a node drain or crash is an outage` })) };
+  },
+  "liveness-probes"({ data }) {
+    return { items: data["kube-deployments"].items.filter(isApp).map((w) => ({ id: ref(w), pass: w.containers.every((c) => c.livenessProbe), detail: `no livenessProbe: ${w.containers.filter((c) => !c.livenessProbe).map((c) => c.name).join(", ")}` })) };
+  },
+  "run-as-non-root"({ data }) {
+    const list = [...data["kube-deployments"].items, ...(data["kube-statefulsets"]?.items || [])].filter(isApp);
+    return { items: list.map((w) => ({ id: ref(w), pass: w.podRunAsNonRoot || w.containers.every((c) => c.runAsNonRoot), detail: `runAsNonRoot not set: ${w.containers.filter((c) => !c.runAsNonRoot).map((c) => c.name).join(", ")}` })) };
+  },
+  "not-spot-only"({ data }) {
+    const nodes = data["kube-nodes"].items.filter((n) => n.ready);
+    if (!nodes.length) return { items: [] };
+    const spot = nodes.filter((n) => /^spot$/i.test(n.capacityType));
+    const cluster = data["kube-cluster"]?.clusterName || "cluster";
+    if (!spot.length && nodes.some((n) => !n.capacityType)) return { items: [], unknown: [{ id: cluster, reason: "nodes carry no capacity-type label" }] };
+    return { items: [{ id: cluster, pass: spot.length < nodes.length, detail: spot.length < nodes.length ? `${nodes.length - spot.length} of ${nodes.length} nodes on-demand` : `all ${nodes.length} ready nodes are spot: one reclaim wave can take every node at once` }] };
   },
   // Runtime: every pod in every namespace is not stuck right now.
   "pods-healthy"({ data, now = Date.now() }) {

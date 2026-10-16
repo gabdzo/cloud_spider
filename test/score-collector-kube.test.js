@@ -27,7 +27,7 @@ test("403 on a list is denied and 404 on a core list is an error, never an empty
 test("container facts: privileged, requests and readiness probe are read", async () => {
   const world = { ...freshCluster(), deployments: [deployment("shop", "web", { containers: [{ name: "web", image: "web:2", securityContext: { privileged: true }, resources: { requests: { cpu: "100m" } }, readinessProbe: { httpGet: {} } }] })] };
   const web = byKey(await kubeWorkloads.collect({ kube: fakeKube(world) })).get("kube-deployments").fields.items[0];
-  assert.deepEqual(web.containers[0], { name: "web", image: "web:2", privileged: true, runAsNonRoot: false, requests: { cpu: "100m", memory: null }, readinessProbe: true });
+  assert.deepEqual(web.containers[0], { name: "web", image: "web:2", privileged: true, runAsNonRoot: false, requests: { cpu: "100m", memory: null }, readinessProbe: true, livenessProbe: false });
 });
 
 test("metrics API: absent on a fresh cluster, ok after metrics-server, denied stays denied", async () => {

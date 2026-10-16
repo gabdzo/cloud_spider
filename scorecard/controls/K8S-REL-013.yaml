@@ -1,0 +1,16 @@
+kind: Control
+id: K8S-REL-013
+revision: 1
+title: "Not every node is spot"
+platforms: [eks]
+category: reliability
+target: kubernetes
+evidenceType: config
+severity: { default: medium }
+confidence: high
+evaluator: not-spot-only
+aggregation: all-or-nothing
+requires: [kube-cluster, kube-nodes]
+whyItMatters: "Spot capacity is reclaimed with two minutes' notice, often for several nodes at once: a spot-only cluster can lose every node together."
+remediation: { summary: "Keep at least one on-demand node (a small on-demand node group, or a Karpenter NodePool allowing on-demand). Costs money: about $70/month per m6i.large.", effort: M }
+verification: "At least one ready node is not labelled spot (eks.amazonaws.com/capacityType or karpenter.sh/capacity-type)."

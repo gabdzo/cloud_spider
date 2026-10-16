@@ -29,6 +29,7 @@ export function containerFacts(c = {}) {
     runAsNonRoot: sc.runAsNonRoot === true,
     requests: { cpu: c.resources?.requests?.cpu || null, memory: c.resources?.requests?.memory || null },
     readinessProbe: Boolean(c.readinessProbe),
+    livenessProbe: Boolean(c.livenessProbe),
   };
 }
 
@@ -43,6 +44,7 @@ function workload(item) {
     ready: item?.status?.readyReplicas ?? item?.status?.numberReady ?? 0,
     desired: item?.status?.desiredNumberScheduled ?? item?.spec?.replicas ?? 1,
     hostNetwork: spec.hostNetwork === true,
+    podRunAsNonRoot: spec.securityContext?.runAsNonRoot === true,
     containers: (spec.containers || []).map(containerFacts),
   };
 }

@@ -7,7 +7,7 @@ minCategoryCoverage: 0.30
 minAssessedControls: 8
 minCategoryControls: 3
 runtimeRequired: false
-categoryWeights: { security: 40, finops: 30, governance: 15, networking: 10, observability: 5, reliability: 0 }
+categoryWeights: { security: 40, finops: 30, networking: 10, observability: 5, reliability: 0 }
 gates: [AWS-SEC-001, AWS-SEC-002]
 overrides:
   AWS-SEC-012: { severity: high }
