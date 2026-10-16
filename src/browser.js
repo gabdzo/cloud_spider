@@ -1008,18 +1008,18 @@ function renderMorning() {
       text.append(when);
     }
     // one short line on the card; the whole story is in its popup
-    text.append(shortLine(name, line, { logs: logNight }));
+    // The panel has room: the whole line, not the card's short one.
+    text.append(line.text || shortLine(name, line, { logs: logNight }));
     li.title = `${line.time ? `${hhmm24(line.time)} ` : ""}${line.text || ""} (click for details)`;
     li.dataset.focus = line.focus || "";
     li.setAttribute("aria-label", `${li.querySelector("b").textContent}: ${li.title}`);
   }
   morningWhen.textContent = sample ? "SAMPLE" : hhmm24(Date.now());
-  morningEl.classList.toggle("folded", morningFolded);
+  morningEl.classList.add("panel");
   // The MORNING key lights (alert dot) while any line is not ok.
   morningKey?.classList.toggle("alert", Boolean(morningEl.querySelector(".m-line.broken, .m-line.hang, .m-line.warn, .m-line.bad, .m-line.err")));
-  morningFold.setAttribute("aria-expanded", String(!morningFolded));
-  morningFold.innerHTML = morningFolded ? "&#9660;" : "&#9650;";
-  morningFold.title = morningFolded ? "open the morning report" : "fold the morning report";
+  morningFold.textContent = "✕";
+  morningFold.title = "close the morning report";
 }
 
 // ---- LOG ERRORS (log-errors-view.js): the fourth card and its panel ----
@@ -1096,15 +1096,8 @@ function openServices(link, at) {
   graphView.focusOn({ scenario: sample ? link.scenario : "", node: link.node || "", t: at ? hhmm24(at.time) : "", query: link.node ? link.node.split("/").pop() : "" });
 }
 
-morningFold.addEventListener("click", () => {
-  morningFolded = !morningFolded;
-  try {
-    window.localStorage.setItem(MORNING_FOLD_KEY, morningFolded ? "1" : "0");
-  } catch {
-    // Folding still works for this page.
-  }
-  renderMorning();
-});
+// MORNING is a toggle now, so the panel's corner button closes it.
+morningFold.addEventListener("click", () => morningKey?.click());
 
 (function paintSunrise() {
   const badge = document.querySelector("#sunrise");
@@ -3509,7 +3502,14 @@ async function restoreSampleMap() {
 
 // The radio panel remembers whether it is open per view; the path needs the
 // width more, so it starts closed there unless the window is wide.
+// RADIO is a toggle like MORNING: what you chose per view is remembered.
+const RADIO_KEY = "cs.radio.open";
 const radioOpen = { map: true, path: window.innerWidth >= 1700, cluster: window.innerWidth >= 1700 };
+const radioSaved = (() => { try { return JSON.parse(window.localStorage.getItem(RADIO_KEY) || "null"); } catch { return null; } })();
+if (radioSaved && typeof radioSaved === "object") for (const k of Object.keys(radioOpen)) if (typeof radioSaved[k] === "boolean") radioOpen[k] = radioSaved[k];
+function saveRadio() {
+  try { window.localStorage.setItem(RADIO_KEY, JSON.stringify(radioOpen)); } catch { /* this page only */ }
+}
 
 function showRadioFor(next) {
   radioOpen[mode] = !radioPanel.hidden;
@@ -6597,6 +6597,8 @@ pipEl.addEventListener("submit", (event) => event.preventDefault());
 
 tabRadio.addEventListener("click", () => {
   radioPanel.hidden = !radioPanel.hidden;
+  radioOpen[mode] = !radioPanel.hidden;
+  saveRadio();
   renderChrome();
   draw();
   if (!radioPanel.hidden) drawScope(scope, reducedMotion ? 0 : animTime, stations.length);
@@ -6788,10 +6790,10 @@ paintIcons();
 document.querySelector("link[rel=icon]").href = iconURL("map", 2);
 drawMascot(mascotCanvas, 0);
 clockEl.textContent = clockText(new Date());
-if (window.matchMedia("(max-width: 900px)").matches) {
+if (window.matchMedia("(max-width: 900px)").matches && !radioSaved) {
   radioOpen.map = false;
-  radioPanel.hidden = true;
 }
+radioPanel.hidden = !radioOpen[mode];
 renderChrome();
 drawScope(scope, 0, 0);
 

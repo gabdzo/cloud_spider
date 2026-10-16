@@ -90,3 +90,11 @@ test("diagramFromKube: no EndpointSlices read (forbidden, sample) keeps the old 
   assert.equal(fine.status, "ok");
   assert.equal(fine.issue, undefined);
 });
+
+test("probe-failing NotReady and OOMKilled pods are broken, Pending stays a warning", async () => {
+  const { podState } = await import("../src/kube-diagram.js");
+  const run = (cs, spec = {}) => podState({ spec, status: { phase: "Running", containerStatuses: cs } });
+  assert.equal(run([{ ready: false, state: { running: {} } }], { containers: [{ readinessProbe: {} }] }).health, "broken");
+  assert.equal(run([{ ready: true, restartCount: 1, state: { running: {} }, lastState: { terminated: { reason: "OOMKilled" } } }]).health, "broken");
+  assert.equal(podState({ status: { phase: "Pending" } }).health, "hang");
+});

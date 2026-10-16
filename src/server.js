@@ -892,6 +892,13 @@ const page = `<!doctype html>
     box-shadow: inset 0 -1px 0 rgba(var(--glow-rgb), 0.12), inset 0 6px 14px rgba(0, 0, 0, 0.6);
   }
   #morning[hidden] { display: none; }
+  /* MORNING is a toggle: when shown it is a real panel, one full line per source */
+  #morning.panel { grid-column: 1 / -1; flex: 1 0 100%; width: 100%; box-sizing: border-box; order: 10; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; padding: 10px 14px; max-height: 42vh; overflow-y: auto; }
+  #morning.panel #sunrise { display: none; }
+  #morning.panel .m-lines { grid-template-columns: minmax(0, 1fr); grid-auto-flow: row; gap: 4px; }
+  #morning.panel .m-line { grid-template-columns: 16px 120px minmax(0, 1fr) 10px; grid-template-rows: auto; column-gap: 8px; align-items: start; padding: 5px 8px; }
+  #morning.panel .m-line .m-text { grid-column: 3; grid-row: 1; white-space: normal; overflow: visible; text-overflow: clip; display: block; -webkit-line-clamp: unset; font-size: 12px; line-height: 1.4; }
+  #morning.panel .m-line:not(.lead) { display: grid; }
   #sunrise {
     width: 64px; height: 36px;
     image-rendering: pixelated;
@@ -3445,6 +3452,8 @@ const page = `<!doctype html>
   .topstrip > #morning #sunrise { width: 36px; height: 20px; }
   .topstrip > #morning .m-head small, .topstrip > #morning #morning-when { display: none; }
   .topstrip > #morning .m-line { padding-top: 1px; padding-bottom: 1px; }
+  .topstrip > #morning.panel:not([hidden]) { flex: 1 0 100%; order: 10; padding: 8px 10px; margin: 0 0 4px 8px; }
+  .topstrip > #morning.panel .m-line { padding-top: 4px; padding-bottom: 4px; }
 
   /* GREEN / AMBER phosphor for the whole app (theme.js data-tint): the CSS
      follows the remapped vars; canvases and pixel icons drawn in the green
