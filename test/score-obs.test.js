@@ -93,7 +93,7 @@ test("catalog: eight K8S-OBS controls, observability, a fix and a card each, in 
   const eks = UPGRADES.find((u) => u.id === "eks").parameters.find((p) => p.name === "controlPlaneLogs");
   assert.equal(eks.default, "off");
   const card = UPGRADES.find((u) => u.id === "observability");
-  assert.deepEqual(card.parameters.map((p) => p.name), ["clusterName", "containerInsights", "alarms", "alertEmail", "dashboard", "retentionDays"]);
+  assert.deepEqual(card.parameters.map((p) => p.name), ["clusterName", "containerInsights", "alarms", "controlPlaneAlarms", "alertEmail", "dashboard", "retentionDays"]);
   assert.equal(card.parameters.find((p) => p.name === "alertEmail").default, "", "email is opt-in");
 });
 

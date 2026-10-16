@@ -66,6 +66,7 @@ export const SCHEMAS = {
       // The card sends on; a hand-run up without the key keeps the program's
       // old default off (changing it would add alarms to a live stack).
       alarms: { ...onoff("off", "ALB 5XX / unhealthy targets / node not ready alarms to SNS (card default on)"), cardDefault: "on" },
+      controlPlaneAlarms: onoff("off", "EKS control plane alarms (pending pods, API 5XX) from free AWS/EKS metrics"),
       alertEmail: { type: "name", optional: true, pattern: /^[^@\s]+@[^@\s]+\.[^@\s]+$/, hint: "must be an email address", doc: "SNS email subscription" },
       dashboard: onoff("on", "CloudWatch dashboard <cluster>-overview"),
       retentionDays: { type: "int", min: 1, max: 3653, default: 7, doc: "log retention" },

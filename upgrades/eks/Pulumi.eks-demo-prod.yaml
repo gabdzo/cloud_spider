@@ -13,5 +13,6 @@ config:
   cloudspider-upgrade:nodeCount: "2"
   cloudspider-upgrade:maxPods: "58"
   cloudspider-upgrade:networkPolicy: "on"
-  cloudspider-upgrade:controlPlaneLogs: "off"
+  cloudspider-upgrade:controlPlaneLogs: "on"
+  cloudspider-upgrade:logRetentionDays: "14"
   cloudspider-upgrade:vpcCidr: 10.44.0.0/16

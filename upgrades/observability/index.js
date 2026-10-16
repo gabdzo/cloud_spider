@@ -25,6 +25,7 @@ assertStackConfig(pulumi, "cloudspider-observability", { strict: true });
 //   - alarms=on: an SNS topic; per ALB of the cluster (tag
 //     elbv2.k8s.aws/cluster) 5XX alarms and an unhealthy-target alarm per
 //     target group; with Container Insights a node-not-ready alarm.
+//     controlPlaneAlarms=on: pending pods + API 5XX from AWS/EKS (free metrics).
 //     alertEmail: an email subscription (opt-in; AWS mails a confirm link).
 //   - dashboard=on: CloudWatch dashboard <cluster>-overview (ALB traffic,
 //     5XX, p95 latency, target health, the alarms; nodes and pods with
@@ -36,6 +37,7 @@ const config = new pulumi.Config();
 const clusterName = config.get("clusterName") || "cloudspider-up";
 const containerInsights = (config.get("containerInsights") || "off") === "on";
 const alarms = (config.get("alarms") || "off") === "on";
+const controlPlaneAlarms = (config.get("controlPlaneAlarms") || "off") === "on";
 const alertEmail = config.get("alertEmail") || "";
 const dashboard = (config.get("dashboard") || "on") === "on";
 const retentionDays = Number(config.get("retentionDays") || 7);
@@ -97,7 +99,7 @@ if (alarms) {
   const topic = new aws.sns.Topic("alerts", { name: `${clusterName}-alerts`, tags });
   topicArn = topic.arn;
   if (alertEmail) new aws.sns.TopicSubscription("alerts-email", { topic: topic.arn, protocol: "email", endpoint: alertEmail });
-  for (const a of alarmSet(clusterName, lbs, { insights: containerInsights })) {
+  for (const a of alarmSet(clusterName, lbs, { insights: containerInsights, controlPlane: controlPlaneAlarms })) {
     const alarm = new aws.cloudwatch.MetricAlarm(a.key, {
       name: a.name, alarmDescription: a.description, namespace: a.namespace, metricName: a.metric, statistic: a.statistic,
       period: a.period, evaluationPeriods: a.evaluationPeriods, threshold: a.threshold, comparisonOperator: "GreaterThanThreshold",

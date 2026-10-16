@@ -345,6 +345,23 @@
       },
       "fakeElb": [],
       "min": 3
+    },
+    {
+      "id": "observability-demo-prod",
+      "dir": "upgrades/observability",
+      "project": "cloudspider-observability",
+      "stack": "observability-demo-prod",
+      "configFile": "upgrades/observability/Pulumi.observability-demo-prod.yaml",
+      "fakeElb": [
+        {
+          "name": "k8s-showcase-abc",
+          "cluster": "demo-prod",
+          "targetGroups": [
+            "k8s-uptimeku-tg"
+          ]
+        }
+      ],
+      "min": 8
     }
   ]
 }
