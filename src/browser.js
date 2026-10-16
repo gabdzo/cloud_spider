@@ -68,6 +68,7 @@ import { snapshot } from "./agent-text.js";
 import { createTerminal } from "./terminal.js";
 import { createLearnView } from "./learn-view.js";
 import { createScoreView, scoreModel } from "./score/view.js";
+import { createAppsView } from "./score/apps-view.js";
 import { groupVaults } from "./vault-perks.js";
 import { clusterVaultNode } from "./perk-view.js";
 import { createNetdebugView, debugBarShown } from "./netdebug/view.js";
@@ -4874,7 +4875,22 @@ document.querySelector("#score-key").addEventListener("click", () => {
   }
   Promise.resolve(scoreView.toggle()).then(renderChromeParts);
 });
+// APPS: a grade per app, same one-big-panel rule as SCORE.
+const appsView = createAppsView({ root: document.querySelector("#apps"), toggleButton: document.querySelector("#apps-key"), context: () => clusterData?.context || clusterContext, sample: () => sample });
+document.querySelector("#apps-key").addEventListener("click", () => {
+  markHistory();
+  if (!appsView.isOpen()) {
+    if (scoreView.isOpen()) scoreView.setOpen(false);
+    if (learnView.isOpen()) learnView.setOpen(false);
+    if (pipOpen) toggleUpgrade();
+    if (terminal.isOpen() && !terminal.isRunning()) terminal.setOpen(false);
+  }
+  Promise.resolve(appsView.toggle()).then(renderChromeParts);
+});
+document.querySelector("#score-key").addEventListener("click", () => { if (appsView.isOpen()) appsView.setOpen(false); });
 document.querySelector("#learn-key").addEventListener("click", () => {
+  if (appsView.isOpen()) appsView.setOpen(false);
+
   markHistory();
   if (!learnView.isOpen()) {
     if (terminal.isOpen()) terminal.setOpen(false);
@@ -6699,6 +6715,7 @@ document.addEventListener("keydown", (event) => {
 
 async function toggleUpgrade() {
   pipOpen = !pipOpen;
+  if (pipOpen && appsView.isOpen()) appsView.setOpen(false);
   renderChrome();
   if (!pipOpen) return;
   if (!pipModules.length) {
@@ -7060,7 +7077,7 @@ settingsApi = createSettings({
 });
 // Modules (modules.js): the tab or key of a module that is off at the server
 // or hidden in this browser is not offered. Cost is the CAPS gauge.
-const MODULE_UI = { network: "#path", kubernetes: "#cluster, #k9s-btn", vaults: "#tab-vaults", radio: "#tab-radio", stacks: "#upgrade", learn: "#learn-key", score: "#score-key", ask: "#ask" };
+const MODULE_UI = { network: "#path", kubernetes: "#cluster, #k9s-btn", vaults: "#tab-vaults", radio: "#tab-radio", stacks: "#upgrade", learn: "#learn-key", score: "#score-key, #apps-key", ask: "#ask" };
 function settingsStorage() {
   try {
     return window.localStorage;
@@ -7097,7 +7114,7 @@ fetch("/api/config")
     const features = pageConfig?.features || {};
     if (features.ask === false) askTab.hidden = true;
     if (features.learn === false) document.querySelector("#learn-key").hidden = true;
-    if (features.scorecard === false) document.querySelector("#score-key").hidden = true;
+    if (features.scorecard === false) document.querySelector("#score-key").hidden = document.querySelector("#apps-key").hidden = true;
     const view = pageConfig?.ui?.defaultView;
     if (!location.hash && view && view !== "map") history.replaceState(null, "", `${location.pathname}${location.search}#${view}`);
   })

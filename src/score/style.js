@@ -168,3 +168,46 @@ export const SCORE_CSS = `
   :root[data-theme="pro"] #score .sc-btn.sc-primary:hover:not(:disabled) { filter: brightness(1.1); }
   :root[data-theme="pro"] #score .sc-label { font-weight: 600; letter-spacing: .08em; }
 `;
+
+// APPS panel: the same tokens as #score, scoped to #apps.
+export const APPS_CSS = `
+  #apps { ${Object.entries(SCORE_TOKENS).map(([k, v]) => `${k}: ${v};`).join(" ")}
+    position: absolute; inset: 12px; overflow: auto; padding: 18px 20px 14px; z-index: 6;
+    background: var(--s-bg); color: var(--s-text); border: 1px solid var(--s-strong); font-family: var(--s-font); font-size: 13px; line-height: 1.45;
+    display: flex; flex-direction: column; gap: 12px; }
+  #apps[hidden] { display: none; }
+  #apps:not([hidden]) { box-shadow: 0 0 0 12px var(--pip-screen); }
+  #apps [data-tone="ok"] { --s-tone: var(--s-ok); }
+  #apps [data-tone="warn"] { --s-tone: var(--s-warn); }
+  #apps [data-tone="bad"] { --s-tone: var(--s-bad); }
+  #apps [data-tone="muted"] { --s-tone: var(--s-muted); }
+  #apps .sc-label { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--s-text2); }
+  #apps .sc-muted { color: var(--s-muted); }
+  #apps .sc-small { font-size: 11.5px; }
+  #apps .sc-remedy { opacity: .9; margin-top: 2px; }
+  #apps .sc-empty { background: var(--s-raised); border: 1px solid var(--s-line); padding: 12px 14px; }
+  #apps .sc-disclaimer { color: var(--s-muted); font-size: 11px; }
+  #apps .sc-btn { font: inherit; font-size: 12px; padding: 3px 10px; cursor: pointer; color: var(--s-accent); background: var(--s-ink); border: 1px solid var(--s-accent); margin-left: auto; }
+  #apps .ap-top { display: flex; gap: 14px; align-items: baseline; }
+  #apps .ap-line { color: var(--s-accent); letter-spacing: .08em; }
+  #apps .ap-list { display: flex; flex-direction: column; gap: 4px; }
+  #apps .ap-row { display: grid; grid-template-columns: 34px minmax(160px, 260px) 44px 1fr; gap: 10px; align-items: center; text-align: left; font: inherit; color: var(--s-text); background: var(--s-raised); border: 1px solid var(--s-line); border-left: 3px solid var(--s-tone); padding: 6px 10px; cursor: pointer; }
+  #apps .ap-row:hover { background: var(--s-hover); }
+  #apps .ap-grade { color: var(--s-tone); font-size: 20px; font-weight: 600; }
+  #apps .ap-card .ap-grade { font-size: 40px; line-height: 1; border: 1px solid var(--s-tone); padding: 2px 12px; }
+  #apps .ap-head { display: flex; gap: 14px; align-items: center; }
+  #apps .ap-title { color: var(--s-text); }
+  #apps .ap-num { color: var(--s-tone, var(--s-text2)); text-align: right; }
+  #apps .ap-bars { display: grid; gap: 4px; max-width: 560px; }
+  #apps .ap-bar { display: grid; grid-template-columns: 110px 1fr 40px; gap: 8px; align-items: center; }
+  #apps .ap-cat { text-transform: uppercase; font-size: 11px; letter-spacing: .1em; color: var(--s-text2); }
+  #apps .ap-track { height: 8px; background: var(--s-ink); border: 1px solid var(--s-line); }
+  #apps .ap-fill { display: block; height: 100%; background: var(--s-tone); }
+  #apps .ap-fails { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+  #apps .ap-fline { display: flex; gap: 10px; }
+  #apps .ap-pts { color: var(--s-ok); min-width: 48px; }
+  #apps .ap-fail[data-sev="critical"] .ap-fid { color: var(--s-bad); }
+  #apps .ap-fid { color: var(--s-warn); }
+  #apps .ap-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  #apps .ap-chip { border: 1px solid var(--s-line); padding: 1px 8px; font-size: 11.5px; color: var(--s-text2); }
+`;
