@@ -21,7 +21,7 @@ export function mountWhere(doc = document) {
   const read = () => {
     const lit = (sel) => [...doc.querySelectorAll(sel)].find((b) => b.getAttribute("aria-pressed") === "true" && !b.hidden);
     const view = label(lit(".tabs .tab:not(#k9s-btn)"));
-    const key = lit(".keys .key:not(#tab-radio)");
+    const key = lit(".keys .key:not(#tab-radio):not(#morning-key)");
     const screen = doc.querySelector("#kube-tabs")?.hidden ? "" : label(lit("#kube-tabs button"));
     const overlay = lit("#k9s-btn") ? "K9S" : "";
     const parts = crumbs({ view, panel: label(key), screen, overlay });

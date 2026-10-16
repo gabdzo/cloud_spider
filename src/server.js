@@ -3413,10 +3413,14 @@ const page = `<!doctype html>
   /* Compact chrome (Gabriel, Pip-Boy pass): a shorter header, and the
      breadcrumb, prompt and morning report on one slim row. */
   header { padding: 3px 12px 4px; gap: 6px 12px; }
-  .porthole { width: 40px; height: 40px; }
-  .plate { padding: 3px 10px 3px 4px; }
+  .porthole { width: 42px; height: 42px; flex: none; overflow: hidden; }
+  :root:not([data-theme="pro"]) #mascot { width: 36px; height: 33px; image-rendering: pixelated; }
+  :root[data-tint="amber"] #mascot { filter: drop-shadow(0 0 3px rgba(255, 169, 20, 0.55)); }
+  .plate { padding: 3px 12px 3px 4px; gap: 10px; }
   h1 { font-size: 17px; }
-  .plate small { font-size: 8px; margin-top: 2px; }
+  .plate small { font-size: 9px; margin-top: 2px; letter-spacing: 0.14em; text-shadow: none; }
+  header .gauges { max-width: 30vw; overflow: hidden; }
+  #morning-key.alert .cap::after { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
   .tabs { padding: 4px 8px 5px; gap: 7px; }
   .tab { min-height: 28px; }
   .key { gap: 2px; }
@@ -3466,6 +3470,7 @@ const page = `<!doctype html>
   </nav>
   <div class="console">
     <div class="keys" role="group" aria-label="panels">
+      <button id="morning-key" class="key" type="button" aria-pressed="false" hidden title="morning report: what is hurting, what changed, log errors (lights up when something is wrong)"><span class="cap" data-icon="clock"></span><span class="tag">Morning</span></button>
       <button id="tab-radio" class="key" type="button" aria-pressed="true" title="radio: the account's recent calls" data-pro-title="activity: the account's recent calls" data-module="radio"><span class="cap" data-icon="radio"></span><span class="tag" data-pro-label="Activity">Radio</span></button>
       <button id="upgrade" class="key" type="button" aria-pressed="false" title="stacks: Pulumi upgrades" data-module="stacks"><span class="cap" data-icon="stack"></span><span class="tag">Stacks</span></button>
       <button id="learn-key" class="key" type="button" aria-pressed="false" title="learn: holotape labs for Kubernetes and OpenShift" data-module="learn"><span class="cap" data-icon="learn"></span><span class="tag">Learn</span></button>
