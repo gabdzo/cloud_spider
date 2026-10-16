@@ -2308,6 +2308,7 @@ function revealPanel(rect) {
 
 // Path with nothing to draw: say why, and what would give it something.
 function pathEmptyText() {
+  if (pathData?.empty) return " ";
   if (pathData && !pathData.error && !pathData.loadBalancers?.length) {
     return [
       pathData.headline || "no load balancers here",
@@ -3428,7 +3429,7 @@ function showSniffExamples(examples) {
   if (!sniffEmptyEl) {
     sniffEmptyEl = document.createElement("div");
     sniffEmptyEl.id = "sniff-empty";
-    sniffEmptyEl.style.cssText = "position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:5;max-width:560px;padding:16px 20px;border:2px solid var(--ink, currentColor);background:var(--panel, rgba(0,0,0,.85));color:var(--ink, inherit);font:inherit;text-align:left";
+    sniffEmptyEl.style.cssText = "position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:5;max-width:560px;padding:16px 20px;border:2px solid currentColor;background:rgba(0,0,0,.88);color:inherit;font:inherit;text-align:left";
     errorEl.parentElement.append(sniffEmptyEl);
   }
   const head = document.createElement("div");
@@ -3439,7 +3440,7 @@ function showSniffExamples(examples) {
     button.type = "button";
     button.className = "sniff-example";
     button.textContent = `${label}: ${target}`;
-    button.style.cssText = "display:block;margin:4px 0;cursor:pointer;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+    button.style.cssText = "display:block;margin:6px 0;padding:4px 10px;cursor:pointer;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;color:inherit;background:transparent;border:1px solid currentColor";
     button.addEventListener("click", () => {
       hostInput.value = target;
       hostInput.dispatchEvent(new Event("change"));
