@@ -59,6 +59,21 @@ export function buildRoutes({ ingresses = [], osRoutes = [], services = [], slic
 
 const KINDS = { ingresses: ["ingresses", "nsIngresses"], osRoutes: ["routes", "nsRoutes"], services: ["services", "nsServices"], slices: ["endpointSlicesAll", "nsEndpointSlices"], pods: ["pods", "nsPods"] };
 
+// One kind listed in scope: cluster-wide for "*", else each allowed
+// namespace (6 at a time). { items, ok, forbidden, noAccess, error }.
+export async function listScoped(kube, kind, scope = "*") {
+  const [all, per] = KINDS[kind] || [kind, null];
+  if (!Array.isArray(scope) || !per) {
+    const r = (await kube.read(all).catch((e) => ({ error: e?.message || "failed" }))) || {};
+    return { items: r.json?.items || [], ok: Boolean(r.json), forbidden: Boolean(r.forbidden), noAccess: [], error: r.error || "" };
+  }
+  const results = await capped(scope, 6, (ns) => kube.read(per, ns));
+  const items = results.flatMap((r) => r?.json?.items || []);
+  const noAccess = scope.filter((ns, i) => results[i]?.forbidden);
+  const ok = results.some((r) => r?.json);
+  return { items, ok, forbidden: !ok && noAccess.length > 0, noAccess, error: ok ? "" : results.find((r) => r?.error)?.error || "" };
+}
+
 // Reads (get/list only) and builds. scope "*" = cluster-wide lists; an array
 // = each namespace on its own, at most 6 lists at once.
 export async function readRoutes(kube, scope = "*") {

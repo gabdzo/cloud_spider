@@ -13,7 +13,7 @@ import { createRadio } from "./radio.js";
 import { readLogs } from "./logs.js";
 import { readPath } from "./path-read.js";
 import { createPathProber } from "./path-probe.js";
-import { readRoutes, ROUTES_TTL_MS } from "./sniff-routes.js";
+import { listScoped, readRoutes, ROUTES_TTL_MS } from "./sniff-routes.js";
 import { ingressFor, ingressRoutesForService, kubePathDiagram, parseKubeTarget, podOnlyDiagram, readKubePath, servicesForPod, withIngress, withServiceIngresses } from "./kube-path.js";
 import { pathResult, withPeers } from "./path-view.js";
 import { costFailure } from "./cost.js";
@@ -1947,9 +1947,12 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   function pathClient(asked) {
     const wanted = asked || settings?.config?.kube?.context || settings?.kube?.context || "";
     if (asked && !contexts.some((ctx) => ctx.name === asked)) return { error: `no kube context named ${asked.slice(0, 80)}` };
-    const client = contexts.find((ctx) => ctx.name === wanted)?.kube || primary?.kube || kube;
+    const ctx = contexts.find((c) => c.name === wanted) || (primary?.kube ? primary : null);
+    const client = ctx?.kube || kube;
     if (!client?.read) return { error: "no kube context: in-cluster paths need one (kube.context)" };
-    return { client };
+    // Namespace-limited contexts: lists go one allowed namespace at a time.
+    const scope = Array.isArray(ctx?.namespaces) ? ctx.namespaces : Array.isArray(client.scope) ? client.scope : "*";
+    return { client, scope };
   }
 
   function kubeResult(base, client, diagram, lead = "") {
@@ -1990,34 +1993,41 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     return ingress ? kubeResult(base, client, withIngress(diagram, ingress), `Ingress ${ingress.ns}/${ingress.ingress} (class ${ingress.cls || "default"}); `) : kubeResult(base, client, diagram);
   }
 
-  async function sniffExamples(client) {
-    const list = async (kind) => (await client.read(kind).catch(() => null))?.json?.items || [];
+  async function sniffExamples(client, scope = "*") {
+    const list = (kind) => listScoped(client, kind, scope).then((r) => r.items);
     const [ings, svcs, pods] = await Promise.all([list("ingresses"), list("services"), list("pods")]);
     return pickSniffExamples(ings, svcs, pods);
   }
 
-  // ROUTES for the empty SNIFF: cached 60 s per context.
-  const routesCache = new Map();
-  async function sniffRoutes(client) {
-    const key = client.context || "?";
+  // ROUTES for the empty SNIFF: cached 60 s per context and scope. The map
+  // hangs on the function: this sits after createApp's return, where a
+  // const would never be initialised (that TDZ made routes null in #447).
+  async function sniffRoutes(client, scope = "*") {
+    const routesCache = (sniffRoutes.cache ||= new Map());
+    const key = `${client.context || "?"}|${Array.isArray(scope) ? scope.join(",") : "*"}`;
     const hit = routesCache.get(key);
     if (hit && Date.now() - hit.at < ROUTES_TTL_MS) return hit.value;
-    const value = await readRoutes(client, Array.isArray(client.scope) ? client.scope : "*");
+    let value;
+    try {
+      value = await readRoutes(client, scope);
+    } catch (failure) {
+      value = { groups: [], total: 0, noAccess: [], error: `routes could not be read (${String(failure?.message || failure).slice(0, 120)})` };
+    }
     routesCache.set(key, { at: Date.now(), value });
     return value;
   }
 
   async function ingressPathView(host, asked = "") {
     const base = { region, loadBalancers: [], selected: "", host, hostNote: "", findings: [], notes: [], kube: true, error: "", diagram: null, headline: "" };
-    const { client, error: noClient } = pathClient(asked);
+    const { client, scope, error: noClient } = pathClient(asked);
     // Nothing typed yet: a friendly empty state with live examples, no error.
     if (!host.trim()) {
       if (noClient) return { ...base, empty: true, examples: [], routes: null };
-      const [examples, routes] = await Promise.all([sniffExamples(client), sniffRoutes(client).catch(() => null)]);
+      const [examples, routes] = await Promise.all([sniffExamples(client, scope), sniffRoutes(client, scope)]);
       return { ...base, empty: true, examples, routes };
     }
     if (noClient) return { ...base, error: noClient };
-    const got = await client.read("ingresses").catch((failure) => ({ error: failure?.message || String(failure) }));
+    const got = await listScoped(client, "ingresses", scope).then((r) => (r.items.length || r.ok ? { json: { items: r.items } } : { forbidden: r.forbidden, error: r.error }), (failure) => ({ error: failure?.message || String(failure) }));
     if (!got?.json) return { ...base, error: got?.forbidden ? "Ingresses are forbidden for this kube context, so a host can't be traced; type ns/service instead" : `Ingresses could not be read (${got?.error || "no answer"}); type ns/service instead` };
     const ing = ingressFor(got.json.items || [], host);
     if (!ing) return { ...base, error: `no Ingress in this cluster serves ${host.slice(0, 120)} (no AWS here, so there is no ALB to look in); type ns/service, a service DNS name or ns/pod` };
