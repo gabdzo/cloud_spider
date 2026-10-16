@@ -3475,6 +3475,87 @@ const page = `<!doctype html>
     header .tab { padding: 0 7px; }
     header .switch { transform: scale(0.85); transform-origin: left center; margin-right: -14px; }
   }
+  /* ---- tools box: Fallout-menu metal plates (Gabriel's reference) ----
+     Each key is a weathered riveted plate: a domed lamp on the left (.cap,
+     its ::after is the bulb, so .issue / #morning-key.alert still turn it
+     red) and a stencilled label. Two rows of four keep the header height. */
+  :root:not([data-theme="pro"]) header .keys { display: grid; grid-template-columns: repeat(4, auto); grid-auto-rows: 19px; gap: 3px 4px; }
+  :root:not([data-theme="pro"]) header .key {
+    position: relative; display: flex; flex-direction: row; align-items: center; gap: 5px;
+    width: 74px; height: 19px; box-sizing: border-box; padding: 0 6px 0 7px; border-radius: 2px;
+    background:
+      radial-gradient(circle at 3px 3px, var(--plate-steel) 0 0.9px, var(--plate-seam) 1.3px, transparent 1.7px),
+      radial-gradient(circle at calc(100% - 3px) 3px, var(--plate-steel) 0 0.9px, var(--plate-seam) 1.3px, transparent 1.7px),
+      radial-gradient(circle at 3px calc(100% - 3px), var(--plate-steel) 0 0.9px, var(--plate-seam) 1.3px, transparent 1.7px),
+      radial-gradient(circle at calc(100% - 3px) calc(100% - 3px), var(--plate-steel) 0 0.9px, var(--plate-seam) 1.3px, transparent 1.7px),
+      repeating-linear-gradient(97deg, rgba(0,0,0,0.10) 0 1px, transparent 1px 4px),
+      repeating-linear-gradient(13deg, rgba(255,255,255,0.03) 0 1px, transparent 1px 6px),
+      radial-gradient(ellipse at 20% 30%, rgba(0,0,0,0.22), transparent 60%),
+      radial-gradient(ellipse at 85% 80%, rgba(0,0,0,0.18), transparent 55%),
+      linear-gradient(180deg, var(--plate-paint-hi), var(--plate-paint) 50%, var(--plate-paint-lo));
+    box-shadow: inset 0 1px 0 var(--btn-rim-hi), inset 0 -1px 0 var(--btn-shade), inset 0 0 0 1px var(--plate-seam), 0 1px 2px var(--btn-shade);
+    transition: filter 0.1s, box-shadow 0.1s;
+  }
+  :root:not([data-theme="pro"]) header .key .cap {
+    flex: none; width: 10px; height: 10px; border-radius: 50%; padding: 0;
+    background: radial-gradient(circle, var(--plate-seam) 55%, var(--btn-rim) 70%);
+    box-shadow: 0 0 0 1px var(--btn-rim), 0 1px 0 1px var(--btn-rim-hi); transform: none;
+  }
+  :root:not([data-theme="pro"]) header .key .cap::before, :root:not([data-theme="pro"]) header .key .cap img { display: none; }
+  :root:not([data-theme="pro"]) header .key .cap::after { top: 1px; right: 1px; width: 8px; height: 8px; }
+  :root:not([data-theme="pro"]) header .key .tag {
+    flex: 1; width: auto; height: auto; min-width: 0; padding: 0; background: none; box-shadow: none; transform: none;
+    color: var(--plate-stencil-dim); font-size: 9px; font-weight: 700; letter-spacing: 0.06em; line-height: 1;
+    text-align: center; white-space: nowrap; text-shadow: 0 1px 0 var(--btn-shade), 0 -1px 0 rgba(0,0,0,0.35);
+  }
+  :root:not([data-theme="pro"]) header .key:hover, :root:not([data-theme="pro"]) header .key:focus-visible { filter: brightness(1.18); }
+  :root:not([data-theme="pro"]) header .key:hover .tag, :root:not([data-theme="pro"]) header .key[aria-pressed="true"] .tag { color: var(--plate-stencil); }
+  :root:not([data-theme="pro"]) header .key:hover .cap::after {
+    background: radial-gradient(circle at 40% 35%, var(--lamp-on-core), var(--lamp-on) 55%, var(--pip-mid)); box-shadow: 0 0 4px var(--lamp-on);
+  }
+  :root:not([data-theme="pro"]) header .key[aria-pressed="true"] { filter: brightness(1.12); }
+  :root:not([data-theme="pro"]) header .key:active, :root:not([data-theme="pro"]) header .key[aria-pressed="true"] {
+    box-shadow: inset 0 2px 3px var(--btn-shade), inset 0 0 0 1px var(--plate-seam), inset 0 -1px 0 var(--btn-rim-hi);
+  }
+  :root:not([data-theme="pro"]) header .key:active .tag { transform: translateY(1px); }
+  @media (max-width: 1180px) {
+    :root:not([data-theme="pro"]) header .key { width: 62px; padding: 0 4px 0 5px; gap: 3px; }
+    :root:not([data-theme="pro"]) header .key .tag { width: auto; font-size: 8px; letter-spacing: 0; }
+    :root:not([data-theme="pro"]) header .key .cap { width: 9px; height: 9px; }
+    :root:not([data-theme="pro"]) header .key .cap::after { width: 7px; height: 7px; }
+  }
+  /* ---- end tools box plates ---- */
+  /* Responsive header (Gabriel, 1024 looked ragged): two tidy rows.
+     Row 1: plate, view tabs, then REGION/MODE/TIME/phosphor and the gear on
+     the right. Row 2: the tools box, SAMPLE, then the status and CAPS LCDs
+     filling the rest (they shrink with an ellipsis; the title has it all). */
+  @media (max-width: 1839px) {
+    :root:not([data-theme="pro"]) header { flex-wrap: wrap; align-items: center; }
+    :root:not([data-theme="pro"]) header .plate { order: 1; }
+    :root:not([data-theme="pro"]) header .tabs { order: 2; }
+    :root:not([data-theme="pro"]) header .readout { order: 3; margin-left: auto; }
+    :root:not([data-theme="pro"]) header .gear { order: 4; margin-left: 0; }
+    :root:not([data-theme="pro"]) header::before { content: ""; order: 5; flex: 0 0 100%; height: 0; }
+    :root:not([data-theme="pro"]) header .console { order: 6; flex: 0 0 auto; }
+    :root:not([data-theme="pro"]) header .gauges { order: 7; flex: 1 1 0; min-width: 0; max-width: none; display: flex; gap: 8px; }
+    :root:not([data-theme="pro"]) header .gauges > * { min-width: 0; }
+    :root:not([data-theme="pro"]) header .gauges #tally { flex: 1 1 auto; max-width: none; margin-left: 0; overflow: hidden; }
+    :root:not([data-theme="pro"]) header .gauges #corner { flex: 0 0 auto; margin-left: 0; }
+    :root:not([data-theme="pro"]) header .gauges :is(#tally-text, #spend) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  }
+  @media (max-width: 1199px) {
+    :root:not([data-theme="pro"]) header { column-gap: 6px; }
+    :root:not([data-theme="pro"]) header .tabs { gap: 4px; padding-left: 5px; padding-right: 5px; }
+    :root:not([data-theme="pro"]) header .tab { padding: 0 6px; letter-spacing: 0.04em; }
+    :root:not([data-theme="pro"]) header .readout { gap: 5px; padding: 3px 6px; font-size: 10px; }
+    :root:not([data-theme="pro"]) header .readout b { letter-spacing: 0.02em; }
+  }
+  /* ~800: the tools box scrolls sideways rather than pushing rows */
+  @media (max-width: 899px) {
+    :root:not([data-theme="pro"]) header .console { flex: 0 1 auto; max-width: 100%; min-width: 0; overflow-x: auto; }
+    :root:not([data-theme="pro"]) header .tabs { overflow-x: auto; max-width: 100%; }
+    :root:not([data-theme="pro"]) header .readout { margin-left: 0; }
+  }
   .topstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 3px 8px 3px 0; border-bottom: 2px solid var(--pip-dark); }
   .topstrip > #where:not([hidden]) { margin: 0 0 0 12px; flex: 0 0 auto; }
   .topstrip > .terminal { flex: 1 1 260px; margin: 0; padding: 2px 8px; border-bottom: 0; }
