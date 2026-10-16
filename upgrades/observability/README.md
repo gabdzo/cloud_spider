@@ -12,6 +12,7 @@ Set with `pulumi config set <key> <value>` or the STACKS card. Validated before 
 | clusterName | must be a short lowercase name (a-z, 0-9, -; 2-28 chars, starts with a letter) | cloudspider-up | the EKS cluster it runs on |
 | containerInsights | on \| off | off | CloudWatch Observability add-on |
 | alarms | on \| off | off | ALB 5XX / unhealthy targets / node not ready alarms to SNS (card default on) |
+| controlPlaneAlarms | on \| off | off | EKS control plane alarms (pending pods, API 5XX) from free AWS/EKS metrics |
 | alertEmail | must be an email address |  | SNS email subscription |
 | dashboard | on \| off | on | CloudWatch dashboard <cluster>-overview |
 | retentionDays | 1..3653 | 7 | log retention |

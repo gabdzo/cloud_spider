@@ -7,8 +7,14 @@ export const insightsGroups = (cluster) => INSIGHTS_GROUPS.map((g) => `/aws/cont
 // The basic alarm set: one cluster alarm (Container Insights' failed node
 // count) and two per load balancer with their target groups.
 // lbs: [{ name, suffix, targetGroups: [suffix] }].
-export function alarmSet(cluster, lbs, { insights }) {
+export function alarmSet(cluster, lbs, { insights, controlPlane = false }) {
   const out = [];
+  // EKS control plane metrics (AWS/EKS, free, Kubernetes 1.28+): a cluster
+  // alarm without Container Insights.
+  if (controlPlane) {
+    out.push({ key: "pending-pods", name: `${cluster}-pending-pods`, namespace: "AWS/EKS", metric: "scheduler_pending_pods", statistic: "Maximum", threshold: 0, period: 300, evaluationPeriods: 2, dimensions: { ClusterName: cluster }, description: `${cluster}: pods waiting for a node for 10 minutes` });
+    out.push({ key: "apiserver-5xx", name: `${cluster}-apiserver-5xx`, namespace: "AWS/EKS", metric: "apiserver_request_total_5XX", statistic: "Sum", threshold: 10, period: 300, evaluationPeriods: 1, dimensions: { ClusterName: cluster }, description: `${cluster}: 10+ API server 5XX in 5 minutes` });
+  }
   if (insights) {
     out.push({ key: "node-not-ready", name: `${cluster}-node-not-ready`, namespace: "ContainerInsights", metric: "cluster_failed_node_count", statistic: "Maximum", threshold: 0, period: 60, evaluationPeriods: 3, dimensions: { ClusterName: cluster }, description: `A node of ${cluster} is not Ready for 3 minutes` });
   }

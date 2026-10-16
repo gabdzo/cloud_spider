@@ -276,6 +276,7 @@ export const UPGRADES = [
       { name: "clusterName", type: "string", default: "cloudspider-up" },
       { name: "containerInsights", type: "string", default: "off", choices: ["off", "on"], labels: { off: "off · no metrics history or container logs (SCORE FAILs K8S-OBS-001/002)", on: "on · CloudWatch Observability add-on: node/pod metrics, container logs, node-not-ready alarm (~$0.40-1.00/day on 2 nodes)" }, warn: "off" },
       { name: "alarms", type: "string", default: "on", choices: ["on", "off"], labels: { on: "on · ALB 5XX, unhealthy targets, node not ready → SNS (~$0.02/day)", off: "off · nobody is told (SCORE FAILs K8S-OBS-005)" }, warn: "off" },
+      { name: "controlPlaneAlarms", type: "string", default: "off", choices: ["off", "on"], labels: { off: "off", on: "on · pending pods + API server 5XX from free AWS/EKS metrics ($0.20/mo)" } },
       { name: "alertEmail", type: "string", default: "" },
       { name: "dashboard", type: "string", default: "on", choices: ["on", "off"], labels: { on: "on · CloudWatch dashboard <cluster>-overview: ALB, alarms, nodes/pods with Container Insights (first 3 free, then $3/month)", off: "off · no dashboard (SCORE WARNs K8S-OBS-007)" } },
       { name: "retentionDays", type: "string", default: "7", choices: ["1", "7", "14", "30"] },
