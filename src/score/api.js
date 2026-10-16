@@ -2,6 +2,7 @@
 // kube context, SCAN, and FIX (plan / preview / approve, then a rescan).
 // Reads only; the one write path is FIX, which goes through the app's
 // Stacks (upgradeRun) after a preview the user approved.
+import { scopedKube } from "./scoped-kube.js";
 import { CLUSTER_NAME } from "../../upgrades/addons/catalog.js";
 import { originAllowed } from "../origin.js";
 import { kubeMetrics } from "./collectors/kube-metrics.js";
@@ -87,7 +88,7 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
     return { scan, diff: diffScans(previous, scan) };
   }
   async function scanNow(context) {
-    const kube = kubeFor(context);
+    const kube = scopedKube(kubeFor(context));
     if (!kube) throw new Error(`no kube context ${context}`);
     const t = await kube.target();
     if (t.error) throw new Error(`${t.error}; CONNECT the cluster on its EKS card`);
@@ -98,6 +99,7 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
     const scan = await runScan({ target: "kubernetes", catalog: cat, profiles: prof.profiles, collectors, evaluators: EVALUATORS, context: { kube, aws: awsSide, vaults }, environment: settings.environment || "", clock });
     scan.clusterName = SHORT(scan.clusterName);
     scan.requestContext = context;
+    scan.scope = Array.isArray(kube.scope) ? { namespaces: kube.scope, noAccess: kube.noAccess() } : null;
     contextOf.set(scan.clusterName, context);
     const previous = await history.latest("kubernetes", scan.clusterName);
     await history.save(scan);

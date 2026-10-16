@@ -5,7 +5,9 @@
 //   denied    403 / AccessDenied: we do not know (never a pass)
 //   error     timeout, throttling after retries, 5xx
 //   truncated the list did not finish (page cap or a continue token left)
-export const EVIDENCE_STATUSES = ["ok", "absent", "denied", "error", "truncated"];
+//   out-of-scope  refused, and outside the context's allowed namespaces
+//             (src/score/scoped-kube.js): its controls are NOT APPLICABLE
+export const EVIDENCE_STATUSES = ["ok", "absent", "denied", "error", "truncated", "out-of-scope"];
 
 export function evidence({ key, collector, read, target, status, fields = {}, error = null, at = new Date().toISOString() }) {
   if (!EVIDENCE_STATUSES.includes(status)) throw new Error(`bad evidence status ${status}`);
@@ -42,7 +44,7 @@ export async function pageAll(send, { maxPages = 50 } = {}) {
 }
 
 // The worst status across several reads that feed one evidence record.
-const RANK = { ok: 0, absent: 0, truncated: 1, error: 2, denied: 3 };
+const RANK = { ok: 0, absent: 0, truncated: 1, "out-of-scope": 2, error: 3, denied: 4 };
 export function worst(statuses) {
   return statuses.reduce((a, b) => (RANK[b] > RANK[a] ? b : a), "ok");
 }

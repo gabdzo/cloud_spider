@@ -25,12 +25,12 @@ export function scoreModel(view) {
   const fixable = new Map((view.suggestions || []).map((s) => [s.control, s]));
   const rows = [...scan.results]
     .sort((a, b) => ORDER[a.status] - ORDER[b.status] || (b.gate === true) - (a.gate === true) || a.id.localeCompare(b.id))
-    .map((r) => ({ id: r.id, title: r.title, status: r.status, statusText: r.warn && r.status === "PASS" ? "WARN" : STATUS_TEXT[r.status] || r.status, warn: Boolean(r.warn), severity: r.severity, gate: r.gate === true, reason: r.reason || failingLine(r), fix: fixable.get(r.id)?.already ? "" : fixable.get(r.id)?.addon || "", card: fixable.get(r.id)?.card || null, already: fixable.get(r.id)?.already || "", remedy: ["FAIL", "UNKNOWN"].includes(r.status) || r.warn ? r.remedy || "" : "" }));
+    .map((r) => ({ id: r.id, title: r.title, status: r.status, statusText: r.warn && r.status === "PASS" ? "WARN" : STATUS_TEXT[r.status] || r.status, warn: Boolean(r.warn), severity: r.severity, gate: r.gate === true, reason: r.reason || failingLine(r), fix: fixable.get(r.id)?.already ? "" : fixable.get(r.id)?.addon || "", card: fixable.get(r.id)?.card || null, already: fixable.get(r.id)?.already || "", remedy: ["FAIL", "UNKNOWN"].includes(r.status) || r.warn ? r.remedy || "" : "", points: card.points?.[r.id] ?? null }));
   const counts = Object.fromEntries(Object.keys(ORDER).map((s) => [s, scan.results.filter((r) => r.status === s).length]));
   const rank = new Map((card.priorities || []).map((p, i) => [p.id, i]));
   // Actionable first (FIX or OPEN a card); an add-on that is already there
   // is not a next fix: it comes last, with why it still fails.
-  const next = rows.filter((r) => r.fix || r.card || r.already).sort((a, b) => Boolean(a.already) - Boolean(b.already) || (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99)).slice(0, 3).map(({ id, title, fix, severity, card, already, reason }) => ({ id, title, addon: fix, severity, card, already, reason }));
+  const next = rows.filter((r) => r.fix || r.card || r.already).sort((a, b) => Boolean(a.already) - Boolean(b.already) || (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99)).slice(0, 3).map(({ id, title, fix, severity, card, already, reason, points }) => ({ id, title, addon: fix, severity, card, already, reason, points }));
   const categories = (card.categories || [])
     .filter((c) => c.applicableWeight > 0)
     .map((c) => ({
@@ -57,7 +57,8 @@ export function scoreModel(view) {
     tone: TONE[card.verdict] || "warn",
     number: card.overall == null ? "" : `${scoreText(card.overall)}/100`,
     range: card.lower == null ? "" : `range ${scoreText(card.lower)}–${scoreText(card.upper)}`,
-    coverage: `coverage ${Math.round(card.coverage)}% · confidence ${card.confidence}`,
+    coverage: `coverage ${Math.round(card.coverage)}% · confidence ${card.confidence}${scan.scope ? ` · scope ${scan.scope.namespaces.length} namespace${scan.scope.namespaces.length === 1 ? "" : "s"}` : ""}`,
+    scope: scan.scope ? { text: `scanned only ${scan.scope.namespaces.join(", ")}`, noAccess: Object.entries(scan.scope.noAccess || {}).map(([ns, kinds]) => `${ns} (${kinds.join(", ")})`) } : null,
     meter: { assessed: card.coverage ?? 0, unknown: card.unknown ?? 0, notAssessed: card.notAssessed ?? 0 },
     reasons: card.reasons || [],
     delta: view.diff?.delta == null ? null : { text: `${view.diff.delta > 0 ? "+" : ""}${view.diff.delta} since the last scan`, up: view.diff.delta > 0 },
@@ -354,6 +355,7 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
     for (const n of model.next) {
       const card = el("div", "sc-nextcard");
       card.append(el("span", "sc-sev", n.severity), el("span", "sc-nexttitle", n.title));
+      if (n.points) card.append(el("span", "sc-pts", `+${scoreText(n.points)} pts`));
       if (n.card) {
         // Fixed on a Stacks card: open it prefilled (live instance type).
         const params = Object.entries(n.card.params || {}).map(([k, v]) => `${k} ${v}`).join(", ");
@@ -397,6 +399,8 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
       const line = el("div", "sc-title");
       line.append(el("span", "sc-id", r.id), el("span", "", r.title));
       if (r.gate) line.append(el("span", "sc-gate", "GATE"));
+      // What fixing it is worth: "+4.2 pts" on the overall.
+      if (r.points) line.append(el("span", "sc-pts", `+${scoreText(r.points)} pts`));
       what.append(line);
       if (r.reason) what.append(el("div", "sc-muted sc-small", r.reason));
       // Every FAIL (and UNKNOWN) says what to do, not only the ones with a button.
@@ -435,6 +439,7 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
     root.append(targets(), top());
     if (model.grants.length) root.append(grants());
     if (model.reasons.length) root.append(el("p", "sc-reasons", model.reasons.join(" · ")));
+    if (model.scope) root.append(el("p", "sc-muted sc-small", `${model.scope.text}${model.scope.noAccess.length ? ` · no access: ${model.scope.noAccess.join("; ")}` : ""}; checks outside these namespaces are not applicable`));
     root.append(categories());
     if (model.changes.length) root.append(changes());
     // FIX installs add-on stacks on the cluster; the AWS view has none.

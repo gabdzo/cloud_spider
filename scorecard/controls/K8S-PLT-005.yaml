@@ -1,7 +1,8 @@
 kind: Control
 id: K8S-PLT-005
-revision: 1
+revision: 2
 title: "Node autoscaling runs"
+platforms: [eks]
 category: platform
 target: kubernetes
 evidenceType: config

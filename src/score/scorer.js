@@ -30,6 +30,7 @@ export function tally(results) {
   if (appW === 0) return { applicableWeight: 0, assessedControls: 0, score: null, coverage: 0, unknown: 0, notAssessed: 0, lower: null, upper: null };
   return {
     applicableWeight: appW,
+    assessedWeight: doneW,
     assessedControls: done.length,
     score: doneW > 0 ? round1((100 * earned) / doneW) : null,
     coverage: round1((100 * doneW) / appW),
@@ -103,7 +104,8 @@ export function scoreCard(results, profile) {
   }
   card.verdictLabel = VERDICT_LABEL[card.verdict];
   card.confidence = confidenceOf(card, results, profile);
-  card.priorities = priorities(results);
+  card.points = pointsOf(results, qualifying);
+  card.priorities = priorities(results).map((p) => ({ ...p, points: card.points[p.id] ?? null }));
   return card;
 }
 
@@ -114,6 +116,22 @@ function confidenceOf(card, results, profile) {
   if (card.coverage >= 85 && card.unknown <= 10 && (failW === 0 || highW / failW >= 0.8)) return "high";
   if (card.coverage >= 100 * profile.minCoverage) return "medium";
   return "low";
+}
+
+// What fixing each failing control adds to the overall score, in points:
+// its category's share of the overall × the weight it lost in that
+// category. Only categories that count toward the overall have points.
+export function pointsOf(results, qualifying) {
+  const total = qualifying.reduce((s, c) => s + c.weight, 0);
+  const out = {};
+  if (!total) return out;
+  for (const r of results) {
+    if (r.status !== "FAIL") continue;
+    const c = qualifying.find((x) => x.name === r.category);
+    if (!c || !c.assessedWeight) continue;
+    out[r.id] = round1(((c.weight / total) * 100 * weightOf(r) * (1 - (r.p ?? 0))) / c.assessedWeight);
+  }
+  return out;
 }
 
 const CONFIDENCE_FACTOR = { high: 1, medium: 0.7, low: 0.4 };

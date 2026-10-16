@@ -1,7 +1,8 @@
 kind: Control
 id: K8S-PLT-006
-revision: 1
+revision: 2
 title: "Workload identity (EKS Pod Identity agent) runs"
+platforms: [eks]
 category: platform
 target: kubernetes
 evidenceType: config

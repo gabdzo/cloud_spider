@@ -1,7 +1,8 @@
 kind: Control
 id: K8S-OBS-008
-revision: 1
+revision: 2
 title: "The cluster's log groups expire"
+platforms: [eks]
 category: observability
 target: kubernetes
 evidenceType: config

@@ -35,6 +35,8 @@ function runOne(control, { evaluators, evidence, profile }) {
   };
   const done = (status, reason = null, extra = {}) => Object.assign(result, { status, reason, ...extra });
   if (!eff.applies) return done("NOT_APPLICABLE", `profile ${profile.id}`);
+  const platform = evidence.get("kube-cluster")?.fields?.platform;
+  if (control.platforms && platform && !control.platforms.includes(platform)) return done("NOT_APPLICABLE", `${control.platforms.join("/")} only; this cluster is ${platform}`);
   if (control.blockedBy) return done("NOT_ASSESSED", `blocked: ${control.blockedBy}`);
   const evaluate = evaluators[control.evaluator];
   if (!evaluate) return done("NOT_ASSESSED", `no evaluator ${control.evaluator}`);
@@ -45,6 +47,7 @@ function runOne(control, { evaluators, evidence, profile }) {
   for (const key of control.requires) {
     const rec = evidence.get(key);
     if (!rec) return done("NOT_ASSESSED", `not collected: ${key}`);
+    if (rec.status === "out-of-scope") return done("NOT_APPLICABLE", `out of scope: ${rec.read}`);
     if (rec.status === "denied") return done("UNKNOWN", `denied: ${rec.read}`);
     if (rec.status === "error") return done("UNKNOWN", `error: ${rec.read}${rec.error?.message ? `: ${rec.error.message}` : ""}`);
     if (rec.status === "truncated") truncated = true;

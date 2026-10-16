@@ -8,9 +8,16 @@ const LISTS = ["namespaces", "deployments", "daemonsets", "statefulsets", "pods"
 // A kube.read() answer → evidence status (403 is denied, never empty).
 export function kubeStatus(res) {
   if (res?.json) return { status: "ok", error: null };
+  if (res?.outOfScope) return { status: "out-of-scope", error: { code: "scope", message: String(res.error || "outside the allowed namespaces").slice(0, 200) } };
   if (res?.forbidden) return { status: "denied", error: { code: "403", message: res.error || "forbidden" } };
   if (res?.missing) return { status: "absent", error: null };
   return { status: "error", error: { code: "", message: String(res?.error || "the read failed").slice(0, 200) } };
+}
+
+// eks when the API server is an EKS endpoint, else kubernetes. EKS-only
+// controls (platforms: [eks]) are NOT APPLICABLE elsewhere.
+export function platformOf(t = {}) {
+  return /\.eks\.amazonaws\.com(:\d+)?\/?$/i.test(String(t.server || "").replace(/^https?:\/\//, "").split("/")[0]) ? "eks" : "kubernetes";
 }
 
 export function containerFacts(c = {}) {
@@ -62,7 +69,7 @@ export const kubeWorkloads = {
   reads: LISTS.map((name) => `GET ${name}`),
   async collect({ kube }) {
     const t = await kube.target();
-    const out = [evidence({ key: "kube-cluster", collector: "kube-workloads", read: "kubeconfig", target: "kubernetes", status: t.error ? "error" : "ok", fields: { clusterName: t.clusterName || "", context: kube.context }, error: t.error ? { code: "", message: t.error } : null })];
+    const out = [evidence({ key: "kube-cluster", collector: "kube-workloads", read: "kubeconfig", target: "kubernetes", status: t.error ? "error" : "ok", fields: { clusterName: t.clusterName || "", context: kube.context, platform: platformOf(t), scope: Array.isArray(kube.scope) ? kube.scope : "*" }, error: t.error ? { code: "", message: t.error } : null })];
     const answers = await Promise.all(LISTS.map((name) => kube.read(name)));
     LISTS.forEach((name, i) => {
       const { status, error } = kubeStatus(answers[i]);

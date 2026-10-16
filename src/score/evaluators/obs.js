@@ -17,7 +17,8 @@ export const obsEvaluators = {
     const agents = data["obs-agents"]?.agents || {};
     const aws = data["obs-aws"] || {};
     const items = [{ id: "metrics-server", pass: served, detail: served ? "the metrics API is served" : "the metrics API is not served: no metrics-server (HPA, kubectl top and Karpenter consolidation go blind)" }];
-    const strong = [...((aws.addons || []).includes(CW_ADDON) ? ["CloudWatch Observability add-on"] : []), ...has(agents, "cwagent", "prometheus", "adot")];
+    const bundle = has(agents, "otel").length && has(agents, "ksm").length ? ["the observe bundle (OpenTelemetry collector + kube-state-metrics)"] : [];
+    const strong = [...((aws.addons || []).includes(CW_ADDON) ? ["CloudWatch Observability add-on"] : []), ...has(agents, "cwagent", "prometheus", "adot"), ...bundle];
     const weak = has(agents, "otel");
     if (strong.length) items.push({ id: "pipeline", pass: true, detail: `cluster metrics kept by ${strong.join(", ")}` });
     else if (weak.length) items.push({ id: "pipeline", pass: true, warn: true, detail: `an OpenTelemetry collector runs (${agents.otel[0]}); its metrics exporter is not verified (Container Insights or AMP keeps history and alarms)` });
@@ -34,6 +35,8 @@ export const obsEvaluators = {
     if (fresh.length && collectors.length) return { items: [{ id: "container-logs", pass: true, detail: `shipped off-node by ${collectors.join(", ")}: ${fresh[0].name} got logs ${Math.round((now - fresh[0].lastEventMs) / 60_000)} min ago` }] };
     const ship = [...((aws.addons || []).includes(CW_ADDON) ? ["CloudWatch Observability add-on (Fluent Bit)"] : []), ...has(agents, "fluentbit", "fluentd", "cwagent", "vector")];
     if (ship.length) return { items: [{ id: "container-logs", pass: true, detail: `shipped off-node by ${ship.join(", ")}` }] };
+    const shippers = has(agents, "otel", "promtail", "prometheus");
+    if (has(agents, "loki").length && shippers.length) return { items: [{ id: "container-logs", pass: true, detail: `shipped to Loki (${agents.loki[0]}) by ${shippers.join(", ")}` }] };
     if (has(agents, "otel", "adot").length) return { items: [{ id: "container-logs", pass: true, warn: true, detail: "an OpenTelemetry collector runs; a filelog receiver is not verified, container logs may stay on the node" }] };
     return { items: [{ id: "container-logs", pass: false, detail: "container logs stay on the node (no Fluent Bit, CloudWatch agent or OTel logs pipeline): a replaced node or pod takes them with it" }] };
   },
@@ -45,20 +48,23 @@ export const obsEvaluators = {
     const missing = CP_REQUIRED.filter((t) => !aws.controlPlaneLogs.includes(t));
     return { items: [{ id: aws.cluster, pass: !missing.length, detail: missing.length ? `control plane logs off for ${missing.join(", ")}${aws.controlPlaneLogs.length ? ` (on: ${aws.controlPlaneLogs.join(", ")})` : ""}: who did what to the cluster is not recorded` : `on: ${aws.controlPlaneLogs.join(", ")}` }] };
   },
+  // Traces need no AWS: Beyla (eBPF) or an OTel collector in the cluster
+  // counts; X-Ray is read when the app has AWS access.
   "obs-traces"({ data }) {
     const aws = data["obs-aws"] || {};
     const agents = data["obs-agents"]?.agents || {};
-    const blocked = noAws(aws);
-    if (blocked) return blocked;
-    const tr = aws.traces;
+    const tr = aws.aws ? aws.traces : null;
     if (tr && tr.count > 0) return { items: [{ id: "traces", pass: true, detail: `${tr.count} X-Ray trace(s) in the last hour (${tr.services.join(", ") || "services unnamed"})` }] };
+    if (has(agents, "beyla").length) return { items: [{ id: "traces", pass: true, detail: `Beyla (${agents.beyla[0]}) emits spans and RED metrics from eBPF${has(agents, "otel").length ? ", into the OpenTelemetry collector" : ""}` }] };
     const collector = has(agents, "adot", "otel", "xray");
-    if (collector.length) return { items: [{ id: "traces", pass: true, warn: true, detail: `a trace collector runs (${collector.join(", ")}) but no X-Ray traces arrived in the last hour${tr ? "" : ` (${failedRead(aws, "xray") || "X-Ray not readable"})`}` }] };
-    if (!tr) return { items: [], unknown: [{ id: "traces", reason: failedRead(aws, "xray") || "X-Ray did not answer" }] };
-    return { items: [{ id: "traces", pass: false, detail: "no traces: no X-Ray traces in the last hour and no OpenTelemetry/ADOT/X-Ray collector in the cluster" }] };
+    if (collector.length) return { items: [{ id: "traces", pass: true, warn: true, detail: `a trace collector runs (${collector.join(", ")}) but no app is seen sending spans (Beyla or X-Ray)` }] };
+    if (aws.aws && !tr) return { items: [], unknown: [{ id: "traces", reason: failedRead(aws, "xray") || "X-Ray did not answer" }] };
+    return { items: [{ id: "traces", pass: false, detail: `no traces: no Beyla, OpenTelemetry/ADOT or X-Ray collector in the cluster${aws.aws ? " and no X-Ray traces in the last hour" : ""}` }] };
   },
   "obs-alerting"({ data }) {
     const aws = data["obs-aws"] || {};
+    const am = has(data["obs-agents"]?.agents || {}, "alertmanager");
+    if (!aws.aws && am.length) return { items: [{ id: "alertmanager", pass: true, warn: true, detail: "Alertmanager runs; its routes are not verified" }] };
     const blocked = noAws(aws);
     if (blocked) return blocked;
     if (failedRead(aws, "cloudwatch:DescribeAlarms")) return { items: [], unknown: [{ id: "alarms", reason: failedRead(aws, "cloudwatch:DescribeAlarms") }] };
@@ -99,8 +105,7 @@ export const obsEvaluators = {
   "obs-dashboards"({ data }) {
     const aws = data["obs-aws"] || {};
     const agents = data["obs-agents"]?.agents || {};
-    const blocked = noAws(aws);
-    if (blocked) return blocked;
+    if (!aws.aws) return { items: [{ id: "dashboards", pass: true, warn: !has(agents, "grafana").length, detail: has(agents, "grafana").length ? `Grafana (${agents.grafana[0]})` : "no Grafana in the cluster (Cloud Spider's map is the only view)" }] };
     if ((aws.dashboards || []).length) return { items: [{ id: "dashboards", pass: true, detail: `CloudWatch dashboard ${aws.dashboards[0]}` }] };
     if ((aws.addons || []).includes(CW_ADDON)) return { items: [{ id: "dashboards", pass: true, detail: "Container Insights dashboards (CloudWatch Observability add-on)" }] };
     if (has(agents, "grafana").length) return { items: [{ id: "dashboards", pass: true, detail: `Grafana (${agents.grafana[0]})` }] };
