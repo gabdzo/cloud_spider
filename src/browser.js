@@ -3421,7 +3421,8 @@ async function pullPath() {
     } else if (!wasSample && !body.error && body.diagram) probePath(asked);
     setStatus(ui, body.error || body.empty ? "" : pathStatus(body));
     showSniffExamples(body.empty ? body.examples || [] : null, body.empty ? body.routes : null);
-    if (!sniffRoutesData && body.kube && !body.empty) pullSniffRoutes();
+    if (body.routes && !body.empty) setSniffRoutes(body.routes);
+    if (!sniffRoutesData && !body.empty && !body.routes) pullSniffRoutes();
     errorEl.hidden = !body.error;
     errorEl.textContent = body.error || "";
     renderChrome();
@@ -3599,6 +3600,10 @@ function sniffRoutesBlock(routes) {
         row.append(why);
       }
       row.addEventListener("click", () => {
+        if (r.lb) {
+          urlLb = r.lb;
+          if ([...lbSelect.options].some((o) => o.value === r.lb)) lbSelect.value = r.lb;
+        }
         hostInput.value = r.target;
         setSniffView("trace");
         hostInput.dispatchEvent(new Event("change"));

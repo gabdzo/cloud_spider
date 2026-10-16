@@ -94,3 +94,44 @@ export async function readRoutes(kube, scope = "*") {
   const ingOk = jobs.some(({ k }, i) => k === "ingresses" && results[i]?.json);
   return { groups, noAccess: [...noAccess], total: groups.reduce((n, g) => n + g.count, 0), error: !ingOk && !noAccess.size ? "Ingresses could not be read" : "" };
 }
+
+// AWS mode: every public ALB's ROUTES rows (alb-routes.js, already read and
+// cached) grouped by domain (the rule's host, else the ALB's DNS name), each
+// with a verdict from the ALB's target health (from the map read) and, for
+// an Ingress backend, the Service's ready endpoints (from the cached kube
+// snapshot). No new reads. Rows carry lb (the ALB arn) for TRACE.
+export function awsRouteGroups(albs = [], routesById = new Map(), snap = null) {
+  const groups = new Map();
+  for (const alb of albs) {
+    const got = routesById.get(alb.id);
+    for (const r of got?.routes || []) {
+      if (r.source === "openapi") continue;
+      const host = String(r.host || alb.dns || alb.name || "?").toLowerCase();
+      const m = /^([a-z0-9-]+)\/([a-z0-9-]+):(.+)$/.exec(r.service || "");
+      const svcPort = m ? (/^\d+$/.test(m[3]) ? Number(m[3]) : m[3]) : null;
+      let status = "ok";
+      let why = "";
+      let ready = null;
+      let total = null;
+      if (/^(redirect|fixed)/.test(r.service || "")) [status, why] = ["note", r.service];
+      else {
+        const tc = Number(alb.targetCount ?? 0);
+        const hc = Number(alb.healthyCount ?? 0);
+        if (alb.targetCount != null) [ready, total] = [hc, tc];
+        if (tc > 0 && hc === 0) [status, why] = ["broken", `0/${tc} targets healthy on ${alb.name || "the ALB"}`];
+        else if (alb.targetHealth && !/healthy/.test(alb.targetHealth) && hc === 0) [status, why] = ["broken", `targets ${alb.targetHealth}`];
+        if (m && snap && status !== "broken") {
+          const v = routeVerdict({ ns: m[1], svc: m[2], port: svcPort }, snap.services || [], snap.endpointSlicesAll?.length ? snap.endpointSlicesAll : null, snap.pods || []);
+          if (v.status !== "ok") [status, why] = [v.status, v.why];
+          if (v.total != null) [ready, total] = [v.ready ?? 0, v.total];
+        }
+        if (status === "ok") why = ready != null ? `${ready}/${total} ready` : "";
+      }
+      const row = { ns: m ? m[1] : "", host, path: r.path || "/", svc: m ? m[2] : r.service || "?", svcPort, via: r.note || "", cls: r.source === "ingress" ? "alb ingress" : "alb rule", kind: "alb", status, why, ready, total, lb: alb.id, target: `${host}${String(r.path || "/").replace(/\*.*$/, "")}` };
+      if (!groups.has(host)) groups.set(host, []);
+      groups.get(host).push(row);
+    }
+  }
+  const list = [...groups].map(([host, rows]) => ({ host, count: rows.length, broken: rows.filter((r) => r.status === "broken").length, rows: rows.sort((a, b) => Number(b.status === "broken") - Number(a.status === "broken") || a.path.localeCompare(b.path)) })).sort((a, b) => b.broken - a.broken || a.host.localeCompare(b.host));
+  return { groups: list, total: list.reduce((n, g) => n + g.count, 0), noAccess: [], error: albs.length ? "" : "no public load balancer on the map" };
+}
