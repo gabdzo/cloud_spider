@@ -140,6 +140,7 @@ export function createHealthWatch({ clock = Date.now, keep = 12 } = {}) {
       lamp: healthLamp(got.issues, got),
       counts,
       total: got.issues.length,
+      byNs: got.issues.reduce((m, i) => ({ ...m, [i.ns]: (m[i.ns] || 0) + 1 }), /** @type {Record<string, number>} */ ({})),
       worst: got.issues.slice(0, 3).map((issue) => ({ ...issue, line: `${issue.ns}/${issue.name} ${HEALTH_KINDS[issue.kind].word}${issue.detail ? ` (${issue.detail})` : ""}` })),
       error: got.error || "",
       noAccess: Object.keys(got.access || {}).length,
@@ -161,5 +162,9 @@ export function morningLine(sum) {
     .sort((a, b) => HEALTH_KINDS[a[0]].rank - HEALTH_KINDS[b[0]].rank)
     .map(([kind, n]) => `${n} ${HEALTH_KINDS[kind].short}`)
     .join(", ");
-  return { status: sum.lamp === "fail" ? "fail" : "warn", text: `${sum.label} · ${scope}: ${counts}. Worst: ${sum.worst.map((w) => w.line).join("; ")}.`, time: sum.at, label: sum.label, counts: { ...sum.counts }, worst: sum.worst.map(({ ns, name, kind, detail }) => ({ ns, name, kind, detail: detail || "" })) };
+  // Every scanned namespace gets named: those with findings, then the clean ones.
+  const by = Object.entries(sum.byNs || {}).sort((x, y) => y[1] - x[1]);
+  const clean = Array.isArray(sum.scope) ? sum.scope.filter((ns) => !(sum.byNs || {})[ns]) : [];
+  const perNs = by.length ? ` By namespace: ${by.map(([ns, n]) => `${ns} ${n}`).join(", ")}${clean.length ? `; healthy: ${clean.join(", ")}` : ""}.` : "";
+  return { status: sum.lamp === "fail" ? "fail" : "warn", text: `${sum.label} · ${scope}: ${counts}. Worst: ${sum.worst.map((w) => w.line).join("; ")}.${perNs}`, time: sum.at, label: sum.label, counts: { ...sum.counts }, worst: sum.worst.map(({ ns, name, kind, detail }) => ({ ns, name, kind, detail: detail || "" })) };
 }

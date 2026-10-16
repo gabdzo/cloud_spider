@@ -39,6 +39,7 @@ import { sampleClusterSnapshot } from "./kube-sample.js";
 import { sampleVaultSnapshot } from "./vault-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { pickSniffExamples } from "./sniff-examples.js";
+import { inventory, resHints, capped } from "./kube-inventory.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, nodeGroupChange, runHint, watchLine } from "./upgrade-rules.js";
 import { CONNECT_REGION, connectCommand, connectionOf, contextsForCluster, sameEndpoint, validCluster, viewerAlias } from "./kube-connect.js";
@@ -1741,6 +1742,37 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     // context: any listed kube context ("" = the primary one, which also
     // feeds the radio). A namespace-scoped context reads its namespaces only
     // and `limits` names what needs a cluster-wide one.
+    // RES (Pip-Boy): every namespaced kind the context can list, cached a
+    // minute per context, one read at a time (kube-inventory.js).
+    async clusterResources({ context = "", fresh = false } = {}) {
+      const { client, error: noClient } = pathClient(String(context || ""));
+      if (noClient) return { error: noClient, kinds: [] };
+      if (!client.readPath) return { error: "this kube client cannot list resources", kinds: [] };
+      const key = client.context || "?";
+      const hit = resCache.get(key);
+      if (!fresh && hit?.value && Date.now() - hit.at < 60_000) return hit.value;
+      if (hit?.pending) return hit.pending;
+      const pending = (async () => {
+        const scope = client.scope === "*" || !Array.isArray(client.scope) ? "*" : client.scope;
+        const get = (/** @type {string} */ path, /** @type {any} */ opts) => client.readPath(path, opts);
+        const inv = await inventory({ get, scope });
+        let monitors = [];
+        if (inv.monitoringCrd) {
+          const sm = inv.kinds.find((k) => k.group === "monitoring.coreos.com" && k.resource === "servicemonitors");
+          if (sm) {
+            const paths = scope === "*" ? [`/apis/${sm.version}/servicemonitors`] : scope.map((ns) => `/apis/${sm.version}/namespaces/${ns}/servicemonitors`);
+            monitors = (await capped(paths, 4, (p) => client.readPath(p))).flatMap((r) => r?.json?.items || []);
+          }
+        }
+        const hints = resHints(inv, monitors);
+        for (const k of inv.kinds || []) for (const it of k.items) { delete it.labels; delete it.owner; }
+        const value = { ...inv, context: key, hints };
+        resCache.set(key, { at: Date.now(), value });
+        return value;
+      })().catch((e) => { resCache.delete(key); return { error: e?.message || "the inventory failed", kinds: [] }; });
+      resCache.set(key, { ...(hit || {}), pending });
+      return pending;
+    },
     async clusterOps({ sample = false, context = "" } = {}) {
       if (sample) return opsView(sampleOps(now()), { now: now() });
       const pick = screenContext(context);
@@ -1909,6 +1941,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
 
   // The configured kube.context (the cluster the app means), else the
   // primary context, else the default client.
+  const resCache = new Map();
   function pathClient(asked) {
     const wanted = asked || settings?.config?.kube?.context || settings?.kube?.context || "";
     if (asked && !contexts.some((ctx) => ctx.name === asked)) return { error: `no kube context named ${asked.slice(0, 80)}` };

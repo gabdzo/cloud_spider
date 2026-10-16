@@ -221,9 +221,9 @@ export const BODY_CAP = 4 * 1024 * 1024;
 // keepLine: a text body is filtered line by line as it streams, so a large
 // Prometheus page (the observe collector's runs to 10+ MB on a busy cluster)
 // keeps the families a caller needs instead of its first 4 MB.
-export function httpsGet(url, { ca, token, servername = "", timeout = TIMEOUT_MS, keepLine = null }) {
+export function httpsGet(url, { ca, token, servername = "", timeout = TIMEOUT_MS, keepLine = null, accept = "application/json" }) {
   return new Promise((resolve) => {
-    const req = request(url, { method: "GET", ca: ca || undefined, ...(servername ? { servername } : {}), headers: { authorization: `Bearer ${token}`, accept: "application/json", "accept-encoding": "gzip" }, timeout }, (res) => {
+    const req = request(url, { method: "GET", ca: ca || undefined, ...(servername ? { servername } : {}), headers: { authorization: `Bearer ${token}`, accept, "accept-encoding": "gzip" }, timeout }, (res) => {
       // gzip: the observe collector's metrics page is 20+ MB raw on a busy
       // cluster and streamed through the API server's service proxy that took
       // 5-50 s over a home uplink (kubectl asks for gzip too: ~1.5 s).
@@ -354,12 +354,12 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     }
   }
 
-  async function getPath(path, { text = false, keepLine = null, timeout = 0 } = {}) {
+  async function getPath(path, { text = false, keepLine = null, timeout = 0, accept = "" } = {}) {
     const t = await resolveTarget();
     if (t.error) return { error: t.error, unset: true };
     const tok = await token(t);
     if (tok.error) return { error: tok.error };
-    let res = await shared(`${t.server}${path}`, keepLine || timeout ? null : `${text ? "t" : "j"} ${path}`, () => limited(() => get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}), ...(timeout ? { timeout } : {}) })));
+    let res = await shared(`${t.server}${path}`, keepLine || timeout ? null : `${text ? "t" : "j"}${accept ? `[${accept}]` : ""} ${path}`, () => limited(() => get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}), ...(timeout ? { timeout } : {}), ...(accept ? { accept } : {}) })));
     // 429: the API server's flow control said "later" (it does right after
     // an add-on install floods it). Try again twice before calling the read
     // failed, so one busy second does not turn a control UNKNOWN.
@@ -412,6 +412,12 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     // One named GET from PATHS, answered raw: { json } | { forbidden } |
     // { missing } | { error } | { unset }. For the scorecard's collectors,
     // which need 403 and 404 kept apart (src/score/collectors/kube-*.js).
+    // Raw read-only GET of an API path (discovery and the RES inventory,
+    // kube-inventory.js); only /api and /apis paths.
+    async readPath(path, { accept = "" } = {}) {
+      if (!/^\/apis?(\/|$)/.test(String(path)) || /\.\./.test(String(path))) return { error: "not an API path" };
+      return getPath(String(path), { accept });
+    },
     async read(name, ...args) {
       if (!Object.hasOwn(PATHS, name) || typeof PATHS[name] !== "function") return { error: `no such read: ${String(name).slice(0, 60)}` };
       return getPath(PATHS[name](...args));
