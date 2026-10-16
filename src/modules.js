@@ -9,7 +9,7 @@ export const MODULES = [
   { id: "kubemap", label: "Cluster map", needs: ["kubernetes"], doc: "the MAP's cluster layer: namespaces, workloads, entry points and NetworkPolicies; on its own (k8s-only) the MAP is the cluster, with AWS it sits inside its subnets" },
   { id: "network", label: "Network", needs: [], doc: "SNIFF/Network: a request's path and DEBUG; FROM INSIDE (the debug pod) needs only a kube write context, the AWS readers only the aws module" },
   { id: "cost", label: "Cost", needs: ["aws"], doc: "CAPS: Cost Explorer, month to date" },
-  { id: "radio", label: "Activity", needs: ["aws"], doc: "RADIO: recent CloudTrail calls" },
+  { id: "radio", label: "Activity", needs: [], doc: "RADIO: pod health findings per kube context, plus recent CloudTrail calls when the aws module is on" },
   { id: "stacks", label: "Stacks", needs: [], doc: "Pulumi stacks and upgrades" },
   { id: "vaults", label: "Vaults", needs: [], doc: "projects, their checks and SLOs" },
   { id: "kubernetes", label: "Cluster", needs: [], doc: "the Cluster screen (read-only Kubernetes)" },
@@ -26,7 +26,7 @@ export const MODULE_IDS = ALL;
 
 export const PROFILES = {
   full: ALL.filter((id) => id !== "observe"),
-  "k8s-only": ["kubemap", "network", "kubernetes", "graph", "timeline", "score", "learn", "ask"],
+  "k8s-only": ["kubemap", "network", "radio", "kubernetes", "graph", "timeline", "score", "learn", "ask"],
   "aws-only": ["aws", "map", "network", "cost", "radio", "stacks", "vaults", "score", "learn", "ask"],
 };
 

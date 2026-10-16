@@ -107,7 +107,8 @@ export function layoutKube(diagram, { width = 0, state = {}, top = 0 } = {}) {
   for (const [owner, pods] of podsOf) {
     if (pods.length < 2 || expanded.has(owner)) continue;
     const worst = pods.find((p) => p.status === "broken") || pods.find((p) => p.status === "hang") || pods.find((p) => p.status !== "ok") || pods[0];
-    const running = pods.filter((p) => p.status === "ok").length;
+    // Running = phase Running and Ready (an ISSUES note such as old restarts does not unready a pod).
+    const running = pods.filter((p) => (typeof p.running === "boolean" ? p.running : p.status === "ok")).length;
     const nodesUsed = [...new Set(pods.map((p) => p.pod?.node).filter(Boolean))];
     const ownerNode = all.find((n) => n.id === owner);
     const group = {

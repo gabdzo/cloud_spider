@@ -3,7 +3,7 @@
 // namespaces (issues first, a 0-10 health value each, like SPECIAL) and the
 // detail of one. Pure: no DOM, no I/O.
 
-/** @typedef {{ id: string, kind: string, label?: string, caption?: string, status?: string, ns?: string, system?: boolean, want?: number, have?: number, workloadKind?: string, issue?: string, svc?: any, host?: any, owner?: string }} DNode */
+/** @typedef {{ id: string, kind: string, label?: string, caption?: string, status?: string, running?: boolean, ns?: string, system?: boolean, want?: number, have?: number, workloadKind?: string, issue?: string, svc?: any, host?: any, owner?: string }} DNode */
 /** @typedef {{ name: string, kind: string, want: number, have: number, status: string, note: string }} PipWorkload */
 /** @typedef {{ name: string, type: string, ports: string, status: string, note: string }} PipService */
 /** @typedef {{ kind: string, host: string, full: string, target: string, status: string }} PipEntry */
@@ -21,6 +21,8 @@ export function shortHost(host, max = 26) {
   return elb ? `${s} (ELB)` : s;
 }
 
+/** Running = phase Running and Ready; old restarts do not count against it. */
+const isRunning = (/** @type {any} */ p) => (typeof p.running === "boolean" ? p.running : p.status === "ok");
 const stateOf = (/** @type {number} */ health, /** @type {boolean} */ broken) => (broken || health <= 3 ? "broken" : health < 10 ? "hurting" : "healthy");
 
 /**
@@ -38,7 +40,7 @@ export function pipModel(body) {
   for (const name of names) {
     const own = nodes.filter((n) => n.ns === name);
     const pods = own.filter((n) => n.kind === "pod");
-    const ready = pods.filter((p) => p.status === "ok").length;
+    const ready = pods.filter(isRunning).length;
     const workloads = own.filter((n) => n.kind === "workload").map((w) => ({ name: w.label || "", kind: w.workloadKind || "Deployment", want: w.want ?? 0, have: w.have ?? 0, status: w.status || "ok", note: w.status !== "ok" ? (pods.find((p) => p.owner === w.id && p.status !== "ok")?.caption || w.caption || "") : "" }));
     const services = own.filter((n) => n.kind === "service").map((s) => ({ name: s.label || "", type: s.svc?.type || "ClusterIP", ports: (s.svc?.ports || []).map((p) => `:${p.port}`).join(" "), status: s.status || "ok", note: s.issue || "" }));
     /** @type {PipEntry[]} */
@@ -93,6 +95,6 @@ export function pipModel(body) {
     cluster: nodes.find((n) => n.kind === "control-plane")?.label || body?.context || "",
     context: body?.context || "",
     namespaces: list,
-    totals: { ready: pods.filter((p) => p.status === "ok").length, pods: pods.length, nodes: kn.length, nodesReady: kn.filter((n) => n.host?.ready !== false && n.status === "ok").length, issues: list.reduce((n, x) => n + x.issues.length, 0) },
+    totals: { ready: pods.filter(isRunning).length, pods: pods.length, nodes: kn.length, nodesReady: kn.filter((n) => n.host?.ready !== false && n.status === "ok").length, issues: list.reduce((n, x) => n + x.issues.length, 0) },
   };
 }
