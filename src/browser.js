@@ -88,6 +88,19 @@ const ui = createUi();
 // The morning report (SRE overview): three sentences from the server's
 // reads (or the sample's), shown over the map.
 const morningEl = document.querySelector("#morning");
+// MORNING in the key panel, like RADIO: hidden by default, kept per browser.
+const MORNING_KEY = "cs.morning.on";
+const morningKey = /** @type {HTMLButtonElement|null} */ (document.querySelector("#morning-key"));
+let morningOn = (() => { try { return window.localStorage.getItem(MORNING_KEY) === "1"; } catch { return false; } })();
+morningKey?.setAttribute("aria-pressed", String(morningOn));
+morningKey?.addEventListener("click", () => {
+  morningOn = !morningOn;
+  try { window.localStorage.setItem(MORNING_KEY, morningOn ? "1" : "0"); } catch { /* this page only */ }
+  morningKey.setAttribute("aria-pressed", String(morningOn));
+  morningShown = "";
+  renderMorning();
+  draw();
+});
 const morningWhen = document.querySelector("#morning-when");
 const morningFold = document.querySelector("#morning-fold");
 const morningLines = {
@@ -924,7 +937,8 @@ function renderMorning() {
   const kubeOnly = !moduleOn("map");
   const report = mode === "map" || (kubeOnly && mode === "cluster" && moduleOn("kubernetes")) ? currentMorning() : null;
   ui.marks = currentMorning()?.marks || null;
-  morningEl.hidden = !report;
+  morningEl.hidden = !report || !morningOn;
+  if (morningKey) morningKey.hidden = !report;
   if (!report) return;
   const pods = sample ? [] : report.pods || [];
   ensureLogErrors();
@@ -989,6 +1003,8 @@ function renderMorning() {
   }
   morningWhen.textContent = sample ? "SAMPLE" : hhmm24(Date.now());
   morningEl.classList.toggle("folded", morningFolded);
+  // The MORNING key lights (alert dot) while any line is not ok.
+  morningKey?.classList.toggle("alert", Boolean(morningEl.querySelector(".m-line.broken, .m-line.hang, .m-line.warn, .m-line.bad, .m-line.err")));
   morningFold.setAttribute("aria-expanded", String(!morningFolded));
   morningFold.innerHTML = morningFolded ? "&#9660;" : "&#9650;";
   morningFold.title = morningFolded ? "open the morning report" : "fold the morning report";
