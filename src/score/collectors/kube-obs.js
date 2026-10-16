@@ -19,6 +19,12 @@ export const AGENTS = [
   ["cwagent", /cloudwatch-agent/],
   ["adot", /aws-otel-collector|adot/],
   ["otel", /opentelemetry-collector|otel\/opentelemetry|otelcol/],
+  // The observe bundle (upgrades/observe) and its kin, before prometheus
+  // (grafana/alloy) so each image counts once, as what it is.
+  ["beyla", /grafana\/beyla|(^|\/)beyla(:|@|$)/],
+  ["loki", /grafana\/loki|(^|\/)loki(:|@|$)/],
+  ["ksm", /kube-state-metrics/],
+  ["promtail", /promtail/],
   ["prometheus", /(^|\/)prometheus(:|@|$)|prom\/prometheus|quay\.io\/prometheus\/prometheus|vmagent|grafana\/agent|grafana\/alloy/],
   ["alertmanager", /alertmanager/],
   ["grafana", /grafana\/grafana/],

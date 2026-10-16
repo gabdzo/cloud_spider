@@ -6,6 +6,8 @@ export const SEVERITIES = ["critical", "high", "medium", "low", "info"];
 // One Critical outweighs 20 Lows; one High outweighs 7 Lows (spec §6.2).
 export const SEVERITY_WEIGHT = { critical: 40, high: 15, medium: 5, low: 2, info: 0 };
 export const CATEGORIES = ["security", "reliability", "networking", "observability", "finops", "governance", "sre", "platform"];
+// Kubernetes flavours a control can be limited to (platforms: [eks]).
+export const PLATFORMS = ["eks", "kubernetes", "openshift"];
 export const TARGETS = ["aws", "kubernetes"];
 export const EVIDENCE_TYPES = ["config", "runtime", "process"];
 export const AGGREGATIONS = ["all-or-nothing", "proportional"];
@@ -54,6 +56,7 @@ export function validateControl(doc) {
   // ending in "/" (K8S-SEC-005: namespace shop → pgcluster; NET-K8S-002:
   // shop/ → shopapi). The card's id, the same names as remediation.card.
   need(doc.remediation?.cardFor === undefined || (doc.remediation.cardFor && typeof doc.remediation.cardFor === "object" && !Array.isArray(doc.remediation.cardFor) && Object.values(doc.remediation.cardFor).every((v) => /^[a-z][a-z0-9-]*$/.test(String(v)))), `${where}remediation.cardFor must map resource ids (or prefixes ending in /) to card ids`);
+  need(doc.platforms === undefined || (Array.isArray(doc.platforms) && doc.platforms.length > 0 && doc.platforms.every((x) => PLATFORMS.includes(x))), `${where}platforms must list ${PLATFORMS.join(", ")}`);
   need(doc.params === undefined || (doc.params && typeof doc.params === "object" && !Array.isArray(doc.params)), `${where}params must be a mapping`);
   need(typeof doc.verification === "string" && doc.verification.length > 0, `${where}verification is required`);
   for (const ref of doc.references || []) {

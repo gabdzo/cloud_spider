@@ -112,6 +112,7 @@ export const SCORE_CSS = `
   #score .sc-title { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
   #score .sc-id { color: var(--s-text2); font-family: var(--s-num); font-size: 12px; }
   #score .sc-gate { font-size: 10px; letter-spacing: .1em; color: var(--s-bad); border: 1px solid var(--s-bad); padding: 0 5px; }
+  #score .sc-pts { font-size: 10px; letter-spacing: .06em; color: var(--s-ok); border: 1px solid var(--s-ok); padding: 0 5px; margin-left: 6px; }
   #score .sc-what { min-width: 0; }
   #score .sc-empty { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; max-width: 560px; }
   #score .sc-empty p { margin: 0; }
