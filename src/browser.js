@@ -67,7 +67,7 @@ import { plateText } from "./vault-schema.js";
 import { snapshot } from "./agent-text.js";
 import { createTerminal } from "./terminal.js";
 import { createLearnView } from "./learn-view.js";
-import { createScoreView, scoreModel } from "./score/view.js";
+import { createScoreView, scoreModel, scoreTabs } from "./score/view.js";
 import { createAppsView } from "./score/apps-view.js";
 import { groupVaults } from "./vault-perks.js";
 import { clusterVaultNode } from "./perk-view.js";
@@ -2791,6 +2791,7 @@ const pipBoy = mountPip(pipBoyEl, {
   onClose: () => { if (!kubeMapOnly()) setPipBoy(false); },
   canClose: !kubeMapOnly(),
   openTopology: (ns) => openInCluster({ type: "entry", id: `ns:${ns}`, ns }),
+  openApp: (id) => openAppScore(id),
   store: (() => { try { return window.localStorage; } catch { return null; } })(),
 });
 function setPipBoy(on) {
@@ -4862,7 +4863,7 @@ function openScoreCard(card, cluster) {
   liveWant = { cluster, values: Object.fromEntries(Object.entries(card.params || {}).map(([k, v]) => [k, String(v)])) };
   openEksCard(cluster);
 }
-const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key"), context: () => clusterData?.context || clusterContext, openCard: openScoreCard, onChange: () => syncUrl(), sample: () => sample });
+const scoreView = createScoreView({ root: document.querySelector("#score"), toggleButton: document.querySelector("#score-key"), context: () => clusterData?.context || clusterContext, openCard: openScoreCard, onChange: () => syncUrl(), sample: () => sample, hasKube: () => moduleOn("kubernetes"), hasAws: () => moduleOn("aws"), openApps: () => openAppScore("") });
 scoreApi = scoreView;
 // SCORE covers the map like LEARN: one big panel at a time. Opening it folds
 // LEARN, STACKS and ASK; opening any of those folds SCORE (before, SCORE
@@ -4877,7 +4878,39 @@ document.querySelector("#score-key").addEventListener("click", () => {
   Promise.resolve(scoreView.toggle()).then(renderChromeParts);
 });
 // APPS: a grade per app, same one-big-panel rule as SCORE.
-const appsView = createAppsView({ root: document.querySelector("#apps"), toggleButton: document.querySelector("#apps-key"), context: () => clusterData?.context || clusterContext, sample: () => sample });
+const appsView = createAppsView({ root: document.querySelector("#apps"), toggleButton: document.querySelector("#apps-key"), context: () => clusterData?.context || clusterContext, sample: () => sample, tabs: scoreTabBar });
+// SCORE's tab bar on the APPS panel: CLUSTER / AWS ACCOUNT go back to SCORE.
+function scoreTabBar() {
+  const bar = document.createElement("div");
+  bar.className = "sc-targets";
+  bar.setAttribute("role", "group");
+  bar.setAttribute("aria-label", "scan target");
+  for (const [value, label] of scoreTabs({ kube: moduleOn("kubernetes"), aws: moduleOn("aws") })) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "sc-target";
+    b.dataset.target = value;
+    b.textContent = label;
+    b.setAttribute("aria-pressed", String(value === "apps"));
+    b.addEventListener("click", () => {
+      if (value === "apps") return Promise.resolve(appsView.showList()).then(renderChromeParts);
+      appsView.setOpen(false);
+      Promise.resolve(scoreView.openTarget(value)).then(renderChromeParts);
+    });
+    bar.append(b);
+  }
+  return bar;
+}
+// APPS on SCORE and the Pip-Boy grade tiles: the APPS panel, on one app's
+// card when an id is given.
+function openAppScore(id) {
+  markHistory();
+  if (scoreView.isOpen()) scoreView.setOpen(false);
+  if (learnView.isOpen()) learnView.setOpen(false);
+  if (pipOpen) toggleUpgrade();
+  if (terminal.isOpen() && !terminal.isRunning()) terminal.setOpen(false);
+  return Promise.resolve(id ? appsView.openApp(id) : appsView.showList()).then(renderChromeParts);
+}
 document.querySelector("#apps-key").addEventListener("click", () => {
   markHistory();
   if (!appsView.isOpen()) {

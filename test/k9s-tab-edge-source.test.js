@@ -3,10 +3,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { edgeBadge } from "../src/graph-view.js";
 
-test("K9S is a top-level view tab after Cluster, gated by the kubernetes module", async () => {
+test("K9S is a labelled key in the tools box (not a top tab), gated by the kubernetes module", async () => {
   const server = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
   const tabs = server.match(/<nav class="tabs" aria-label="views">([\s\S]*?)<\/nav>/)[1];
-  assert.match(tabs, /<button id="k9s-btn" class="tab" type="button" data-icon="terminal" aria-pressed="false"[^>]*data-module="kubernetes">K9S<\/button>/);
+  assert.doesNotMatch(tabs, /k9s-btn/);
+  const keys = server.match(/<div class="keys" role="group" aria-label="panels">([\s\S]*?)<\/div>/)[1];
+  assert.match(keys, /<button id="k9s-btn" class="key" type="button" aria-pressed="false"[^>]*data-module="kubernetes"><span class="cap" data-icon="terminal"><\/span><span class="tag">K9S<\/span><\/button>/);
+  // every tools-box key carries a visible label, and narrow widths keep it
+  for (const m of keys.matchAll(/<button id="([^"]+)" class="key"[^>]*>([\s\S]*?)<\/button>/g)) assert.match(m[2], /<span class="tag"[^>]*>\w+<\/span>/, m[1]);
+  assert.doesNotMatch(server, /header \.key \.tag \{ display: none; \}/);
   assert.doesNotMatch(server, /#k9s-btn \{ position: absolute/);
   const browser = await readFile(new URL("../src/browser.js", import.meta.url), "utf8");
   assert.match(browser, /kubernetes: "#cluster, #k9s-btn"/);

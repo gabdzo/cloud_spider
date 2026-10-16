@@ -25,7 +25,7 @@ export function gradeLine(grades = {}) {
   return ["A", "B", "C", "D", "F", "?"].filter((g) => grades[g]).map((g) => `${g} ${grades[g]}`).join(" · ") || "no apps";
 }
 
-export function createAppsView({ root, toggleButton, context = () => "", sample = () => false, onChange = () => {} }) {
+export function createAppsView({ root, toggleButton, context = () => "", sample = () => false, onChange = () => {}, tabs = null }) {
   let open = false;
   let model = null;
   let picked = null;
@@ -87,6 +87,8 @@ export function createAppsView({ root, toggleButton, context = () => "", sample 
   }
   function draw() {
     root.replaceChildren();
+    // SCORE's tab bar (CLUSTER | AWS ACCOUNT | APPS) with APPS lit.
+    if (tabs) root.append(tabs());
     const head = el("div", "ap-top");
     head.append(el("span", "sc-label", "APPS · production readiness per app"), el("span", "ap-line", model?.state === "ok" ? gradeLine(model.grades) : ""));
     root.append(head);
@@ -120,6 +122,9 @@ export function createAppsView({ root, toggleButton, context = () => "", sample 
       onChange(open);
     },
     toggle() { return this.setOpen(!open); },
+    // A Pip-Boy grade tile: open straight on that app's card.
+    openApp(id) { picked = id || null; return this.setOpen(true); },
+    showList() { picked = null; return this.setOpen(true); },
     refresh() { return open ? load() : undefined; },
     load,
   };

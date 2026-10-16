@@ -111,10 +111,10 @@ test("the vault page lists what a vault owns and where it lives; VPCs and missin
   assert.deepEqual(gone[0], { id: "i-gone", kind: "?", name: "i-gone", where: "not on the map right now", onMap: false });
 });
 
-test("VAULTS is the view tab after Cluster and K9S (a push-button with a lamp and a vault-door icon); no strip on the map", async () => {
+test("VAULTS is the view tab after Cluster (a push-button with a lamp and a vault-door icon); no strip on the map", async () => {
   const server = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
   const tabs = server.match(/<nav class="tabs" aria-label="views">([\s\S]*?)<\/nav>/)[1];
-  assert.deepEqual([...tabs.matchAll(/<button id="([^"]+)" class="tab"/g)].map((m) => m[1]), ["tab-map", "path", "cluster", "k9s-btn", "tab-vaults"]);
+  assert.deepEqual([...tabs.matchAll(/<button id="([^"]+)" class="tab"/g)].map((m) => m[1]), ["tab-map", "path", "cluster", "tab-vaults"]);
   assert.match(tabs, /id="tab-vaults" class="tab" type="button" data-icon="vaults" aria-pressed="false"/);
   assert.doesNotMatch(server, /vault-strip/);
   assert.match(server, /<section id="vault-page" aria-label="vaults page" hidden><\/section>/);

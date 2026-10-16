@@ -116,11 +116,11 @@ export const SCORE_CSS = `
   #score .sc-what { min-width: 0; }
   #score .sc-empty { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; max-width: 560px; }
   #score .sc-empty p { margin: 0; }
-  #score .sc-targets { display: flex; flex: none; gap: 0; align-self: flex-start; border: 1px solid var(--s-line); }
-  #score .sc-target { font: inherit; font-size: 11.5px; letter-spacing: .1em; padding: 4px 14px; cursor: pointer; color: var(--s-text2); background: var(--s-ink); border: none; }
-  #score .sc-target + .sc-target { border-left: 1px solid var(--s-line); }
-  #score .sc-target:hover { background: var(--s-hover); }
-  #score .sc-target[aria-pressed="true"] { color: var(--s-ink); background: var(--s-accent); cursor: default; }
+  :is(#score, #apps) .sc-targets { display: flex; flex: none; gap: 0; align-self: flex-start; border: 1px solid var(--s-line); }
+  :is(#score, #apps) .sc-target { font: inherit; font-size: 11.5px; letter-spacing: .1em; padding: 4px 14px; cursor: pointer; color: var(--s-text2); background: var(--s-ink); border: none; }
+  :is(#score, #apps) .sc-target + .sc-target { border-left: 1px solid var(--s-line); }
+  :is(#score, #apps) .sc-target:hover { background: var(--s-hover); }
+  :is(#score, #apps) .sc-target[aria-pressed="true"] { color: var(--s-ink); background: var(--s-accent); cursor: default; }
   #score .sc-exports { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   #score .sc-export { font-size: 11.5px; letter-spacing: .08em; color: var(--s-accent); text-decoration: none; border-bottom: 1px dotted var(--s-accent); }
   #score .sc-export:hover { color: var(--s-text); border-bottom-color: var(--s-text); }
@@ -147,7 +147,7 @@ export const SCORE_CSS = `
   :root:not([data-theme="pro"]) #score .sc-btn::after { content: " ]"; }
   :root:not([data-theme="pro"]) #score .sc-btn.sc-primary:not(:disabled) { color: var(--s-ink); background: var(--s-accent); box-shadow: 0 0 10px color-mix(in srgb, var(--s-accent) 45%, transparent); }
   :root:not([data-theme="pro"]) #score .sc-gauge, :root:not([data-theme="pro"]) #score .sc-cat, :root:not([data-theme="pro"]) #score .sc-pane, :root:not([data-theme="pro"]) #score .sc-nextcard { box-shadow: inset 0 0 18px color-mix(in srgb, var(--s-text) 6%, transparent); }
-  :root:not([data-theme="pro"]) #score .sc-target[aria-pressed="true"] { box-shadow: 0 0 10px color-mix(in srgb, var(--s-accent) 45%, transparent); }
+  :root:not([data-theme="pro"]) :is(#score, #apps) .sc-target[aria-pressed="true"] { box-shadow: 0 0 10px color-mix(in srgb, var(--s-accent) 45%, transparent); }
   :root:not([data-theme="pro"]) #score .sc-export::before { content: "> "; }
   :root:not([data-theme="pro"]) #score .sc-row:nth-of-type(odd) { background: color-mix(in srgb, var(--s-text) 3%, transparent); }
 
@@ -156,8 +156,8 @@ export const SCORE_CSS = `
   :root[data-theme="pro"] #score .sc-gauge, :root[data-theme="pro"] #score .sc-meta, :root[data-theme="pro"] #score .sc-side, :root[data-theme="pro"] #score .sc-cat,
   :root[data-theme="pro"] #score .sc-pane, :root[data-theme="pro"] #score .sc-nextcard, :root[data-theme="pro"] #score .sc-empty,
   :root[data-theme="pro"] #score .sc-changes, :root[data-theme="pro"] #score .sc-grant { border-radius: 8px; }
-  :root[data-theme="pro"] #score .sc-targets { border-radius: 8px; overflow: hidden; }
-  :root[data-theme="pro"] #score .sc-target { font-weight: 500; letter-spacing: .04em; }
+  :root[data-theme="pro"] :is(#score, #apps) .sc-targets { border-radius: 8px; overflow: hidden; }
+  :root[data-theme="pro"] :is(#score, #apps) .sc-target { font-weight: 500; letter-spacing: .04em; }
   :root[data-theme="pro"] #score .sc-code { border-radius: 6px; }
   :root[data-theme="pro"] #score .sc-verdict, :root[data-theme="pro"] #score .sc-chip, :root[data-theme="pro"] #score .sc-sev, :root[data-theme="pro"] #score .sc-gate { border-radius: 999px; }
   :root[data-theme="pro"] #score .sc-verdict { background: color-mix(in srgb, var(--s-tone) 14%, transparent); font-weight: 600; }
@@ -176,6 +176,7 @@ export const APPS_CSS = `
     background: var(--s-bg); color: var(--s-text); border: 1px solid var(--s-strong); font-family: var(--s-font); font-size: 13px; line-height: 1.45;
     display: flex; flex-direction: column; gap: 12px; }
   #apps[hidden] { display: none; }
+  #apps .sc-targets { margin-bottom: 10px; }
   #apps:not([hidden]) { box-shadow: 0 0 0 12px var(--pip-screen); }
   #apps [data-tone="ok"] { --s-tone: var(--s-ok); }
   #apps [data-tone="warn"] { --s-tone: var(--s-warn); }
