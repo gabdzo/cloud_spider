@@ -13,7 +13,7 @@ import { createRadio } from "./radio.js";
 import { readLogs } from "./logs.js";
 import { readPath } from "./path-read.js";
 import { createPathProber } from "./path-probe.js";
-import { ingressFor, kubePathDiagram, parseKubeTarget, podOnlyDiagram, readKubePath, servicesForPod, withIngress } from "./kube-path.js";
+import { ingressFor, ingressRoutesForService, kubePathDiagram, parseKubeTarget, podOnlyDiagram, readKubePath, servicesForPod, withIngress, withServiceIngresses } from "./kube-path.js";
 import { pathResult, withPeers } from "./path-view.js";
 import { costFailure } from "./cost.js";
 import { diagramFromClusters } from "./cluster.js";
@@ -1960,6 +1960,14 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     const base = { region, loadBalancers: [], selected: "", host, hostNote: "", findings: [], notes: [], kube: true, error: "" };
     const { client, error: noClient } = pathClient(asked);
     if (noClient) return { ...base, diagram: null, headline: "", error: noClient };
+    // Traced by name: the Ingresses in its namespace that route to it (one
+    // namespaced list, read-only; forbidden or failing = skipped quietly).
+    let routes = [];
+    if (!ingress) {
+      const got = await client.read("nsIngresses", target.ns).catch(() => null);
+      routes = got?.json ? ingressRoutesForService(got.json.items || [], target.ns, target.name) : [];
+      if (target.port == null && routes[0]?.port != null) target = { ...target, port: routes[0].port };
+    } else if (target.port == null && ingress.port != null) target = { ...target, port: ingress.port };
     const world = await readKubePath(client, target).catch((failure) => ({ error: failure?.message || String(failure) }));
     if (world.error) return { ...base, diagram: null, headline: "", error: world.error };
     const first = world.hops?.[0];
@@ -1977,6 +1985,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       }
     }
     const diagram = kubePathDiagram(world);
+    if (routes.length && first?.svc) return kubeResult(base, client, withServiceIngresses(diagram, routes), `Ingress ${routes[0].ns}/${routes[0].ingress} (class ${routes[0].cls || "default"}); `);
     return ingress ? kubeResult(base, client, withIngress(diagram, ingress), `Ingress ${ingress.ns}/${ingress.ingress} (class ${ingress.cls || "default"}); `) : kubeResult(base, client, diagram);
   }
 

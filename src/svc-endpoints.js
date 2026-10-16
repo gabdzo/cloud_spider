@@ -38,7 +38,10 @@ export function serviceEndpoints(svc, slices, chosen = []) {
       const t = p.targetPort;
       const named = typeof t === "string" && !/^\d+$/.test(t);
       const miss = named ? !declared.some((d) => d.name === t) : declared.length > 0 && !declared.some((d) => d.containerPort === Number(t));
-      if (miss) flags.push({ id: "port", text: "PORT MISMATCH", why: `port ${p.port} → targetPort ${t}: no selected pod ${named ? "names a port" : "declares containerPort"} ${t}` });
+      // A named targetPort that no container names really breaks routing; a
+      // number not declared as containerPort still routes (declaring is optional).
+      if (miss && named) flags.push({ id: "port", text: "PORT MISMATCH", why: `port ${p.port} → targetPort ${t}: no selected pod names a port ${t}` });
+      else if (miss) flags.push({ id: "port-note", text: "PORT NOT DECLARED", note: true, why: `port ${p.port} → targetPort ${t}: not declared as containerPort; k8s still routes` });
     }
   }
   return { ready, notReady, list, ports, flags };
