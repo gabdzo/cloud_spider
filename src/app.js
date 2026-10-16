@@ -13,7 +13,7 @@ import { createRadio } from "./radio.js";
 import { readLogs } from "./logs.js";
 import { readPath } from "./path-read.js";
 import { createPathProber } from "./path-probe.js";
-import { listScoped, readRoutes, ROUTES_TTL_MS } from "./sniff-routes.js";
+import { awsRouteGroups, listScoped, readRoutes, ROUTES_TTL_MS } from "./sniff-routes.js";
 import { ingressFor, ingressRoutesForService, kubePathDiagram, parseKubeTarget, podOnlyDiagram, readKubePath, servicesForPod, withIngress, withServiceIngresses } from "./kube-path.js";
 import { pathResult, withPeers } from "./path-view.js";
 import { costFailure } from "./cost.js";
@@ -950,6 +950,14 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       const value = { id, from, openapi: api.length > 0, routes: all, notes, lb, exposure: lbExposure({ ...alb, ...lb }, all) };
       routeCache.set(id, { value, at: now() });
       return value;
+    },
+    async awsRoutes() {
+      const albs = (place?.fixtures || []).filter((item) => item.kind === "alb" && item.public);
+      const byId = new Map();
+      for (const alb of albs) byId.set(alb.id, await this.albRoutes(alb.id));
+      let snap = null;
+      if (kube) snap = await readKube(KUBE_VIEW_TTL).catch(() => null);
+      return awsRouteGroups(albs, byId, snap && !snap.error ? snap : null);
     },
     async logsFor(id) {
       const result = await readLogs({ logs, logGroup, region, id });
@@ -1890,6 +1898,9 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       }
       lastPathGraph = { at, graph: result.graph };
       const shown = pathResult(result.graph, { lb: query.lb || "", host: query.host || "", region: at });
+      // SNIFF ROUTES (AWS): every public ALB's rules by domain, from the
+      // ALB ROUTES reads (cached 60 s) and the cached kube snapshot.
+      if (!String(query.host || "").trim()) shown.routes = await this.awsRoutes().catch((failure) => ({ groups: [], total: 0, noAccess: [], error: `routes could not be read (${String(failure?.message || failure).slice(0, 120)})` }));
       // Peering paths start at the region's first EKS cluster's nodes.
       const cluster = (place?.fixtures || []).find((item) => item.kind === "eks")?.name || "";
       if (!peers || !cluster) return shown;
