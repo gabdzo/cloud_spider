@@ -3435,7 +3435,7 @@ const page = `<!doctype html>
   /* every key and its label share one width, so labels sit centred under
      their caps and never spill (MORNING is the longest) */
   :root:not([data-theme="pro"]) header .key { width: 46px; }
-  :root:not([data-theme="pro"]) header .key .tag { box-sizing: border-box; width: 46px; min-width: 0; padding: 0 1px 1px; font-size: 7.5px; letter-spacing: 0.04em; line-height: 1.6; white-space: nowrap; overflow: visible; text-align: center; }
+  :root:not([data-theme="pro"]) header .key .tag { box-sizing: border-box; width: 46px; min-width: 0; padding: 0 1px 1px; height: 14px; font-size: 9px; letter-spacing: 0.02em; line-height: 13px; transform: translateY(0.5px); white-space: nowrap; overflow: visible; text-align: center; }
   header .knobs { display: none; }
   header .gauges { flex: 0 1 auto; }
   header .readout { padding: 3px 8px; gap: 8px; font-size: 11px; }
