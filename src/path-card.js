@@ -121,11 +121,13 @@ function cardBody(node) {
       }
       return { ...base, type: `FIXED RESPONSE · ${f.code}`, glyph: "fixed", name: f.body ? `"${f.body}"` : `${f.code}`, full: f.body || String(f.code), port: `${f.code}${f.contentType ? ` ${f.contentType}` : ""}`, detail: "the ALB answers itself" };
     case "service": {
-      const ports = (f.ports || []).map((p) => `:${p.port} → ${p.targetPort}`).join(" ");
-      return { ...base, type: f.missing ? "SERVICE · missing" : `SERVICE · ${f.type || "ClusterIP"}`, name: node.label, port: `${ports || f.clusterIP || ""}${f.nodePorts?.length ? ` · node :${f.nodePorts.join(",:")}` : ""}`, detail: f.selector ? `selector ${f.selector}` : node.caption || "" };
+      const one = (p) => `:${p.port} → ${p.targetPort}${p.podPort != null && String(p.podPort) !== String(p.targetPort) ? ` (:${p.podPort})` : ""}`;
+      const ports = f.traced ? one(f.traced) : (f.ports || []).map(one).join(" ");
+      const extra = [f.others?.length ? `also ${f.others.map((p) => `:${p.port}`).join(",")}` : "", ...(f.notes || []).map((n) => `note: ${n}`)].filter(Boolean);
+      return { ...base, type: f.missing ? "SERVICE · missing" : `SERVICE · ${f.type || "ClusterIP"}`, name: node.label, full: extra.length ? [node.label, ...extra].join(" · ") : base.full, port: `${ports || f.clusterIP || ""}${f.nodePorts?.length ? ` · node :${f.nodePorts.join(",:")}` : ""}`, detail: [f.selector ? `selector ${f.selector}` : node.caption || "", f.others?.length ? `also :${f.others.map((p) => p.port).join(",:")}` : ""].filter(Boolean).join(" · ") };
     }
     case "ingress":
-      return { ...base, type: `INGRESS · ${f.cls || "default class"}`, name: `${f.host}${f.path}`, full: node.label, port: `${f.tls ? "HTTPS" : "HTTP"} → ${f.name}${f.port != null ? `:${f.port}` : ""}`, detail: f.address ? `controller ${f.address}` : "no address yet" };
+      return { ...base, type: `INGRESS · ${f.cls || "default class"}`, name: `${f.host}${f.path}${f.paths?.length > 1 ? ` +${f.paths.length - 1} more` : ""}`, full: f.paths?.length > 1 ? [node.label, ...f.paths.map((p) => `${p.host}${p.path}`)].join(" · ") : node.label, port: `${f.tls ? "HTTPS" : "HTTP"} → ${f.name}${f.port != null ? `:${f.port}` : ""}`, detail: f.address ? `controller ${f.address}` : "no address yet" };
     case "endpoints":
       return { ...base, type: "ENDPOINTS", name: node.label, port: "EndpointSlices", detail: f.notReady ? `${f.notReady} not ready` : f.total ? "all ready" : f.total === 0 ? "none" : "" };
     case "pod":

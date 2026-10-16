@@ -81,13 +81,16 @@ export function kubePathDiagram(world) {
     }
     const chosen = (hop.pods || []).filter((pod) => picks(hop.svc.spec?.selector, pod));
     const ep = serviceEndpoints(hop.svc, hop.slices, chosen);
-    const ports = ep.ports.map((p) => ({ port: p.port, targetPort: p.targetPort }));
+    const ports = ep.ports.map((p) => ({ name: p.name, port: p.port, targetPort: p.targetPort, podPort: podPortFor(p.targetPort, chosen) }));
+    const traced = tracePort(ports, hop.port ?? null);
+    const others = ports.filter((p) => p !== traced);
+    const notes = ep.flags.filter((f) => f.note).map((f) => f.why);
     const nodePorts = (hop.svc.spec?.ports || []).map((p) => p.nodePort).filter(Boolean);
     const lbAddr = (hop.svc.status?.loadBalancer?.ingress || []).map((a) => a.ip || a.hostname).filter(Boolean).join(", ");
     const outside = nodePorts.length ? ` From outside: node port ${nodePorts.join(", ")}${hop.svc.spec?.type === "LoadBalancer" ? (lbAddr ? `, load balancer ${lbAddr}` : ", load balancer address pending") : ""}.` : "";
     const selector = Object.entries(hop.svc.spec?.selector || {}).map(([k, v]) => `${k}=${v}`).join(",");
-    const svcFlag = ep.flags.find((f) => f.id === "selector" || f.id === "port");
-    nodes.push({ id, col, kind: "service", label: `${hop.ns}/${hop.name}`, caption: selector || "no selector", facts: { ns: hop.ns, type: hop.svc.spec?.type || "ClusterIP", clusterIP: hop.svc.spec?.clusterIP || "", ports, selector, nodePorts, lbAddress: lbAddr }, status: svcFlag ? "broken" : "ok", sentence: svcFlag ? `${hop.name}: ${svcFlag.why}.` : `Service ${hop.name} (${hop.svc.spec?.type || "ClusterIP"} ${hop.svc.spec?.clusterIP || ""}) sends ${ports.map((p) => `:${p.port} → ${p.targetPort}`).join(", ")} to pods with ${selector || "no selector"}.${outside}` });
+    const svcFlag = ep.flags.find((f) => f.id === "selector" || (f.id === "port" && (!traced || f.why.startsWith(`port ${traced.port} `))));
+    nodes.push({ id, col, kind: "service", label: `${hop.ns}/${hop.name}`, caption: selector || "no selector", facts: { ns: hop.ns, type: hop.svc.spec?.type || "ClusterIP", clusterIP: hop.svc.spec?.clusterIP || "", ports, traced: traced || null, others, notes, selector, nodePorts, lbAddress: lbAddr }, status: svcFlag ? "broken" : "ok", sentence: svcFlag ? `${hop.name}: ${svcFlag.why}.` : `Service ${hop.name} (${hop.svc.spec?.type || "ClusterIP"} ${hop.svc.spec?.clusterIP || ""}) sends ${traced ? `:${traced.port} → ${traced.targetPort}${traced.podPort != null ? ` (pod :${traced.podPort})` : ""}` : "no port"} to pods with ${selector || "no selector"}.${others.length ? ` Also: ${others.map((p) => `:${p.port} → ${p.targetPort}`).join(", ")}.` : ""}${notes.length ? ` Note: ${notes.join("; ")}.` : ""}${outside}` });
     if (prev) link(prev, id);
     const epId = `ep:${hop.ns}/${hop.name}`;
     const total = ep.list ? ep.list.length : null;
@@ -124,7 +127,7 @@ export function kubePathDiagram(world) {
 export async function readKubePath(kube, target) {
   const hops = [];
   const podsByNs = new Map();
-  let at = { ns: target.ns, name: target.name, guess: false };
+  let at = { ns: target.ns, name: target.name, guess: false, port: target.port ?? null };
   for (let depth = 0; at && depth < MAX_HOPS; depth += 1) {
     if (hops.some((h) => h.ns === at.ns && h.name === at.name)) break;
     const got = await kube.read("service", at.ns, at.name);
@@ -153,7 +156,8 @@ export async function readKubePath(kube, target) {
       const data = (await kube.read("configMap", hop.ns, cm))?.json?.data || {};
       const up = Object.values(data).flatMap(nginxUpstreams)[0];
       if (!up) continue;
-      const next = clusterHost(up.host, hop.ns);
+      const found = clusterHost(up.host, hop.ns);
+      const next = found ? { ...found, port: up.port } : found;
       hop.proxy = { configMap: cm, upstream: up, next };
       at = next;
       break;
@@ -218,4 +222,57 @@ export function podOnlyDiagram(pod) {
   const ns = pod.metadata.namespace;
   const reason = ready ? "" : notReadyWhy(pod);
   return { nodes: [{ id: `pod:${ns}/${name}`, col: 0, kind: "pod", label: name, caption: ready ? "Ready" : reason, facts: { ns, ready, restarts: restarts(pod), node: pod.spec?.nodeName || "", ip: pod.status?.podIP || "", phase: pod.status?.phase || "", reason }, status: ready ? "ok" : "broken", sentence: `${name} ${ready ? "is Ready" : `is not Ready: ${reason}`}; no Service selects it, so nothing in the cluster routes to it by name.` }], edges: [] };
+}
+
+// The pod port a Service targetPort lands on: a number as is, a name through
+// the selected pods' containerPorts. null when a name does not resolve.
+export function podPortFor(targetPort, pods = []) {
+  if (typeof targetPort === "number" || /^\d+$/.test(String(targetPort))) return Number(targetPort);
+  const hit = (pods || []).flatMap((pod) => (pod.spec?.containers || []).flatMap((c) => c.ports || [])).find((d) => d.name === targetPort);
+  return hit ? hit.containerPort : null;
+}
+
+// Which Service port to trace: the one asked for (Ingress backend, by number
+// or name), else the first HTTP-named one, else the first.
+export function tracePort(ports, want = null) {
+  if (!ports?.length) return undefined;
+  if (want != null && want !== "") {
+    const hit = ports.find((p) => (typeof want === "number" || /^\d+$/.test(String(want)) ? p.port === Number(want) : p.name === want));
+    if (hit) return hit;
+  }
+  return ports.find((p) => /http|web|app/i.test(p.name || "")) || ports[0];
+}
+
+// Every Ingress rule (and defaultBackend) in ns that sends to Service name.
+// [{ ns, ingress, cls, host, path, pathType, port, tls, address }]
+export function ingressRoutesForService(ingresses, ns, name) {
+  const out = [];
+  for (const ing of ingresses || []) {
+    if ((ing.metadata?.namespace || "default") !== ns) continue;
+    const base = { ns, name, ingress: ing.metadata?.name || "", cls: ing.spec?.ingressClassName || ing.metadata?.annotations?.["kubernetes.io/ingress.class"] || "", address: (ing.status?.loadBalancer?.ingress || []).map((a) => a.ip || a.hostname).filter(Boolean).join(", ") };
+    const tlsHosts = (ing.spec?.tls || []).flatMap((t) => t.hosts || []).map((x) => x.toLowerCase());
+    for (const rule of ing.spec?.rules || []) {
+      const host = String(rule.host || "").toLowerCase();
+      for (const p of rule.http?.paths || []) {
+        const svc = p.backend?.service;
+        if (svc?.name !== name) continue;
+        out.push({ ...base, host: host || "*", path: p.path || "/", pathType: p.pathType || "Prefix", port: svc.port?.number ?? svc.port?.name ?? null, tls: tlsHosts.includes(host) });
+      }
+    }
+    const def = ing.spec?.defaultBackend?.service;
+    if (def?.name === name) out.push({ ...base, host: "*", path: "/", pathType: "default", port: def.port?.number ?? def.port?.name ?? null, tls: false, isDefault: true });
+  }
+  return out;
+}
+
+// The Ingress hop for a Service traced by name: all its public paths on one
+// node (the first shown, the rest folded into facts.paths).
+export function withServiceIngresses(diagram, routes) {
+  if (!routes?.length) return diagram;
+  const [first] = routes;
+  const shown = routes.slice(0, 12);
+  const sentence = `${routes.length} public path${routes.length > 1 ? "s" : ""} via ${[...new Set(routes.map((r) => `${r.ingress} (class ${r.cls || "default"})`))].join(", ")}: ${shown.map((r) => `${r.tls ? "https" : "http"}://${r.host}${r.path} → ${r.name}${r.port != null ? `:${r.port}` : ""}`).join(", ")}${routes.length > shown.length ? `, +${routes.length - shown.length} more` : ""}.`;
+  const out = withIngress(diagram, { ...first, paths: routes.map((r) => ({ host: r.host, path: r.path, pathType: r.pathType, port: r.port, ingress: r.ingress, tls: r.tls })) });
+  out.nodes[0] = { ...out.nodes[0], caption: `${first.host}${first.path}${routes.length > 1 ? ` +${routes.length - 1}` : ""}`, sentence };
+  return out;
 }

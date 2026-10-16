@@ -32,7 +32,7 @@ test("NO ENDPOINTS and SELECTOR MATCHES NO PODS; unreadable slices only flag the
 test("PORT MISMATCH: a named targetPort no pod names, or a number no pod declares", () => {
   const p = [pod("app", "a-1", { app: "a" })];
   assert.deepEqual(serviceEndpoints(svc("app", "a", { app: "a" }, [{ port: 80, targetPort: "web" }]), [slice("app", "a", [ep("a-1")])], p).flags.map((f) => f.id), ["port"]);
-  assert.deepEqual(serviceEndpoints(svc("app", "a", { app: "a" }, [{ port: 80, targetPort: 9999 }]), [slice("app", "a", [ep("a-1")])], p).flags.map((f) => f.id), ["port"]);
+  assert.deepEqual(serviceEndpoints(svc("app", "a", { app: "a" }, [{ port: 80, targetPort: 9999 }]), [slice("app", "a", [ep("a-1")])], p).flags.map((f) => f.id), ["port-note"], "a number no pod declares is a note: k8s still routes");
   assert.deepEqual(serviceEndpoints(svc("app", "a", { app: "a" }, [{ port: 80, targetPort: "http" }]), [slice("app", "a", [ep("a-1")])], p).flags, []);
   assert.deepEqual(serviceEndpoints(svc("app", "a", { app: "a" }, [{ port: 80, targetPort: 9999 }]), [], [pod("app", "a-1", { app: "a" }, [])]).flags.map((f) => f.id), ["no-endpoints"], "pods declare no ports: a number cannot be judged");
 });
