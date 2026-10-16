@@ -24,6 +24,9 @@ const TIMEOUT_MS = 8000;
 export const SHARE_MS = 0;
 export const MAX_INFLIGHT = 12;
 export const LOW_INFLIGHT = 8;
+// Background reads reuse an identical background read's 2xx body this long
+// (RES and APP score refreshing back to back list the same paths).
+export const BG_SHARE_MS = 20_000;
 
 export function kubeconfigPath(env = process.env) {
   const first = String(env.KUBECONFIG || "").split(delimiter).find(Boolean);
@@ -335,10 +338,10 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
   // At most MAX_INFLIGHT GETs per context run at once.
   const inflight = new Map();
   const recent = new Map();
-  function shared(url, key, run) {
+  function shared(url, key, run, reuseMs = SHARE_MS) {
     if (!key) return run();
     const hit = recent.get(key);
-    if (SHARE_MS && hit && clock() - hit.at < SHARE_MS) return Promise.resolve(hit.res);
+    if (reuseMs && hit && clock() - hit.at < reuseMs) return Promise.resolve({ ...hit.res, reused: true });
     if (inflight.has(key)) return inflight.get(key);
     const p = run().then((res) => {
       inflight.delete(key);
@@ -356,6 +359,7 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
   // inventory never parks the MAP's /api/cluster behind 300 list calls.
   let running = 0;
   let lowRunning = 0;
+  let bgChain = Promise.resolve();
   const queue = [];
   const lowQueue = [];
   const canRun = (low) => running < MAX_INFLIGHT && (!low || (lowRunning < LOW_INFLIGHT && !queue.length));
@@ -363,10 +367,12 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     if (queue.length) queue.shift()();
     else for (const go of lowQueue.splice(0)) go();
   }
-  async function limited(run, low = false) {
+  async function limited(run, low = false, timing = null) {
+    const asked = clock();
     while (!canRun(low)) await new Promise((go) => (low ? lowQueue : queue).push(go));
     running++;
     if (low) lowRunning++;
+    if (timing) timing.waitMs = clock() - asked;
     try {
       return await run();
     } finally {
@@ -376,12 +382,15 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     }
   }
 
-  async function getPath(path, { text = false, keepLine = null, timeout = 0, accept = "", low = false } = {}) {
+  async function getPath(path, { text = false, keepLine = null, timeout = 0, accept = "", low = false, trace = null } = {}) {
+    const t0 = clock();
+    const timing = { waitMs: 0 };
     const t = await resolveTarget();
     if (t.error) return { error: t.error, unset: true };
     const tok = await token(t);
     if (tok.error) return { error: tok.error };
-    let res = await shared(`${t.server}${path}`, keepLine || timeout ? null : `${text ? "t" : "j"}${accept ? `[${accept}]` : ""} ${path}`, () => limited(() => get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}), ...(timeout ? { timeout } : {}), ...(accept ? { accept } : {}) }), low));
+    let res = await shared(`${t.server}${path}`, keepLine || timeout ? null : `${text ? "t" : "j"}${accept ? `[${accept}]` : ""} ${path}`, () => limited(() => get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}), ...(timeout ? { timeout } : {}), ...(accept ? { accept } : {}) }), low, timing), low ? BG_SHARE_MS : SHARE_MS);
+    if (trace) trace.push({ path, waitMs: timing.waitMs, ms: clock() - t0, status: res.status || 0, reused: Boolean(res.reused) });
     // 429: the API server's flow control said "later" (it does right after
     // an add-on install floods it). Try again twice before calling the read
     // failed, so one busy second does not turn a control UNKNOWN.
@@ -436,13 +445,21 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     // which need 403 and 404 kept apart (src/score/collectors/kube-*.js).
     // Raw read-only GET of an API path (discovery and the RES inventory,
     // kube-inventory.js); only /api and /apis paths.
-    async readPath(path, { accept = "", low = false } = {}) {
+    async readPath(path, { accept = "", low = false, trace = null } = {}) {
       if (!/^\/apis?(\/|$)/.test(String(path)) || /\.\./.test(String(path))) return { error: "not an API path" };
-      return getPath(String(path), { accept, low });
+      return getPath(String(path), { accept, low, trace });
     },
     // The same client on the background lane (see limited()).
-    background() {
-      return { ...this, read: (name, ...args) => (Object.hasOwn(PATHS, name) && typeof PATHS[name] === "function" ? getPath(PATHS[name](...args), { low: true }) : Promise.resolve({ error: `no such read: ${String(name).slice(0, 60)}` })), readPath: (path, opts = {}) => this.readPath(path, { ...opts, low: true }) };
+    // trace: an array each read appends { path, waitMs (lane wait), ms, status, reused } to.
+    background(trace = null) {
+      return { ...this, read: (name, ...args) => (Object.hasOwn(PATHS, name) && typeof PATHS[name] === "function" ? getPath(PATHS[name](...args), { low: true, trace }) : Promise.resolve({ error: `no such read: ${String(name).slice(0, 60)}` })), readPath: (path, opts = {}) => this.readPath(path, { ...opts, low: true, trace }) };
+    },
+    // One background job (RES inventory, APP score) at a time per context:
+    // refreshes queue behind each other instead of splitting the lane.
+    exclusive(job) {
+      const run = bgChain.then(job, job);
+      bgChain = run.catch(() => {});
+      return run;
     },
     async read(name, ...args) {
       if (!Object.hasOwn(PATHS, name) || typeof PATHS[name] !== "function") return { error: `no such read: ${String(name).slice(0, 60)}` };

@@ -5,7 +5,7 @@ import { stringify } from "yaml";
 import { LOW_INFLIGHT, MAX_INFLIGHT, createKube } from "../src/kube.js";
 import { discoveryCache, inventory } from "../src/kube-inventory.js";
 import { APP_LISTS, LIST_CAP, collectApps } from "../src/score/app/collect.js";
-import { slowLog } from "../src/slow-log.js";
+import { slowLog, traceText } from "../src/slow-log.js";
 
 const CONFIG = {
   apiVersion: "v1",
@@ -79,4 +79,27 @@ test("slowLog writes only past the threshold", () => {
   slowLog("x", 0, "", { write: (s) => lines.push(s), now: () => 10 });
   slowLog("y", 0, "3 kinds", { write: (s) => lines.push(s), now: () => 99999 });
   assert.deepEqual(lines, ["slow: y 99999 ms (3 kinds)\n"]);
+});
+
+test("background jobs run one at a time per context; reads are traced and identical background reads reuse a body", async () => {
+  const seen = { now: 0, max: 0 };
+  let calls = 0;
+  const kube = createKube({
+    env: { KUBECONFIG: "/kc" }, run: fakeRun(), read: async () => stringify(CONFIG), context: "ctx",
+    get: async () => { calls++; await wait(10); return { status: 200, body: JSON.stringify({ items: [] }) }; },
+  });
+  const order = [];
+  const job = (name) => async () => { order.push(`${name}+`); await wait(15); order.push(`${name}-`); };
+  await Promise.all([kube.exclusive(job("res")), kube.exclusive(job("app")), kube.exclusive(async () => { throw new Error("x"); }).catch(() => {}), kube.exclusive(job("res2"))]);
+  assert.deepEqual(order, ["res+", "res-", "app+", "app-", "res2+", "res2-"]);
+  const trace = [];
+  const bg = kube.background(trace);
+  await bg.readPath("/api/v1/namespaces/a/pods");
+  await bg.readPath("/api/v1/namespaces/a/pods");
+  assert.equal(calls, 1, "second background read reused the body");
+  assert.equal(trace.length, 2);
+  assert.equal(trace[1].reused, true);
+  assert.ok(trace[0].ms >= 10 && trace[0].waitMs >= 0);
+  assert.match(traceText(trace), /^2 reads, 1 reused, lane wait \d+ ms, request \d+ ms; slowest: \/api\/v1\/namespaces\/a\/pods \d+ms\(wait \d+\)/);
+  void seen;
 });
