@@ -389,6 +389,7 @@ export function mountPip(el, io) {
       el.hidden = false;
       render();
       pull();
+      pullRes();
       clearInterval(timer);
       timer = Number(setInterval(pull, 15000));
       /** @type {HTMLElement|null} */ (el.querySelector(".pb-tile,.pb-list"))?.focus();
