@@ -119,7 +119,7 @@ function nsSummary(apps) {
 // One compound, laid out from (0, 0); placeYard moves it into the yard.
 // nodeShacks: the subnet's node buildings (faces). apps: assignApps' list
 // for this subnet. room: the width the yard can give.
-export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice, room, fill = false, policies = true }) {
+export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice, room, fill = false, policies = true, grid = false }) {
   const netpol = model?.netpol?.ns || null;
   const inner = Math.max(CELL.w, room - 2 * MK.PAD);
   const items = { buildings: [], stalls: [], figures: [], ns: [], lod: [], badges: [], lines: [], sources: [], pol: null };
@@ -133,7 +133,15 @@ export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice
   if (nodeShacks.length) y += Math.ceil(nodeShacks.length / cols) * (CELL.h + CELL.gap);
   const pods = apps.reduce((sum, a) => sum + a.pods.length, 0);
   const summary = `${nodeShacks.length} node${nodeShacks.length === 1 ? "" : "s"} · ${apps.length} app${apps.length === 1 ? "" : "s"} · ${pods} pod${pods === 1 ? "" : "s"}`;
-  if (level >= 2) {
+  if (level >= 2 && grid) {
+    const g = nsGrid({ cluster, apps, level, netpol, x0: MK.PAD, y0: y, inner });
+    items.ns.push(...g.ns);
+    items.badges.push(...g.badges);
+    items.stalls.push(...g.stalls);
+    items.figures.push(...g.figures);
+    right = Math.max(right, g.right);
+    y = g.bottom;
+  } else if (level >= 2) {
     const namespaces = [...new Set(apps.map((a) => a.ns))].sort((a, b) => Number(SYSTEM.test(a)) - Number(SYSTEM.test(b)) || a.localeCompare(b));
     for (const ns of namespaces) {
       const mine = apps.filter((a) => a.ns === ns).sort((a, b) => Number(!!a.bare) - Number(!!b.bare) || a.label.localeCompare(b.label));
@@ -179,9 +187,11 @@ export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice
   if (model?.netpol && level >= 2) {
     items.pol = { type: "policies", cluster, on: policies, count: model.netpol.total || 0, bundled: !!model.netpol.bundled, x: 0, y: 5, w: 70, h: MK.LOD_H };
     if (policies) extraH = policyLines(items, model.netpol, cluster, MK.PAD, y, (fill ? room : Math.min(room, Math.max(right + MK.PAD, 384))) - 2 * MK.PAD);
+    if (policies && grid) items.nsLines = nsLinks(items);
   }
   // Badges sit at the compound's right edge; the ns line stops before them.
-  for (const bd of items.badges) {
+  // (Grid mode: each group box already holds its own badge.)
+  for (const bd of grid ? [] : items.badges) {
     bd.x = w - MK.PAD - bd.w;
     const line = items.ns.find((l) => l.ns === bd.ns);
     if (line) line.w = Math.max(40, bd.x - 4 - line.x);
@@ -193,7 +203,119 @@ export function layoutCompound({ cluster, model, nodeShacks, apps, level, choice
     items.lod.push({ type: "lod", cluster, value, active: String(choice) === value, shown: String(level) === value, x: lx, y: 5, w: lw, h: MK.LOD_H });
   });
   if (items.pol) items.pol.x = (items.lod[0]?.x ?? w) - KUBE_CHIP_W - 6 - items.pol.w - 6;
-  return { cluster, level, choice, summary, w, h: Math.max(y + extraH, MK.HEAD + 20) + 2, ...items };
+  return { cluster, level, choice, summary, w, h: Math.max(y + extraH, MK.HEAD + 20) + 2, grid, ...items };
+}
+
+// Grid mode (the AWS map): each namespace is a box; boxes are packed in
+// rows across the full width with a fixed gutter, and each row is stretched
+// to the width so the yard has no empty half. Labels are clipped by the
+// painter; the hover gives the full name.
+export const NSG = { PAD: 6, GUTTER: 16, MIN_W: 180, MAX_COLS: 4 };
+export function nsGrid({ cluster, apps, level, netpol, x0, y0, inner }) {
+  const out = { ns: [], badges: [], stalls: [], figures: [], right: x0, bottom: y0 };
+  const namespaces = [...new Set(apps.map((a) => a.ns))].sort((a, b) => Number(SYSTEM.test(a)) - Number(SYSTEM.test(b)) || a.localeCompare(b));
+  const cell = MK.STALL_W + MK.GAP;
+  const maxCols = Math.max(1, Math.floor((inner - 2 * NSG.PAD + MK.GAP) / cell));
+  const groups = namespaces.map((ns) => {
+    const mine = apps.filter((a) => a.ns === ns).sort((a, b) => Number(!!a.bare) - Number(!!b.bare) || a.label.localeCompare(b.label));
+    const system = SYSTEM.test(ns);
+    const folded = system && level < 3;
+    const widths = mine.map((app) => Math.max(MK.STALL_W, level === 3 && app.pods.length ? MK.PAD + app.pods.length * MK.FIG_W + 4 : 0));
+    const cols = folded ? 1 : Math.min(maxCols, NSG.MAX_COLS, Math.max(1, mine.length));
+    const natural = Math.max(...widths.slice(0, cols), MK.STALL_W) + (cols - 1) * cell;
+    const w = Math.min(inner, Math.max(NSG.MIN_W, natural + 2 * NSG.PAD));
+    return { ns, mine, system, folded, w };
+  });
+  // Shelf-pack into rows.
+  const rows = [];
+  let row = [];
+  let used = 0;
+  for (const gr of groups) {
+    if (row.length && used + NSG.GUTTER + gr.w > inner) {
+      rows.push(row);
+      row = [];
+      used = 0;
+    }
+    used += (row.length ? NSG.GUTTER : 0) + gr.w;
+    row.push(gr);
+  }
+  if (row.length) rows.push(row);
+  let y = y0;
+  for (const r of rows) {
+    const total = r.reduce((sum, gr) => sum + gr.w, 0) + (r.length - 1) * NSG.GUTTER;
+    const extra = Math.floor((inner - total) / r.length);
+    let x = x0;
+    let rowH = 0;
+    for (const gr of r) {
+      gr.w += extra;
+      const badge = netpol ? policyBadge(netpol[gr.ns]) : null;
+      const head = MK.NS + 2;
+      let sy = y + head + 2;
+      let sx = x + NSG.PAD;
+      let lineH = 0;
+      if (!gr.folded) {
+        for (const app of gr.mine) {
+          const figs = level === 3 ? app.pods.length : 0;
+          const w = Math.min(Math.max(MK.STALL_W, figs ? MK.PAD + figs * MK.FIG_W + 4 : 0), gr.w - 2 * NSG.PAD);
+          const h = MK.STALL_H + (figs ? MK.FIG_H + 2 : 0);
+          if (sx > x + NSG.PAD && sx + w > x + gr.w - NSG.PAD) {
+            sx = x + NSG.PAD;
+            sy += lineH + MK.GAP;
+            lineH = 0;
+          }
+          out.stalls.push({ type: "app", id: app.id, cluster, ns: app.ns, label: app.label, kind: app.kind, count: app.bare ? "" : `${app.have}/${app.want}`, status: app.status, services: app.services, system: gr.system, split: !!app.split, x: sx, y: sy, w, h });
+          if (figs) app.pods.forEach((pod, index) => out.figures.push({ type: "pod", id: pod.id, cluster, ns: pod.ns, label: pod.label, caption: pod.caption, status: pod.status, app: app.id, x: sx + 4 + index * MK.FIG_W, y: sy + MK.STALL_H, w: MK.FIG_W - 2, h: MK.FIG_H }));
+          sx += w + MK.GAP;
+          lineH = Math.max(lineH, h);
+        }
+      }
+      const gh = gr.folded || !gr.mine.length ? head + 4 : sy + lineH + NSG.PAD - y;
+      const bx = badge ? x + gr.w - NSG.PAD - badge.w : x + gr.w;
+      out.ns.push({ ns: gr.ns, x: x + 2, y: y + 1, w: Math.max(40, bx - 4 - (x + 2)), text: `${gr.ns}${gr.system ? " · system" : ""} · ${nsSummary(gr.mine)}`, system: gr.system, box: { x, y, w: gr.w, h: gh } });
+      if (badge) out.badges.push({ ...badge, type: "netpol", cluster, ns: gr.ns, x: bx, y: y + 3, h: MK.NS - 4 });
+      out.right = Math.max(out.right, x + gr.w);
+      rowH = Math.max(rowH, gh);
+      x += gr.w + NSG.GUTTER;
+    }
+    // One row height: boxes line up, gutters stay straight.
+    for (const line of out.ns.slice(-r.length)) line.box.h = rowH;
+    y += rowH + NSG.GUTTER;
+  }
+  out.bottom = y;
+  return out;
+}
+
+// Grid mode's resting lines: one per namespace pair (count = allow lines it
+// stands for), routed orthogonally through the gutters: out of the source
+// box's bottom into the gutter below, along it, then down/up the gutter left
+// of the target box and into its header. Same-namespace lines are left out
+// (they would cross the tents); the hovered app shows its own lines.
+export function nsLinks(items) {
+  const box = new Map(items.ns.filter((l) => l.box).map((l) => [l.ns, l.box]));
+  const pairs = new Map();
+  for (const l of items.lines) {
+    const a = l.fromNs;
+    const b = l.toNs;
+    if (a === b) continue;
+    const key = `${a || l.from}→${b || l.to}`;
+    if (!pairs.has(key)) pairs.set(key, { from: a, to: b, fromId: l.from, toId: l.to, count: 0, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2 });
+    pairs.get(key).count += l.count || 1;
+  }
+  const half = NSG.GUTTER / 2;
+  const out = [];
+  let lane = 0;
+  for (const p of pairs.values()) {
+    const A = p.from ? box.get(p.from) : null;
+    const B = p.to ? box.get(p.to) : null;
+    const nudge = ((lane++ % 5) - 2) * 2;
+    const start = A ? { x: A.x + A.w / 2 + nudge, y: A.y + A.h } : { x: p.x1, y: p.y1 };
+    const end = B ? { x: B.x - half + nudge, y: B.y + MK.NS / 2 } : { x: p.x2, y: p.y2 };
+    const gy = (A ? A.y + A.h : start.y) + half + nudge / 2;
+    const points = [start, { x: start.x, y: gy }, { x: end.x, y: gy }, end];
+    if (B) points.push({ x: B.x, y: end.y });
+    out.push({ from: p.from || p.fromId, to: p.to || p.toId, count: p.count, points });
+  }
+  return out;
 }
 
 // Moves a compound (and everything in it) to x, y.
@@ -206,7 +328,8 @@ export function moveCompound(compound, x, y) {
     buildings: compound.buildings.map(shift),
     stalls: compound.stalls.map(shift),
     figures: compound.figures.map(shift),
-    ns: compound.ns.map(shift),
+    ns: compound.ns.map((l) => (l.box ? { ...shift(l), box: shift(l.box) } : shift(l))),
+    nsLines: (compound.nsLines || []).map((l) => ({ ...l, points: l.points.map((pt) => ({ x: pt.x + x, y: pt.y + y })) })),
     lod: compound.lod.map(shift),
     badges: (compound.badges || []).map(shift),
     lines: (compound.lines || []).map((l) => ({ ...l, x1: l.x1 + x, y1: l.y1 + y, x2: l.x2 + x, y2: l.y2 + y })),
@@ -250,6 +373,8 @@ export function compoundHit(placed, x, y) {
     if (pod) return { ...pod };
     const app = compound.stalls.find(inside);
     if (app) return { ...app };
+    const head = compound.ns.find((l) => l.box && inside({ x: l.box.x, y: l.box.y, w: l.box.w, h: MK.NS + 2 }));
+    if (head) return { type: "ns", cluster: compound.cluster, ns: head.ns, text: head.text };
     if (y < compound.y + MK.HEAD) return { type: "compound", cluster: compound.cluster };
     return null;
   }
@@ -266,6 +391,7 @@ export function compoundHover(hit) {
   if (hit.type === "lod") return `detail ${hit.value === "auto" ? "AUTO" : hit.value}: ${LOD_TEXT[hit.value]}`;
   if (hit.type === "pod") return `${hit.ns}/${hit.label}${hit.caption ? ` · ${hit.caption}` : ""} · click: deep-inspect in the Cluster view`;
   if (hit.type === "app") return `${hit.kind} ${hit.ns}/${hit.label}${hit.count ? ` · ${hit.count} ready` : ""}${hit.services.length ? ` · svc ${hit.services.join(", ")}` : ""} · click: open in the Cluster view`;
+  if (hit.type === "ns") return hit.text;
   if (hit.type === "compound") return `${hit.cluster}: open the Cluster view`;
   if (hit.type === "kube") return hit.text || `${hit.cluster}: kube connection · click: CONNECT / DISCONNECT`;
   return "";
@@ -455,7 +581,7 @@ function policyLines(items, netpol, cluster, x0, y, inner) {
       c.lines++;
       for (const p of e.policies || []) if (!c.policies.includes(p)) c.policies.push(p);
     }
-    items.lines.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, from: e.from.id, to: e.to.id, dir: e.dir, ports: e.ports || [], policies: e.policies || [], bundle: !!e.bundle, count: e.count || 1 });
+    items.lines.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, from: e.from.id, to: e.to.id, fromNs: e.from.ns || null, toNs: e.to.ns || null, dir: e.dir, ports: e.ports || [], policies: e.policies || [], bundle: !!e.bundle, count: e.count || 1 });
   }
   return outside.size ? rowY + 20 - y : 0;
 }
