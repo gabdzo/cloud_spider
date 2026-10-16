@@ -3464,7 +3464,12 @@ const page = `<!doctype html>
   header .console { padding: 3px 8px; gap: 8px; }
   header .tab { padding: 0 9px 0 8px; }
   @media (max-width: 1180px) {
-    .plate small, header .key .tag { display: none; }
+    /* the key labels stay (Gabriel could not tell the icon-only keys apart);
+       narrower caps and labels instead */
+    .plate small { display: none; }
+    :root:not([data-theme="pro"]) header .key { width: 40px; }
+    :root:not([data-theme="pro"]) header .key .cap { width: 38px; }
+    :root:not([data-theme="pro"]) header .key .tag { width: 40px; font-size: 8px; letter-spacing: 0; }
     h1 { font-size: 15px; letter-spacing: 0.12em; }
     header .tabs { gap: 5px; }
     header .tab { padding: 0 7px; }
@@ -3500,7 +3505,6 @@ const page = `<!doctype html>
     <button id="tab-map" class="tab" type="button" data-icon="map" aria-pressed="true" data-module-any="map kubemap">Map</button>
     <button id="path" class="tab" type="button" data-icon="path" aria-pressed="false" title="sniff: a request's path, and DEBUG for any URL" data-pro-title="network: a request's path, and DEBUG for any URL" data-module="network"><span data-pro-label="Network">Sniff</span></button>
     <button id="cluster" class="tab" type="button" data-icon="cluster" aria-pressed="false" data-module="kubernetes">Cluster</button>
-    <button id="k9s-btn" class="tab" type="button" data-icon="terminal" aria-pressed="false" title="K9S: a read-only resource table for the connected cluster (:)" data-module="kubernetes">K9S</button>
     <button id="tab-vaults" class="tab" type="button" data-icon="vaults" aria-pressed="false" title="vaults: every project, its checks and what it owns" data-module="vaults">Vaults</button>
   </nav>
   <div class="console">
@@ -3511,6 +3515,7 @@ const page = `<!doctype html>
       <button id="learn-key" class="key" type="button" aria-pressed="false" title="learn: holotape labs for Kubernetes and OpenShift" data-module="learn"><span class="cap" data-icon="learn"></span><span class="tag">Learn</span></button>
       <button id="score-key" class="key" type="button" aria-pressed="false" title="score: production readiness of the connected cluster (reads only; FIX runs an add-on stack after you approve its preview)" data-module="score"><span class="cap" data-icon="vaults"></span><span class="tag">Score</span></button>
       <button id="apps-key" class="key" type="button" aria-pressed="false" title="apps: a grade per app (reads only)" data-module="score"><span class="cap" data-icon="vaults"></span><span class="tag">Apps</span></button>
+      <button id="k9s-btn" class="key" type="button" aria-pressed="false" title="K9S: a read-only resource table for the connected cluster (:)" data-module="kubernetes"><span class="cap" data-icon="terminal"></span><span class="tag">K9S</span></button>
       <button id="ask" class="key" type="button" aria-pressed="false" title="ask your local agent (runs only when you press ASK)" data-module="ask"><span class="cap" data-icon="terminal"></span><span class="tag">Ask</span></button>
     </div>
   <button id="sample" class="switch" type="button" role="switch" aria-checked="false" aria-label="Sample mode" title="Sample mode: a made-up account, nothing read from AWS"><span class="well" aria-hidden="true"><span class="nut"></span><span class="lever"></span></span><span class="marks" aria-hidden="true"><span>ON</span><span>OFF</span></span><span class="name" aria-hidden="true">SAMPLE</span><span class="led" aria-hidden="true"></span></button>

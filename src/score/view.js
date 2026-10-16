@@ -116,7 +116,13 @@ export function sampleModel() {
   return { state: "sample", text: "SAMPLE has no scorecard: SCORE reads your real cluster or AWS account, and FIX changes it.", hint: "Turn SAMPLE off to SCAN." };
 }
 
-export function createScoreView({ root, toggleButton, context = () => "", onChange = () => {}, openCard = null, sample = () => false }) {
+// The SCORE tab bar: CLUSTER and APPS wherever Kubernetes is on (full and
+// k8s-only), AWS ACCOUNT wherever AWS is. APPS opens the per-app panel.
+export function scoreTabs({ kube = true, aws = true, apps = true } = {}) {
+  return [kube && ["kubernetes", "CLUSTER"], aws && ["aws", "AWS ACCOUNT"], kube && apps && ["apps", "APPS"]].filter(Boolean);
+}
+
+export function createScoreView({ root, toggleButton, context = () => "", onChange = () => {}, openCard = null, sample = () => false, hasKube = () => true, hasAws = () => true, openApps = null }) {
   let open = false;
   let target = "kubernetes";
   let model = null;
@@ -204,10 +210,12 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
     const bar = el("div", "sc-targets");
     bar.setAttribute("role", "group");
     bar.setAttribute("aria-label", "scan target");
-    for (const [value, label] of [["kubernetes", "CLUSTER"], ["aws", "AWS ACCOUNT"]]) {
+    for (const [value, label] of scoreTabs({ kube: hasKube(), aws: hasAws(), apps: Boolean(openApps) })) {
       const b = button(label, "sc-target");
+      b.dataset.target = value;
       b.setAttribute("aria-pressed", String(target === value));
       b.addEventListener("click", () => {
+        if (value === "apps") return openApps();
         if (target === value) return;
         target = value;
         plan = null;
@@ -474,6 +482,12 @@ export function createScoreView({ root, toggleButton, context = () => "", onChan
     },
     toggle() {
       return this.setOpen(!open);
+    },
+    // Back from APPS onto CLUSTER or AWS ACCOUNT.
+    openTarget(value) {
+      target = value === "aws" ? "aws" : "kubernetes";
+      plan = null;
+      return this.setOpen(true);
     },
     // SAMPLE switched on or off while the panel is open.
     refresh() {

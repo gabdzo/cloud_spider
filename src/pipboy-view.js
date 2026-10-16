@@ -304,7 +304,7 @@ const keep = (store, key, value) => { try { store?.setItem(key, value); } catch 
  * The screen's controller: fetches /api/cluster, renders, keys and clicks.
  * The amber tint is set on <html data-tint> so the whole app follows.
  * @param {HTMLElement} el
- * @param {{ loadRes?: () => Promise<any>, loadApps?: () => Promise<any>, load: () => Promise<any>, model: (body: any) => any, onClose: () => void, canClose?: boolean, openTopology?: (ns: string) => void, store?: Storage|null }} io
+ * @param {{ loadRes?: () => Promise<any>, loadApps?: () => Promise<any>, load: () => Promise<any>, model: (body: any) => any, onClose: () => void, canClose?: boolean, openTopology?: (ns: string) => void, openApp?: (id: string) => void, store?: Storage|null }} io
  */
 export function mountPip(el, io) {
   const store = io.store ?? null;
@@ -365,6 +365,8 @@ export function mountPip(el, io) {
   const toGrid = () => { state.view = "grid"; render(); };
   el.addEventListener("click", (event) => {
     const t = /** @type {HTMLElement} */ (event.target);
+    const appEl = /** @type {HTMLElement|null} */ (t.closest("[data-app]"));
+    if (appEl && io.openApp) return io.openApp(appEl.dataset.app || "");
     const tileEl = /** @type {HTMLElement|null} */ (t.closest("[data-tile]"));
     if (tileEl) return zoom(tileEl.dataset.tile || "");
     const chip = /** @type {HTMLElement|null} */ (t.closest("[data-entry-ns]"));
