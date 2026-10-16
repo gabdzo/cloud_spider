@@ -1,10 +1,11 @@
 // APP score collector: the namespaced lists one app score needs, read with
-// GET only through scoped-kube (one namespace at a time, 6 at once), one
-// list after another so no more than 6 requests are ever in flight.
+// GET only through scoped-kube (one namespace at a time), LIST_CAP lists at
+// once on the kube client's background lane (screens' reads go first).
 // Minimised on the way in: env values and ConfigMap values are dropped
 // (only names stay), Secrets are never read. 403 is "denied", 404 "absent".
 import { kubeStatus } from "../collectors/kube-workloads.js";
 
+export const LIST_CAP = 4;
 export const APP_LISTS = ["deployments", "statefulsets", "daemonsets", "pods", "services", "endpointSlicesAll", "ingresses", "hpas", "pdbs", "networkPolicies", "serviceAccounts", "configMaps", "limitRanges", "roles", "roleBindings", "serviceMonitors", "podMonitors", "prometheusRules", "nodes"];
 
 const meta = (i) => ({ namespace: i?.metadata?.namespace || "", name: i?.metadata?.name || "", labels: i?.metadata?.labels || {}, annotations: i?.metadata?.annotations || {} });
@@ -83,10 +84,17 @@ const SHAPE = {
 // { lists: { name: { status, items } }, scope, noAccess }
 export async function collectApps(kube) {
   const lists = {};
-  for (const name of APP_LISTS) {
-    const res = await kube.read(name);
-    const { status } = kubeStatus(res);
-    lists[name] = { status, items: (res?.json?.items || []).map(SHAPE[name]) };
-  }
+  let next = 0;
+  // A namespace-limited context already reads each list 6 namespaces at
+  // once (scoped-kube): one list at a time there keeps it at 6 in flight.
+  const cap = Array.isArray(kube.scope) ? 1 : LIST_CAP;
+  await Promise.all(Array.from({ length: Math.min(cap, APP_LISTS.length) }, async () => {
+    while (next < APP_LISTS.length) {
+      const name = APP_LISTS[next++];
+      const res = await kube.read(name).catch((e) => ({ error: e?.message || "failed" }));
+      const { status } = kubeStatus(res);
+      lists[name] = { status, items: (res?.json?.items || []).map(SHAPE[name]) };
+    }
+  }));
   return { lists, scope: Array.isArray(kube.scope) ? kube.scope : "*", noAccess: kube.noAccess ? kube.noAccess() : {} };
 }

@@ -23,6 +23,7 @@ const DNS = /^[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?$/;
 const TIMEOUT_MS = 8000;
 export const SHARE_MS = 0;
 export const MAX_INFLIGHT = 12;
+export const LOW_INFLIGHT = 8;
 
 export function kubeconfigPath(env = process.env) {
   const first = String(env.KUBECONFIG || "").split(delimiter).find(Boolean);
@@ -350,25 +351,37 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     inflight.set(key, p);
     return p;
   }
+  // Two lanes: background reads (RES inventory, APP score) take at most
+  // LOW_INFLIGHT slots and only when no screen read is waiting, so a big
+  // inventory never parks the MAP's /api/cluster behind 300 list calls.
   let running = 0;
+  let lowRunning = 0;
   const queue = [];
-  async function limited(run) {
-    if (running >= MAX_INFLIGHT) await new Promise((go) => queue.push(go));
+  const lowQueue = [];
+  const canRun = (low) => running < MAX_INFLIGHT && (!low || (lowRunning < LOW_INFLIGHT && !queue.length));
+  function wake() {
+    if (queue.length) queue.shift()();
+    else for (const go of lowQueue.splice(0)) go();
+  }
+  async function limited(run, low = false) {
+    while (!canRun(low)) await new Promise((go) => (low ? lowQueue : queue).push(go));
     running++;
+    if (low) lowRunning++;
     try {
       return await run();
     } finally {
       running--;
-      queue.shift()?.();
+      if (low) lowRunning--;
+      wake();
     }
   }
 
-  async function getPath(path, { text = false, keepLine = null, timeout = 0, accept = "" } = {}) {
+  async function getPath(path, { text = false, keepLine = null, timeout = 0, accept = "", low = false } = {}) {
     const t = await resolveTarget();
     if (t.error) return { error: t.error, unset: true };
     const tok = await token(t);
     if (tok.error) return { error: tok.error };
-    let res = await shared(`${t.server}${path}`, keepLine || timeout ? null : `${text ? "t" : "j"}${accept ? `[${accept}]` : ""} ${path}`, () => limited(() => get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}), ...(timeout ? { timeout } : {}), ...(accept ? { accept } : {}) })));
+    let res = await shared(`${t.server}${path}`, keepLine || timeout ? null : `${text ? "t" : "j"}${accept ? `[${accept}]` : ""} ${path}`, () => limited(() => get(`${t.server}${path}`, { ca: t.ca, servername: t.tlsServerName, token: tok.token, ...(keepLine ? { keepLine } : {}), ...(timeout ? { timeout } : {}), ...(accept ? { accept } : {}) }), low));
     // 429: the API server's flow control said "later" (it does right after
     // an add-on install floods it). Try again twice before calling the read
     // failed, so one busy second does not turn a control UNKNOWN.
@@ -423,9 +436,13 @@ export function createKube({ env = process.env, run = spawn, read = readFile, ge
     // which need 403 and 404 kept apart (src/score/collectors/kube-*.js).
     // Raw read-only GET of an API path (discovery and the RES inventory,
     // kube-inventory.js); only /api and /apis paths.
-    async readPath(path, { accept = "" } = {}) {
+    async readPath(path, { accept = "", low = false } = {}) {
       if (!/^\/apis?(\/|$)/.test(String(path)) || /\.\./.test(String(path))) return { error: "not an API path" };
-      return getPath(String(path), { accept });
+      return getPath(String(path), { accept, low });
+    },
+    // The same client on the background lane (see limited()).
+    background() {
+      return { ...this, read: (name, ...args) => (Object.hasOwn(PATHS, name) && typeof PATHS[name] === "function" ? getPath(PATHS[name](...args), { low: true }) : Promise.resolve({ error: `no such read: ${String(name).slice(0, 60)}` })), readPath: (path, opts = {}) => this.readPath(path, { ...opts, low: true }) };
     },
     async read(name, ...args) {
       if (!Object.hasOwn(PATHS, name) || typeof PATHS[name] !== "function") return { error: `no such read: ${String(name).slice(0, 60)}` };

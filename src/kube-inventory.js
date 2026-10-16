@@ -67,10 +67,12 @@ function rowItem(/** @type {any} */ row, /** @type {string[]} */ cols) {
 /**
  * The inventory. scope "*" lists each kind cluster-wide; a list of
  * namespaces lists each kind in each namespace (namespaced calls only).
- * @param {{ get: (path: string, opts?: any) => Promise<any>, scope: "*"|string[], clock?: () => number }} io
+ * discovered: an optional cached discover() (API discovery changes only when
+ * a CRD is installed; app.js keeps it 5 minutes).
+ * @param {{ get: (path: string, opts?: any) => Promise<any>, scope: "*"|string[], clock?: () => number, discovered?: () => Promise<any> }} io
  */
-export async function inventory({ get, scope, clock = Date.now }) {
-  const found = await discover(get);
+export async function inventory({ get, scope, clock = Date.now, discovered }) {
+  const found = discovered ? await discovered() : await discover(get);
   if (found.error && !found.kinds.length) return { error: found.error, kinds: [], at: clock() };
   const nss = scope === "*" ? [""] : scope;
   const jobs = found.kinds.flatMap((k) => nss.map((ns) => ({ k, ns })));
@@ -130,4 +132,26 @@ export function resHints(inv, monitors = []) {
     for (const [ns, names] of Object.entries(bare)) add(ns, `${names.length} Service${names.length === 1 ? "" : "s"} without ServiceMonitor (${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""})`);
   }
   return out;
+}
+
+/**
+ * discover() cached per key for ttlMs, callers in flight sharing one read.
+ * A failed discovery is not kept.
+ * @param {{ ttlMs?: number, clock?: () => number }} [opts]
+ */
+export function discoveryCache({ ttlMs = 5 * 60_000, clock = Date.now } = {}) {
+  /** @type {Map<string, { at: number, value?: any, pending?: Promise<any> }>} */
+  const map = new Map();
+  return (/** @type {string} */ key, /** @type {(path: string, opts?: any) => Promise<any>} */ get) => {
+    const hit = map.get(key);
+    if (hit?.value && clock() - hit.at < ttlMs) return Promise.resolve(hit.value);
+    if (hit?.pending) return hit.pending;
+    const pending = discover(get).then((value) => {
+      if (value.error && !value.kinds.length) map.delete(key);
+      else map.set(key, { at: clock(), value });
+      return value;
+    }, (e) => { map.delete(key); throw e; });
+    map.set(key, { at: 0, pending });
+    return pending;
+  };
 }

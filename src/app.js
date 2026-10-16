@@ -41,7 +41,8 @@ import { sampleClusterSnapshot } from "./kube-sample.js";
 import { sampleVaultSnapshot } from "./vault-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { pickSniffExamples } from "./sniff-examples.js";
-import { inventory, resHints, capped } from "./kube-inventory.js";
+import { inventory, resHints, capped, discoveryCache } from "./kube-inventory.js";
+import { slowLog } from "./slow-log.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, nodeGroupChange, runHint, watchLine } from "./upgrade-rules.js";
 import { CONNECT_REGION, connectCommand, connectionOf, contextsForCluster, sameEndpoint, validCluster, viewerAlias } from "./kube-connect.js";
@@ -340,6 +341,8 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   // FailedAttachVolume / Multi-Attach (drill 2026-10-11, finding 11).
   const pendingEvents = new Map();
   const resCache = new Map();
+  // API discovery per context, 5 minutes (only a CRD install changes it).
+  const discovered = discoveryCache();
   async function withPendingEvents(ctx, snap) {
     if (!snap || snap.error || !ctx.kube?.events) return snap;
     const stuck = stuckPending(snap, now());
@@ -1770,17 +1773,21 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       const key = client.context || "?";
       const hit = resCache.get(key);
       if (!fresh && hit?.value && Date.now() - hit.at < 60_000) return hit.value;
-      if (hit?.pending) return hit.pending;
+      // Expired: answer the last inventory now, read a fresh one behind it.
+      if (hit?.pending) return hit.value && !fresh ? hit.value : hit.pending;
       const pending = (async () => {
         const scope = client.scope === "*" || !Array.isArray(client.scope) ? "*" : client.scope;
-        const get = (/** @type {string} */ path, /** @type {any} */ opts) => client.readPath(path, opts);
-        const inv = await inventory({ get, scope });
+        // Background lane: hundreds of list calls must not queue the MAP.
+        const get = (/** @type {string} */ path, /** @type {any} */ opts) => client.readPath(path, { ...(opts || {}), low: true });
+        const started = Date.now();
+        const inv = await inventory({ get, scope, discovered: () => discovered(key, get) });
+        slowLog(`RES inventory ${key}`, started, `${inv.kinds?.length || 0} kinds`);
         let monitors = [];
         if (inv.monitoringCrd) {
           const sm = inv.kinds.find((k) => k.group === "monitoring.coreos.com" && k.resource === "servicemonitors");
           if (sm) {
             const paths = scope === "*" ? [`/apis/${sm.version}/servicemonitors`] : scope.map((ns) => `/apis/${sm.version}/namespaces/${ns}/servicemonitors`);
-            monitors = (await capped(paths, 4, (p) => client.readPath(p))).flatMap((r) => r?.json?.items || []);
+            monitors = (await capped(paths, 4, (p) => client.readPath(p, { low: true }))).flatMap((r) => r?.json?.items || []);
           }
         }
         const hints = resHints(inv, monitors);
@@ -1790,7 +1797,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
         return value;
       })().catch((e) => { resCache.delete(key); return { error: e?.message || "the inventory failed", kinds: [] }; });
       resCache.set(key, { ...(hit || {}), pending });
-      return pending;
+      return hit?.value && !fresh ? hit.value : pending;
     },
     async clusterOps({ sample = false, context = "" } = {}) {
       if (sample) return opsView(sampleOps(now()), { now: now() });

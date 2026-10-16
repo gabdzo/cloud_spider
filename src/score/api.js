@@ -30,6 +30,7 @@ import { runScan } from "./scan.js";
 import { permissionReport } from "./permissions.js";
 import { renderReport } from "./report.js";
 import { collectApps } from "./app/collect.js";
+import { slowLog } from "../slow-log.js";
 import { loadAppCatalog, scoreApps } from "./app/score.js";
 import { sampleClusterSnapshot } from "../kube-sample.js";
 
@@ -121,17 +122,28 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
   async function appsView({ context = "", sample = false } = {}) {
     const key = sample ? "\u0000sample" : context;
     const hit = appCache.get(key);
-    if (hit && clock().getTime() - hit.at < 60_000) return hit.view;
+    if (hit?.view && clock().getTime() - hit.at < 60_000) return hit.view;
+    // Pip-Boy and SCORE APPS ask at once: one collection, both answered.
+    // An expired score is answered at once while a fresh one is read.
+    if (hit?.pending) return hit.view || hit.pending;
+    const pending = appsRead(key, context, sample).catch((e) => { appCache.delete(key); return { error: e?.message || "the app score failed" }; });
+    appCache.set(key, { ...(hit || {}), pending });
+    return hit?.view || pending;
+  }
+  async function appsRead(key, context, sample) {
+    const started = Date.now();
     appCatalog ??= await loadAppCatalog();
     let kube;
     if (sample) kube = sampleKube();
     else {
-      kube = scopedKube(kubeFor(context));
-      if (!kube) return { error: `no kube context ${context || "(default)"}`, hint: "CONNECT a cluster on its EKS card first." };
+      const raw = kubeFor(context);
+      kube = scopedKube(raw?.background ? raw.background() : raw);
+      if (!kube) { appCache.delete(key); return { error: `no kube context ${context || "(default)"}`, hint: "CONNECT a cluster on its EKS card first." }; }
     }
     const collected = await collectApps(kube);
     const view = { context: sample ? "sample" : kube.context || context, at: clock().toISOString(), ...scoreApps(collected, { controls: appCatalog.controls, profiles: appCatalog.profiles, environment: settings.environment || "" }) };
     appCache.set(key, { at: clock().getTime(), view });
+    slowLog(`APP score ${view.context}`, started);
     return view;
   }
 
