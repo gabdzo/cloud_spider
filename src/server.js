@@ -882,7 +882,8 @@ const page = `<!doctype html>
   .mapwrap { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
   /* SCORE and LEARN fill the view with a small frame: a scrim under them so
      the map's labels in that frame do not read as part of the panel. */
-  .mapwrap:has(#score:not([hidden]), #apps:not([hidden]), #learn:not([hidden]))::before { content: ""; position: absolute; inset: 0; z-index: 5; background: rgba(0, 0, 0, 0.72); pointer-events: none; }
+  .mapwrap:has(#score:not([hidden]), #learn:not([hidden]))::before { content: ""; position: absolute; inset: 0; z-index: 5; background: rgba(0, 0, 0, 0.72); pointer-events: none; }
+  .mapwrap:has(#apps:not([hidden]))::before { content: ""; position: absolute; inset: 0; z-index: 5; background: rgba(0, 0, 0, 0.72); pointer-events: none; }
   #map { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--pip-screen); }
 
   /* ---- the morning report: three sentences pinned over the map ---- */
