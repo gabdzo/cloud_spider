@@ -14,6 +14,7 @@
     "test": "node --test test/*.test.js",
     "vaults:check": "node scripts/vaults-check.mjs",
     "vaults:new": "node scripts/vaults-new.mjs",
+    "vaults:migrate": "node scripts/vaults-migrate.mjs",
     "validate-vaults": "node scripts/cloudspider.mjs validate-vaults",
     "typecheck": "tsc -p ."
   },

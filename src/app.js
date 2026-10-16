@@ -32,6 +32,7 @@ import { waitingLines } from "./run-waiting.js";
 import { bundleById, bundleConfirm, bundleSteps, stackBundlePlan } from "./stack-bundles.js";
 import { costFor, estimate } from "./stack-costs.js";
 import { UPGRADES } from "./upgrade.js";
+import { stacksObservability } from "./stack-observability.js";
 import { kubeCard } from "./modules.js";
 import { BUNDLE_IDS, bundlePlan, bundleView, confirmText, slotLine } from "./addon-bundle.js";
 import { daemonSetCheck, daemonSetRoom, podRoom } from "../upgrades/addons/pod-room.js";
@@ -1568,6 +1569,14 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       } catch (failure) {
         return { dir: "", note: `the vaults did not load: ${failure?.message || "error"}`, vaults: [] };
       }
+    },
+    // STACKS › OBSERVABILITY: one card per stack (stack-observability.js).
+    // Reads only what VAULTS and the cluster view already have.
+    async stackObservability({ sample = false } = {}) {
+      const view = await api.vaultsView({ sample });
+      const kubeSnaps = sample ? [{ snap: sampleClusterSnapshot() }] : [...kubeCaches.values()];
+      const out = stacksObservability(UPGRADES, { vaults: view.vaults || [], kubeSnaps });
+      return { ...out, note: view.note || "" };
     },
     async vaultLogs(key, { sample = false } = {}) {
       const viewer = sample ? vaults?.sample : vaults?.live;

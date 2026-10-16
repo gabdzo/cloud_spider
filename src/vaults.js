@@ -6,6 +6,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseAllDocuments } from "yaml";
 import { validateVault } from "./vault-schema.js";
+import { observabilityToVault } from "./observability-config.js";
 
 export function vaultsDir(env = process.env, cwd = process.cwd()) {
   return resolve(cwd, env.CLOUDSPIDER_VAULTS_DIR || "vaults");
@@ -42,7 +43,7 @@ export function parseVaultText(textBody, file) {
       entries.push(damaged(file, index, [`YAML: ${oneLine(error?.message)}`]));
       return;
     }
-    const result = validateVault(value);
+    const result = validateVault(observabilityToVault(value));
     if (!result.vault) {
       entries.push(damaged(file, index, result.errors, result.name, result.number));
       return;
@@ -107,12 +108,36 @@ export function byNumber(entries) {
     .map((item) => item.entry);
 }
 
-export function createVaultStore({ dir, fs = { readdir, readFile, stat }, templates = false } = {}) {
+// extraDirs: [{ dir, prefix }] read before dir (observability/ first, so a
+// migrated file wins over the vault it came from: same name, first wins).
+export function createVaultStore({ dir, fs = { readdir, readFile, stat }, templates = false, extraDirs = [] } = {}) {
   let signature = null;
   let cached = { vaults: [], note: "", dir };
   let flight = null;
 
   async function scan() {
+    const extra = [];
+    for (const { dir: other, prefix } of extraDirs) {
+      let list = [];
+      try {
+        list = (await fs.readdir(other)).filter((name) => FILE.test(name) && !name.startsWith(".")).sort();
+      } catch {
+        continue;
+      }
+      for (const name of list) {
+        try {
+          const info = await fs.stat(join(other, name));
+          if (info.isFile()) extra.push({ name: `${prefix}/${name}`, path: join(other, name), mtime: Number(info.mtimeMs) || 0, size: Number(info.size) || 0 });
+        } catch {
+          // gone between readdir and stat
+        }
+      }
+    }
+    const own = await scanOwn();
+    return { ...own, files: [...extra, ...own.files], signature: `${extra.map((f) => `${f.name}:${f.mtime}:${f.size}`).join("|")}#${own.signature}` };
+  }
+
+  async function scanOwn() {
     let names;
     try {
       names = (await fs.readdir(dir)).filter((name) => FILE.test(name) && (templates || !TEMPLATE.test(name)) && !name.startsWith(".")).sort();
@@ -144,7 +169,7 @@ export function createVaultStore({ dir, fs = { readdir, readFile, stat }, templa
       }
       let body;
       try {
-        body = await fs.readFile(join(dir, file.name), "utf8");
+        body = await fs.readFile(file.path || join(dir, file.name), "utf8");
       } catch (error) {
         entries.push(damaged(file.name, 0, [`the file did not open: ${error?.code || error?.message}`]));
         continue;
