@@ -2598,6 +2598,18 @@ const page = `<!doctype html>
   #pip .ov-close { margin-left: auto; min-height: 0; padding: 1px 6px; font: inherit; font-size: 10px; cursor: pointer; color: var(--pip-bright); background: transparent; border: 1px solid var(--pip-mid); }
   #pip .ov-close:hover, #pip .ov-close:focus-visible { color: var(--pip-ink); background: var(--pip-bright); outline: none; }
   #pip .ov-facts li span:last-child { overflow-wrap: anywhere; text-align: right; }
+  #pip .ov-obs { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border: 1px solid rgba(var(--glow-rgb), 0.45); }
+  #pip .ov-obs-head { display: flex; justify-content: space-between; align-items: baseline; }
+  #pip .ov-obs-h { letter-spacing: .12em; }
+  #pip .ov-obs-cov, #pip .ov-obs-note { opacity: .75; font-size: 11px; }
+  #pip .ov-obs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  #pip .ov-obs-row { display: grid; grid-template-columns: 70px 16px 1fr auto; gap: 6px; align-items: baseline; }
+  #pip .ov-obs-k { letter-spacing: .08em; }
+  #pip .ov-obs-t { overflow-wrap: anywhere; }
+  #pip .ov-obs-row.ok .ov-obs-lamp { color: var(--pip-bright); }
+  #pip .ov-obs-row.partial .ov-obs-lamp { color: var(--status-hang); }
+  #pip .ov-obs-row.missing .ov-obs-lamp { color: var(--status-broken); }
+  #pip .ov-obs-fix { font-size: 10px; opacity: .8; }
   #pip .ov-console, #pip .ov-back { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 6px 12px; font: inherit; font-size: 12px; letter-spacing: 0.14em; cursor: pointer;
     color: var(--pip-ink); border: 1px solid var(--pip-ink); background: linear-gradient(180deg, var(--pip-hot, var(--pip-bright)), var(--pip-bright) 45%, var(--pip-mid)); box-shadow: 0 0 10px rgba(var(--glow-rgb), 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
   #pip .ov-console img { image-rendering: pixelated; }
@@ -3814,6 +3826,11 @@ async function route(app, req, res) {
     // No boot here: vaults come from files, so they show even before (or
     // without) an AWS read; ownership fills in once the place is known.
     send(res, 200, await app.vaultsView({ sample: url.searchParams.get("sample") === "1" }));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/stacks/observability") {
+    send(res, 200, await app.stackObservability({ sample: url.searchParams.get("sample") === "1" }));
     return;
   }
 

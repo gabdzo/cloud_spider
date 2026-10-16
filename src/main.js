@@ -1,3 +1,4 @@
+import { observabilityDir } from "./observability-config.js";
 import { EC2Client } from "@aws-sdk/client-ec2";
 import { createReach } from "./kube-reach.js";
 import { createEksPreflight } from "./stack-preflight.js";
@@ -92,7 +93,7 @@ function awsMake(name, make) {
 }
 const aws = awsMake("aws", () => createAws());
 const vaults = {
-  live: createVaultView({ store: createVaultStore({ dir: vaultsDir() }), checker: createCheckRunner(), stacks: createStackReader(), codeTime: createCodeTime() }),
+  live: createVaultView({ store: createVaultStore({ dir: vaultsDir(), extraDirs: [{ dir: observabilityDir(), prefix: "observability" }] }), checker: createCheckRunner(), stacks: createStackReader(), codeTime: createCodeTime() }),
   sample: createVaultView({
     store: createVaultStore({ dir: join(root, "samples", "vaults") }),
     checker: createCheckRunner({ fetch: sampleFetch }),

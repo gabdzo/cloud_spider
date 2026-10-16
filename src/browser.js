@@ -4947,6 +4947,51 @@ async function pullStackStates(force = false) {
 // card (settings, PREVIEW / RUN / TAKE IT DOWN, run log) on its own.
 const LAYOUT_KEY = "cloudspider.stacks.layout";
 let stackRuns = {};
+// STACKS › OBSERVABILITY cards (GET /api/stacks/observability), per stack id.
+let stackObs = {};
+async function pullStackObs() {
+  const body = await fetch(`/api/stacks/observability${sample ? "?sample=1" : ""}`).then((r) => r.json()).catch(() => null);
+  if (!body?.stacks) return;
+  stackObs = body.stacks;
+  if (pipOpen && overviewPick) drawPipForm();
+}
+const OBS_LAMP = { ok: "●", partial: "◐", missing: "○" };
+// The card: four signals, checks, trouble, and ADD MISSING, which only
+// opens the observe bundle's card prefilled (PREVIEW, then RUN, approves).
+function observabilityBlock(spec) {
+  const card = stackObs[spec.id];
+  const box = el("section", { className: "ov-obs", ariaLabel: `${spec.title}: observability` });
+  if (!card) {
+    box.append(el("b", { className: "ov-obs-h", textContent: "OBSERVABILITY" }), el("span", { className: "ov-obs-note", textContent: "reading…" }));
+    return box;
+  }
+  box.append(el("header", { className: "ov-obs-head" }, el("b", { className: "ov-obs-h", textContent: "OBSERVABILITY" }), el("span", { className: "ov-obs-cov", textContent: `coverage ${card.coverage.ok}/${card.coverage.of}` })));
+  const list = el("ul", { className: "ov-obs-list" });
+  for (const s of card.signals) {
+    const li = el("li", { className: `ov-obs-row ${s.state}` }, el("span", { className: "ov-obs-k", textContent: s.id.toUpperCase() }), el("i", { className: "ov-obs-lamp", textContent: OBS_LAMP[s.state] || "?" }), el("span", { className: "ov-obs-t", textContent: s.text }));
+    if (s.fixable) li.append(el("span", { className: "ov-obs-fix", textContent: "ADD ›" }));
+    list.append(li);
+  }
+  list.append(el("li", { className: `ov-obs-row ${card.checks.total ? (card.checks.ok === card.checks.total ? "ok" : "partial") : "missing"}` }, el("span", { className: "ov-obs-k", textContent: "CHECKS" }), el("i", { className: "ov-obs-lamp", textContent: card.checks.total ? OBS_LAMP[card.checks.ok === card.checks.total ? "ok" : "partial"] : OBS_LAMP.missing }), el("span", { className: "ov-obs-t", textContent: card.checks.text })));
+  if (card.troubleCount) list.append(el("li", { className: "ov-obs-row partial" }, el("span", { className: "ov-obs-k", textContent: "TROUBLE" }), el("i", { className: "ov-obs-lamp", textContent: "!" }), el("span", { className: "ov-obs-t", textContent: `${card.troubleCount} failed call${card.troubleCount === 1 ? "" : "s"}: ${card.trouble[0].call} ${card.trouble[0].issue}` })));
+  box.append(list);
+  box.append(el("span", { className: "ov-obs-note", textContent: card.source ? `config ${card.source}` : `no config: add observability/${spec.vault || spec.id}.yaml (checks, SLOs, links)` }));
+  if (card.add) {
+    const values = Object.entries(card.add.values).map(([k, v]) => `${k}=${v}`).join(", ");
+    const b = el("button", { type: "button", className: "ov-console ov-obs-add", title: `opens the Observe bundle card with ${values}; nothing changes until you PREVIEW and RUN it` }, el("span", { textContent: `ADD MISSING (${card.add.missing.join(", ")}) › OBSERVE BUNDLE` }));
+    b.addEventListener("click", () => {
+      pipKept[card.add.module] = { ...(pipKept[card.add.module] || {}), ...card.add.values };
+      overviewPick = null;
+      openCard = card.add.module;
+      markHistory();
+      syncUrl();
+      drawPipForm();
+      refreshUpgrade(true);
+    });
+    box.append(b, el("span", { className: "ov-obs-note", textContent: `prefills ${values}; PREVIEW first, nothing is installed until you RUN` }));
+  }
+  return box;
+}
 let overviewPick = null;
 let stacksReadSample = null;
 function stacksLayout() {
@@ -5033,7 +5078,7 @@ function overviewDetail(spec) {
   if (run?.error) fact("error", run.error);
   const hint = driftHint(st, run);
   if (hint) fact("drift hint", hint);
-  box.append(facts, resourcesBlock(spec));
+  box.append(facts, observabilityBlock(spec), resourcesBlock(spec));
   const go = el("button", { type: "button", className: "ov-console", title: `settings, PREVIEW, RUN, TAKE IT DOWN and the run log for ${spec.title}` }, iconImg("terminal"), el("span", { textContent: "OPEN RUN CONSOLE ›" }));
   go.addEventListener("click", () => {
     openCard = spec.id;
@@ -5725,8 +5770,10 @@ function drawPipForm() {
     stacksReadSample = sample;
     stackStates = {};
     stackRuns = {};
+    stackObs = {};
     pullStackStates(true);
     pullLastRuns();
+    pullStackObs();
   }
   const title = el("div", { className: "ptitle" }, iconImg("stack"), el("span", { textContent: "STACKS" }), el("span", { className: "pcount", textContent: overview ? `${own.length + pipTerraform.length} STACKS` : `${own.length + pipTerraform.length} STACKS · CLICK ONE TO OPEN` }), layoutToggle());
   pipEl.replaceChildren(title);
@@ -6666,6 +6713,7 @@ async function toggleUpgrade() {
   refreshUpgrade(true);
   pullStackStates();
   pullLastRuns();
+  pullStackObs();
   if (pipModules.some((spec) => spec.addon)) pullAddons(true);
 }
 
