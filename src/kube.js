@@ -149,6 +149,15 @@ export const PATHS = {
   // Protections (src/score/collectors/kube-protect.js): service accounts,
   // volumes and what backs them up. A CRD that is not installed answers 404.
   serviceAccounts: () => "/api/v1/serviceaccounts",
+  // APP score (src/score/app): namespaced lists, split per allowed namespace
+  // by scoped-kube. ConfigMaps keep only their key names (collector).
+  configMaps: () => "/api/v1/configmaps",
+  limitRanges: () => "/api/v1/limitranges",
+  roles: () => "/apis/rbac.authorization.k8s.io/v1/roles",
+  roleBindings: () => "/apis/rbac.authorization.k8s.io/v1/rolebindings",
+  serviceMonitors: () => "/apis/monitoring.coreos.com/v1/servicemonitors",
+  podMonitors: () => "/apis/monitoring.coreos.com/v1/podmonitors",
+  prometheusRules: () => "/apis/monitoring.coreos.com/v1/prometheusrules",
   pvcs: () => "/api/v1/persistentvolumeclaims",
   pvs: () => "/api/v1/persistentvolumes",
   cnpgClusters: () => "/apis/postgresql.cnpg.io/v1/clusters",
