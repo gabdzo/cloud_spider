@@ -3409,7 +3409,7 @@ async function pullPath() {
       pathProbeKey = "";
     } else if (!wasSample && !body.error && body.diagram) probePath(asked);
     setStatus(ui, body.error || body.empty ? "" : pathStatus(body));
-    showSniffExamples(body.empty ? body.examples || [] : null);
+    showSniffExamples(body.empty ? body.examples || [] : null, body.empty ? body.routes : null);
     errorEl.hidden = !body.error;
     errorEl.textContent = body.error || "";
     renderChrome();
@@ -3432,7 +3432,8 @@ async function pullPath() {
 
 // SNIFF with nothing typed (k8s-only): a friendly prompt with live examples.
 let sniffEmptyEl = null;
-function showSniffExamples(examples) {
+const sniffOpenHosts = new Set();
+function showSniffExamples(examples, routes = null) {
   if (!examples) {
     if (sniffEmptyEl) sniffEmptyEl.hidden = true;
     return;
@@ -3440,7 +3441,7 @@ function showSniffExamples(examples) {
   if (!sniffEmptyEl) {
     sniffEmptyEl = document.createElement("div");
     sniffEmptyEl.id = "sniff-empty";
-    sniffEmptyEl.style.cssText = "position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:5;max-width:560px;padding:16px 20px;border:2px solid currentColor;background:rgba(0,0,0,.88);color:inherit;font:inherit;text-align:left";
+    sniffEmptyEl.style.cssText = "position:absolute;left:50%;top:calc(var(--kube-top, 50px) + 16px);transform:translateX(-50%);z-index:5;width:min(720px,94%);max-height:calc(100% - var(--kube-top, 50px) - 72px);overflow:auto;padding:16px 20px;border:2px solid currentColor;background:rgba(0,0,0,.88);color:inherit;font:inherit;text-align:left";
     errorEl.parentElement.append(sniffEmptyEl);
   }
   const head = document.createElement("div");
@@ -3458,8 +3459,65 @@ function showSniffExamples(examples) {
     });
     return button;
   });
-  sniffEmptyEl.replaceChildren(head, ...buttons);
+  sniffEmptyEl.replaceChildren(head, ...buttons, ...sniffRoutesBlock(routes));
   sniffEmptyEl.hidden = mode !== "path";
+  lastSniffExamples = examples;
+}
+let lastSniffExamples = [];
+
+// ROUTES: every Ingress/Route path grouped by host, folded with a count.
+function sniffRoutesBlock(routes) {
+  if (!routes) return [];
+  const wrap = document.createElement("div");
+  wrap.className = "sniff-routes";
+  const title = document.createElement("div");
+  title.textContent = `ROUTES · ${routes.total || 0} path${routes.total === 1 ? "" : "s"}`;
+  title.style.cssText = "margin:14px 0 6px;color:var(--pip-bright);letter-spacing:.1em";
+  wrap.append(title);
+  if (!routes.groups?.length) wrap.append(Object.assign(document.createElement("div"), { textContent: routes.error || "no Ingress or Route found" }));
+  const dot = { ok: "var(--ok)", broken: "var(--err)", note: "var(--pip-dim-text)" };
+  for (const g of routes.groups || []) {
+    const open = sniffOpenHosts.has(g.host);
+    const head = document.createElement("button");
+    head.type = "button";
+    head.className = "sniff-route-host";
+    head.setAttribute("aria-expanded", String(open));
+    head.textContent = `${open ? "▾" : "▸"} ${g.host} (${g.count}${g.broken ? `, ${g.broken} broken` : ""})`;
+    head.style.cssText = `display:block;width:100%;margin:4px 0;padding:3px 8px;text-align:left;cursor:pointer;font:inherit;background:transparent;border:1px solid var(--pip-dim);color:${g.broken ? "var(--err)" : "inherit"}`;
+    head.addEventListener("click", () => {
+      if (sniffOpenHosts.has(g.host)) sniffOpenHosts.delete(g.host);
+      else sniffOpenHosts.add(g.host);
+      showSniffExamples(lastSniffExamples, routes);
+    });
+    wrap.append(head);
+    if (!open) continue;
+    for (const r of g.rows) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = `sniff-route sniff-route-${r.status}`;
+      row.title = `${r.ns}/${r.via} (${r.cls || r.kind}) · ${r.why}`;
+      row.style.cssText = "display:flex;gap:8px;align-items:center;width:100%;margin:2px 0 2px 14px;padding:2px 8px;text-align:left;cursor:pointer;font:inherit;color:inherit;background:transparent;border:0;white-space:nowrap;overflow:hidden";
+      const d = document.createElement("i");
+      d.style.cssText = `flex:none;width:8px;height:8px;border-radius:50%;background:${dot[r.status] || dot.note}`;
+      const t = document.createElement("span");
+      t.style.cssText = "overflow:hidden;text-overflow:ellipsis";
+      t.textContent = `${r.path} → ${r.ns}/${r.svc}:${r.svcPort ?? "?"}${r.status === "ok" ? "" : ` · ${r.why}`}`;
+      row.append(d, t);
+      row.addEventListener("click", () => {
+        hostInput.value = r.target;
+        hostInput.dispatchEvent(new Event("change"));
+      });
+      wrap.append(row);
+    }
+  }
+  if (routes.noAccess?.length) {
+    const note = document.createElement("div");
+    note.className = "sniff-noaccess";
+    note.textContent = `no access: ${routes.noAccess.join(", ")}`;
+    note.style.cssText = "margin-top:10px;font-size:.85em;color:var(--pip-dim-text)";
+    wrap.append(note);
+  }
+  return [wrap];
 }
 
 // A view read that failed on the server (a 500 with a status line, or not

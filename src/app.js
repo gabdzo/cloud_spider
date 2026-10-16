@@ -13,6 +13,7 @@ import { createRadio } from "./radio.js";
 import { readLogs } from "./logs.js";
 import { readPath } from "./path-read.js";
 import { createPathProber } from "./path-probe.js";
+import { readRoutes, ROUTES_TTL_MS } from "./sniff-routes.js";
 import { ingressFor, ingressRoutesForService, kubePathDiagram, parseKubeTarget, podOnlyDiagram, readKubePath, servicesForPod, withIngress, withServiceIngresses } from "./kube-path.js";
 import { pathResult, withPeers } from "./path-view.js";
 import { costFailure } from "./cost.js";
@@ -1995,11 +1996,26 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
     return pickSniffExamples(ings, svcs, pods);
   }
 
+  // ROUTES for the empty SNIFF: cached 60 s per context.
+  const routesCache = new Map();
+  async function sniffRoutes(client) {
+    const key = client.context || "?";
+    const hit = routesCache.get(key);
+    if (hit && Date.now() - hit.at < ROUTES_TTL_MS) return hit.value;
+    const value = await readRoutes(client, Array.isArray(client.scope) ? client.scope : "*");
+    routesCache.set(key, { at: Date.now(), value });
+    return value;
+  }
+
   async function ingressPathView(host, asked = "") {
     const base = { region, loadBalancers: [], selected: "", host, hostNote: "", findings: [], notes: [], kube: true, error: "", diagram: null, headline: "" };
     const { client, error: noClient } = pathClient(asked);
     // Nothing typed yet: a friendly empty state with live examples, no error.
-    if (!host.trim()) return { ...base, empty: true, examples: noClient ? [] : await sniffExamples(client) };
+    if (!host.trim()) {
+      if (noClient) return { ...base, empty: true, examples: [], routes: null };
+      const [examples, routes] = await Promise.all([sniffExamples(client), sniffRoutes(client).catch(() => null)]);
+      return { ...base, empty: true, examples, routes };
+    }
     if (noClient) return { ...base, error: noClient };
     const got = await client.read("ingresses").catch((failure) => ({ error: failure?.message || String(failure) }));
     if (!got?.json) return { ...base, error: got?.forbidden ? "Ingresses are forbidden for this kube context, so a host can't be traced; type ns/service instead" : `Ingresses could not be read (${got?.error || "no answer"}); type ns/service instead` };
