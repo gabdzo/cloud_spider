@@ -55,7 +55,8 @@ import {
   clockText, drawMascot, drawScope, iconURL, mapStats, scrollToShow, needleAt, paintIcons, pathStats, renderRadio, renderStats, setIcon,
   explainAbbr,
 } from "./chrome.js";
-import { FRAME_MS, PIP } from "./theme.js";
+import { FRAME_MS, PIP, TINT, amberizeCss } from "./theme.js";
+if (TINT === "amber") for (const s of document.querySelectorAll("style")) s.textContent = amberizeCss(s.textContent || "");
 import { createVaultState, VPC_FOLD_KEY } from "./vault-state.js";
 import { VAULT, placeVaults, vaultAt } from "./vault-layout.js";
 import { badgeAt, ownedRows, parseVaultHash, vaultSummary, vaultTally } from "./vault-page.js";
