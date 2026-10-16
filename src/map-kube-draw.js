@@ -39,8 +39,47 @@ function fence(ctx, c) {
 export function drawCompoundGround(ctx, placed) {
   for (const c of compoundsOf(placed)) {
     fence(ctx, c);
-    policyLines(ctx, c.lines || [], null);
+    // Grid mode: namespace boxes, and only the per-pair gutter lines at rest.
+    for (const l of c.ns) if (l.box) nsBox(ctx, l);
+    if (c.grid) gutterLines(ctx, c.nsLines || []);
+    else policyLines(ctx, c.lines || [], null);
   }
+}
+
+function nsBox(ctx, l) {
+  const b = l.box;
+  ctx.fillStyle = rgba(PIP.ink, l.system ? 0.35 : 0.5);
+  ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.fillStyle = rgba(PIP.ink, 0.75);
+  ctx.fillRect(b.x, b.y, b.w, MK.NS + 2);
+  ctx.strokeStyle = rgba(l.system ? PIP.dim : PIP.mid, 0.8);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1);
+}
+
+// Orthogonal per-namespace-pair lines in the gutters, faint at rest.
+function gutterLines(ctx, lines) {
+  for (const l of lines) {
+    const pts = l.points;
+    ctx.strokeStyle = rgba(PIP.bright, 0.35);
+    ctx.lineWidth = Math.min(4, 1 + Math.log2(l.count));
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (const p of pts.slice(1)) ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    const end = pts[pts.length - 1];
+    ctx.fillStyle = rgba(PIP.bright, 0.6);
+    ctx.fillRect(end.x - 2, end.y - 2, 4, 4);
+    if (l.count > 1) {
+      ctx.font = font(8);
+      const mid = pts[2];
+      const t = `×${l.count}`;
+      labelBacking(ctx, t, mid.x + 3, mid.y - 2, 8);
+      ctx.fillStyle = rgba(PIP.bright, 0.8);
+      ctx.fillText(t, mid.x + 3, mid.y - 2);
+    }
+  }
+  ctx.lineWidth = 1;
 }
 
 // NetworkPolicy allow lines: a soft arc per line; a bundle (too many lines
@@ -152,7 +191,7 @@ export function drawCompoundTop(ctx, placed, { animTime = 0, reducedMotion = fal
       ctx.fillText(text, line.x + 2, line.y + 11);
     }
     // Lines of the hovered tent or outside chip, bright, over everything.
-    const lit = c.stalls.find((s) => s.id === hover) || (c.sources || []).find((s) => s.id === hover);
+    const lit = c.stalls.find((s) => s.id === hover) || (c.sources || []).find((s) => s.id === hover) || (c.grid ? c.stalls.find((s) => s.id === selected) : null);
     if (lit) {
       const key = lit.type === "policy-source" ? lit.id.slice(4) : `${lit.ns}/${lit.label}`;
       policyLines(ctx, c.lines || [], (l) => l.from === key || l.to === key);

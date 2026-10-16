@@ -22,15 +22,17 @@ const { PRO_GLYPHS, glyphKey } = await import("../src/map-pro-icons.js");
 // showcase balancers (dedicated Boutique ALB, shared demo-apps ALB, an NLB).
 // Changed on purpose (map dock overlap): wrapped public ALB lines leave room
 // for the dock under a line and the PUBLIC badge over the next.
+// Changed on purpose (map namespace grid): the EKS compound lays its
+// namespaces out as a grid of boxes over the free width, with gutter lines.
 const PIP_GOLDEN = {
-  w1440: ["c8040815f9993158", { width: 1440 }],
-  w760: ["314069899cda667b", { width: 760, animTime: 1234 }],
+  w1440: ["71592595747d0735", { width: 1440 }],
+  w760: ["3e85298eda4fa2fe", { width: 760, animTime: 1234 }],
   // Changed on purpose (#pro-map-2): side-by-side VPCs leave a chip row
   // above the first row so peering chips clear the ARCH / BY TAG switch.
-  w1920flow: ["cf1cfc2dc3b26baa", { width: 1920, flow: true, animTime: 5000 }],
+  w1920flow: ["c29f0d6ccd85d699", { width: 1920, flow: true, animTime: 5000 }],
   tag: ["d3ac33f6eb8e83a2", { width: 1440, view: "tag" }],
-  selBuilding: ["284c8291216bbb34", { width: 1440, select: "building" }],
-  selFixture: ["a26fc2eb477286a1", { width: 1440, select: "fixture" }],
+  selBuilding: ["406aff821b21484c", { width: 1440, select: "building" }],
+  selFixture: ["56fc2581e0d5f962", { width: 1440, select: "fixture" }],
 };
 
 function render(opts, theme) {

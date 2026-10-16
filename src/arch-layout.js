@@ -284,7 +284,19 @@ export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fi
 
   // EKS clusters with kube data (map-kube.js): node buildings move into a
   // compound in their subnet, with the cluster's apps or pods around them.
-  const compounds = kubeCompounds(kube, instances.filter((item) => item.vpcId === vpc.id), subnets, budget - 2 * A.INSET);
+  // The compound gets the width the other AZ columns leave over, so its
+  // namespace grid spreads across the map instead of one narrow column.
+  const vpcInstances = instances.filter((item) => item.vpcId === vpc.id);
+  const probe = kubeCompounds(kube, vpcInstances, subnets, budget - 2 * A.INSET);
+  const compoundZones = zones.filter((zone) => subnets.some((s) => (s.zone || "") === zone && probe.has(s.id)));
+  let compoundRoom = budget - 2 * A.INSET;
+  if (compoundZones.length) {
+    const probeIds = new Set([...probe.values()].flatMap((c) => c.nodeIds));
+    const fixed = zones.filter((zone) => !compoundZones.includes(zone)).reduce((sum, zone) => sum + Math.max(textWidth(zone.toUpperCase()), A.CELL_W + 2 * A.INSET, ...subnets.filter((s) => (s.zone || "") === zone).map((s) => yardSize(s, routes.get(s.id), allShacksIn(s).filter((item) => !probeIds.has(item.id)), inYard(s), columns, budget).w)), 0);
+    const free = inner - fixed - (zones.length - 1) * A.GAP;
+    compoundRoom = Math.max(compoundRoom, Math.floor(free / compoundZones.length) - 2 * A.INSET);
+  }
+  const compounds = compoundZones.length ? kubeCompounds(kube, vpcInstances, subnets, compoundRoom, true) : probe;
   const inCompound = new Set([...compounds.values()].flatMap((c) => c.nodeIds));
   const shacksIn = (subnet) => allShacksIn(subnet).filter((item) => !inCompound.has(item.id));
   const compoundIn = (subnet) => {
@@ -422,7 +434,7 @@ export function placeArchVpc(vpc, { place, x, y, rowLimit, routes, instances, fi
 
 // Per subnet: which cluster's compound it holds and what goes in it.
 // kube = { models: Map(cluster -> kubeModel), choice(cluster) -> "1".."3"|"auto" }
-function kubeCompounds(kube, instances, subnets, room) {
+function kubeCompounds(kube, instances, subnets, room, grid = false) {
   const out = new Map();
   if (!kube?.models?.size) return out;
   const subnetIds = new Set(subnets.map((s) => s.id));
@@ -439,7 +451,7 @@ function kubeCompounds(kube, instances, subnets, room) {
     const apps = assignApps(model, nodeSubnet, level);
     for (const subnetId of new Set(nodeSubnet.values())) {
       if (out.has(subnetId)) continue;
-      out.set(subnetId, { cluster, model, level, choice, room, policies: kube.policies !== false, apps: apps.get(subnetId) || [], nodeIds: [...nodeSubnet].filter(([, s]) => s === subnetId).map(([id]) => id) });
+      out.set(subnetId, { cluster, model, level, choice, room, grid, fill: grid, policies: kube.policies !== false, apps: apps.get(subnetId) || [], nodeIds: [...nodeSubnet].filter(([, s]) => s === subnetId).map(([id]) => id) });
     }
   }
   return out;
