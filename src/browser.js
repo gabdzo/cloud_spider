@@ -1243,7 +1243,7 @@ function mapKubeSignature(models) {
 }
 
 async function pullMapKube() {
-  if (mode !== "map" || !tabVisible) return;
+  if (mode !== "map" || !tabVisible || kubeMapOnly()) return;
   const ticket = ++mapKube.ticket;
   const wasSample = sample;
   const body = await fetch(`/api/map/kube${wasSample ? "?sample=1" : ""}`)
@@ -2753,16 +2753,17 @@ const pipBoyEl = /** @type {HTMLElement} */ (document.querySelector("#pipboy"));
 // k8s-only: the Pip-Boy wall IS the map (HUT MAP brings the drawn one back);
 // with AWS it is a toggle over the AWS map.
 const pipBoyKey = kubeMapOnly() ? `${PIP_ON_KEY}.k8s` : PIP_ON_KEY;
-let pipBoyOn = readPref(pipBoyKey, kubeMapOnly() ? "1" : "0") === "1";
+let pipBoyOn = kubeMapOnly() || readPref(pipBoyKey, "0") === "1";
 const pipBoy = mountPip(pipBoyEl, {
   load: () => fetch(sample ? "/api/cluster-sample" : `/api/cluster${clusterContext ? `?context=${encodeURIComponent(clusterContext)}` : ""}`).then((r) => r.json()),
   model: pipModel,
-  onClose: () => setPipBoy(false),
+  onClose: () => { if (!kubeMapOnly()) setPipBoy(false); },
+  canClose: !kubeMapOnly(),
   openTopology: (ns) => openInCluster({ type: "entry", id: `ns:${ns}`, ns }),
   store: (() => { try { return window.localStorage; } catch { return null; } })(),
 });
 function setPipBoy(on) {
-  pipBoyOn = on;
+  pipBoyOn = on || kubeMapOnly();
   try { window.localStorage.setItem(pipBoyKey, on ? "1" : "0"); } catch { /* this page only */ }
   syncPipBoy();
 }
@@ -2770,6 +2771,9 @@ function syncPipBoy() {
   const room = mode === "map" && moduleOn("kubernetes");
   pipBoyButton.hidden = !room || pipBoyOn;
   const show = room && pipBoyOn;
+  // The screen covers #map; #map must not scroll the hut map out from under it.
+  map.classList.toggle("pip-on", show);
+  if (show && map.scrollTop) map.scrollTop = 0;
   if (show && pipBoyEl.hidden) pipBoy.show();
   else if (!show && !pipBoyEl.hidden) pipBoy.hide();
 }
@@ -2782,6 +2786,8 @@ showTint();
 
 function draw() {
   syncPipBoy();
+  // k8s-only: MAP is the Pip-Boy, never the drawn hut map.
+  if (mode === "map" && kubeMapOnly()) return;
   syncClusterScreens();
   if (!kubeFocusBox.hidden || !kubeHealthy.hidden) syncFocusBar();
   const noCluster = mode === "cluster" && !sample && Boolean(clusterData?.unset) && !clusterData?.diagram && (!clusterTabsShown || clusterScreen === "topology");

@@ -204,12 +204,12 @@ export function hotLinks(/** @type {HTMLElement} */ el, /** @type {string} */ ns
 
 /**
  * @param {ReturnType<typeof import("./pipboy-model.js").pipModel>|null} model
- * @param {{ selected: string, tab: string, theme: string, view?: string, error?: string, loading?: boolean, hutMap?: boolean }} state
+ * @param {{ selected: string, tab: string, theme: string, view?: string, canClose?: boolean, error?: string, loading?: boolean, hutMap?: boolean }} state
  */
 export function pipHtml(model, state) {
   const grid = state.view !== "one";
   const tabs = grid ? `<button class="pb-tab" aria-selected="true">CLUSTER</button>` : ["stat", "pods", "net"].map((t) => `<button class="pb-tab" role="tab" data-tab="${t}" aria-selected="${state.tab === t}">${t.toUpperCase()}</button>`).join("");
-  const top = `<div class="pb-top" role="tablist">${tabs}<span class="pb-title">${esc(model?.cluster || "")}${model?.context ? ` · ${esc(model.context)}` : ""}<button class="pb-theme" data-theme-toggle title="switch phosphor colour">${state.theme === "amber" ? "AMBER" : "GREEN"}</button><button class="pb-close" data-close title="the old drawn map (huts)">HUT MAP</button></span></div>`;
+  const top = `<div class="pb-top" role="tablist">${tabs}<span class="pb-title">${esc(model?.cluster || "")}${model?.context ? ` · ${esc(model.context)}` : ""}<button class="pb-theme" data-theme-toggle title="switch phosphor colour">${state.theme === "amber" ? "AMBER" : "GREEN"}</button>${state.canClose === false ? "" : `<button class="pb-close" data-close title="back to the AWS map">✕ MAP</button>`}</span></div>`;
   if (!model || !model.namespaces.length) return `${top}<p class="pb-empty">${esc(state.error || (state.loading ? "READING CLUSTER…" : "NO NAMESPACES VISIBLE TO THIS CONTEXT"))}</p>`;
   const t = model.totals;
   const pct = t.pods ? Math.round((100 * t.ready) / t.pods) : 100;
@@ -227,6 +227,8 @@ export function setTint(tint, store = null) {
   else delete document.documentElement.dataset.tint;
   try { (store || window.localStorage).setItem(PIP_THEME_KEY, tint); } catch { /* this page only */ }
   window.dispatchEvent(new CustomEvent("cs-tint", { detail: tint }));
+  // canvases, sprites and icons take the palette at load (theme.js TINT)
+  window.location.reload();
 }
 /** @returns {"green"|"amber"} */
 export function readTint() { try { return window.localStorage.getItem(PIP_THEME_KEY) === "amber" ? "amber" : "green"; } catch { return "green"; } }
@@ -240,11 +242,11 @@ const keep = (store, key, value) => { try { store?.setItem(key, value); } catch 
  * The screen's controller: fetches /api/cluster, renders, keys and clicks.
  * The amber tint is set on <html data-tint> so the whole app follows.
  * @param {HTMLElement} el
- * @param {{ load: () => Promise<any>, model: (body: any) => any, onClose: () => void, openTopology?: (ns: string) => void, store?: Storage|null }} io
+ * @param {{ load: () => Promise<any>, model: (body: any) => any, onClose: () => void, canClose?: boolean, openTopology?: (ns: string) => void, store?: Storage|null }} io
  */
 export function mountPip(el, io) {
   const store = io.store ?? null;
-  const state = { scrollSel: true, selected: pref(store, PIP_SEL_KEY, ""), tab: "stat", view: "grid", theme: pref(store, PIP_THEME_KEY, "green") === "amber" ? "amber" : "green", error: "", loading: true };
+  const state = { canClose: io.canClose !== false, scrollSel: true, selected: pref(store, PIP_SEL_KEY, ""), tab: "stat", view: "grid", theme: pref(store, PIP_THEME_KEY, "green") === "amber" ? "amber" : "green", error: "", loading: true };
   /** @type {any} */
   let model = null;
   let timer = 0;
