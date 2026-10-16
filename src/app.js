@@ -42,7 +42,7 @@ import { sampleVaultSnapshot } from "./vault-sample.js";
 import { addonById } from "../upgrades/addons/catalog.js";
 import { pickSniffExamples } from "./sniff-examples.js";
 import { inventory, resHints, capped, discoveryCache } from "./kube-inventory.js";
-import { slowLog } from "./slow-log.js";
+import { slowLog, traceText } from "./slow-log.js";
 import { createClusterSlo, createSloLedger } from "./slo.js";
 import { campFixtures, nodeGroupChange, runHint, watchLine } from "./upgrade-rules.js";
 import { CONNECT_REGION, connectCommand, connectionOf, contextsForCluster, sameEndpoint, validCluster, viewerAlias } from "./kube-connect.js";
@@ -1778,16 +1778,23 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
       const pending = (async () => {
         const scope = client.scope === "*" || !Array.isArray(client.scope) ? "*" : client.scope;
         // Background lane: hundreds of list calls must not queue the MAP.
-        const get = (/** @type {string} */ path, /** @type {any} */ opts) => client.readPath(path, { ...(opts || {}), low: true });
-        const started = Date.now();
-        const inv = await inventory({ get, scope, discovered: () => discovered(key, get) });
-        slowLog(`RES inventory ${key}`, started, `${inv.kinds?.length || 0} kinds`);
+        /** @type {any[]} */
+        const trace = [];
+        const get = (/** @type {string} */ path, /** @type {any} */ opts) => client.readPath(path, { ...(opts || {}), low: true, trace });
+        const queued = Date.now();
+        const job = async () => {
+          const started = Date.now();
+          const out = await inventory({ get, scope, discovered: () => discovered(key, get) });
+          return { out, started };
+        };
+        const { out: inv, started } = await (client.exclusive ? client.exclusive(job) : job());
+        slowLog(`RES inventory ${key}`, queued, `${inv.kinds?.length || 0} kinds; queued ${started - queued} ms; ${traceText(trace)}`);
         let monitors = [];
         if (inv.monitoringCrd) {
           const sm = inv.kinds.find((k) => k.group === "monitoring.coreos.com" && k.resource === "servicemonitors");
           if (sm) {
             const paths = scope === "*" ? [`/apis/${sm.version}/servicemonitors`] : scope.map((ns) => `/apis/${sm.version}/namespaces/${ns}/servicemonitors`);
-            monitors = (await capped(paths, 4, (p) => client.readPath(p, { low: true }))).flatMap((r) => r?.json?.items || []);
+            monitors = (await capped(paths, 4, (p) => client.readPath(p, { low: true, trace }))).flatMap((r) => r?.json?.items || []);
           }
         }
         const hints = resHints(inv, monitors);

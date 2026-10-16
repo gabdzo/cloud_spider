@@ -30,7 +30,7 @@ import { runScan } from "./scan.js";
 import { permissionReport } from "./permissions.js";
 import { renderReport } from "./report.js";
 import { collectApps } from "./app/collect.js";
-import { slowLog } from "../slow-log.js";
+import { slowLog, traceText } from "../slow-log.js";
 import { loadAppCatalog, scoreApps } from "./app/score.js";
 import { sampleClusterSnapshot } from "../kube-sample.js";
 
@@ -134,16 +134,20 @@ export function createScoreApi({ app, kubeFor, aws = null, history, catalog, pro
     const started = Date.now();
     appCatalog ??= await loadAppCatalog();
     let kube;
+    let raw = null;
+    /** @type {any[]} */
+    const trace = [];
     if (sample) kube = sampleKube();
     else {
-      const raw = kubeFor(context);
-      kube = scopedKube(raw?.background ? raw.background() : raw);
+      raw = kubeFor(context);
+      kube = scopedKube(raw?.background ? raw.background(trace) : raw);
       if (!kube) { appCache.delete(key); return { error: `no kube context ${context || "(default)"}`, hint: "CONNECT a cluster on its EKS card first." }; }
     }
-    const collected = await collectApps(kube);
+    const job = async () => ({ started: Date.now(), collected: await collectApps(kube) });
+    const { collected, started: ran } = await (raw?.exclusive ? raw.exclusive(job) : job());
     const view = { context: sample ? "sample" : kube.context || context, at: clock().toISOString(), ...scoreApps(collected, { controls: appCatalog.controls, profiles: appCatalog.profiles, environment: settings.environment || "" }) };
     appCache.set(key, { at: clock().getTime(), view });
-    slowLog(`APP score ${view.context}`, started);
+    slowLog(`APP score ${view.context}`, started, `queued ${ran - started} ms; ${traceText(trace)}`);
     return view;
   }
 
