@@ -126,6 +126,16 @@ const map = document.querySelector("#map");
 const pathButton = document.querySelector("#path");
 const lbSelect = document.querySelector("#lb");
 const hostInput = document.querySelector("#host");
+let sniffEmptyEl = null;
+let sniffView = (() => { try { return localStorage.getItem("cs.sniffView") === "trace" ? "trace" : "routes"; } catch { return "routes"; } })();
+let sniffRoutesData = null;
+let sniffRoutesKey = "";
+const sniffSwitchEl = document.querySelector("#sniff-switch");
+const sniffRoutesPage = document.createElement("section");
+sniffRoutesPage.id = "sniff-routes-page";
+sniffRoutesPage.setAttribute("aria-label", "SNIFF routes");
+sniffRoutesPage.hidden = true;
+document.body.append(sniffRoutesPage);
 // DEBUG: network debugging of a URL you type, docked in PATH
 // (src/netdebug/view.js). SAMPLE mode debugs fixture answers.
 // When an AWS load balancer answered, the PATH diagram follows the same
@@ -788,6 +798,7 @@ function openLink(url, label = "OPEN ↗") {
   return a;
 }
 function renderChrome() {
+  try { syncSniffView(); } catch {}
   // The map's DOM overlays (ALB docks, VPC folds) belong to the map only:
   // SNIFF and CLUSTER draw on the same canvas and must not wear them.
   if (albDocksEl) albDocksEl.hidden = mode !== "map";
@@ -3410,6 +3421,7 @@ async function pullPath() {
     } else if (!wasSample && !body.error && body.diagram) probePath(asked);
     setStatus(ui, body.error || body.empty ? "" : pathStatus(body));
     showSniffExamples(body.empty ? body.examples || [] : null, body.empty ? body.routes : null);
+    if (!sniffRoutesData && body.kube && !body.empty) pullSniffRoutes();
     errorEl.hidden = !body.error;
     errorEl.textContent = body.error || "";
     renderChrome();
@@ -3431,7 +3443,6 @@ async function pullPath() {
 }
 
 // SNIFF with nothing typed (k8s-only): a friendly prompt with live examples.
-let sniffEmptyEl = null;
 function showSniffExamples(examples, routes = null) {
   if (!examples) {
     if (sniffEmptyEl) sniffEmptyEl.hidden = true;
@@ -3440,36 +3451,93 @@ function showSniffExamples(examples, routes = null) {
   if (!sniffEmptyEl) {
     sniffEmptyEl = document.createElement("div");
     sniffEmptyEl.id = "sniff-empty";
-    sniffEmptyEl.style.cssText = "position:absolute;left:50%;top:calc(var(--kube-top, 50px) + 16px);transform:translateX(-50%);z-index:5;width:min(720px,94%);max-height:calc(100% - var(--kube-top, 50px) - 72px);overflow:auto;padding:16px 20px;border:2px solid currentColor;background:rgba(0,0,0,.88);color:inherit;font:inherit;text-align:left";
+    sniffEmptyEl.style.cssText = "position:relative;margin:6px 12px;z-index:5;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:16px 20px;border:2px solid currentColor;background:rgba(0,0,0,.88);color:inherit;font:inherit;text-align:left";
     errorEl.parentElement.append(sniffEmptyEl);
   }
   const head = document.createElement("div");
-  head.textContent = "SNIFF a path: type ns/service, a service DNS name, ns/pod or an Ingress host. Try one:";
-  head.style.marginBottom = "10px";
+  head.textContent = "type ns/service, a service DNS name, ns/pod or a host · try:";
   const buttons = examples.map(({ label, target }) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "sniff-example";
     button.textContent = `${label}: ${target}`;
-    button.style.cssText = "display:block;margin:6px 0;padding:4px 10px;cursor:pointer;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;color:inherit;background:transparent;border:1px solid currentColor";
+    button.style.cssText = "display:inline-block;margin:0;padding:1px 8px;max-width:320px;cursor:pointer;text-align:left;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:inherit;color:inherit;background:transparent;border:1px solid currentColor";
     button.addEventListener("click", () => {
       hostInput.value = target;
       hostInput.dispatchEvent(new Event("change"));
     });
     return button;
   });
-  sniffEmptyEl.replaceChildren(head, ...buttons, ...sniffRoutesBlock(routes));
-  sniffEmptyEl.hidden = mode !== "path";
+  sniffEmptyEl.replaceChildren(head, ...buttons);
+  if (routes) setSniffRoutes(routes);
+  sniffEmptyEl.hidden = mode !== "path" || sniffView === "routes";
 }
 
-// ROUTES: every Ingress/Route path grouped by host, folded with a count.
+// SNIFF's two views: ROUTES (a page of every Ingress/Route path, the
+// default) and TRACE (the diagram). Choice kept in localStorage.
+function setSniffView(view) {
+  sniffView = view;
+  try { localStorage.setItem("cs.sniffView", view); } catch {}
+  syncSniffView();
+}
+document.querySelector("#sniff-routes-key")?.addEventListener("click", () => {
+  setSniffView("routes");
+  if (!sniffRoutesData) pullSniffRoutes();
+});
+document.querySelector("#sniff-trace-key")?.addEventListener("click", () => setSniffView("trace"));
+function setSniffRoutes(routes) {
+  sniffRoutesData = routes;
+  const key = JSON.stringify(routes);
+  if (key !== sniffRoutesKey) {
+    sniffRoutesKey = key;
+    const keep = sniffRoutesPage.scrollTop;
+    sniffRoutesPage.replaceChildren(...sniffRoutesBlock(routes));
+    sniffRoutesPage.scrollTop = keep;
+  }
+  syncSniffView();
+}
+// ROUTES needs the empty-host answer even while a trace is typed.
+let sniffRoutesPulling = false;
+async function pullSniffRoutes() {
+  if (sniffRoutesPulling || sample) return;
+  sniffRoutesPulling = true;
+  try {
+    const ctxParam = clusterContext ? `&context=${encodeURIComponent(clusterContext)}` : "";
+    const body = await readBody(await fetch(`/api/path?host=${ctxParam}`));
+    if (body.routes) setSniffRoutes(body.routes);
+  } catch {
+    // the trace view still works; ROUTES keeps what it had
+  } finally {
+    sniffRoutesPulling = false;
+  }
+}
+function syncSniffView() {
+  const has = mode === "path" && Boolean(sniffRoutesData);
+  if (sniffSwitchEl) sniffSwitchEl.hidden = !has;
+  document.querySelector("#sniff-routes-key")?.setAttribute("aria-pressed", String(sniffView === "routes"));
+  document.querySelector("#sniff-trace-key")?.setAttribute("aria-pressed", String(sniffView === "trace"));
+  const show = has && sniffView === "routes";
+  sniffRoutesPage.hidden = !show;
+  if (sniffEmptyEl && show) sniffEmptyEl.hidden = true;
+  if (!show) return;
+  // Between the input row and the DEBUG bar (or the bottom legend).
+  const top = (document.querySelector(".terminal")?.getBoundingClientRect().bottom || 90) + 6;
+  const nd = document.querySelector("#netdebug");
+  const ndTop = nd && !nd.hidden && nd.getBoundingClientRect().height ? nd.getBoundingClientRect().top : window.innerHeight - 40;
+  sniffRoutesPage.style.top = `${Math.round(top)}px`;
+  sniffRoutesPage.style.height = `${Math.max(120, Math.round(ndTop - top - 6))}px`;
+}
+window.addEventListener("resize", () => syncSniffView());
+
+// ROUTES: every Ingress/Route path, each host a heading with all its rows.
 function sniffRoutesBlock(routes) {
   if (!routes) return [];
   const wrap = document.createElement("div");
   wrap.className = "sniff-routes";
+  const broken = (routes.groups || []).reduce((n, g) => n + (g.broken || 0), 0);
   const title = document.createElement("div");
-  title.textContent = `ROUTES · ${routes.total || 0} path${routes.total === 1 ? "" : "s"}`;
-  title.style.cssText = "margin:14px 0 6px;color:var(--pip-bright);letter-spacing:.1em";
+  title.className = "sr-title";
+  title.textContent = `ROUTES · ${routes.total || 0} path${routes.total === 1 ? "" : "s"} · ${broken} broken`;
   wrap.append(title);
   if (!routes.groups?.length) wrap.append(Object.assign(document.createElement("div"), { textContent: routes.error || "no Ingress or Route found" }));
   const dot = { ok: "var(--ok)", broken: "var(--err)", note: "var(--pip-dim-text)" };
@@ -3502,6 +3570,7 @@ function sniffRoutesBlock(routes) {
       }
       row.addEventListener("click", () => {
         hostInput.value = r.target;
+        setSniffView("trace");
         hostInput.dispatchEvent(new Event("change"));
       });
       list.append(row);
@@ -6776,6 +6845,7 @@ lbSelect.addEventListener("change", () => {
 });
 
 hostInput.addEventListener("change", () => {
+  if (hostInput.value.trim() && sniffView === "routes") setSniffView("trace");
   markHistory();
   syncUrl();
   pathSelected = null;
@@ -6784,6 +6854,7 @@ hostInput.addEventListener("change", () => {
 
 setInterval(() => {
   if (mode === "path") pullPath();
+  if (mode === "path" && sniffView === "routes" && hostInput.value.trim()) pullSniffRoutes();
   if (mode === "cluster") pullCluster();
 }, 15_000);
 

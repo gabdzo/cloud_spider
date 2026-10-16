@@ -808,6 +808,13 @@ const page = `<!doctype html>
   #kube-groupby :is(select, input) { font: inherit; font-size: 12px; padding: 3px 6px; color: var(--pip-bright); background: var(--pip-ink); border: 1px solid var(--pip-dim); outline: none; }
   #kube-groupby input { width: 140px; }
   #kube-groupby select { max-width: 150px; }
+  /* SNIFF ROUTES | TRACE switch and the ROUTES page (browser.js). */
+  #sniff-switch { flex: none; display: inline-flex; gap: 4px; margin-right: 8px; }
+  #sniff-switch[hidden], #sniff-routes-page[hidden] { display: none; }
+  #sniff-switch .kf-btn { font: inherit; font-size: 11px; letter-spacing: 0.08em; padding: 3px 9px; color: var(--pip-mid); background: var(--pip-ink); border: 1px solid var(--pip-dim); cursor: pointer; }
+  #sniff-switch .kf-btn[aria-pressed="true"] { color: var(--pip-ink); background: var(--pip-bright); border-color: var(--pip-bright); }
+  #sniff-routes-page { position: fixed; left: 12px; right: 12px; z-index: 6; overflow: auto; padding: 8px 14px 12px; background: var(--pip-ink); border-top: 1px solid var(--pip-dim); color: var(--pip-mid); font-family: var(--font-mono); font-size: 12px; line-height: 1.35; }
+  #sniff-routes-page .sr-title { position: sticky; top: -8px; padding: 4px 0; background: var(--pip-ink); color: var(--pip-bright); letter-spacing: 0.1em; z-index: 1; }
   /* TOPOLOGY focus (kube-focus.js): ISSUES / ALL, scope, namespaces. */
   #kube-focus { flex: none; display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; }
   #kube-focus[hidden], #kube-healthy[hidden], #kube-issues[hidden], #kf-ns-pop[hidden] { display: none; }
@@ -3514,6 +3521,7 @@ const page = `<!doctype html>
   <div class="terminal">
     <span class="line"><span class="prompt">&gt;</span><span id="status"></span><input id="kube-search" type="search" aria-label="search the cluster" placeholder="search: name, ns:team, crash, pending, app=web   ( / )" autocomplete="off" spellcheck="false" hidden><output id="kube-search-count" aria-live="polite" hidden></output><span id="kube-groupby" title="Group by: the namespace, or a label; resources without it go to 'unlabeled'. System namespaces stay as they are." hidden><b>GROUP BY</b><select id="kube-groupby-sel" aria-label="group lanes by"></select><input id="kube-groupby-custom" type="text" aria-label="custom label key" placeholder="label key, e.g. team" autocomplete="off" spellcheck="false" hidden></span><span id="kube-focus" role="group" aria-label="what TOPOLOGY shows" hidden><button id="kf-issues" class="kf-btn" type="button" aria-pressed="true" title="only what needs a look, and what it hangs off; healthy pods fold into counts">ISSUES <i id="kf-count">0</i></button><button id="kf-list" class="kf-btn" type="button" aria-expanded="false" aria-controls="kube-issues" title="the list of issues, with INVESTIGATE">LIST</button><button id="kf-all" class="kf-btn" type="button" aria-pressed="false" title="everything in scope">ALL</button><select id="kf-scope" aria-label="scope: all, apps or add-ons"></select><button id="kf-ns" class="kf-btn" type="button" aria-expanded="false" aria-controls="kf-ns-pop" title="pick namespaces">NS: ALL</button></span></span>
     <select id="lb" aria-label="load balancer" hidden></select>
+    <span id="sniff-switch" role="group" aria-label="SNIFF view" hidden><button id="sniff-routes-key" class="kf-btn" type="button" aria-pressed="true" title="every Ingress/Route path by host">ROUTES</button><button id="sniff-trace-key" class="kf-btn" type="button" aria-pressed="false" title="trace one path">TRACE</button></span>
     <input id="host" type="text" aria-label="URL or host" placeholder="paste a URL, a host, or ns/service (in-cluster)" hidden>
     <p id="confirm"></p>
     <span class="choice">
