@@ -337,6 +337,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
   // at most 3 namespaces a read) so the radio can say why, e.g.
   // FailedAttachVolume / Multi-Attach (drill 2026-10-11, finding 11).
   const pendingEvents = new Map();
+  const resCache = new Map();
   async function withPendingEvents(ctx, snap) {
     if (!snap || snap.error || !ctx.kube?.events) return snap;
     const stuck = stuckPending(snap, now());
@@ -1941,7 +1942,7 @@ export function createApp({ ec2, trail, logs, metrics, path, peers = null, cost,
 
   // The configured kube.context (the cluster the app means), else the
   // primary context, else the default client.
-  const resCache = new Map();
+
   function pathClient(asked) {
     const wanted = asked || settings?.config?.kube?.context || settings?.kube?.context || "";
     if (asked && !contexts.some((ctx) => ctx.name === asked)) return { error: `no kube context named ${asked.slice(0, 80)}` };
