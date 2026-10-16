@@ -120,6 +120,10 @@ export const PIP_CSS = `
 #pipboy .pb-pol summary{cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--pb-fg)}
 #pipboy .pb-pol[open] summary{white-space:normal}
 #pipboy .pb-pol .pb-rule{padding-left:3ch;word-break:break-word}
+#pipboy [data-res-kind],#pipboy [data-res-obj]{cursor:pointer}
+#pipboy [data-res-kind]:hover,#pipboy [data-res-obj]:hover,#pipboy [data-res-obj][aria-selected=true]{background:color-mix(in srgb,var(--pb-fg) 18%,transparent)}
+#pipboy .pb-hint{opacity:.9}
+#pipboy .pb-resobj{border:1px solid var(--pb-fg);padding:6px 8px}
 `;
 
 /** @typedef {import("./pipboy-model.js").PipNs} PipNs */
@@ -138,8 +142,36 @@ function list(title, /** @type {string[]} */ items, empty, wide = false) {
   return `<h4>${esc(title)}</h4>${items.length ? `<ul class="pb-items${wide ? " pb-wide" : ""}">${items.join("")}</ul>` : `<p class="pb-rule">${esc(empty)}</p>`}`;
 }
 
-/** @param {PipNs} ns @param {string} tab */
-export function detailHtml(ns, tab) {
+const RES_CATS = ["Workloads", "Networking", "Config", "Storage", "Monitoring", "Policy", "Other CRDs", "Other"];
+const ago = (/** @type {string} */ iso, now = Date.now()) => { const s = (now - Date.parse(iso)) / 1000; return !iso || !(s >= 0) ? "" : s < 3600 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`; };
+const badStatus = (/** @type {string} */ st) => /^(false|pending|failed|lost|unknown|error)/i.test(st) || /^(\d+)\/(\d+)$/.test(st) && st.split("/")[0] !== st.split("/")[1];
+
+/**
+ * RES: every kind in one namespace, grouped, counts; a kind opens its objects,
+ * an object a small detail.
+ * @param {string} ns @param {any} res @param {{ resKind?: string, resObj?: string }} pick
+ */
+export function resHtml(ns, res, pick = {}) {
+  if (!res) return `<h4>RESOURCES</h4><p class="pb-rule">READING EVERY KIND…</p>`;
+  if (res.error && !(res.kinds || []).length) return `<h4>RESOURCES</h4><p class="pb-rule pb-alert">${esc(res.error)}</p>`;
+  const kinds = (res.kinds || []).map((/** @type {any} */ k) => ({ ...k, mine: k.items.filter((/** @type {any} */ i) => i.ns === ns) })).filter((/** @type {any} */ k) => k.mine.length);
+  const open = kinds.find((/** @type {any} */ k) => `${k.group}/${k.resource}` === pick.resKind);
+  if (open) {
+    const obj = open.mine.find((/** @type {any} */ i) => i.name === pick.resObj);
+    const rows = open.mine.map((/** @type {any} */ i) => `<li class="${badStatus(i.status) ? "bad" : ""}" data-res-obj="${esc(i.name)}" aria-selected="${i === obj}"><span>${esc(i.name)}</span><span class="pb-r">${esc(i.status)} ${esc(ago(i.created))}</span></li>`);
+    const detail = obj ? `<p class="pb-rule pb-resobj">${esc(open.kind)} <b>${esc(obj.name)}</b><br>namespace ${esc(ns)} · ${esc(open.group || "core")}/${esc(open.version.split("/").pop() || "")}<br>${obj.status ? `status ${esc(obj.status)} · ` : ""}age ${esc(ago(obj.created) || "?")}${obj.created ? ` (${esc(obj.created)})` : ""}</p>` : "";
+    return `<p class="pb-go"><button data-res-kind="">◄ ALL KINDS</button></p>${detail}${list(`${open.kind.toUpperCase()} · ${open.mine.length}${open.truncated ? "+" : ""}`, rows, "none")}`;
+  }
+  const groups = RES_CATS.map((c) => [c, kinds.filter((/** @type {any} */ k) => k.category === c)]).filter(([, ks]) => ks.length);
+  const body = groups.map(([c, ks]) => list(String(c).toUpperCase(), /** @type {any[]} */ (ks).sort((a, b) => b.mine.length - a.mine.length).map((k) => `<li class="${k.mine.some((/** @type {any} */ i) => badStatus(i.status)) ? "bad" : ""}" data-res-kind="${esc(`${k.group}/${k.resource}`)}" title="${esc(k.group || "core")}"><span>${esc(k.kind)}</span><span class="pb-r">${k.mine.length}${k.truncated ? "+" : ""}</span></li>`), "")).join("");
+  const denied = (res.forbidden || []).length ? `<p class="pb-rule">no access: ${esc(res.forbidden.slice(0, 8).join(", "))}${res.forbidden.length > 8 ? ` +${res.forbidden.length - 8}` : ""}</p>` : "";
+  return `${body || `<p class="pb-rule">nothing listable in this namespace</p>`}${denied}`;
+}
+
+const hintHtml = (/** @type {string[]} */ hints) => (hints?.length ? `<h4>HINTS</h4>${hints.map((h) => `<p class="pb-rule pb-hint">⚑ ${esc(h)}</p>`).join("")}` : "");
+
+/** @param {PipNs} ns @param {string} tab @param {any} [res] @param {{ resKind?: string, resObj?: string }} [pick] */
+export function detailHtml(ns, tab, res = null, pick = {}) {
   const head = `<div class="pb-head"><div class="pb-figbox">${figureSvg(ns.state, 6)}<span class="pb-state ${ns.state}">${ns.state.toUpperCase()}</span></div><div><h3 class="pb-name">${esc(ns.name)} <small class="pb-sys">${ns.health}/10</small></h3><p class="pb-text">${esc(ns.text)}</p></div></div>`;
   const wl = list("WORKLOADS", ns.workloads.map((w) => `<li class="${w.status === "ok" ? "" : "bad"}"><span>${esc(w.name)}</span><span class="pb-r">${esc(w.kind.toLowerCase())} ${w.have}/${w.want}</span></li>`), "no workloads");
   const issues = ns.issues.length ? `<h4>ISSUES</h4>${ns.issues.map((i) => `<p class="pb-rule pb-alert">✖ ${esc(i)}</p>`).join("")}` : "";
@@ -150,19 +182,20 @@ export function detailHtml(ns, tab) {
   const go = `<p class="pb-go"><button data-topology="${esc(ns.name)}" title="Enter">▶ OPEN IN TOPOLOGY</button> <button data-grid title="Backspace">◄ ALL NAMESPACES</button></p>`;
   if (tab === "pods") return head + go + issues + wl + sv;
   if (tab === "net") return head + go + en + np;
-  return head + go + issues + wl + sv + en + np;
+  if (tab === "res") return head + go + resHtml(ns.name, res, pick);
+  return head + go + issues + hintHtml(res?.hints?.[ns.name]) + wl + sv + en + np;
 }
 
 /** One namespace as a small Pip-Boy screen. @param {PipNs} n @param {boolean} sel */
-function tileHtml(n, sel) {
-  const top = n.issues[0] || (n.pods ? `all ${n.pods} pod${n.pods === 1 ? "" : "s"} ready` : "no pods");
-  return `<button class="pb-tile ${n.state}${n.system ? " pb-sys" : ""}" data-tile="${esc(n.name)}" aria-pressed="${sel}" title="${esc(n.name)}: ${esc(top)}"><span class="pb-tn">${esc(n.name)}</span><span class="pb-th">${n.health}</span>${figureSvg(n.state, 2)}<span class="pb-tp">PODS ${n.ready}/${n.pods}</span><span class="pb-badge ${n.policy.badge}">${esc(n.policy.badge.toUpperCase())}</span><span class="pb-ti${n.state === "healthy" ? "" : " pb-alert"}">${esc(top)}</span></button>`;
+function tileHtml(n, sel, hints = /** @type {string[]} */ ([])) {
+  const top = n.issues[0] || hints[0] || (n.pods ? `all ${n.pods} pod${n.pods === 1 ? "" : "s"} ready` : "no pods");
+  return `<button class="pb-tile ${n.state}${n.system ? " pb-sys" : ""}" data-tile="${esc(n.name)}" aria-pressed="${sel}" title="${esc(n.name)}: ${esc(top)}"><span class="pb-tn">${esc(n.name)}</span><span class="pb-th">${n.health}</span>${figureSvg(n.state, 2)}<span class="pb-tp">PODS ${n.ready}/${n.pods}</span><span class="pb-badge ${n.policy.badge}">${esc(n.policy.badge.toUpperCase())}</span><span class="pb-ti${n.state === "healthy" ? "" : " pb-alert"}">${!n.issues[0] && hints[0] ? "⚑ " : ""}${esc(top)}</span></button>`;
 }
 
 /** The cluster as a wall of small Pip-Boys, with entry points on top. */
-export function gridHtml(/** @type {any} */ model, /** @type {{ selected: string }} */ state) {
+export function gridHtml(/** @type {any} */ model, /** @type {{ selected: string, res?: any }} */ state) {
   const entries = (model.entries || []).map((/** @type {any} */ e, /** @type {number} */ i) => `<span class="pb-entry${e.status === "ok" ? "" : " pb-alert"}" data-entry="${i}" data-entry-ns="${esc(e.ns)}" title="${esc(e.full)}">${esc(e.kind)} ${esc(e.host)}</span>`).join("");
-  return `<div class="pb-gridwrap"><div class="pb-entries">${entries || `<span class="pb-entry pb-sys">no entry points: in-cluster only</span>`}</div><div class="pb-grid">${model.namespaces.map((/** @type {PipNs} */ n) => tileHtml(n, n.name === state.selected)).join("")}</div><svg class="pb-links" aria-hidden="true"></svg></div>`;
+  return `<div class="pb-gridwrap"><div class="pb-entries">${entries || `<span class="pb-entry pb-sys">no entry points: in-cluster only</span>`}</div><div class="pb-grid">${model.namespaces.map((/** @type {PipNs} */ n) => tileHtml(n, n.name === state.selected, state.res?.hints?.[n.name] || [])).join("")}</div><svg class="pb-links" aria-hidden="true"></svg></div>`;
 }
 
 /** Draws the glowing lines once the tiles are laid out. @param {HTMLElement} el @param {any} model */
@@ -204,11 +237,12 @@ export function hotLinks(/** @type {HTMLElement} */ el, /** @type {string} */ ns
 
 /**
  * @param {ReturnType<typeof import("./pipboy-model.js").pipModel>|null} model
- * @param {{ selected: string, tab: string, theme: string, view?: string, canClose?: boolean, error?: string, loading?: boolean, hutMap?: boolean }} state
+ * @param {{ selected: string, tab: string, theme: string, view?: string, canClose?: boolean, error?: string, loading?: boolean, hutMap?: boolean, res?: any, resKind?: string, resObj?: string }} state
  */
+export const PIP_TABS = ["stat", "pods", "net", "res"];
 export function pipHtml(model, state) {
   const grid = state.view !== "one";
-  const tabs = grid ? `<button class="pb-tab" aria-selected="true">CLUSTER</button>` : ["stat", "pods", "net"].map((t) => `<button class="pb-tab" role="tab" data-tab="${t}" aria-selected="${state.tab === t}">${t.toUpperCase()}</button>`).join("");
+  const tabs = grid ? `<button class="pb-tab" aria-selected="true">CLUSTER</button>` : PIP_TABS.map((t) => `<button class="pb-tab" role="tab" data-tab="${t}" aria-selected="${state.tab === t}">${t.toUpperCase()}</button>`).join("");
   const top = `<div class="pb-top" role="tablist">${tabs}<span class="pb-title">${esc(model?.cluster || "")}${model?.context ? ` · ${esc(model.context)}` : ""}<button class="pb-theme" data-theme-toggle title="switch phosphor colour">${state.theme === "amber" ? "AMBER" : "GREEN"}</button>${state.canClose === false ? "" : `<button class="pb-close" data-close title="back to the AWS map">✕ MAP</button>`}</span></div>`;
   if (!model || !model.namespaces.length) return `${top}<p class="pb-empty">${esc(state.error || (state.loading ? "READING CLUSTER…" : "NO NAMESPACES VISIBLE TO THIS CONTEXT"))}</p>`;
   const t = model.totals;
@@ -218,7 +252,7 @@ export function pipHtml(model, state) {
   if (grid) return `${top}${gridHtml(model, state)}${bar}`;
   const sel = model.namespaces.find((n) => n.name === state.selected) || model.namespaces[0];
   const rows = model.namespaces.map((n) => `<li class="pb-row${n.state === "healthy" ? "" : " pb-bad"}${n.system ? " pb-sys" : ""}" role="option" data-ns="${esc(n.name)}" aria-selected="${n === sel}"><span class="pb-n">${esc(n.name)}</span><span class="pb-v">${n.health}</span></li>`).join("");
-  return `${top}<p class="pb-sub">${state.tab === "stat" ? "NAMESPACES · HEALTH" : state.tab === "pods" ? "WORKLOADS · SERVICES" : "ENTRY POINTS · POLICIES"}</p><div class="pb-main"><ul class="pb-list" role="listbox" tabindex="0" aria-label="namespaces">${rows}</ul><div class="pb-detail">${detailHtml(sel, state.tab)}</div></div>${bar}`;
+  return `${top}<p class="pb-sub">${state.tab === "stat" ? "NAMESPACES · HEALTH" : state.tab === "pods" ? "WORKLOADS · SERVICES" : state.tab === "res" ? "EVERY RESOURCE KIND" : "ENTRY POINTS · POLICIES"}</p><div class="pb-main"><ul class="pb-list" role="listbox" tabindex="0" aria-label="namespaces">${rows}</ul><div class="pb-detail">${detailHtml(sel, state.tab, state.res, state)}</div></div>${bar}`;
 }
 
 /** The app-wide phosphor: <html data-tint>, kept per browser, announced. @param {"green"|"amber"} tint @param {Storage|null} [store] */
@@ -242,11 +276,11 @@ const keep = (store, key, value) => { try { store?.setItem(key, value); } catch 
  * The screen's controller: fetches /api/cluster, renders, keys and clicks.
  * The amber tint is set on <html data-tint> so the whole app follows.
  * @param {HTMLElement} el
- * @param {{ load: () => Promise<any>, model: (body: any) => any, onClose: () => void, canClose?: boolean, openTopology?: (ns: string) => void, store?: Storage|null }} io
+ * @param {{ loadRes?: () => Promise<any>, load: () => Promise<any>, model: (body: any) => any, onClose: () => void, canClose?: boolean, openTopology?: (ns: string) => void, store?: Storage|null }} io
  */
 export function mountPip(el, io) {
   const store = io.store ?? null;
-  const state = { canClose: io.canClose !== false, scrollSel: true, selected: pref(store, PIP_SEL_KEY, ""), tab: "stat", view: "grid", theme: pref(store, PIP_THEME_KEY, "green") === "amber" ? "amber" : "green", error: "", loading: true };
+  const state = { canClose: io.canClose !== false, scrollSel: true, selected: pref(store, PIP_SEL_KEY, ""), tab: "stat", view: "grid", res: /** @type {any} */ (null), resKind: "", resObj: "", theme: pref(store, PIP_THEME_KEY, "green") === "amber" ? "amber" : "green", error: "", loading: true };
   /** @type {any} */
   let model = null;
   let timer = 0;
@@ -285,9 +319,19 @@ export function mountPip(el, io) {
     state.error = error;
     state.loading = false;
     if (!el.hidden && !same) render();
+    pullRes();
+  };
+  let resAt = 0;
+  const pullRes = async () => {
+    if (!io.loadRes || Date.now() - resAt < 55_000) return;
+    resAt = Date.now();
+    const res = await io.loadRes().catch((e) => ({ error: e?.message || "the inventory failed", kinds: [] }));
+    const same = JSON.stringify(res) === JSON.stringify(state.res);
+    state.res = res;
+    if (!el.hidden && !same) render();
   };
   const focusOf = () => (model?.namespaces?.some((/** @type {any} */ n) => n.name === state.selected) ? state.selected : model?.namespaces?.[0]?.name || "");
-  const select = (/** @type {string} */ name) => { state.selected = name; state.scrollSel = true; keep(store, PIP_SEL_KEY, name); render(); };
+  const select = (/** @type {string} */ name) => { if (name !== state.selected) { state.resKind = ""; state.resObj = ""; } state.selected = name; state.scrollSel = true; keep(store, PIP_SEL_KEY, name); render(); };
   const zoom = (/** @type {string} */ name) => { state.view = "one"; select(name); };
   const toGrid = () => { state.view = "grid"; render(); };
   el.addEventListener("click", (event) => {
@@ -298,6 +342,10 @@ export function mountPip(el, io) {
     if (chip) return zoom(chip.dataset.entryNs || "");
     const row = /** @type {HTMLElement|null} */ (t.closest("[data-ns]"));
     if (row) return select(row.dataset.ns || "");
+    const rk = /** @type {HTMLElement|null} */ (t.closest("[data-res-kind]"));
+    if (rk) { state.resKind = rk.dataset.resKind || ""; state.resObj = ""; return render(); }
+    const ro = /** @type {HTMLElement|null} */ (t.closest("[data-res-obj]"));
+    if (ro) { state.resObj = state.resObj === ro.dataset.resObj ? "" : ro.dataset.resObj || ""; return render(); }
     const tab = /** @type {HTMLElement|null} */ (t.closest("[data-tab]"));
     if (tab) { state.tab = tab.dataset.tab || "stat"; return render(); }
     const topo = /** @type {HTMLElement|null} */ (t.closest("[data-topology]"));
@@ -321,8 +369,8 @@ export function mountPip(el, io) {
       event.preventDefault();
       select(names[(at + (event.key === "ArrowDown" ? 1 : names.length - 1)) % names.length]);
     } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-      const tabs = ["stat", "pods", "net"];
-      state.tab = tabs[(tabs.indexOf(state.tab) + (event.key === "ArrowRight" ? 1 : 2)) % 3];
+      const n = PIP_TABS.length;
+      state.tab = PIP_TABS[(PIP_TABS.indexOf(state.tab) + (event.key === "ArrowRight" ? 1 : n - 1)) % n];
       render();
     } else if (event.key === "Enter" && !(/** @type {HTMLElement} */ (event.target)).closest("button,summary")) {
       io.openTopology?.(names[at]);
@@ -341,6 +389,7 @@ export function mountPip(el, io) {
       el.hidden = false;
       render();
       pull();
+      pullRes();
       clearInterval(timer);
       timer = Number(setInterval(pull, 15000));
       /** @type {HTMLElement|null} */ (el.querySelector(".pb-tile,.pb-list"))?.focus();

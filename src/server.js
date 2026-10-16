@@ -4166,6 +4166,13 @@ async function route(app, req, res) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/cluster/resources") {
+    if (url.searchParams.get("sample") === "1") { send(res, 200, { kinds: [], hints: {}, sample: true }); return; }
+    await app.boot();
+    send(res, 200, app.clusterResources ? await app.clusterResources({ context: url.searchParams.get("context") || "", fresh: url.searchParams.get("fresh") === "1" }) : { error: "not set up", kinds: [] });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/cluster/ops") {
     send(res, 200, app.clusterOps ? await app.clusterOps({ sample: url.searchParams.get("sample") === "1", context: url.searchParams.get("context") || "" }) : { error: "not set up" });
     return;
