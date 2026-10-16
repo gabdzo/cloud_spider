@@ -3485,9 +3485,19 @@ document.querySelector("#sniff-routes-key")?.addEventListener("click", () => {
   if (!sniffRoutesData) pullSniffRoutes();
 });
 document.querySelector("#sniff-trace-key")?.addEventListener("click", () => setSniffView("trace"));
+// Folded hosts, per kube context, kept in localStorage.
+const sniffFoldKey = () => `cs.sniffFolded.${clusterContext || "default"}`;
+function sniffFolded() {
+  try { return new Set(JSON.parse(localStorage.getItem(sniffFoldKey()) || "[]")); } catch { return new Set(); }
+}
+function saveSniffFolded(set) {
+  try { localStorage.setItem(sniffFoldKey(), JSON.stringify([...set])); } catch {}
+  sniffRoutesKey = "";
+  if (sniffRoutesData) setSniffRoutes(sniffRoutesData);
+}
 function setSniffRoutes(routes) {
   sniffRoutesData = routes;
-  const key = JSON.stringify(routes);
+  const key = `${sniffFoldKey()}|${[...sniffFolded()].join(",")}|${JSON.stringify(routes)}`;
   if (key !== sniffRoutesKey) {
     sniffRoutesKey = key;
     const keep = sniffRoutesPage.scrollTop;
@@ -3537,18 +3547,38 @@ function sniffRoutesBlock(routes) {
   const broken = (routes.groups || []).reduce((n, g) => n + (g.broken || 0), 0);
   const title = document.createElement("div");
   title.className = "sr-title";
-  title.textContent = `ROUTES · ${routes.total || 0} path${routes.total === 1 ? "" : "s"} · ${broken} broken`;
+  title.textContent = `ROUTES · ${routes.total || 0} path${routes.total === 1 ? "" : "s"} · ${broken} broken `;
+  const folded = sniffFolded();
+  const hosts = (routes.groups || []).map((g) => g.host);
+  const allFolded = hosts.length > 0 && hosts.every((h) => folded.has(h));
+  const foldAll = document.createElement("button");
+  foldAll.type = "button";
+  foldAll.className = "kf-btn sniff-fold-all";
+  foldAll.textContent = allFolded ? "OPEN ALL" : "FOLD ALL";
+  foldAll.style.cssText = "margin-left:10px;font:inherit;font-size:11px;letter-spacing:.08em;padding:1px 8px;color:var(--pip-mid);background:var(--pip-ink);border:1px solid var(--pip-dim);cursor:pointer";
+  foldAll.addEventListener("click", () => saveSniffFolded(allFolded ? new Set() : new Set(hosts)));
+  if (hosts.length) title.append(foldAll);
   wrap.append(title);
   if (!routes.groups?.length) wrap.append(Object.assign(document.createElement("div"), { textContent: routes.error || "no Ingress or Route found" }));
   const dot = { ok: "var(--ok)", broken: "var(--err)", note: "var(--pip-dim-text)" };
   const list = document.createElement("div");
   list.style.cssText = "font-family:var(--font-mono);font-size:12px;line-height:1.35";
   for (const g of routes.groups || []) {
-    const head = document.createElement("div");
+    const shut = folded.has(g.host);
+    const head = document.createElement("button");
+    head.type = "button";
     head.className = "sniff-route-host";
-    head.textContent = `${g.host}  ·  ${g.count} route${g.count === 1 ? "" : "s"}${g.broken ? `, ${g.broken} broken` : ""}`;
-    head.style.cssText = `margin:10px 0 2px;padding-bottom:1px;border-bottom:1px solid var(--pip-dim);color:${g.broken ? "var(--err)" : "var(--pip-bright)"};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+    head.setAttribute("aria-expanded", String(!shut));
+    head.addEventListener("click", () => {
+      const now = sniffFolded();
+      if (now.has(g.host)) now.delete(g.host);
+      else now.add(g.host);
+      saveSniffFolded(now);
+    });
+    head.textContent = `${shut ? "▸" : "▾"} ${g.host}  ·  ${g.count} route${g.count === 1 ? "" : "s"}${g.broken ? `, ${g.broken} broken` : ""}`;
+    head.style.cssText = `display:block;width:100%;text-align:left;cursor:pointer;font:inherit;background:transparent;border:0;padding:0 0 1px;margin:10px 0 2px;border-bottom:1px solid var(--pip-dim);color:${g.broken ? "var(--err)" : "var(--pip-bright)"};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
     list.append(head);
+    if (shut) continue;
     for (const r of g.rows) {
       const row = document.createElement("button");
       row.type = "button";

@@ -13,3 +13,11 @@ test("SNIFF has a ROUTES | TRACE switch, ROUTES is a page (not the popup), choic
   assert.match(browser, /setSniffView\("trace"\);\n\s*hostInput\.dispatchEvent/);
   assert.match(browser, /const keep = sniffRoutesPage\.scrollTop;/);
 });
+
+test("ROUTES host headings fold, per-context localStorage, FOLD ALL / OPEN ALL, state in the redraw key", () => {
+  assert.match(browser, /cs\.sniffFolded\.\$\{clusterContext \|\| "default"\}/);
+  assert.match(browser, /\$\{shut \? "▸" : "▾"\} \$\{g\.host\}/);
+  assert.match(browser, /allFolded \? "OPEN ALL" : "FOLD ALL"/);
+  assert.match(browser, /if \(shut\) continue;/);
+  assert.match(browser, /const key = `\$\{sniffFoldKey\(\)\}\|\$\{\[\.\.\.sniffFolded\(\)\]\.join\(","\)\}\|/);
+});
