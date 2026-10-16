@@ -2210,6 +2210,8 @@ const page = `<!doctype html>
   .reach-lamp[data-state="ok"]::before { background: var(--status-ok); box-shadow: 0 0 6px var(--status-ok); }
   .reach-lamp[data-state="fail"]::before { background: var(--status-broken); box-shadow: 0 0 6px var(--status-broken); }
   .reach-lamp[data-state="fail"] { color: var(--status-broken); }
+  #map.pip-on { overflow: hidden; }
+  #map.pip-on > canvas#place { visibility: hidden; }
   #map-pipboy { position: absolute; z-index: 6; top: 8px; right: 8px; }
   #map-view { position: absolute; z-index: 2; display: flex; align-items: center; gap: 6px; padding: 3px 6px; background: var(--pip-ink); border: 1px solid var(--pip-dark); box-shadow: 0 0 0 1px var(--pip-ink), 0 4px 10px var(--pip-ink); }
   #map-view button.cmd { white-space: nowrap; min-height: 24px; padding: 0 8px; font-size: 11px; letter-spacing: 0.12em; }
@@ -3445,11 +3447,6 @@ const page = `<!doctype html>
      ramp are turned amber with a hue shift (alerts stay distinct). */
   #tint-key { font: inherit; font-size: 10px; letter-spacing: 0.08em; padding: 0 5px; color: var(--pip-mid); background: none; border: 1px solid var(--pip-dark); border-radius: 3px; cursor: pointer; }
   :root[data-tint="amber"] #tint-key { color: var(--pip-bright); }
-  :root[data-tint="amber"]:not([data-theme="pro"]) canvas:not(#place),
-  :root[data-tint="amber"]:not([data-theme="pro"]) img.px,
-  :root[data-tint="amber"]:not([data-theme="pro"]) .cap,
-  :root[data-tint="amber"]:not([data-theme="pro"]) [data-icon]::before { filter: sepia(1) saturate(2.6) hue-rotate(-8deg) brightness(1.05); }
-  :root[data-tint="amber"]:not([data-theme="pro"]) #pipboy canvas { filter: none; }
 </style>
 </head>
 <body>

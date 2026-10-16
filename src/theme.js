@@ -184,6 +184,24 @@ export function hardwareVars() {
 // its roles, so the existing CSS follows it without a rewrite; canvases
 // keep the Pip palette until the canvas phases.
 export const THEME_NAMES = ["pip", "pro"];
+// AMBER (Pip-Boy 3000): the browser reads the phosphor choice before any
+// module draws, and turns every green of the shared palettes amber in
+// place, so canvases, sprites and icons all follow (pipboy-view.js
+// setTint reloads the page on a switch). The server never sees a tint.
+export const TINT_KEY = "cs.pipboy.theme";
+export const TINT = (() => {
+  try {
+    return typeof window !== "undefined" && window.localStorage?.getItem(TINT_KEY) === "amber" ? "amber" : "green";
+  } catch {
+    return "green";
+  }
+})();
+if (TINT === "amber") {
+  for (const table of [PALETTE, PIP, WORLD, CASE, STATUS, STATE_COLOR]) {
+    for (const [k, v] of Object.entries(table)) if (typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v)) table[k] = toAmber(v);
+  }
+}
+
 export const PRO = {
   bg: "#0b0d10",
   raised: "#111418",
