@@ -904,7 +904,8 @@ function renderRadioPanel() {
 // line instead (review R6); narrower, it stays a header gauge before CAPS.
 // >=1840 (one header row) and <1200 (compact header): the tally rides on the
 // terminal line instead of squeezing into the header (UX overlaps B).
-const wideHeader = window.matchMedia("(min-width: 1840px), (max-width: 1199px)");
+// Since the two-row header (toolbox plates) it stays in row two down to 900px.
+const wideHeader = window.matchMedia("(min-width: 1840px), (max-width: 899px)");
 function placeTally() {
   const home = wideHeader.matches ? document.querySelector(".terminal") : document.querySelector(".gauges");
   if (tallyEl.parentElement === home) return;
