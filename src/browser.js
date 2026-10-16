@@ -2787,6 +2787,7 @@ const pipBoy = mountPip(pipBoyEl, {
   load: () => fetch(sample ? "/api/cluster-sample" : `/api/cluster${clusterContext ? `?context=${encodeURIComponent(clusterContext)}` : ""}`).then((r) => r.json()),
   model: pipModel,
   loadRes: () => fetch(`/api/cluster/resources${sample ? "?sample=1" : clusterContext ? `?context=${encodeURIComponent(clusterContext)}` : ""}`).then((r) => r.json()),
+  loadApps: () => fetch(`/api/score/apps${sample ? "?sample=1" : clusterContext ? `?context=${encodeURIComponent(clusterContext)}` : ""}`).then((r) => r.json()),
   onClose: () => { if (!kubeMapOnly()) setPipBoy(false); },
   canClose: !kubeMapOnly(),
   openTopology: (ns) => openInCluster({ type: "entry", id: `ns:${ns}`, ns }),
@@ -7114,7 +7115,8 @@ fetch("/api/config")
     const features = pageConfig?.features || {};
     if (features.ask === false) askTab.hidden = true;
     if (features.learn === false) document.querySelector("#learn-key").hidden = true;
-    if (features.scorecard === false) document.querySelector("#score-key").hidden = document.querySelector("#apps-key").hidden = true;
+    if (features.scorecard === false) document.querySelector("#score-key").hidden = true;
+    if (features.scorecard === false) document.querySelector("#apps-key").hidden = true;
     const view = pageConfig?.ui?.defaultView;
     if (!location.hash && view && view !== "map") history.replaceState(null, "", `${location.pathname}${location.search}#${view}`);
   })
