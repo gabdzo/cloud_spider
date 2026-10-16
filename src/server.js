@@ -21,7 +21,7 @@ import { samplePathGraph } from "./path-sample.js";
 import { peerSampleWorld } from "./peer-path.js";
 import { pathResult, withPeers } from "./path-view.js";
 import { THEME_NAMES, cssVars } from "./theme.js";
-import { SCORE_CSS } from "./score/style.js";
+import { APPS_CSS, SCORE_CSS } from "./score/style.js";
 import { ND_CSS } from "./netdebug/style.js";
 import { DX_CSS } from "./diagnose-style.js";
 import { LE_CSS } from "./log-errors-style.js";
@@ -42,6 +42,7 @@ export const FILES = new Set([
   "browser.js",
   "where.js",
   "score/view.js",
+  "score/apps-view.js",
   "netdebug/view.js",
   "netdebug/walkthrough.js",
   "spend-view.js",
@@ -185,6 +186,7 @@ const page = `<!doctype html>
   @font-face { font-family: "JetBrains Mono"; src: url("/fonts/jetbrains-mono-latin-400-normal.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
   ${cssVars()}
   ${SCORE_CSS}
+  ${APPS_CSS}
   ${ND_CSS}
   ${DX_CSS}
   ${LE_CSS}
@@ -880,7 +882,7 @@ const page = `<!doctype html>
   .mapwrap { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
   /* SCORE and LEARN fill the view with a small frame: a scrim under them so
      the map's labels in that frame do not read as part of the panel. */
-  .mapwrap:has(#score:not([hidden]), #learn:not([hidden]))::before { content: ""; position: absolute; inset: 0; z-index: 5; background: rgba(0, 0, 0, 0.72); pointer-events: none; }
+  .mapwrap:has(#score:not([hidden]), #apps:not([hidden]), #learn:not([hidden]))::before { content: ""; position: absolute; inset: 0; z-index: 5; background: rgba(0, 0, 0, 0.72); pointer-events: none; }
   #map { position: relative; flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--pip-screen); }
 
   /* ---- the morning report: three sentences pinned over the map ---- */
@@ -3507,6 +3509,7 @@ const page = `<!doctype html>
       <button id="upgrade" class="key" type="button" aria-pressed="false" title="stacks: Pulumi upgrades" data-module="stacks"><span class="cap" data-icon="stack"></span><span class="tag">Stacks</span></button>
       <button id="learn-key" class="key" type="button" aria-pressed="false" title="learn: holotape labs for Kubernetes and OpenShift" data-module="learn"><span class="cap" data-icon="learn"></span><span class="tag">Learn</span></button>
       <button id="score-key" class="key" type="button" aria-pressed="false" title="score: production readiness of the connected cluster (reads only; FIX runs an add-on stack after you approve its preview)" data-module="score"><span class="cap" data-icon="vaults"></span><span class="tag">Score</span></button>
+      <button id="apps-key" class="key" type="button" aria-pressed="false" title="apps: a grade per app (reads only)" data-module="score"><span class="cap" data-icon="vaults"></span><span class="tag">Apps</span></button>
       <button id="ask" class="key" type="button" aria-pressed="false" title="ask your local agent (runs only when you press ASK)" data-module="ask"><span class="cap" data-icon="terminal"></span><span class="tag">Ask</span></button>
     </div>
   <button id="sample" class="switch" type="button" role="switch" aria-checked="false" aria-label="Sample mode" title="Sample mode: a made-up account, nothing read from AWS"><span class="well" aria-hidden="true"><span class="nut"></span><span class="lever"></span></span><span class="marks" aria-hidden="true"><span>ON</span><span>OFF</span></span><span class="name" aria-hidden="true">SAMPLE</span><span class="led" aria-hidden="true"></span></button>
@@ -3602,6 +3605,7 @@ const page = `<!doctype html>
       <section id="term" hidden></section>
       <section id="learn" aria-label="learn" hidden></section>
       <section id="score" aria-label="scorecard" hidden></section>
+      <section id="apps" aria-label="app scores" hidden></section>
       <section id="netdebug" aria-label="network debugging" hidden></section>
     </div>
     <aside id="radio-panel" aria-label="radio" data-module="radio">
