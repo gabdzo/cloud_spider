@@ -39,10 +39,11 @@ export function routeVerdict(entry, services, slices, pods) {
   const named = port && typeof port.targetPort === "string" && !/^\d+$/.test(port.targetPort);
   const podPort = port ? podPortFor(port.targetPort, chosen) : null;
   if (named && chosen.length && podPort == null) return { status: "broken", why: `targetPort ${port.targetPort} names no container port` };
-  if (Object.keys(svc.spec?.selector || {}).length && ep.ready === 0) return { status: "broken", why: chosen.length ? "no ready endpoints" : "selector matches no pods" };
-  if (ep.ready == null) return { status: "note", why: "endpoints not read", port: port?.port, podPort };
+  if (Object.keys(svc.spec?.selector || {}).length && ep.ready === 0) return { status: "broken", why: chosen.length ? "no ready endpoints" : "selector matches no pods", ready: 0, total: ep.list ? ep.list.length : chosen.length };
+  const counts = { ready: ep.ready, total: ep.list ? ep.list.length : null };
+  if (ep.ready == null) return { status: "note", why: "endpoints not read", port: port?.port, podPort, ...counts };
   const note = ep.flags.find((f) => f.note && port && f.why.startsWith(`port ${port.port} `));
-  return note ? { status: "note", why: note.why, port: port?.port, podPort } : { status: "ok", why: `${ep.ready} ready`, port: port?.port, podPort };
+  return note ? { status: "note", why: note.why, port: port?.port, podPort, ...counts } : { status: "ok", why: `${ep.ready} ready`, port: port?.port, podPort, ...counts };
 }
 
 // Groups by host: [{ host, count, broken, rows: [{ ...entry, status, why }] }].
@@ -50,11 +51,11 @@ export function buildRoutes({ ingresses = [], osRoutes = [], services = [], slic
   const groups = new Map();
   for (const e of routeEntries(ingresses, osRoutes)) {
     const v = routeVerdict(e, services, slices, pods);
-    const row = { ...e, status: v.status, why: v.why, svcPort: v.port ?? e.port, podPort: v.podPort ?? null, target: e.host !== "*" ? `${e.host}${e.path}` : `${e.ns}/${e.svc}` };
+    const row = { ...e, status: v.status, why: v.why, svcPort: v.port ?? e.port, podPort: v.podPort ?? null, ready: v.ready ?? null, total: v.total ?? null, target: e.host !== "*" ? `${e.host}${e.path}` : `${e.ns}/${e.svc}` };
     if (!groups.has(e.host)) groups.set(e.host, []);
     groups.get(e.host).push(row);
   }
-  return [...groups].map(([host, rows]) => ({ host, count: rows.length, broken: rows.filter((r) => r.status === "broken").length, rows: rows.sort((a, b) => a.path.localeCompare(b.path)) })).sort((a, b) => b.broken - a.broken || a.host.localeCompare(b.host));
+  return [...groups].map(([host, rows]) => ({ host, count: rows.length, broken: rows.filter((r) => r.status === "broken").length, rows: rows.sort((a, b) => Number(b.status === "broken") - Number(a.status === "broken") || a.path.localeCompare(b.path)) })).sort((a, b) => b.broken - a.broken || a.host.localeCompare(b.host));
 }
 
 const KINDS = { ingresses: ["ingresses", "nsIngresses"], osRoutes: ["routes", "nsRoutes"], services: ["services", "nsServices"], slices: ["endpointSlicesAll", "nsEndpointSlices"], pods: ["pods", "nsPods"] };

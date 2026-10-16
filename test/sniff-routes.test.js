@@ -51,3 +51,10 @@ test("namespace-limited: one ns at a time, 403 is a quiet note, reads are lists 
   assert.equal(out.error, "");
   assert.ok(calls.every((n) => n.startsWith("ns")));
 });
+
+test("rows carry pod ready counts and broken rows come first", () => {
+  const [g] = buildRoutes({ ingresses: [ing], services: [svc], slices, pods: [pod] });
+  assert.equal(g.rows[0].path, "/ghost");
+  const gaas = g.rows.find((r) => r.path === "/gaas");
+  assert.deepEqual([gaas.ready, gaas.total], [1, 1]);
+});
