@@ -319,6 +319,7 @@ export function mountPip(el, io) {
     state.error = error;
     state.loading = false;
     if (!el.hidden && !same) render();
+    pullRes();
   };
   let resAt = 0;
   const pullRes = async () => {
@@ -328,7 +329,6 @@ export function mountPip(el, io) {
     const same = JSON.stringify(res) === JSON.stringify(state.res);
     state.res = res;
     if (!el.hidden && !same) render();
-    pullRes();
   };
   const focusOf = () => (model?.namespaces?.some((/** @type {any} */ n) => n.name === state.selected) ? state.selected : model?.namespaces?.[0]?.name || "");
   const select = (/** @type {string} */ name) => { if (name !== state.selected) { state.resKind = ""; state.resObj = ""; } state.selected = name; state.scrollSel = true; keep(store, PIP_SEL_KEY, name); render(); };
