@@ -3432,7 +3432,6 @@ async function pullPath() {
 
 // SNIFF with nothing typed (k8s-only): a friendly prompt with live examples.
 let sniffEmptyEl = null;
-const sniffOpenHosts = new Set();
 function showSniffExamples(examples, routes = null) {
   if (!examples) {
     if (sniffEmptyEl) sniffEmptyEl.hidden = true;
@@ -3461,9 +3460,7 @@ function showSniffExamples(examples, routes = null) {
   });
   sniffEmptyEl.replaceChildren(head, ...buttons, ...sniffRoutesBlock(routes));
   sniffEmptyEl.hidden = mode !== "path";
-  lastSniffExamples = examples;
 }
-let lastSniffExamples = [];
 
 // ROUTES: every Ingress/Route path grouped by host, folded with a count.
 function sniffRoutesBlock(routes) {
@@ -3476,40 +3473,41 @@ function sniffRoutesBlock(routes) {
   wrap.append(title);
   if (!routes.groups?.length) wrap.append(Object.assign(document.createElement("div"), { textContent: routes.error || "no Ingress or Route found" }));
   const dot = { ok: "var(--ok)", broken: "var(--err)", note: "var(--pip-dim-text)" };
+  const list = document.createElement("div");
+  list.style.cssText = "font-family:var(--font-mono);font-size:12px;line-height:1.35";
   for (const g of routes.groups || []) {
-    const open = sniffOpenHosts.has(g.host);
-    const head = document.createElement("button");
-    head.type = "button";
+    const head = document.createElement("div");
     head.className = "sniff-route-host";
-    head.setAttribute("aria-expanded", String(open));
-    head.textContent = `${open ? "▾" : "▸"} ${g.host} (${g.count}${g.broken ? `, ${g.broken} broken` : ""})`;
-    head.style.cssText = `display:block;width:100%;margin:4px 0;padding:3px 8px;text-align:left;cursor:pointer;font:inherit;background:transparent;border:1px solid var(--pip-dim);color:${g.broken ? "var(--err)" : "inherit"}`;
-    head.addEventListener("click", () => {
-      if (sniffOpenHosts.has(g.host)) sniffOpenHosts.delete(g.host);
-      else sniffOpenHosts.add(g.host);
-      showSniffExamples(lastSniffExamples, routes);
-    });
-    wrap.append(head);
-    if (!open) continue;
+    head.textContent = `${g.host}  ·  ${g.count} route${g.count === 1 ? "" : "s"}${g.broken ? `, ${g.broken} broken` : ""}`;
+    head.style.cssText = `margin:10px 0 2px;padding-bottom:1px;border-bottom:1px solid var(--pip-dim);color:${g.broken ? "var(--err)" : "var(--pip-bright)"};white-space:nowrap;overflow:hidden;text-overflow:ellipsis`;
+    list.append(head);
     for (const r of g.rows) {
       const row = document.createElement("button");
       row.type = "button";
       row.className = `sniff-route sniff-route-${r.status}`;
-      row.title = `${r.ns}/${r.via} (${r.cls || r.kind}) · ${r.why}`;
-      row.style.cssText = "display:flex;gap:8px;align-items:center;width:100%;margin:2px 0 2px 14px;padding:2px 8px;text-align:left;cursor:pointer;font:inherit;color:inherit;background:transparent;border:0;white-space:nowrap;overflow:hidden";
+      row.title = `${r.ns}/${r.via} (${r.cls || r.kind}) · ${r.why} · click for the full trace`;
+      row.style.cssText = "display:flex;gap:6px;align-items:center;width:100%;margin:0;padding:1px 4px;text-align:left;cursor:pointer;font:inherit;color:inherit;background:transparent;border:0;white-space:nowrap;overflow:hidden";
       const d = document.createElement("i");
-      d.style.cssText = `flex:none;width:8px;height:8px;border-radius:50%;background:${dot[r.status] || dot.note}`;
+      d.style.cssText = `flex:none;width:7px;height:7px;border-radius:50%;background:${dot[r.status] || dot.note}`;
       const t = document.createElement("span");
       t.style.cssText = "overflow:hidden;text-overflow:ellipsis";
-      t.textContent = `${r.path} → ${r.ns}/${r.svc}:${r.svcPort ?? "?"}${r.status === "ok" ? "" : ` · ${r.why}`}`;
+      const pods = r.total != null ? ` · ${r.ready ?? 0}/${r.total} ready` : "";
+      t.textContent = `${r.path} → ${r.ns}/${r.svc}:${r.svcPort ?? "?"}${pods}`;
       row.append(d, t);
+      if (r.status !== "ok") {
+        const why = document.createElement("span");
+        why.style.cssText = `flex:none;color:${r.status === "broken" ? "var(--err)" : "var(--pip-dim-text)"}`;
+        why.textContent = `· ${r.why}`;
+        row.append(why);
+      }
       row.addEventListener("click", () => {
         hostInput.value = r.target;
         hostInput.dispatchEvent(new Event("change"));
       });
-      wrap.append(row);
+      list.append(row);
     }
   }
+  wrap.append(list);
   if (routes.noAccess?.length) {
     const note = document.createElement("div");
     note.className = "sniff-noaccess";
