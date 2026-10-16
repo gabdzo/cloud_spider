@@ -57,6 +57,18 @@ export const PIP_CSS = `
 #pipboy .pb-bar .pb-meter{flex:1;max-width:180px;height:10px;border:1px solid var(--pb-fg);align-self:center;position:relative}
 #pipboy .pb-bar .pb-meter i{position:absolute;inset:0 auto 0 0;background:var(--pb-fg)}
 #pipboy .pb-empty{margin:auto;text-align:center;color:var(--pb-dim)}
+#pipboy .pb-apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:6px;margin:4px 0 6px}
+#pipboy .pb-app{display:grid;grid-template-columns:auto 1fr;gap:2px 8px;align-items:center;border:1px solid var(--pb-dim);padding:3px 6px;text-align:left}
+#pipboy .pb-app b{font-size:22px;grid-row:span 2}
+#pipboy .pb-app.bad{border-color:var(--pb-alert)}
+#pipboy .pb-app.bad b{color:var(--pb-alert);text-shadow:0 0 6px var(--pb-alert)}
+#pipboy .pb-app.warn b{color:var(--pb-fg)}
+#pipboy .pb-app.muted b{color:var(--pb-dim)}
+#pipboy .pb-app .pb-an{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pipboy .pb-app .pb-meter{height:7px;border:1px solid var(--pb-fg);position:relative}
+#pipboy .pb-app .pb-meter i{position:absolute;inset:0 auto 0 0;background:var(--pb-fg)}
+#pipboy .pb-app.bad .pb-meter i{background:var(--pb-alert)}
+#pipboy .pb-app .pb-at{grid-column:1/-1;color:var(--pb-dim);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #pipboy .pb-close{border-color:var(--pb-dim)!important}
 
 #pipboy{background:radial-gradient(ellipse at 50% 45%,color-mix(in srgb,var(--pb-fg) 9%,var(--pb-bg)) 0%,var(--pb-bg) 70%,#000 120%);border:3px solid color-mix(in srgb,var(--pb-fg) 30%,#000);border-radius:18px;box-shadow:inset 0 0 60px rgba(0,0,0,.85),inset 0 0 12px var(--pb-glow);margin:4px;inset:0}
@@ -168,6 +180,22 @@ export function resHtml(ns, res, pick = {}) {
   return `${body || `<p class="pb-rule">nothing listable in this namespace</p>`}${denied}`;
 }
 
+const APP_TONE = { A: "ok", B: "ok", C: "warn", D: "bad", F: "bad" };
+/** "A 1 · F 3" over every scored app. @param {Record<string, number>} [grades] */
+export function appGradeLine(grades = {}) {
+  return ["A", "B", "C", "D", "F", "?"].filter((g) => grades[g]).map((g) => `${g} ${grades[g]}`).join(" · ");
+}
+/** RES: one tile per app in the namespace: grade, a bar of its score, the top fix. @param {string} ns @param {any} apps */
+export function appTilesHtml(ns, apps) {
+  const mine = (apps?.apps || []).filter((/** @type {any} */ a) => a.namespace === ns);
+  if (!mine.length) return "";
+  const tiles = mine.map((/** @type {any} */ a) => {
+    const top = a.scaledDown ? "SCALED DOWN" : a.fails?.[0] ? `+${a.fails[0].points} ${a.fails[0].title}` : "no fails";
+    return `<span class="pb-app ${APP_TONE[a.grade] || "muted"}" data-app="${esc(a.id)}" title="${esc(a.id)}: ${esc(top)}"><b>${esc(a.grade)}</b><span class="pb-an">${esc(a.name)} ${a.overall ?? ""}</span><i class="pb-meter"><i style="width:${Math.max(0, Math.min(100, Number(a.overall) || 0))}%"></i></i><span class="pb-at">${esc(top)}</span></span>`;
+  }).join("");
+  return `<h4>APPS · GRADE</h4><div class="pb-apps">${tiles}</div>`;
+}
+
 const hintHtml = (/** @type {string[]} */ hints) => (hints?.length ? `<h4>HINTS</h4>${hints.map((h) => `<p class="pb-rule pb-hint">⚑ ${esc(h)}</p>`).join("")}` : "");
 
 /** @param {PipNs} ns @param {string} tab @param {any} [res] @param {{ resKind?: string, resObj?: string }} [pick] */
@@ -182,7 +210,7 @@ export function detailHtml(ns, tab, res = null, pick = {}) {
   const go = `<p class="pb-go"><button data-topology="${esc(ns.name)}" title="Enter">▶ OPEN IN TOPOLOGY</button> <button data-grid title="Backspace">◄ ALL NAMESPACES</button></p>`;
   if (tab === "pods") return head + go + issues + wl + sv;
   if (tab === "net") return head + go + en + np;
-  if (tab === "res") return head + go + resHtml(ns.name, res, pick);
+  if (tab === "res") return head + go + appTilesHtml(ns.name, /** @type {any} */ (pick).apps) + resHtml(ns.name, res, pick);
   return head + go + issues + hintHtml(res?.hints?.[ns.name]) + wl + sv + en + np;
 }
 
@@ -248,7 +276,7 @@ export function pipHtml(model, state) {
   const t = model.totals;
   const pct = t.pods ? Math.round((100 * t.ready) / t.pods) : 100;
   const legend = grid ? `<span class="pb-legend"><i class="pb-k-pol"></i>policy allow <i class="pb-k-in"></i>entry → ns</span>` : "";
-  const bar = `<div class="pb-bar"><span>HP · PODS ${t.ready}/${t.pods}<i class="pb-meter"><i style="width:${pct}%"></i></i></span><span>LEVEL · NODES ${t.nodesReady}/${t.nodes}</span><span class="${t.issues ? "pb-alert" : ""}">AP · ISSUES ${t.issues}</span>${legend}</div>`;
+  const bar = `<div class="pb-bar"><span>HP · PODS ${t.ready}/${t.pods}<i class="pb-meter"><i style="width:${pct}%"></i></i></span><span>LEVEL · NODES ${t.nodesReady}/${t.nodes}</span><span class="${t.issues ? "pb-alert" : ""}">AP · ISSUES ${t.issues}</span>${appGradeLine(state.apps?.grades) ? `<span class="${state.apps.grades.F || state.apps.grades.D ? "pb-alert" : ""}">APPS · ${esc(appGradeLine(state.apps.grades))}</span>` : ""}${legend}</div>`;
   if (grid) return `${top}${gridHtml(model, state)}${bar}`;
   const sel = model.namespaces.find((n) => n.name === state.selected) || model.namespaces[0];
   const rows = model.namespaces.map((n) => `<li class="pb-row${n.state === "healthy" ? "" : " pb-bad"}${n.system ? " pb-sys" : ""}" role="option" data-ns="${esc(n.name)}" aria-selected="${n === sel}"><span class="pb-n">${esc(n.name)}</span><span class="pb-v">${n.health}</span></li>`).join("");
@@ -276,11 +304,11 @@ const keep = (store, key, value) => { try { store?.setItem(key, value); } catch 
  * The screen's controller: fetches /api/cluster, renders, keys and clicks.
  * The amber tint is set on <html data-tint> so the whole app follows.
  * @param {HTMLElement} el
- * @param {{ loadRes?: () => Promise<any>, load: () => Promise<any>, model: (body: any) => any, onClose: () => void, canClose?: boolean, openTopology?: (ns: string) => void, store?: Storage|null }} io
+ * @param {{ loadRes?: () => Promise<any>, loadApps?: () => Promise<any>, load: () => Promise<any>, model: (body: any) => any, onClose: () => void, canClose?: boolean, openTopology?: (ns: string) => void, store?: Storage|null }} io
  */
 export function mountPip(el, io) {
   const store = io.store ?? null;
-  const state = { canClose: io.canClose !== false, scrollSel: true, selected: pref(store, PIP_SEL_KEY, ""), tab: "stat", view: "grid", res: /** @type {any} */ (null), resKind: "", resObj: "", theme: pref(store, PIP_THEME_KEY, "green") === "amber" ? "amber" : "green", error: "", loading: true };
+  const state = { canClose: io.canClose !== false, scrollSel: true, selected: pref(store, PIP_SEL_KEY, ""), tab: "stat", view: "grid", res: /** @type {any} */ (null), apps: /** @type {any} */ (null), resKind: "", resObj: "", theme: pref(store, PIP_THEME_KEY, "green") === "amber" ? "amber" : "green", error: "", loading: true };
   /** @type {any} */
   let model = null;
   let timer = 0;
@@ -325,6 +353,7 @@ export function mountPip(el, io) {
   const pullRes = async () => {
     if (!io.loadRes || Date.now() - resAt < 55_000) return;
     resAt = Date.now();
+    if (io.loadApps) io.loadApps().then((apps) => { if (apps?.error) return; const same = JSON.stringify(apps) === JSON.stringify(state.apps); state.apps = apps; if (!el.hidden && !same) render(); }).catch(() => {});
     const res = await io.loadRes().catch((e) => ({ error: e?.message || "the inventory failed", kinds: [] }));
     const same = JSON.stringify(res) === JSON.stringify(state.res);
     state.res = res;

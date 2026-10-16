@@ -2787,6 +2787,7 @@ const pipBoy = mountPip(pipBoyEl, {
   load: () => fetch(sample ? "/api/cluster-sample" : `/api/cluster${clusterContext ? `?context=${encodeURIComponent(clusterContext)}` : ""}`).then((r) => r.json()),
   model: pipModel,
   loadRes: () => fetch(`/api/cluster/resources${sample ? "?sample=1" : clusterContext ? `?context=${encodeURIComponent(clusterContext)}` : ""}`).then((r) => r.json()),
+  loadApps: () => fetch(`/api/score/apps${sample ? "?sample=1" : clusterContext ? `?context=${encodeURIComponent(clusterContext)}` : ""}`).then((r) => r.json()),
   onClose: () => { if (!kubeMapOnly()) setPipBoy(false); },
   canClose: !kubeMapOnly(),
   openTopology: (ns) => openInCluster({ type: "entry", id: `ns:${ns}`, ns }),
